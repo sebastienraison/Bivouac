@@ -1,9 +1,11 @@
 package com.bivouac.app.gpximport
 
+import android.app.Application
 import android.content.ContentResolver
 import android.net.Uri
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.bivouac.app.data.db.SavedTrackRepository
 import com.bivouac.app.data.gpx.GpxParser
 import com.bivouac.app.data.gpx.TrackStats
 import com.bivouac.app.data.gpx.TrackStatsCalculator
@@ -11,6 +13,8 @@ import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrackPoint
+import com.bivouac.app.data.prefs.MapLayerPreferences
+import com.bivouac.app.ui.map.MapLayer
 import java.io.IOException
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +34,17 @@ sealed interface GpxImportUiState {
     data class Error(val message: String) : GpxImportUiState
 }
 
-class GpxImportViewModel : ViewModel() {
+class GpxImportViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val repository = SavedTrackRepository(application)
+    private val mapLayerPreferences = MapLayerPreferences(application)
+
+    val selectedLayer: StateFlow<MapLayer> = mapLayerPreferences.selectedLayer
+        .stateIn(viewModelScope, SharingStarted.Eagerly, MapLayer.HIKING)
+
+    fun setSelectedLayer(layer: MapLayer) {
+        viewModelScope.launch { mapLayerPreferences.setSelectedLayer(layer) }
+    }
 
     private val _uiState = MutableStateFlow<GpxImportUiState>(GpxImportUiState.Idle)
     val uiState: StateFlow<GpxImportUiState> = _uiState.asStateFlow()
@@ -71,12 +85,30 @@ class GpxImportViewModel : ViewModel() {
                 onSuccess = { (track, stats) -> GpxImportUiState.Loaded(track, stats) },
                 onFailure = { GpxImportUiState.Error("Trace incorrecte ou fichier illisible.") },
             )
+            persistCurrentState()
+        }
+    }
+
+    // Restores the trace saved from the previous session, if any — called once on a fresh start
+    // (not after an incoming-GPX import already handled it), so a restart doesn't lose the plan.
+    fun restoreLastTrack() {
+        _uiState.value = GpxImportUiState.Loading
+        viewModelScope.launch {
+            val restored = withContext(Dispatchers.IO) { repository.loadLast() }
+            if (restored == null) {
+                _uiState.value = GpxImportUiState.Idle
+                return@launch
+            }
+            val (track, points) = restored
+            _uiState.value = GpxImportUiState.Loaded(track, TrackStatsCalculator.compute(track.points))
+            _bivouacPoints.value = points
         }
     }
 
     fun clear() {
         _uiState.value = GpxImportUiState.Idle
         _bivouacPoints.value = emptyList()
+        viewModelScope.launch { withContext(Dispatchers.IO) { repository.clear() } }
     }
 
     fun addBivouacPoint(trackPointIndex: Int) {
@@ -84,10 +116,12 @@ class GpxImportViewModel : ViewModel() {
         if (current.any { it.trackPointIndex == trackPointIndex }) return
         _bivouacPoints.value = (current + BivouacPoint(UUID.randomUUID().toString(), trackPointIndex))
             .sortedBy { it.trackPointIndex }
+        persistCurrentState()
     }
 
     fun removeBivouacPoint(id: String) {
         _bivouacPoints.value = _bivouacPoints.value.filterNot { it.id == id }
+        persistCurrentState()
     }
 
     fun moveBivouacPoint(id: String, newTrackPointIndex: Int) {
@@ -95,6 +129,16 @@ class GpxImportViewModel : ViewModel() {
         _bivouacPoints.value = _bivouacPoints.value
             .map { if (it.id == id) it.copy(trackPointIndex = newTrackPointIndex) else it }
             .sortedBy { it.trackPointIndex }
+        persistCurrentState()
+    }
+
+    // Fire-and-forget: called after every settled (non-transient) change to the loaded track or
+    // its bivouac points. Never called from previewBivouacDrag, which fires on every drag frame —
+    // only the drop (moveBivouacPoint) persists.
+    private fun persistCurrentState() {
+        val track = (_uiState.value as? GpxImportUiState.Loaded)?.track ?: return
+        val points = _bivouacPoints.value
+        viewModelScope.launch { withContext(Dispatchers.IO) { repository.save(track, points) } }
     }
 
     fun previewBivouacDrag(id: String, trackPointIndex: Int) {

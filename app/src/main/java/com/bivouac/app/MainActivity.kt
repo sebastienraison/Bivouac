@@ -49,7 +49,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -131,9 +130,7 @@ fun GpxImportScreen(
     val segments by viewModel.segments.collectAsStateWithLifecycle()
     val loadedTrack = (uiState as? GpxImportUiState.Loaded)?.track
 
-    // Randonnée (OpenTopoMap) is the more useful default for hiking; could become a stored
-    // preference later, but that needs the settings screen planned for a future phase.
-    var selectedLayer by remember { mutableStateOf(MapLayer.HIKING) }
+    val selectedLayer by viewModel.selectedLayer.collectAsStateWithLifecycle()
     var recenterSignal by remember { mutableIntStateOf(0) }
 
     // The loaded-state peek content (title/stats/curve) is measured rather than given a fixed dp
@@ -155,10 +152,16 @@ fun GpxImportScreen(
 
     // A rotation destroys and recreates the Activity, so onCreate re-evaluates the incoming
     // intent's URI and this effect fires again with the same (non-null) value — only guarding on
-    // Idle stops that replay from re-importing (and wiping bivouac points) on every rotation.
+    // Idle stops that replay from re-importing (and wiping bivouac points) on every rotation. An
+    // explicit incoming GPX (opened from another app) always wins over whatever was saved from
+    // the previous session; otherwise, restore that previous trace so a restart doesn't lose it.
     LaunchedEffect(incomingGpxUri) {
         if (uiState is GpxImportUiState.Idle) {
-            incomingGpxUri?.let { viewModel.importGpx(context.contentResolver, it) }
+            if (incomingGpxUri != null) {
+                viewModel.importGpx(context.contentResolver, incomingGpxUri)
+            } else {
+                viewModel.restoreLastTrack()
+            }
         }
     }
 
@@ -218,7 +221,7 @@ fun GpxImportScreen(
             )
             MapControls(
                 selectedLayer = selectedLayer,
-                onLayerSelected = { selectedLayer = it },
+                onLayerSelected = viewModel::setSelectedLayer,
                 recenterEnabled = loadedTrack != null,
                 onRecenterClick = { recenterSignal++ },
                 modifier = Modifier

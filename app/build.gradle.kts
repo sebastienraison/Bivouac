@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -55,5 +56,9 @@ dependencies {
     // stax-api provides the missing API classes, aalto-xml a pure-Java implementation of them.
     implementation(libs.stax.api)
     implementation(libs.aalto.xml)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+    implementation(libs.datastore.preferences)
     debugImplementation(libs.ui.tooling)
 }

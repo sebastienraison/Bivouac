@@ -34,31 +34,37 @@ fun MapControls(
     var layerMenuExpanded by remember { mutableStateOf(false) }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        FilledIconButton(
-            onClick = { layerMenuExpanded = true },
-            colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            ),
-        ) {
-            Icon(Icons.Default.Layers, contentDescription = "Choisir le fond de carte")
-        }
-        DropdownMenu(expanded = layerMenuExpanded, onDismissRequest = { layerMenuExpanded = false }) {
-            MapLayer.entries.forEach { layer ->
-                DropdownMenuItem(
-                    text = { Text(layer.label) },
-                    leadingIcon = {
-                        if (layer == selectedLayer) {
-                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(20.dp))
-                        } else {
-                            Box(modifier = Modifier.size(20.dp))
-                        }
-                    },
-                    onClick = {
-                        onLayerSelected(layer)
-                        layerMenuExpanded = false
-                    },
-                )
+        // The dropdown must live inside its own Box, scoped to just this button — as a direct
+        // Column child (a sibling of the recenter button) its expand/collapse animation briefly
+        // reports a non-zero measured height, which the Column's spacedBy() picks up and uses to
+        // shove the recenter button down and back up.
+        Box {
+            FilledIconButton(
+                onClick = { layerMenuExpanded = true },
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+            ) {
+                Icon(Icons.Default.Layers, contentDescription = "Choisir le fond de carte")
+            }
+            DropdownMenu(expanded = layerMenuExpanded, onDismissRequest = { layerMenuExpanded = false }) {
+                MapLayer.entries.forEach { layer ->
+                    DropdownMenuItem(
+                        text = { Text(layer.label) },
+                        leadingIcon = {
+                            if (layer == selectedLayer) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(20.dp))
+                            } else {
+                                Box(modifier = Modifier.size(20.dp))
+                            }
+                        },
+                        onClick = {
+                            onLayerSelected(layer)
+                            layerMenuExpanded = false
+                        },
+                    )
+                }
             }
         }
         FilledIconButton(
