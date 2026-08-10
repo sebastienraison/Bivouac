@@ -1,0 +1,9 @@
+<resources>
+    <color name="track_line">#1976D2</color>
+    <color name="track_line_outline">#FFFFFF</color>
+
+    <color name="marker_start">#4E8B50</color>
+    <color name="marker_finish">#B85450</color>
+    <color name="marker_tail_neutral">#616161</color>
+    <color name="marker_bivouac">#F57C00</color>
+</resources>

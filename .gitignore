@@ -1,0 +1,23 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+/app/build
+/app/release
+
+# Android Studio
+*.hprof
+.navigation/
+
+# Internal planning docs — working base, not meant to be published
+/docs/
+
+# Local tooling — not meant to be published
+/.claude/
+/.kotlin/

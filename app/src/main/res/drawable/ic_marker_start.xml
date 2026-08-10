@@ -1,0 +1,27 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <!-- pointer tail -->
+    <path
+        android:fillColor="@color/marker_start"
+        android:pathData="M19,30 L29,30 L24,46 Z" />
+
+    <!-- circle body -->
+    <path
+        android:fillColor="@color/marker_start"
+        android:pathData="M24,4 A14,14 0 0,1 24,32 A14,14 0 0,1 24,4 Z" />
+
+    <!-- white outline ring -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:pathData="M24,4 A14,14 0 0,1 24,32 A14,14 0 0,1 24,4 Z" />
+
+    <!-- start flag glyph -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M19,10 L19,26 L31,18 Z" />
+</vector>
