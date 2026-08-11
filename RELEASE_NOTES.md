@@ -1,5 +1,19 @@
 # Bivouac — Notes de version
 
+## V1.2
+
+**Persistance (nouveau) :**
+
+- La trace en cours et ses points de bivouac sont sauvegardés automatiquement et rouverts au
+  lancement de l'app, sauf si un GPX arrive entre-temps depuis une autre application (qui reste
+  prioritaire)
+- Le fond de carte sélectionné (Standard, Randonnée, Satellite) est mémorisé entre les sessions
+
+**Corrections :**
+
+- Le bouton de recentrage bougeait légèrement à l'ouverture et à la fermeture du menu des fonds de
+  carte
+
 ## V1.1
 
 **Import et affichage :**
