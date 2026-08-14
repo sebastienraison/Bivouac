@@ -21,3 +21,6 @@ local.properties
 # Local tooling — not meant to be published
 /.claude/
 /.kotlin/
+
+# Personal GPX tracks used as real-world test data — not meant to be published
+/traces réelles/

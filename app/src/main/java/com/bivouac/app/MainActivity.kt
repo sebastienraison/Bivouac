@@ -26,8 +26,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.TrendingDown
-import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.ContentCopy
@@ -35,9 +33,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.AlertDialog
@@ -65,7 +61,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
@@ -91,6 +86,9 @@ import com.bivouac.app.gpximport.DeleteTarget
 import com.bivouac.app.gpximport.GpxImportUiState
 import com.bivouac.app.gpximport.GpxImportViewModel
 import com.bivouac.app.ui.components.ElevationProfile
+import com.bivouac.app.ui.components.GainIconColor
+import com.bivouac.app.ui.components.InfoText
+import com.bivouac.app.ui.components.StatsRows
 import com.bivouac.app.ui.journal.JournalScreen
 import com.bivouac.app.ui.map.HikeMapView
 import com.bivouac.app.ui.map.MapControls
@@ -107,11 +105,6 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 private val PEEK_HEIGHT_EMPTY = 150.dp
-
-private val DistanceIconColor = Color(0xFF3C7A5D)
-private val DurationIconColor = Color(0xFF6FA8CC)
-private val GainIconColor = Color(0xFFD98E48)
-private val LossIconColor = Color(0xFFD4B94E)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -152,14 +145,11 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUri: Uri? = nul
             )
         }
         composable(AppSection.JOURNAL.route) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                JournalScreen(modifier = Modifier.fillMaxSize())
-                SectionMenuButton(
-                    current = AppSection.JOURNAL,
-                    onSelect = ::onSectionSelected,
-                    modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(16.dp),
-                )
-            }
+            JournalScreen(
+                modifier = Modifier.fillMaxSize(),
+                currentSection = AppSection.JOURNAL,
+                onSectionSelected = ::onSectionSelected,
+            )
         }
         composable(AppSection.REGLAGES.route) {
             Box(modifier = Modifier.fillMaxSize()) {
@@ -641,24 +631,6 @@ private fun formatSavedAt(epochMillis: Long): String {
 }
 
 @Composable
-private fun StatsRows(stats: TrackStats, muted: Boolean = false) {
-    val neutral = MaterialTheme.colorScheme.onSurfaceVariant
-    val distanceColor = if (muted) neutral else DistanceIconColor
-    val durationColor = if (muted) neutral else DurationIconColor
-    val gainColor = if (muted) neutral else GainIconColor
-    val lossColor = if (muted) neutral else LossIconColor
-
-    Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-        InfoText(String.format(Locale.FRANCE, "%.1f km", stats.distanceMeters / 1000), Icons.Filled.Route, distanceColor)
-        InfoText(formatDuration(stats.estimatedDurationMinutes), Icons.Filled.Schedule, durationColor)
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-        InfoText("D+ ${stats.elevationGainMeters.toInt()} m", Icons.AutoMirrored.Filled.TrendingUp, gainColor)
-        InfoText("D- ${stats.elevationLossMeters.toInt()} m", Icons.AutoMirrored.Filled.TrendingDown, lossColor)
-    }
-}
-
-@Composable
 private fun SegmentsList(
     track: HikeTrack,
     segments: List<Segment>,
@@ -761,16 +733,3 @@ private fun ComposedWeatherIconButton(onClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun InfoText(text: String, icon: ImageVector, iconTint: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = iconTint)
-        Text(text = text, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-private fun formatDuration(totalMinutes: Int): String {
-    val hours = totalMinutes / 60
-    val minutes = totalMinutes % 60
-    return "${hours}h${minutes.toString().padStart(2, '0')}"
-}

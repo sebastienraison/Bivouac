@@ -5,11 +5,16 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [SavedTrackEntity::class, BankedTrackEntity::class], version = 2, exportSchema = false)
+@Database(
+    entities = [SavedTrackEntity::class, BankedTrackEntity::class, LoggedTrackEntity::class, LoggedTrackDayEntity::class],
+    version = 5,
+    exportSchema = false,
+)
 abstract class BivouacDatabase : RoomDatabase() {
 
     abstract fun savedTrackDao(): SavedTrackDao
     abstract fun bankedTrackDao(): BankedTrackDao
+    abstract fun loggedTrackDao(): LoggedTrackDao
 
     companion object {
         @Volatile private var instance: BivouacDatabase? = null
