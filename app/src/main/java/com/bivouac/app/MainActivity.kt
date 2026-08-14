@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,26 +30,36 @@ import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Route
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -64,6 +75,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bivouac.app.data.db.BankedTrackEntity
 import com.bivouac.app.data.gpx.GpxExporter
 import com.bivouac.app.data.gpx.TrackStats
 import com.bivouac.app.data.model.BivouacPoint
@@ -71,6 +83,7 @@ import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.data.weather.MeteoblueLink
+import com.bivouac.app.gpximport.DeleteTarget
 import com.bivouac.app.gpximport.GpxImportUiState
 import com.bivouac.app.gpximport.GpxImportViewModel
 import com.bivouac.app.ui.components.ElevationProfile
@@ -78,6 +91,10 @@ import com.bivouac.app.ui.map.HikeMapView
 import com.bivouac.app.ui.map.MapControls
 import com.bivouac.app.ui.map.MapLayer
 import com.bivouac.app.ui.theme.BivouacTheme
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -129,6 +146,13 @@ fun GpxImportScreen(
     val effectiveBivouacPoints by viewModel.effectiveBivouacPoints.collectAsStateWithLifecycle()
     val segments by viewModel.segments.collectAsStateWithLifecycle()
     val loadedTrack = (uiState as? GpxImportUiState.Loaded)?.track
+
+    val dirty by viewModel.dirty.collectAsStateWithLifecycle()
+    val currentBankedId by viewModel.currentBankedId.collectAsStateWithLifecycle()
+    val bankedTraces by viewModel.bankedTraces.collectAsStateWithLifecycle()
+    val nameDialogRequest by viewModel.nameDialogRequest.collectAsStateWithLifecycle()
+    val closeConfirmationVisible by viewModel.closeConfirmationVisible.collectAsStateWithLifecycle()
+    val deleteTarget by viewModel.deleteTarget.collectAsStateWithLifecycle()
 
     val selectedLayer by viewModel.selectedLayer.collectAsStateWithLifecycle()
     var recenterSignal by remember { mutableIntStateOf(0) }
@@ -186,8 +210,18 @@ fun GpxImportScreen(
                 bivouacPoints = bivouacPoints,
                 elevationMarkerPoints = effectiveBivouacPoints,
                 segments = segments,
+                dirty = dirty,
+                isBanked = currentBankedId != null,
+                bankedTraces = bankedTraces,
                 onOpenClick = { pickGpxLauncher.launch(arrayOf("*/*")) },
-                onCloseClick = viewModel::clear,
+                onCloseClick = viewModel::requestClose,
+                onSaveClick = viewModel::requestSave,
+                onRenameClick = viewModel::requestRename,
+                onDuplicateClick = viewModel::requestDuplicate,
+                onDeleteClick = viewModel::requestDelete,
+                onOpenBankedClick = viewModel::openFromBank,
+                onRenameBankedClick = viewModel::requestRenameFromList,
+                onDeleteBankedClick = viewModel::requestDeleteFromList,
                 onRemovePoint = viewModel::removeBivouacPoint,
                 onExportSegment = { index, segment ->
                     val baseName = loadedTrack?.name ?: "Trace"
@@ -231,6 +265,63 @@ fun GpxImportScreen(
             )
         }
     }
+
+    if (closeConfirmationVisible) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissCloseConfirmation,
+            title = { Text("Trace modifiée") },
+            text = { Text("Cette trace a des modifications non enregistrées.") },
+            confirmButton = {
+                TextButton(onClick = viewModel::saveAndClose) { Text("Enregistrer") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = viewModel::dismissCloseConfirmation) { Text("Annuler") }
+                    TextButton(onClick = viewModel::discardAndClose) {
+                        Text("Ne pas enregistrer", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+        )
+    }
+
+    nameDialogRequest?.let { request ->
+        var name by remember(request) { mutableStateOf(request.suggestedName) }
+        AlertDialog(
+            onDismissRequest = viewModel::dismissNameDialog,
+            title = { Text("Nommer la trace") },
+            text = {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.confirmNameDialog(name) }) { Text("Enregistrer") }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissNameDialog) { Text("Annuler") }
+            },
+        )
+    }
+
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDeleteConfirmation,
+            title = { Text("Supprimer cette trace ?") },
+            text = { Text("« ${target.name} » sera définitivement supprimée. Cette action est irréversible.") },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmDelete) {
+                    Text("Supprimer", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissDeleteConfirmation) { Text("Annuler") }
+            },
+        )
+    }
 }
 
 @Composable
@@ -239,8 +330,18 @@ private fun TrackSheetContent(
     bivouacPoints: List<BivouacPoint>,
     elevationMarkerPoints: List<BivouacPoint>,
     segments: List<Segment>,
+    dirty: Boolean,
+    isBanked: Boolean,
+    bankedTraces: List<BankedTrackEntity>,
     onOpenClick: () -> Unit,
     onCloseClick: () -> Unit,
+    onSaveClick: () -> Unit,
+    onRenameClick: () -> Unit,
+    onDuplicateClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+    onOpenBankedClick: (String) -> Unit,
+    onRenameBankedClick: (id: String, name: String) -> Unit,
+    onDeleteBankedClick: (id: String, name: String) -> Unit,
     onRemovePoint: (String) -> Unit,
     onExportSegment: (index: Int, segment: Segment) -> Unit,
     onWeatherClick: (TrackPoint) -> Unit,
@@ -263,6 +364,18 @@ private fun TrackSheetContent(
             is GpxImportUiState.Idle -> {
                 Button(onClick = onOpenClick, modifier = Modifier.fillMaxWidth()) {
                     Text("Ouvrir une trace")
+                }
+                if (bankedTraces.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                bankedTraces.forEach { entry ->
+                    HorizontalDivider()
+                    BankedTrackRow(
+                        entry = entry,
+                        onClick = { onOpenBankedClick(entry.id) },
+                        onRename = { onRenameBankedClick(entry.id, entry.name) },
+                        onDelete = { onDeleteBankedClick(entry.id, entry.name) },
+                    )
                 }
             }
             is GpxImportUiState.Loading -> {
@@ -294,9 +407,15 @@ private fun TrackSheetContent(
                                 .weight(1f)
                                 .padding(end = 8.dp),
                         )
-                        IconButton(onClick = onCloseClick) {
-                            Icon(Icons.Default.Close, contentDescription = "Fermer la trace")
-                        }
+                        TrackActionsRow(
+                            dirty = dirty,
+                            isBanked = isBanked,
+                            onSaveClick = onSaveClick,
+                            onRenameClick = onRenameClick,
+                            onDuplicateClick = onDuplicateClick,
+                            onDeleteClick = onDeleteClick,
+                            onCloseClick = onCloseClick,
+                        )
                     }
                     if (bivouacPoints.isNotEmpty()) {
                         Text(
@@ -326,6 +445,135 @@ private fun TrackSheetContent(
                 }
             }
         }
+    }
+}
+
+// Trailing icons on the title row of an open trace. Order matters and is deliberate: save, then
+// the overflow menu (duplicate/delete), then close last — see CONCEPTION notes. The overflow menu
+// never holds save or close, both stay standalone; reused identically on each home screen list row
+// (minus save, nothing to save from there) to keep the convention consistent across the app.
+@Composable
+private fun TrackActionsRow(
+    dirty: Boolean,
+    isBanked: Boolean,
+    onSaveClick: () -> Unit,
+    onRenameClick: () -> Unit,
+    onDuplicateClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+    onCloseClick: () -> Unit,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Row {
+        IconButton(onClick = onSaveClick) {
+            Icon(
+                Icons.Default.Save,
+                contentDescription = if (dirty) "Enregistrer (modifications non sauvegardées)" else "Enregistrer",
+                // Orange (GainIconColor) rather than the error/red role: an unsaved change isn't
+                // a critical error, just a state — red is reserved for destructive actions
+                // (delete), matching Material 3's role guidance.
+                tint = if (dirty) GainIconColor else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Box {
+            IconButton(onClick = { menuExpanded = true }) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+            }
+            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                DropdownMenuItem(
+                    text = { Text("Renommer") },
+                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                    enabled = isBanked,
+                    onClick = { menuExpanded = false; onRenameClick() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Dupliquer") },
+                    leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                    onClick = { menuExpanded = false; onDuplicateClick() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Supprimer") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    },
+                    enabled = isBanked,
+                    onClick = { menuExpanded = false; onDeleteClick() },
+                )
+            }
+        }
+        IconButton(onClick = onCloseClick) {
+            Icon(Icons.Default.Close, contentDescription = "Fermer la trace")
+        }
+    }
+}
+
+@Composable
+private fun BankedTrackRow(entry: BankedTrackEntity, onClick: () -> Unit, onRename: () -> Unit, onDelete: () -> Unit) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    val bivouacCount = entry.bivouacTrackPointIndices.split(",").count { it.isNotBlank() }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp)) {
+                Text(text = entry.name, style = MaterialTheme.typography.titleSmall)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = formatSavedAt(entry.savedAt) + if (bivouacCount > 0) " · $bivouacCount" else "",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (bivouacCount > 0) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_bivouac_badge),
+                            contentDescription = "point${if (bivouacCount != 1) "s" else ""} de bivouac",
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                }
+            }
+            Box {
+                IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Menu", modifier = Modifier.size(20.dp))
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Renommer") },
+                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                        onClick = { menuExpanded = false; onRename() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Supprimer") },
+                        leadingIcon = {
+                            Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        },
+                        onClick = { menuExpanded = false; onDelete() },
+                    )
+                }
+            }
+        }
+        StatsRows(entry.toTrackStats())
+    }
+}
+
+// "aujourd'hui à 14:32" when saved today (the realistic case for several saves the same day —
+// disambiguates them without cluttering older entries with a time nobody needs), otherwise just
+// the date ("3 août").
+private fun formatSavedAt(epochMillis: Long): String {
+    val zone = ZoneId.systemDefault()
+    val instant = Instant.ofEpochMilli(epochMillis)
+    return if (instant.atZone(zone).toLocalDate() == LocalDate.now(zone)) {
+        "aujourd'hui à " + DateTimeFormatter.ofPattern("HH:mm").withZone(zone).format(instant)
+    } else {
+        DateTimeFormatter.ofPattern("d MMMM", Locale.FRANCE).withZone(zone).format(instant)
     }
 }
 

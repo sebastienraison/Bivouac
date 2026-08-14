@@ -3,8 +3,11 @@ package com.bivouac.app.gpximport
 import android.app.Application
 import android.content.ContentResolver
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.bivouac.app.data.db.BankedTrackEntity
+import com.bivouac.app.data.db.BankedTrackRepository
 import com.bivouac.app.data.db.SavedTrackRepository
 import com.bivouac.app.data.gpx.GpxParser
 import com.bivouac.app.data.gpx.TrackStats
@@ -34,9 +37,22 @@ sealed interface GpxImportUiState {
     data class Error(val message: String) : GpxImportUiState
 }
 
+enum class NameDialogPurpose { FIRST_SAVE, RENAME, RENAME_FROM_LIST, DUPLICATE, SAVE_THEN_CLOSE }
+
+data class NameDialogRequest(val suggestedName: String, val purpose: NameDialogPurpose, val targetId: String? = null)
+
+sealed interface DeleteTarget {
+    val id: String
+    val name: String
+
+    data class Current(override val id: String, override val name: String) : DeleteTarget
+    data class FromList(override val id: String, override val name: String) : DeleteTarget
+}
+
 class GpxImportViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = SavedTrackRepository(application)
+    private val bankRepository = BankedTrackRepository(application)
     private val mapLayerPreferences = MapLayerPreferences(application)
 
     val selectedLayer: StateFlow<MapLayer> = mapLayerPreferences.selectedLayer
@@ -70,9 +86,216 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         computeSegments(track.points, points)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    // --- Banque de traces ---
+    // The auto-save above (repository / SavedTrackEntity) is an invisible safety net against a
+    // crash or restart. This section is the deliberate, named collection the user explicitly
+    // saves to — a separate table and a separate mechanism, on purpose (see CONCEPTION notes).
+
+    private val _dirty = MutableStateFlow(false)
+    val dirty: StateFlow<Boolean> = _dirty.asStateFlow()
+
+    private val _currentBankedId = MutableStateFlow<String?>(null)
+    val currentBankedId: StateFlow<String?> = _currentBankedId.asStateFlow()
+
+    private val _bankedTraces = MutableStateFlow<List<BankedTrackEntity>>(emptyList())
+    val bankedTraces: StateFlow<List<BankedTrackEntity>> = _bankedTraces.asStateFlow()
+
+    private val _nameDialogRequest = MutableStateFlow<NameDialogRequest?>(null)
+    val nameDialogRequest: StateFlow<NameDialogRequest?> = _nameDialogRequest.asStateFlow()
+
+    private val _closeConfirmationVisible = MutableStateFlow(false)
+    val closeConfirmationVisible: StateFlow<Boolean> = _closeConfirmationVisible.asStateFlow()
+
+    private val _deleteTarget = MutableStateFlow<DeleteTarget?>(null)
+    val deleteTarget: StateFlow<DeleteTarget?> = _deleteTarget.asStateFlow()
+
+    init {
+        refreshBankedTraces()
+    }
+
+    private fun refreshBankedTraces() {
+        viewModelScope.launch {
+            _bankedTraces.value = withContext(Dispatchers.IO) { bankRepository.list() }
+        }
+    }
+
+    // Silent update if already banked or the track already has a name (e.g. from the GPX itself);
+    // otherwise prompts for one — matches the "ask a name only if it doesn't have one yet" rule.
+    fun requestSave() {
+        val state = _uiState.value as? GpxImportUiState.Loaded ?: return
+        val name = state.track.name
+        when {
+            _currentBankedId.value != null -> saveToBank(name ?: "")
+            !name.isNullOrBlank() -> saveToBank(name)
+            else -> _nameDialogRequest.value = NameDialogRequest("", NameDialogPurpose.FIRST_SAVE)
+        }
+    }
+
+    // Only meaningful once the trace is actually banked — renaming something never saved is just
+    // editing the name before that first save, already covered by the FIRST_SAVE prompt.
+    fun requestRename() {
+        val state = _uiState.value as? GpxImportUiState.Loaded ?: return
+        if (_currentBankedId.value == null) return
+        _nameDialogRequest.value = NameDialogRequest(state.track.name ?: "", NameDialogPurpose.RENAME)
+    }
+
+    fun requestDuplicate() {
+        val state = _uiState.value as? GpxImportUiState.Loaded ?: return
+        val baseName = state.track.name?.takeIf { it.isNotBlank() } ?: "Trace"
+        _nameDialogRequest.value = NameDialogRequest("Copie de $baseName", NameDialogPurpose.DUPLICATE)
+    }
+
+    // Same convention as the open-trace toolbar, applied to a list row: renames that specific
+    // bank entry directly, independent of whatever (if anything) is currently open — the home
+    // screen list and an open trace are never shown at once, so there's no id collision to worry
+    // about between this and requestRename().
+    fun requestRenameFromList(id: String, currentName: String) {
+        _nameDialogRequest.value = NameDialogRequest(currentName, NameDialogPurpose.RENAME_FROM_LIST, targetId = id)
+    }
+
+    fun confirmNameDialog(name: String) {
+        val request = _nameDialogRequest.value ?: return
+        _nameDialogRequest.value = null
+        val trimmed = name.trim().ifBlank { "Trace" }
+        when (request.purpose) {
+            // A rename is just a save under the existing id with a new name — no separate
+            // persistence path needed.
+            NameDialogPurpose.FIRST_SAVE, NameDialogPurpose.RENAME -> saveToBank(trimmed)
+            NameDialogPurpose.RENAME_FROM_LIST -> renameInBank(request.targetId ?: return, trimmed)
+            NameDialogPurpose.DUPLICATE -> duplicateToBank(trimmed)
+            NameDialogPurpose.SAVE_THEN_CLOSE -> saveToBank(trimmed, thenClose = true)
+        }
+    }
+
+    private fun renameInBank(id: String, name: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { bankRepository.rename(id, name) }
+            refreshBankedTraces()
+        }
+    }
+
+    fun dismissNameDialog() {
+        _nameDialogRequest.value = null
+    }
+
+    // Overwrites the current banked entry (currentBankedId != null) or creates a new one.
+    private fun saveToBank(name: String, thenClose: Boolean = false) {
+        val state = _uiState.value as? GpxImportUiState.Loaded ?: return
+        val points = _bivouacPoints.value
+        val renamedTrack = state.track.copy(name = name)
+        viewModelScope.launch {
+            val id = withContext(Dispatchers.IO) {
+                bankRepository.save(_currentBankedId.value, name, renamedTrack, points, state.stats)
+            }
+            _currentBankedId.value = id
+            _uiState.value = state.copy(track = renamedTrack)
+            _dirty.value = false
+            refreshBankedTraces()
+            if (thenClose) performClose()
+        }
+    }
+
+    // Always creates a new entry (new id) and switches the current session onto it.
+    private fun duplicateToBank(name: String) {
+        val state = _uiState.value as? GpxImportUiState.Loaded ?: return
+        val points = _bivouacPoints.value
+        val renamedTrack = state.track.copy(name = name)
+        viewModelScope.launch {
+            val id = withContext(Dispatchers.IO) {
+                bankRepository.save(null, name, renamedTrack, points, state.stats)
+            }
+            _currentBankedId.value = id
+            _uiState.value = state.copy(track = renamedTrack)
+            _dirty.value = false
+            refreshBankedTraces()
+        }
+    }
+
+    fun openFromBank(id: String) {
+        _uiState.value = GpxImportUiState.Loading
+        viewModelScope.launch {
+            val opened = withContext(Dispatchers.IO) { bankRepository.open(id) }
+            if (opened == null) {
+                _uiState.value = GpxImportUiState.Idle
+                return@launch
+            }
+            val (track, points) = opened
+            _uiState.value = GpxImportUiState.Loaded(track, TrackStatsCalculator.compute(track.points))
+            _bivouacPoints.value = points
+            _currentBankedId.value = id
+            _dirty.value = false
+        }
+    }
+
+    fun requestDelete() {
+        val id = _currentBankedId.value ?: return
+        val name = (_uiState.value as? GpxImportUiState.Loaded)?.track?.name ?: "cette trace"
+        _deleteTarget.value = DeleteTarget.Current(id, name)
+    }
+
+    fun requestDeleteFromList(id: String, name: String) {
+        _deleteTarget.value = DeleteTarget.FromList(id, name)
+    }
+
+    fun confirmDelete() {
+        val target = _deleteTarget.value ?: return
+        _deleteTarget.value = null
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { bankRepository.delete(target.id) }
+            refreshBankedTraces()
+            if (target is DeleteTarget.Current) {
+                performClose()
+            }
+        }
+    }
+
+    fun dismissDeleteConfirmation() {
+        _deleteTarget.value = null
+    }
+
+    fun requestClose() {
+        if (_dirty.value) {
+            _closeConfirmationVisible.value = true
+        } else {
+            performClose()
+        }
+    }
+
+    fun dismissCloseConfirmation() {
+        _closeConfirmationVisible.value = false
+    }
+
+    fun discardAndClose() {
+        _closeConfirmationVisible.value = false
+        performClose()
+    }
+
+    fun saveAndClose() {
+        _closeConfirmationVisible.value = false
+        val state = _uiState.value as? GpxImportUiState.Loaded ?: run { performClose(); return }
+        val name = state.track.name
+        when {
+            _currentBankedId.value != null -> saveToBank(name ?: "", thenClose = true)
+            !name.isNullOrBlank() -> saveToBank(name, thenClose = true)
+            else -> _nameDialogRequest.value = NameDialogRequest("", NameDialogPurpose.SAVE_THEN_CLOSE)
+        }
+    }
+
+    private fun performClose() {
+        _uiState.value = GpxImportUiState.Idle
+        _bivouacPoints.value = emptyList()
+        _currentBankedId.value = null
+        _dirty.value = false
+        viewModelScope.launch { withContext(Dispatchers.IO) { repository.clear() } }
+    }
+
+    // --- Import / restauration ---
+
     fun importGpx(resolver: ContentResolver, uri: Uri) {
         _uiState.value = GpxImportUiState.Loading
         _bivouacPoints.value = emptyList()
+        _currentBankedId.value = null
+        _dirty.value = false
         viewModelScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
@@ -83,7 +306,10 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
             }
             _uiState.value = result.fold(
                 onSuccess = { (track, stats) -> GpxImportUiState.Loaded(track, stats) },
-                onFailure = { GpxImportUiState.Error("Trace incorrecte ou fichier illisible.") },
+                onFailure = {
+                    Log.e("GpxImportViewModel", "Échec de l'import GPX", it)
+                    GpxImportUiState.Error("Trace incorrecte ou fichier illisible.")
+                },
             )
             persistCurrentState()
         }
@@ -91,6 +317,9 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Restores the trace saved from the previous session, if any — called once on a fresh start
     // (not after an incoming-GPX import already handled it), so a restart doesn't lose the plan.
+    // Not linked back to a bank entry even if it originally came from one: the auto-save singleton
+    // doesn't track that link, so a restored session is treated as detached — a fresh save creates
+    // a new bank entry rather than silently overwriting the one it may have started from.
     fun restoreLastTrack() {
         _uiState.value = GpxImportUiState.Loading
         viewModelScope.launch {
@@ -102,13 +331,9 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
             val (track, points) = restored
             _uiState.value = GpxImportUiState.Loaded(track, TrackStatsCalculator.compute(track.points))
             _bivouacPoints.value = points
+            _currentBankedId.value = null
+            _dirty.value = false
         }
-    }
-
-    fun clear() {
-        _uiState.value = GpxImportUiState.Idle
-        _bivouacPoints.value = emptyList()
-        viewModelScope.launch { withContext(Dispatchers.IO) { repository.clear() } }
     }
 
     fun addBivouacPoint(trackPointIndex: Int) {
@@ -116,11 +341,13 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         if (current.any { it.trackPointIndex == trackPointIndex }) return
         _bivouacPoints.value = (current + BivouacPoint(UUID.randomUUID().toString(), trackPointIndex))
             .sortedBy { it.trackPointIndex }
+        _dirty.value = true
         persistCurrentState()
     }
 
     fun removeBivouacPoint(id: String) {
         _bivouacPoints.value = _bivouacPoints.value.filterNot { it.id == id }
+        _dirty.value = true
         persistCurrentState()
     }
 
@@ -129,12 +356,14 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         _bivouacPoints.value = _bivouacPoints.value
             .map { if (it.id == id) it.copy(trackPointIndex = newTrackPointIndex) else it }
             .sortedBy { it.trackPointIndex }
+        _dirty.value = true
         persistCurrentState()
     }
 
     // Fire-and-forget: called after every settled (non-transient) change to the loaded track or
     // its bivouac points. Never called from previewBivouacDrag, which fires on every drag frame —
-    // only the drop (moveBivouacPoint) persists.
+    // only the drop (moveBivouacPoint) persists. This is the auto-save singleton, unrelated to the
+    // banque de traces mechanism above.
     private fun persistCurrentState() {
         val track = (_uiState.value as? GpxImportUiState.Loaded)?.track ?: return
         val points = _bivouacPoints.value

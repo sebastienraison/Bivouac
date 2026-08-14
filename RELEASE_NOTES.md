@@ -1,5 +1,23 @@
 # Bivouac — Notes de version
 
+## V1.3
+
+**Banque de traces (nouveau) :**
+
+- Enregistrer, renommer, dupliquer, supprimer et lister plusieurs traces planifiées
+- Indicateur de modifications non enregistrées, confirmation avant de fermer une trace modifiée
+  sans l'enregistrer
+
+**Autres :**
+
+- Zoom de départ de la carte adapté à la France quand l'appareil y est configuré
+
+**Corrections :**
+
+- L'import d'une trace GPX contenant des données de capteur (fréquence cardiaque, cadence...),
+  fréquentes sur les exports de montres/GPS de randonnée, faisait échouer l'import
+- En mode paysage, recentrer la carte sur la trace pouvait couper le haut du tracé
+
 ## V1.2
 
 **Persistance (nouveau) :**

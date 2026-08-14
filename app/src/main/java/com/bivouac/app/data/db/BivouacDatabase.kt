@@ -5,10 +5,11 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [SavedTrackEntity::class], version = 1, exportSchema = false)
+@Database(entities = [SavedTrackEntity::class, BankedTrackEntity::class], version = 2, exportSchema = false)
 abstract class BivouacDatabase : RoomDatabase() {
 
     abstract fun savedTrackDao(): SavedTrackDao
+    abstract fun bankedTrackDao(): BankedTrackDao
 
     companion object {
         @Volatile private var instance: BivouacDatabase? = null
@@ -19,7 +20,12 @@ abstract class BivouacDatabase : RoomDatabase() {
                     context.applicationContext,
                     BivouacDatabase::class.java,
                     "bivouac.db",
-                ).build().also { instance = it }
+                )
+                    // No user base to migrate yet (still pre-release, cf. F-Droid submission in
+                    // progress) — a real Migration isn't worth writing for a single added table.
+                    .fallbackToDestructiveMigration(dropAllTables = true)
+                    .build()
+                    .also { instance = it }
             }
     }
 }

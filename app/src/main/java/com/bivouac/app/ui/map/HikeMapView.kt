@@ -21,6 +21,8 @@ import com.bivouac.app.data.gpx.TrackGeometry
 import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.TrackPoint
+import java.util.Locale
+import kotlin.math.log2
 import kotlin.math.sqrt
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.util.BoundingBox
@@ -30,9 +32,15 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Polyline
 
+// Already roughly France's geographic centroid — the empty-state view previously looked
+// "centered on all of Europe" only because of the wide default zoom below, not the center point.
 private const val DEFAULT_CENTER_LAT = 46.6
 private const val DEFAULT_CENTER_LON = 2.5
-private const val DEFAULT_ZOOM = 5.5
+// Tighter framing for a French locale; a generic wider view otherwise. A real per-country default
+// isn't worth building before the app is actually localized — cf. i18n backlog item — a simple
+// FR/non-FR split covers the only locale that matters today.
+private const val DEFAULT_ZOOM_FRANCE = 6.3
+private const val DEFAULT_ZOOM_WORLD = 5.5
 private const val MIN_ZOOM = 3.0
 private const val MAX_ZOOM = 19.0
 
@@ -79,7 +87,8 @@ fun HikeMapView(
             setMultiTouchControls(true)
             setMinZoomLevel(MIN_ZOOM)
             setMaxZoomLevel(MAX_ZOOM)
-            controller.setZoom(DEFAULT_ZOOM)
+            val defaultZoom = if (Locale.getDefault().country == "FR") DEFAULT_ZOOM_FRANCE else DEFAULT_ZOOM_WORLD
+            controller.setZoom(defaultZoom)
             controller.setCenter(GeoPoint(DEFAULT_CENTER_LAT, DEFAULT_CENTER_LON))
         }
     }
@@ -299,9 +308,28 @@ private fun fitToTrack(mapView: MapView, points: List<GeoPoint>, visibleHeightPx
 
         // zoomToBoundingBox only fits within the full view, with no way to bias the fit towards
         // a sub-rectangle — osmdroid has no asymmetric-border variant. So instead: let it fit and
-        // center normally, then re-center on whichever point is currently at the middle of the
-        // portion the sheet doesn't cover, shifting the fitted track up into view.
+        // center normally, then correct in two steps below.
         val hiddenHeightPx = mapView.height - visibleHeightPx.coerceAtMost(mapView.height)
+
+        // Step 1: the fit above sized the track to the FULL view height, which is taller than
+        // what's actually visible once the sheet's cover is excluded — left uncorrected, the top
+        // of the track ends up pushed past the top edge of the screen once shifted into view
+        // below (only noticeable when the sheet covers a large share of the height, e.g.
+        // landscape, not portrait where the covered share is small). Zoom out by exactly the
+        // ratio needed so the track's rendered height matches the available height instead.
+        val availableHeightPx = visibleHeightPx.coerceAtMost(mapView.height) - 2 * borderPx
+        if (availableHeightPx > 0) {
+            val boxTopPx = mapView.projection.toPixels(GeoPoint(boundingBox.latNorth, boundingBox.centerLongitude), null).y
+            val boxBottomPx = mapView.projection.toPixels(GeoPoint(boundingBox.latSouth, boundingBox.centerLongitude), null).y
+            val boxHeightPx = boxBottomPx - boxTopPx
+            if (boxHeightPx > availableHeightPx) {
+                val zoomDelta = log2(availableHeightPx.toDouble() / boxHeightPx)
+                mapView.controller.setZoom(mapView.zoomLevelDouble + zoomDelta)
+            }
+        }
+
+        // Step 2: re-center on whichever point is currently at the middle of the portion the
+        // sheet doesn't cover, shifting the (now correctly sized) fitted track up into view.
         if (hiddenHeightPx > 0) {
             val shiftPx = hiddenHeightPx / 2
             val recenterOn = mapView.projection.fromPixels(mapView.width / 2, mapView.height / 2 + shiftPx)

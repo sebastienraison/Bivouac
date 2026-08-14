@@ -17,6 +17,13 @@ private fun <T> Optional<T>.orNull(): T? = orElse(null)
 private fun decodeEntities(text: String): String =
     Html.fromHtml(text, Html.FROM_HTML_MODE_LEGACY).toString()
 
+// jpx's lenient reader skips vendor <extensions> blocks (Garmin heart rate/cadence/temperature,
+// etc.) via an internal javax.xml.transform.stax.StAXSource copy — a class Android's JDK subset
+// doesn't provide, so any real-world GPX with such extensions crashes with a NoClassDefFoundError
+// instead of being skipped. None of that data is used here, so the blocks are stripped from the
+// raw XML before jpx ever sees them.
+private val EXTENSIONS_BLOCK = Regex("<extensions\\s*/>|<extensions\\b.*?</extensions>", RegexOption.DOT_MATCHES_ALL)
+
 /**
  * Parses a GPX file into a flat, ordered [HikeTrack].
  *
@@ -28,7 +35,9 @@ object GpxParser {
 
     @Throws(IOException::class)
     fun parse(input: InputStream): HikeTrack {
-        val gpx = GPX.Reader.of(GPX.Reader.Mode.LENIENT).read(input)
+        val rawXml = input.bufferedReader(Charsets.UTF_8).readText()
+        val cleanedXml = EXTENSIONS_BLOCK.replace(rawXml, "")
+        val gpx = GPX.Reader.of(GPX.Reader.Mode.LENIENT).read(cleanedXml.byteInputStream(Charsets.UTF_8))
 
         val points = gpx.tracks()
             .flatMap { it.segments() }
