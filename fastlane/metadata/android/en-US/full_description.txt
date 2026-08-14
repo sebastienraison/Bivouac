@@ -13,6 +13,6 @@ Features:
 * Export a single day's segment as its own GPX file
 * Your last trace is remembered between launches
 
-No account, no tracking, no ads.
+No account, no tracking, no ads. Two optional features connect to third-party network services when you use them: the Satellite map layer (Esri World Imagery) and the weather forecast link on bivouac points (Meteoblue). Everything else works without any such dependency.
 
 This started as a personal tool to stop losing track of my bivouac plans on a paper map, and grew from there. Don't expect flawless code, but it works and if it's useful to someone else too, all the better. Feedback and contributions welcome.
