@@ -75,6 +75,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import com.bivouac.app.data.db.BankedTrackEntity
 import com.bivouac.app.data.gpx.GpxExporter
 import com.bivouac.app.data.gpx.TrackStats
@@ -87,9 +91,13 @@ import com.bivouac.app.gpximport.DeleteTarget
 import com.bivouac.app.gpximport.GpxImportUiState
 import com.bivouac.app.gpximport.GpxImportViewModel
 import com.bivouac.app.ui.components.ElevationProfile
+import com.bivouac.app.ui.journal.JournalScreen
 import com.bivouac.app.ui.map.HikeMapView
 import com.bivouac.app.ui.map.MapControls
 import com.bivouac.app.ui.map.MapLayer
+import com.bivouac.app.ui.nav.AppSection
+import com.bivouac.app.ui.nav.SectionMenuButton
+import com.bivouac.app.ui.settings.SettingsScreen
 import com.bivouac.app.ui.theme.BivouacTheme
 import java.time.Instant
 import java.time.LocalDate
@@ -112,7 +120,55 @@ class MainActivity : ComponentActivity() {
         val incomingGpxUri = intent.extractGpxUri()
         setContent {
             BivouacTheme {
-                GpxImportScreen(modifier = Modifier.fillMaxSize(), incomingGpxUri = incomingGpxUri)
+                BivouacApp(modifier = Modifier.fillMaxSize(), incomingGpxUri = incomingGpxUri)
+            }
+        }
+    }
+}
+
+@Composable
+private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUri: Uri? = null) {
+    val navController = rememberNavController()
+
+    // Standard top-level-destination navigation: pop back to the graph's start so switching
+    // sections never piles up a back stack, but save/restore each section's own state (scroll
+    // position, and — via the ViewModel's own store — the trace currently open in Planification)
+    // across switches.
+    fun onSectionSelected(section: AppSection) {
+        navController.navigate(section.route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    NavHost(navController = navController, startDestination = AppSection.PLANIFICATION.route, modifier = modifier) {
+        composable(AppSection.PLANIFICATION.route) {
+            GpxImportScreen(
+                modifier = Modifier.fillMaxSize(),
+                incomingGpxUri = incomingGpxUri,
+                currentSection = AppSection.PLANIFICATION,
+                onSectionSelected = ::onSectionSelected,
+            )
+        }
+        composable(AppSection.JOURNAL.route) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                JournalScreen(modifier = Modifier.fillMaxSize())
+                SectionMenuButton(
+                    current = AppSection.JOURNAL,
+                    onSelect = ::onSectionSelected,
+                    modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(16.dp),
+                )
+            }
+        }
+        composable(AppSection.REGLAGES.route) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                SettingsScreen(modifier = Modifier.fillMaxSize())
+                SectionMenuButton(
+                    current = AppSection.REGLAGES,
+                    onSelect = ::onSectionSelected,
+                    modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(16.dp),
+                )
             }
         }
     }
@@ -138,6 +194,8 @@ private fun Intent.extractGpxUri(): Uri? = when (action) {
 fun GpxImportScreen(
     modifier: Modifier = Modifier,
     incomingGpxUri: Uri? = null,
+    currentSection: AppSection,
+    onSectionSelected: (AppSection) -> Unit,
     viewModel: GpxImportViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -253,16 +311,21 @@ fun GpxImportScreen(
                 onBivouacDragPreview = viewModel::previewBivouacDrag,
                 modifier = Modifier.fillMaxSize(),
             )
-            MapControls(
-                selectedLayer = selectedLayer,
-                onLayerSelected = viewModel::setSelectedLayer,
-                recenterEnabled = loadedTrack != null,
-                onRecenterClick = { recenterSignal++ },
+            Column(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .statusBarsPadding()
                     .padding(16.dp),
-            )
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                SectionMenuButton(current = currentSection, onSelect = onSectionSelected)
+                MapControls(
+                    selectedLayer = selectedLayer,
+                    onLayerSelected = viewModel::setSelectedLayer,
+                    recenterEnabled = loadedTrack != null,
+                    onRecenterClick = { recenterSignal++ },
+                )
+            }
         }
     }
 

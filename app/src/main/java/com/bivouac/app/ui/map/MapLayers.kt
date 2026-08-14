@@ -1,5 +1,10 @@
 package com.bivouac.app.ui.map
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Satellite
+import androidx.compose.material.icons.filled.Terrain
+import androidx.compose.ui.graphics.vector.ImageVector
 import org.osmdroid.tileprovider.tilesource.ITileSource
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -25,8 +30,8 @@ private val EsriWorldImagery: ITileSource = object : OnlineTileSourceBase(
     }
 }
 
-enum class MapLayer(val label: String, val tileSource: ITileSource) {
-    STANDARD("Standard", TileSourceFactory.MAPNIK),
-    HIKING("Randonnée", TileSourceFactory.OpenTopo),
-    SATELLITE("Satellite", EsriWorldImagery),
+enum class MapLayer(val label: String, val tileSource: ITileSource, val icon: ImageVector) {
+    STANDARD("Standard", TileSourceFactory.MAPNIK, Icons.Default.Map),
+    HIKING("Randonnée", TileSourceFactory.OpenTopo, Icons.Default.Terrain),
+    SATELLITE("Satellite", EsriWorldImagery, Icons.Default.Satellite),
 }

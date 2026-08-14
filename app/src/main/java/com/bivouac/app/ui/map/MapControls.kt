@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -46,7 +45,7 @@ fun MapControls(
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
             ) {
-                Icon(Icons.Default.Layers, contentDescription = "Choisir le fond de carte")
+                Icon(selectedLayer.icon, contentDescription = "Choisir le fond de carte (actuel : ${selectedLayer.label})")
             }
             DropdownMenu(expanded = layerMenuExpanded, onDismissRequest = { layerMenuExpanded = false }) {
                 MapLayer.entries.forEach { layer ->
