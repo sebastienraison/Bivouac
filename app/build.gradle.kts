@@ -1,9 +1,23 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
+
+// Optional local override, same pattern as sdk.dir: a developer who has generated a personal
+// Esri API key (see BIV-56 — free anonymous tile access is otherwise rate/volume-limited) can
+// drop `esri.apiKey=...` in local.properties. Never committed; absent by default, in which case
+// EsriWorldImagery falls back to the current unauthenticated public endpoint.
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { load(it) }
+    }
+}
+val esriApiKey: String = localProperties.getProperty("esri.apiKey", "")
 
 android {
     namespace = "com.bivouac.app"
@@ -16,6 +30,7 @@ android {
         versionCode = 4
         versionName = "1.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "ESRI_API_KEY", "\"$esriApiKey\"")
     }
 
     buildTypes {
@@ -33,6 +48,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     sourceSets {
         getByName("androidTest").assets.srcDirs("$projectDir/schemas")

@@ -5,6 +5,7 @@ import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Satellite
 import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.bivouac.app.BuildConfig
 import org.osmdroid.tileprovider.tilesource.ITileSource
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -26,7 +27,11 @@ private val EsriWorldImagery: ITileSource = object : OnlineTileSourceBase(
         val zoom = MapTileIndex.getZoom(pMapTileIndex)
         val x = MapTileIndex.getX(pMapTileIndex)
         val y = MapTileIndex.getY(pMapTileIndex)
-        return "$baseUrl$zoom/$y/$x"
+        val url = "$baseUrl$zoom/$y/$x"
+        // Optional local key (BIV-56, see app/build.gradle.kts) lifts Esri's anonymous-access
+        // volume limits. Absent by default — falls back to the public endpoint, unauthenticated,
+        // exactly as before.
+        return if (BuildConfig.ESRI_API_KEY.isNotBlank()) "$url?token=${BuildConfig.ESRI_API_KEY}" else url
     }
 }
 
