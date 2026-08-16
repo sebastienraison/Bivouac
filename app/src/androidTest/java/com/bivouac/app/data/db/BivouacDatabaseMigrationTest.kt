@@ -49,6 +49,178 @@ class BivouacDatabaseMigrationTest {
     )
 
     @Test
+    fun migrate1To2_preservesExistingDataAndAddsBankedTrackTable() {
+        helper.createDatabase(testDbName, 1).apply {
+            execSQL(
+                "INSERT INTO saved_track (id, trackName, gpxContent, bivouacTrackPointIndices) " +
+                    "VALUES (1, 'Trace en cours', '${TRACK_1_GPX.escapeSql()}', '[0,2]')",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            2,
+            true,
+            BivouacDatabase.MIGRATION_1_2,
+        )
+
+        migrated.query("SELECT id, trackName, gpxContent, bivouacTrackPointIndices FROM saved_track").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1, cursor.getInt(0))
+            assertEquals("Trace en cours", cursor.getString(1))
+            assertEquals(TRACK_1_GPX, cursor.getString(2))
+            assertEquals("[0,2]", cursor.getString(3))
+        }
+
+        migrated.query("SELECT COUNT(*) FROM banked_track").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+
+        migrated.execSQL(
+            "INSERT INTO banked_track (id, name, gpxContent, bivouacTrackPointIndices, " +
+                "distanceMeters, elevationGainMeters, elevationLossMeters, pointCount, " +
+                "estimatedDurationMinutes, savedAt) VALUES ('bank-1', 'Belledonne', " +
+                "'${TRACK_1_GPX.escapeSql()}', '[]', 8200.0, 650.0, 300.0, 3, 240, 1780300800000)",
+        )
+        migrated.query("SELECT id, name FROM banked_track").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("bank-1", cursor.getString(0))
+            assertEquals("Belledonne", cursor.getString(1))
+        }
+
+        migrated.close()
+    }
+
+    @Test
+    fun migrate2To5_preservesExistingDataAndAddsLoggedTrackTables() {
+        helper.createDatabase(testDbName, 2).apply {
+            execSQL(
+                "INSERT INTO saved_track (id, trackName, gpxContent, bivouacTrackPointIndices) " +
+                    "VALUES (1, 'Trace en cours', '${TRACK_1_GPX.escapeSql()}', '[0,2]')",
+            )
+            execSQL(
+                "INSERT INTO banked_track (id, name, gpxContent, bivouacTrackPointIndices, " +
+                    "distanceMeters, elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, savedAt) VALUES ('bank-1', 'Belledonne', " +
+                    "'${TRACK_1_GPX.escapeSql()}', '[]', 8200.0, 650.0, 300.0, 3, 240, 1780300800000)",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            5,
+            true,
+            BivouacDatabase.MIGRATION_2_5,
+        )
+
+        migrated.query("SELECT id, trackName FROM saved_track").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1, cursor.getInt(0))
+            assertEquals("Trace en cours", cursor.getString(1))
+        }
+        migrated.query("SELECT id, name FROM banked_track").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("bank-1", cursor.getString(0))
+            assertEquals("Belledonne", cursor.getString(1))
+        }
+
+        migrated.query("SELECT COUNT(*) FROM logged_track").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        migrated.query("SELECT COUNT(*) FROM logged_track_day").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+
+        migrated.execSQL(
+            "INSERT INTO logged_track (id, name, sourceFileName, startedAt, contentHash, " +
+                "distanceMeters, elevationGainMeters, elevationLossMeters, pointCount, " +
+                "estimatedDurationMinutes) VALUES " +
+                "('track-1', 'Randonnee Belledonne', 'belledonne.gpx', 1780300800000, " +
+                "'hash-track-1', 8200.0, 650.0, 300.0, 3, 240)",
+        )
+        migrated.execSQL(
+            "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxContent) VALUES " +
+                "(1, 'track-1', 0, '${TRACK_1_GPX.escapeSql()}')",
+        )
+        migrated.query("SELECT trackId, dayIndex FROM logged_track_day").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("track-1", cursor.getString(0))
+            assertEquals(0, cursor.getInt(1))
+        }
+
+        migrated.close()
+    }
+
+    @Test
+    fun migrateAllTheWayFrom1ToCurrent_preservesSavedTrackData() {
+        helper.createDatabase(testDbName, 1).apply {
+            execSQL(
+                "INSERT INTO saved_track (id, trackName, gpxContent, bivouacTrackPointIndices) " +
+                    "VALUES (1, 'Trace en cours', '${TRACK_1_GPX.escapeSql()}', '[0,2]')",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            6,
+            true,
+            BivouacDatabase.MIGRATION_1_2,
+            BivouacDatabase.MIGRATION_2_5,
+            BivouacDatabase.MIGRATION_5_6,
+        )
+
+        migrated.query("SELECT id, trackName, gpxContent, bivouacTrackPointIndices FROM saved_track").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1, cursor.getInt(0))
+            assertEquals("Trace en cours", cursor.getString(1))
+            assertEquals(TRACK_1_GPX, cursor.getString(2))
+            assertEquals("[0,2]", cursor.getString(3))
+        }
+
+        // Tables added by every intermediate jump must all exist and be usable at the final version.
+        migrated.query("SELECT COUNT(*) FROM banked_track").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        migrated.query("SELECT COUNT(*) FROM logged_track").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        migrated.execSQL(
+            "INSERT INTO logged_track (id, name, sourceFileName, startedAt, contentHash, " +
+                "distanceMeters, elevationGainMeters, elevationLossMeters, pointCount, " +
+                "estimatedDurationMinutes) VALUES " +
+                "('track-1', 'Randonnee Belledonne', 'belledonne.gpx', 1780300800000, " +
+                "'hash-track-1', 8200.0, 650.0, 300.0, 3, 240)",
+        )
+        migrated.execSQL(
+            "INSERT INTO logged_track_tag (trackId, tag) VALUES ('track-1', 'solo')",
+        )
+        migrated.query("SELECT COUNT(*) FROM logged_track_tag").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1, cursor.getInt(0))
+        }
+        migrated.query("SELECT note FROM logged_track WHERE id = 'track-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("", cursor.getString(0))
+        }
+
+        migrated.close()
+    }
+
+    @Test
     fun migrate5To6_preservesExistingDataAndAddsTagsTableAndNoteColumn() {
         helper.createDatabase(testDbName, 5).apply {
             execSQL(
