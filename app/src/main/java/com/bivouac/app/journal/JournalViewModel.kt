@@ -285,5 +285,8 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private suspend fun commit(prepared: PreparedImport) {
         withContext(Dispatchers.IO) { repository.commitImport(prepared) }
         refresh()
+        // Mirrors Planification's "open a track" behavior: a just-imported trace should land
+        // straight on its detail view, not merely appear in the list waiting to be tapped.
+        openTrack(prepared.entity)
     }
 }

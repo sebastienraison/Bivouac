@@ -163,14 +163,25 @@ fun JournalScreen(
 
     var recenterSignal by remember { mutableIntStateOf(0) }
     var mapBoxTopPx by remember { mutableIntStateOf(0) }
-    var sheetTopPx by remember { mutableIntStateOf(Int.MAX_VALUE) }
+    val detail = uiState as? JournalUiState.Detail
+    val multiTrack = uiState as? JournalUiState.MultiTrack
+    // Overview list, multi-track view and single-track detail each report their own sheet's top
+    // through onSheetTopMeasured into this single shared value — keyed on which of the three is
+    // currently showing (and, for detail, which track) so switching between them starts the
+    // height fresh at "unknown" instead of leaking the previous sheet's already-measured
+    // position into the newly opened one's very first fit (that stale value being smaller than
+    // the real one was making tracks open zoomed out far more than the visible area warranted).
+    val sheetIdentity = when {
+        detail != null -> "detail:${detail.entry.id}"
+        multiTrack != null -> "multi"
+        else -> "overview"
+    }
+    var sheetTopPx by remember(sheetIdentity) { mutableIntStateOf(Int.MAX_VALUE) }
     val visibleMapHeightPx = (sheetTopPx - mapBoxTopPx).let { if (it > 0) it else Int.MAX_VALUE }
     val pickGpxLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let { viewModel.importTrack(context.contentResolver, it) }
     }
 
-    val detail = uiState as? JournalUiState.Detail
-    val multiTrack = uiState as? JournalUiState.MultiTrack
     val coloredTracks = remember(multiTrack) { multiTrack?.entries?.let { assignTrackColors(it) }.orEmpty() }
     var highlightedTrackId by remember(multiTrack) { mutableStateOf<String?>(null) }
     val onToggleHighlight = { id: String -> highlightedTrackId = if (highlightedTrackId == id) null else id }
