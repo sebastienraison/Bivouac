@@ -144,6 +144,11 @@ fun HikeMapView(
     val lastFittedMultiTracks = remember { mutableStateOf<List<ColoredTrack>>(emptyList()) }
     val lastRecenterSignal = remember { mutableStateOf(recenterSignal) }
     val lastLayer = remember { mutableStateOf(selectedLayer) }
+    // Set whenever a fit just happened with visibleHeightPx still unknown (drawer not yet
+    // measured) — true until exactly one corrective re-fit runs once the real height is known, so
+    // opening a trace never leaves the map framed for the wrong, pre-measurement viewport. Never
+    // triggers again afterwards, so it never fights a user's own pan/zoom.
+    val pendingHeightCorrection = remember { mutableStateOf(false) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, mapView) {
@@ -173,17 +178,25 @@ fun HikeMapView(
                 view.setTileSource(selectedLayer.tileSource)
                 lastLayer.value = selectedLayer
             }
-            val shouldFit = if (multiTracks.isNotEmpty()) {
-                multiTracks !== lastFittedMultiTracks.value || recenterSignal != lastRecenterSignal.value
+            val trackChanged = if (multiTracks.isNotEmpty()) {
+                multiTracks !== lastFittedMultiTracks.value
             } else {
-                track !== lastFittedTrack.value || recenterSignal != lastRecenterSignal.value
+                track !== lastFittedTrack.value
             }
+            val recenterRequested = recenterSignal != lastRecenterSignal.value
+            val heightJustBecameKnown = pendingHeightCorrection.value && visibleHeightPx != Int.MAX_VALUE
+            val shouldFit = trackChanged || recenterRequested || heightJustBecameKnown
             renderTrack(
                 view, track, bivouacPoints, shouldFit, visibleHeightPx,
                 onTrackTapped, onBivouacMoved, onBivouacDragPreview,
                 cursorIndex, onCursorChanged, cursorInfoWindow, cursorDragState,
                 multiTracks, highlightedTrackId, onTraceTapped,
             )
+            pendingHeightCorrection.value = when {
+                trackChanged || recenterRequested -> visibleHeightPx == Int.MAX_VALUE
+                heightJustBecameKnown -> false
+                else -> pendingHeightCorrection.value
+            }
             lastFittedTrack.value = track
             lastFittedMultiTracks.value = multiTracks
             lastRecenterSignal.value = recenterSignal
