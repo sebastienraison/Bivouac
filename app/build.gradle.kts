@@ -61,5 +61,6 @@ dependencies {
     ksp(libs.room.compiler)
     implementation(libs.datastore.preferences)
     implementation(libs.navigation.compose)
+    testImplementation("junit:junit:4.13.2")
     debugImplementation(libs.ui.tooling)
 }

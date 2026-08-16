@@ -6,4 +6,7 @@
     <color name="marker_finish">#B85450</color>
     <color name="marker_tail_neutral">#616161</color>
     <color name="marker_bivouac">#F57C00</color>
+    <!-- Journal-only point-of-track cursor (BIV-52) — deliberately not orange, that's reserved
+         for the bivouac marker. -->
+    <color name="marker_cursor">#00897B</color>
 </resources>

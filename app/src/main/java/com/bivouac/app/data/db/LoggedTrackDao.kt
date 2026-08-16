@@ -33,4 +33,19 @@ interface LoggedTrackDao {
     // logged_track_day rows cascade-delete with their parent (ForeignKey.CASCADE).
     @Query("DELETE FROM logged_track WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("UPDATE logged_track SET note = :note WHERE id = :id")
+    suspend fun updateNote(id: String, note: String)
+
+    @Query("UPDATE logged_track SET name = :name WHERE id = :id")
+    suspend fun updateName(id: String, name: String)
+
+    @Query("SELECT * FROM logged_track_tag")
+    suspend fun getAllTags(): List<LoggedTrackTagEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertTag(tag: LoggedTrackTagEntity)
+
+    @Query("DELETE FROM logged_track_tag WHERE trackId = :trackId AND tag = :tag")
+    suspend fun deleteTag(trackId: String, tag: String)
 }

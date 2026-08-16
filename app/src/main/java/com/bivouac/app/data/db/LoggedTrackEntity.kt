@@ -28,6 +28,10 @@ data class LoggedTrackEntity(
     val elevationLossMeters: Double,
     val pointCount: Int,
     val estimatedDurationMinutes: Int,
+    // Plain text, not Markdown — line breaks preserved, lines starting with "-" rendered as
+    // bullets purely as a display transform (see BulletVisualTransformation). Lives on the
+    // "Détails" sub-screen, not the main map/stats view — same reasoning as tags.
+    val note: String = "",
 ) {
     fun toTrackStats(): TrackStats = TrackStats(
         distanceMeters = distanceMeters,

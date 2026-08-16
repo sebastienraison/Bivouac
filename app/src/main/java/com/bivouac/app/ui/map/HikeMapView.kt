@@ -1,7 +1,9 @@
 package com.bivouac.app.ui.map
 
-import android.graphics.DashPathEffect
 import android.graphics.Paint
+import android.graphics.Point
+import android.view.MotionEvent
+import android.widget.TextView
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -9,20 +11,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.DrawableCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.bivouac.app.R
-import com.bivouac.app.data.gpx.GeoMath
 import com.bivouac.app.data.gpx.TrackGeometry
 import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.TrackPoint
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.log2
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.util.BoundingBox
@@ -31,6 +38,7 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.infowindow.InfoWindow
 
 // Already roughly France's geographic centroid — the empty-state view previously looked
 // "centered on all of Europe" only because of the wide default zoom below, not the center point.
@@ -56,8 +64,32 @@ private const val SINGLE_POINT_SPAN_DEGREES = 0.01
 // How close (in dp) a tap needs to land next to the track line to register as "add a point here".
 private const val TRACK_TAP_TOLERANCE_DP = 24f
 
+// Direction arrows along loop tracks (BIV-46): two on short loops, up to four on longer ones.
+// Equal fractions of cumulative distance keep them visually regular whatever the GPX sampling.
+private const val ARROW_TARGET_SPACING_METERS = 2500.0
+private const val ARROW_MIN_COUNT = 2
+private const val ARROW_MAX_COUNT = 4
+// How far to look before/after an arrow's position when computing its bearing — wide enough that
+// small local zigzags (switchbacks, GPS jitter) don't flip an arrow against the trace's actual
+// macro direction of travel at that point.
+private const val ARROW_BEARING_WINDOW_METERS = 150.0
+
+// Cursor bubble (BIV-52): lifted above the pin by roughly its rendered height, so the bubble
+// doesn't sit on top of (and block dragging) the marker it's describing.
+private const val CURSOR_MARKER_HEIGHT_DP = 40f
+private const val CURSOR_HIT_RADIUS_DP = 28f
+
+// Journal-only (BIV-48): one track among several shown together in the multi-trace overview.
+data class ColoredTrack(val id: String, val track: HikeTrack, val color: Color)
+
+// Compose updates HikeMapView whenever the Journal cursor index changes. While osmdroid owns an
+// active drag, rebuilding all overlays would replace the marker under the finger and interrupt
+// the gesture. This tiny bridge lets renderTrack leave the live overlay tree untouched until the
+// finger is released.
+private class CursorDragState(var isDragging: Boolean = false)
+
 /**
- * Displays a [HikeTrack] on an offline-capable OSM map (osmdroid): the track as a dashed blue
+ * Displays a [HikeTrack] on an offline-capable OSM map (osmdroid): the track as a solid blue
  * line with a white casing for contrast, start/finish pin markers, bivouac markers, and an
  * automatic fit to the track's extent the first time a given track is drawn. Standard
  * pinch-zoom/pan gestures are enabled.
@@ -78,6 +110,16 @@ fun HikeMapView(
     onTrackTapped: (trackPointIndex: Int) -> Unit,
     onBivouacMoved: (id: String, trackPointIndex: Int) -> Unit,
     onBivouacDragPreview: (id: String, trackPointIndex: Int) -> Unit,
+    // Journal-only (BIV-52): a single "point du parcours" cursor, distinct from bivouacs — no
+    // preview/commit split like bivouacs get, every intermediate drag position is already final
+    // since nothing about the cursor is ever persisted.
+    cursorIndex: Int? = null,
+    onCursorChanged: (trackPointIndex: Int) -> Unit = {},
+    // Journal-only (BIV-48): when non-empty, overrides single-track rendering entirely — a
+    // contemplative multi-trace overview, no tap/drag interactions, no bivouacs/arrows/cursor.
+    multiTracks: List<ColoredTrack> = emptyList(),
+    highlightedTrackId: String? = null,
+    onTraceTapped: (id: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -92,11 +134,14 @@ fun HikeMapView(
             controller.setCenter(GeoPoint(DEFAULT_CENTER_LAT, DEFAULT_CENTER_LON))
         }
     }
+    val cursorInfoWindow = remember(mapView) { CursorInfoWindow(mapView) }
+    val cursorDragState = remember(mapView) { CursorDragState() }
 
     // Only re-fit the camera when the track itself changes (a new import) or the user taps the
     // recenter button, not on every bivouac point edit, which would be a jarring reset while the
     // user is placing points.
     val lastFittedTrack = remember { mutableStateOf<HikeTrack?>(null) }
+    val lastFittedMultiTracks = remember { mutableStateOf<List<ColoredTrack>>(emptyList()) }
     val lastRecenterSignal = remember { mutableStateOf(recenterSignal) }
     val lastLayer = remember { mutableStateOf(selectedLayer) }
 
@@ -128,9 +173,19 @@ fun HikeMapView(
                 view.setTileSource(selectedLayer.tileSource)
                 lastLayer.value = selectedLayer
             }
-            val shouldFit = track !== lastFittedTrack.value || recenterSignal != lastRecenterSignal.value
-            renderTrack(view, track, bivouacPoints, shouldFit, visibleHeightPx, onTrackTapped, onBivouacMoved, onBivouacDragPreview)
+            val shouldFit = if (multiTracks.isNotEmpty()) {
+                multiTracks !== lastFittedMultiTracks.value || recenterSignal != lastRecenterSignal.value
+            } else {
+                track !== lastFittedTrack.value || recenterSignal != lastRecenterSignal.value
+            }
+            renderTrack(
+                view, track, bivouacPoints, shouldFit, visibleHeightPx,
+                onTrackTapped, onBivouacMoved, onBivouacDragPreview,
+                cursorIndex, onCursorChanged, cursorInfoWindow, cursorDragState,
+                multiTracks, highlightedTrackId, onTraceTapped,
+            )
             lastFittedTrack.value = track
+            lastFittedMultiTracks.value = multiTracks
             lastRecenterSignal.value = recenterSignal
         },
     )
@@ -145,8 +200,26 @@ private fun renderTrack(
     onTrackTapped: (Int) -> Unit,
     onBivouacMoved: (String, Int) -> Unit,
     onBivouacDragPreview: (String, Int) -> Unit,
+    cursorIndex: Int?,
+    onCursorChanged: (Int) -> Unit,
+    cursorInfoWindow: CursorInfoWindow,
+    cursorDragState: CursorDragState,
+    multiTracks: List<ColoredTrack>,
+    highlightedTrackId: String?,
+    onTraceTapped: (String) -> Unit,
 ) {
+    // onCursorChanged deliberately updates Compose on every snapped point so the elevation
+    // profile follows live. Do not let that recomposition destroy osmdroid's current drag.
+    if (cursorDragState.isDragging) return
+
     mapView.overlays.clear()
+    cursorInfoWindow.close()
+
+    if (multiTracks.isNotEmpty()) {
+        renderMultiTracks(mapView, multiTracks, highlightedTrackId, shouldFit, visibleHeightPx, onTraceTapped)
+        mapView.invalidate()
+        return
+    }
 
     if (track == null || track.points.isEmpty()) {
         mapView.invalidate()
@@ -169,20 +242,20 @@ private fun renderTrack(
             pathEffect = null
         }
     }
-    val dashedTrack = Polyline(mapView).apply {
+    val colorTrack = Polyline(mapView).apply {
         setPoints(geoPoints)
         paint.apply {
             color = ContextCompat.getColor(context, R.color.track_line)
             style = Paint.Style.STROKE
             strokeWidth = 4f * density
-            strokeCap = Paint.Cap.BUTT
+            strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
-            pathEffect = DashPathEffect(floatArrayOf(14f * density, 10f * density), 0f)
+            pathEffect = null
         }
     }
 
     mapView.overlays.add(outline)
-    mapView.overlays.add(dashedTrack)
+    mapView.overlays.add(colorTrack)
     mapView.overlays.add(trackTapOverlay(mapView, points, geoPoints, density, onTrackTapped))
 
     bivouacPoints.forEach { bivouac ->
@@ -190,11 +263,93 @@ private fun renderTrack(
     }
 
     mapView.overlays.addAll(endpointMarkers(mapView, points))
+    mapView.overlays.addAll(directionArrowMarkers(mapView, points, geoPoints))
+
+    if (cursorIndex != null && cursorIndex in points.indices) {
+        mapView.overlays.add(
+            cursorMarker(
+                mapView, points, geoPoints, cursorIndex, density, onCursorChanged,
+                cursorInfoWindow, cursorDragState,
+            ),
+        )
+        val bubbleText = cursorBubbleText(points, cursorIndex)
+        val bubblePosition = geoPoints[cursorIndex]
+        // A tap can be dispatched to an overlay that existed before this recomposition and open
+        // its default InfoWindow after renderTrack returns. Re-open ours on the next UI frame so
+        // it deterministically wins and no empty osmdroid speech bubble remains on screen.
+        mapView.postDelayed({
+            InfoWindow.closeAllInfoWindowsOn(mapView)
+            cursorInfoWindow.open(bubbleText, bubblePosition, 0, cursorBubbleOffsetY(density))
+        }, 100L)
+    } else {
+        cursorInfoWindow.close()
+    }
 
     if (shouldFit) {
         fitToTrack(mapView, geoPoints, visibleHeightPx)
     }
     mapView.invalidate()
+}
+
+// BIV-48: a contemplative overview, but still legible — each trace keeps the single-track
+// "color on white casing" treatment, plus direction arrows on loops and start/finish pins.
+// No bivouacs (Journal traces
+// don't carry bivouac data yet — cf. BIV-41) and no tap-to-cursor. Tapping a trace on the map
+// highlights it exactly like tapping its legend entry does.
+private fun renderMultiTracks(
+    mapView: MapView,
+    tracks: List<ColoredTrack>,
+    highlightedTrackId: String?,
+    shouldFit: Boolean,
+    visibleHeightPx: Int,
+    onTraceTapped: (String) -> Unit,
+) {
+    val context = mapView.context
+    val density = context.resources.displayMetrics.density
+    val allGeoPoints = mutableListOf<GeoPoint>()
+
+    tracks.forEach { colored ->
+        val geoPoints = colored.track.points.map { GeoPoint(it.latitude, it.longitude) }
+        if (geoPoints.isEmpty()) return@forEach
+        allGeoPoints.addAll(geoPoints)
+        val isHighlighted = highlightedTrackId == colored.id
+        val isDimmed = highlightedTrackId != null && !isHighlighted
+        val alphaValue = if (isDimmed) 90 else 255
+        val clickListener = Polyline.OnClickListener { _, _, _ -> onTraceTapped(colored.id); true }
+
+        val outline = Polyline(mapView).apply {
+            setPoints(geoPoints)
+            paint.apply {
+                color = ContextCompat.getColor(context, R.color.track_line_outline)
+                alpha = alphaValue
+                style = Paint.Style.STROKE
+                strokeWidth = (if (isHighlighted) 11f else 9f) * density
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+            }
+            setOnClickListener(clickListener)
+        }
+        val colorLine = Polyline(mapView).apply {
+            setPoints(geoPoints)
+            paint.apply {
+                color = colored.color.toArgb()
+                alpha = alphaValue
+                style = Paint.Style.STROKE
+                strokeWidth = (if (isHighlighted) 6f else 4f) * density
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+            }
+            setOnClickListener(clickListener)
+        }
+        mapView.overlays.add(outline)
+        mapView.overlays.add(colorLine)
+        mapView.overlays.addAll(endpointMarkers(mapView, colored.track.points))
+        mapView.overlays.addAll(directionArrowMarkers(mapView, colored.track.points, geoPoints, colored.color.toArgb()))
+    }
+
+    if (shouldFit && allGeoPoints.isNotEmpty()) {
+        fitToTrack(mapView, allGeoPoints, visibleHeightPx)
+    }
 }
 
 private fun trackTapOverlay(
@@ -263,13 +418,106 @@ private fun bivouacMarker(
     return marker
 }
 
+// Same drag-and-snap gabarit as a bivouac marker, but nothing here is ever persisted — every
+// snapped position during a drag is immediately reported as final via onCursorChanged (no
+// preview/commit split), and re-opens the info bubble on each index change so it tracks the
+// marker without waiting for the next full recomposition.
+private fun cursorMarker(
+    mapView: MapView,
+    points: List<TrackPoint>,
+    geoPoints: List<GeoPoint>,
+    cursorIndex: Int,
+    density: Float,
+    onCursorChanged: (Int) -> Unit,
+    cursorInfoWindow: CursorInfoWindow,
+    cursorDragState: CursorDragState,
+): Marker {
+    val marker = CursorDragMarker(mapView)
+    marker.position = geoPoints[cursorIndex]
+    marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+    marker.icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_marker_cursor)
+    marker.title = "Point du parcours"
+    marker.isDraggable = true
+    marker.setInfoWindow(null)
+    // The cursor's dedicated CursorInfoWindow is opened explicitly with distance/altitude.
+    // Consuming marker taps prevents osmdroid from opening its large empty default bubble on
+    // the same ACTION_UP that initially placed the cursor through the track tap overlay.
+    marker.setOnMarkerClickListener { _, _ -> true }
+
+    var lastIndex = cursorIndex
+    marker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
+        override fun onMarkerDragStart(marker: Marker) {
+            cursorDragState.isDragging = true
+        }
+
+        override fun onMarkerDrag(marker: Marker) {
+            val current = marker.position
+            val nearestIndex = TrackGeometry.nearestPointIndex(points, current.latitude, current.longitude)
+            marker.position = geoPoints[nearestIndex]
+            if (nearestIndex != lastIndex) {
+                lastIndex = nearestIndex
+                cursorInfoWindow.open(cursorBubbleText(points, nearestIndex), geoPoints[nearestIndex], 0, cursorBubbleOffsetY(density))
+                onCursorChanged(nearestIndex)
+            }
+            mapView.invalidate()
+        }
+
+        override fun onMarkerDragEnd(marker: Marker) {
+            cursorDragState.isDragging = false
+            val nearestIndex = TrackGeometry.nearestPointIndex(
+                points, marker.position.latitude, marker.position.longitude,
+            )
+            marker.position = geoPoints[nearestIndex]
+            // Re-emit the snapped final value even if the last MOVE already reported it. This
+            // gives Compose one deterministic post-drag update after a burst of MOVE callbacks.
+            onCursorChanged(nearestIndex)
+            mapView.invalidate()
+        }
+    })
+    return marker
+}
+
+private fun cursorBubbleText(points: List<TrackPoint>, index: Int): String {
+    val distanceKm = TrackGeometry.cumulativeDistancesMeters(points)[index] / 1000.0
+    val altitude = points[index].elevationMeters?.roundToInt()
+    val distanceText = String.format(Locale.FRANCE, "%.1f km", distanceKm)
+    return if (altitude != null) "$distanceText · $altitude m" else distanceText
+}
+
+// Negative: lifts the bubble's anchor above the marker's own geo point by roughly the pin's
+// rendered height, so the bubble sits above the pin instead of covering it (and blocking drags).
+private fun cursorBubbleOffsetY(density: Float): Int = -(CURSOR_MARKER_HEIGHT_DP * density).toInt()
+
+// Minimal InfoWindow (osmdroid's marker-anchored bubble mechanism — it repositions itself on
+// every pan/zoom, so the bubble tracks the marker without any Compose-side involvement) showing
+// just a distance/altitude readout. Reused across the whole HikeMapView lifetime rather than
+// recreated per render, since InfoWindow owns a real child View added to the MapView.
+private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_cursor_bubble, mapView) {
+    override fun onOpen(item: Any?) {
+        (item as? String)?.let { text -> mView.findViewById<TextView>(R.id.cursor_bubble_text).text = text }
+    }
+
+    override fun onClose() = Unit
+}
+
+// The visible pin stays the same 40 dp gabarit as a bivouac, while a modest invisible 56 dp
+// touch target makes long-press-and-drag dependable. Only touches beginning in this circle are
+// consumed; pan and pinch gestures elsewhere remain MapView's responsibility.
+private class CursorDragMarker(private val owner: MapView) : Marker(owner) {
+    override fun hitTest(event: MotionEvent, mapView: MapView): Boolean {
+        if (super.hitTest(event, mapView)) return true
+        val center = owner.projection.toPixels(position, Point())
+        val radius = CURSOR_HIT_RADIUS_DP * owner.resources.displayMetrics.density
+        val dx = event.x - center.x
+        val dy = event.y - center.y
+        return dx * dx + dy * dy <= radius * radius
+    }
+}
+
 private fun endpointMarkers(mapView: MapView, points: List<TrackPoint>): List<Marker> {
     val first = points.first()
     val last = points.last()
-    val isLoop = GeoMath.haversineMeters(
-        first.latitude, first.longitude,
-        last.latitude, last.longitude,
-    ) < LOOP_THRESHOLD_METERS
+    val isLoop = TrackGeometry.isLoop(points, LOOP_THRESHOLD_METERS)
 
     return if (isLoop) {
         listOf(marker(mapView, first, R.drawable.ic_marker_start_finish, "Départ / Arrivée"))
@@ -281,12 +529,87 @@ private fun endpointMarkers(mapView: MapView, points: List<TrackPoint>): List<Ma
     }
 }
 
+// Chevron markers only belong on loops, where the shared start/finish marker leaves direction
+// ambiguous. [tintColor]
+// recolors the whole icon (losing its white outline in exchange) for multi-trace mode, where each
+// trace's arrows need to match its own line color rather than the single-track default blue.
+private fun directionArrowMarkers(
+    mapView: MapView,
+    points: List<TrackPoint>,
+    geoPoints: List<GeoPoint>,
+    tintColor: Int? = null,
+): List<Marker> {
+    if (points.size < 3 || !TrackGeometry.isLoop(points, LOOP_THRESHOLD_METERS)) return emptyList()
+    val cumulative = TrackGeometry.cumulativeDistancesMeters(points)
+    val totalDistance = cumulative.last()
+    if (totalDistance <= 0) return emptyList()
+
+    val count = (totalDistance / ARROW_TARGET_SPACING_METERS).roundToInt().coerceIn(ARROW_MIN_COUNT, ARROW_MAX_COUNT)
+    return (1..count).mapNotNull { i ->
+        val targetDistance = totalDistance * i / (count + 1)
+        val index = nearestIndexForDistance(cumulative, targetDistance)
+        val screenRotation = projectedTangentRotation(mapView, geoPoints, cumulative, index)
+            ?: return@mapNotNull null
+        Marker(mapView).apply {
+            position = geoPoints[index]
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_track_arrow)?.mutate()?.also { drawable ->
+                if (tintColor != null) DrawableCompat.setTint(drawable, tintColor)
+            }
+            // Projection pixels already include the current map orientation. A flat marker uses
+            // a screen-space rotation; osmdroid applies the negative of the supplied bearing.
+            setFlat(true)
+            rotation = screenRotation
+            // Purely decorative — consume taps instead of popping an empty default info window.
+            setInfoWindow(null)
+            setOnMarkerClickListener { _, _ -> false }
+        }
+    }
+}
+
+// Looks a fixed distance before/after [index] (rather than at its immediate neighbors) so a
+// switchback or GPS jitter right at that point doesn't flip the arrow against the trace's actual
+// direction of travel over the surrounding stretch.
+private fun projectedTangentRotation(
+    mapView: MapView,
+    geoPoints: List<GeoPoint>,
+    cumulative: DoubleArray,
+    index: Int,
+): Float? {
+    val center = cumulative[index]
+    val beforeIndex = nearestIndexForDistance(cumulative, (center - ARROW_BEARING_WINDOW_METERS).coerceAtLeast(0.0))
+    val afterIndex = nearestIndexForDistance(cumulative, (center + ARROW_BEARING_WINDOW_METERS).coerceAtMost(cumulative.last()))
+    if (beforeIndex == afterIndex) return null
+    val beforePx = mapView.projection.toPixels(geoPoints[beforeIndex], Point())
+    val afterPx = mapView.projection.toPixels(geoPoints[afterIndex], Point())
+    val dx = (afterPx.x - beforePx.x).toDouble()
+    val dy = (afterPx.y - beforePx.y).toDouble()
+    if (dx * dx + dy * dy < 4.0) return null
+    val clockwiseFromUp = Math.toDegrees(atan2(dx, -dy))
+    return (-clockwiseFromUp).toFloat()
+}
+
+private fun nearestIndexForDistance(cumulative: DoubleArray, targetDistance: Double): Int {
+    var lo = 0
+    var hi = cumulative.lastIndex
+    while (lo < hi) {
+        val mid = (lo + hi) / 2
+        if (cumulative[mid] < targetDistance) lo = mid + 1 else hi = mid
+    }
+    if (lo > 0 && abs(cumulative[lo - 1] - targetDistance) <= abs(cumulative[lo] - targetDistance)) return lo - 1
+    return lo
+}
+
 private fun marker(mapView: MapView, point: TrackPoint, iconRes: Int, label: String): Marker =
     Marker(mapView).apply {
         position = GeoPoint(point.latitude, point.longitude)
         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
         icon = ContextCompat.getDrawable(mapView.context, iconRes)
         title = label
+        // Endpoint pins are labels, not controls. Let taps near them be handled by the track
+        // cursor overlay without opening osmdroid's oversized default speech bubble.
+        setInfoWindow(null)
+        setOnMarkerClickListener { _, _ -> false }
     }
 
 private fun fitToTrack(mapView: MapView, points: List<GeoPoint>, visibleHeightPx: Int) {

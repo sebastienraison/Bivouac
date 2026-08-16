@@ -95,6 +95,26 @@ class LoggedTrackRepository(context: Context) {
         dao.delete(id)
     }
 
+    suspend fun updateNote(id: String, note: String) {
+        dao.updateNote(id, note)
+    }
+
+    suspend fun rename(id: String, name: String) {
+        dao.updateName(id, name)
+    }
+
+    /** trackId -> its tags, for every track that has at least one. */
+    suspend fun tagsByTrackId(): Map<String, List<String>> =
+        dao.getAllTags().groupBy({ it.trackId }, { it.tag })
+
+    suspend fun addTag(trackId: String, tag: String) {
+        dao.insertTag(LoggedTrackTagEntity(trackId = trackId, tag = tag))
+    }
+
+    suspend fun removeTag(trackId: String, tag: String) {
+        dao.deleteTag(trackId, tag)
+    }
+
     private fun queryDisplayName(resolver: ContentResolver, uri: Uri): String? =
         resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) cursor.getString(0) else null

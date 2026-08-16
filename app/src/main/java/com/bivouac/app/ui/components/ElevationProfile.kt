@@ -1,6 +1,7 @@
 package com.bivouac.app.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
@@ -14,6 +15,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -96,9 +98,19 @@ private fun formatKm(km: Double): String {
  * and altitude/distance rulers. Renders nothing if any point is missing elevation data —
  * real-world GPX files virtually always have it on every point or none at all, so a partial
  * series isn't worth reconstructing.
+ *
+ * [cursorIndex] (Journal-only, BIV-52) draws a synced marker at that point; tapping or
+ * horizontally dragging anywhere on the plot reports the nearest point's index via
+ * [onCursorDragged] — height doesn't matter, only horizontal position.
  */
 @Composable
-fun ElevationProfile(points: List<TrackPoint>, bivouacPoints: List<BivouacPoint>, modifier: Modifier = Modifier) {
+fun ElevationProfile(
+    points: List<TrackPoint>,
+    bivouacPoints: List<BivouacPoint>,
+    modifier: Modifier = Modifier,
+    cursorIndex: Int? = null,
+    onCursorDragged: (Int) -> Unit = {},
+) {
     val elevations = remember(points) { TrackStatsCalculator.smoothedElevationSeries(points) }
     if (elevations == null || elevations.size < 2) return
 
@@ -124,9 +136,42 @@ fun ElevationProfile(points: List<TrackPoint>, bivouacPoints: List<BivouacPoint>
     val gridColor = MaterialTheme.colorScheme.onSurfaceVariant
     val labelStyle = TextStyle(fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     val bivouacColor = colorResource(R.color.marker_bivouac)
+    val cursorColor = colorResource(R.color.marker_cursor)
     val textMeasurer = rememberTextMeasurer()
 
-    Canvas(modifier = modifier.fillMaxWidth().height(72.dp + BOTTOM_AXIS_HEIGHT)) {
+    Canvas(
+        modifier = modifier.fillMaxWidth().height(72.dp + BOTTOM_AXIS_HEIGHT)
+            .pointerInput(cumulativeDistances, totalDistance) {
+                val leftPadPx = LEFT_LABEL_WIDTH.toPx()
+                val plotWidthPx = size.width - leftPadPx
+                var lastReportedIndex = -1
+
+                fun indexForX(x: Float): Int {
+                    val distance = (((x - leftPadPx) / plotWidthPx).toDouble() * totalDistance).coerceIn(0.0, totalDistance)
+                    var lo = 0
+                    var hi = cumulativeDistances.lastIndex
+                    while (lo < hi) {
+                        val mid = (lo + hi) / 2
+                        if (cumulativeDistances[mid] < distance) lo = mid + 1 else hi = mid
+                    }
+                    if (lo > 0 && abs(cumulativeDistances[lo - 1] - distance) <= abs(cumulativeDistances[lo] - distance)) return lo - 1
+                    return lo
+                }
+
+                fun reportIndexAt(x: Float) {
+                    val index = indexForX(x)
+                    if (index != lastReportedIndex) {
+                        lastReportedIndex = index
+                        onCursorDragged(index)
+                    }
+                }
+
+                detectDragGestures(
+                    onDragStart = { offset -> reportIndexAt(offset.x) },
+                    onDrag = { change, _ -> reportIndexAt(change.position.x) },
+                )
+            },
+    ) {
         val leftPad = LEFT_LABEL_WIDTH.toPx()
         val plotWidth = size.width - leftPad
         val plotHeight = size.height - BOTTOM_AXIS_HEIGHT.toPx()
@@ -197,6 +242,17 @@ fun ElevationProfile(points: List<TrackPoint>, bivouacPoints: List<BivouacPoint>
             drawCircle(color = bivouacColor, radius = 4.dp.toPx(), center = Offset(x, y))
             drawCenteredLabel(formatKm(cumulativeDistances[index] / 1000.0), x, plotHeight + 2.dp.toPx(), bivouacColor)
             x
+        }
+
+        // Cursor (BIV-52): a solid line (vs. bivouacs' dashed ones) so it reads as "live" rather
+        // than a fixed waypoint — distance labelled the same way a bivouac's is, for consistency.
+        if (cursorIndex != null) {
+            val index = cursorIndex.coerceIn(0, elevations.lastIndex)
+            val x = xFor(cumulativeDistances[index])
+            val y = yFor(elevations[index])
+            drawLine(color = cursorColor, start = Offset(x, y), end = Offset(x, plotHeight), strokeWidth = 1.5.dp.toPx())
+            drawCircle(color = cursorColor, radius = 5.dp.toPx(), center = Offset(x, y))
+            drawCenteredLabel(formatKm(cumulativeDistances[index] / 1000.0), x, plotHeight + 2.dp.toPx(), cursorColor)
         }
 
         // Distance ruler (vertical gridlines): exact 0/total always shown, round intermediates

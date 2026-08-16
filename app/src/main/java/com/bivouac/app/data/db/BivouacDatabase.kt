@@ -6,8 +6,14 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [SavedTrackEntity::class, BankedTrackEntity::class, LoggedTrackEntity::class, LoggedTrackDayEntity::class],
-    version = 5,
+    entities = [
+        SavedTrackEntity::class,
+        BankedTrackEntity::class,
+        LoggedTrackEntity::class,
+        LoggedTrackDayEntity::class,
+        LoggedTrackTagEntity::class,
+    ],
+    version = 6,
     exportSchema = false,
 )
 abstract class BivouacDatabase : RoomDatabase() {
