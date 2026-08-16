@@ -716,8 +716,11 @@ private fun JournalMultiTrackContent(
     }
 }
 
+// internal rather than private: exercised directly by BivouacDatabaseMigrationTest's sibling,
+// ThreeStopJournalDetailDirtyIndicatorTest (androidTest), to test the isDirty save-icon states
+// without driving the whole Journal screen through a real ViewModel.
 @Composable
-private fun ThreeStopJournalDetail(
+internal fun ThreeStopJournalDetail(
     entry: LoggedTrackEntity,
     track: HikeTrack,
     onCloseClick: () -> Unit,
@@ -996,7 +999,15 @@ private fun ThreeStopJournalDetail(
                         Text("Tags", style = MaterialTheme.typography.titleSmall)
                         if (isEditing) {
                             IconButton(onClick = { saveAndStopEditing() }) {
-                                Icon(Icons.Default.Save, contentDescription = "Enregistrer")
+                                Icon(
+                                    Icons.Default.Save,
+                                    contentDescription = if (isDirty) {
+                                        "Enregistrer (modifications non sauvegardées)"
+                                    } else {
+                                        "Enregistrer"
+                                    },
+                                    tint = if (isDirty) GainIconColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         } else {
                             IconButton(onClick = { beginEditing() }) {
