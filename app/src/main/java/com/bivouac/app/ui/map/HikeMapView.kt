@@ -17,6 +17,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.DrawableCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -139,8 +141,13 @@ fun HikeMapView(
     val cursorDragState = remember(mapView) { CursorDragState() }
     // Esri's free tile access requires on-screen attribution (BIV-56). CopyrightOverlay reads the
     // active tile source's copyright notice on every draw, so it tracks layer switches (Standard,
-    // Randonnée, Satellite) automatically without any extra plumbing here.
-    val copyrightOverlay = remember(mapView) { CopyrightOverlay(context) }
+    // Randonnée, Satellite) automatically without any extra plumbing here. Anchored top-left:
+    // the bottom is a moving target (the detail sheet's peek height varies, drags open further),
+    // while the top-left corner is free of persistent chrome on every screen HikeMapView is used
+    // from (top-right only carries the layer/recenter controls).
+    val copyrightOverlay = remember(mapView) {
+        CopyrightOverlay(context).apply { setAlignBottom(false) }
+    }
 
     // Only re-fit the camera when the track itself changes (a new import) or the user taps the
     // recenter button, not on every bivouac point edit, which would be a jarring reset while the
@@ -233,6 +240,15 @@ private fun renderTrack(
 
     mapView.overlays.clear()
     mapView.overlays.add(copyrightOverlay)
+    // The MapView draws edge-to-edge behind the status bar, so an uncorrected top-aligned
+    // overlay would sit right under the clock/battery icons. ViewCompat mirrors the same
+    // statusBarsPadding() the Compose-side layer controls already use for this (top-right, same
+    // screens) so both stay clear of the status bar the same way.
+    val density = mapView.context.resources.displayMetrics.density
+    val margin = (8 * density).toInt()
+    val statusBarInsetPx = ViewCompat.getRootWindowInsets(mapView)
+        ?.getInsets(WindowInsetsCompat.Type.statusBars())?.top ?: 0
+    copyrightOverlay.setOffset(margin, statusBarInsetPx + margin)
     cursorInfoWindow.close()
 
     if (multiTracks.isNotEmpty()) {
@@ -247,7 +263,6 @@ private fun renderTrack(
     }
 
     val context = mapView.context
-    val density = context.resources.displayMetrics.density
     val points = track.points
     val geoPoints = points.map { GeoPoint(it.latitude, it.longitude) }
 
