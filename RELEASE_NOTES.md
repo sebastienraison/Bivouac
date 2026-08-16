@@ -1,5 +1,12 @@
 # Bivouac — Notes de version
 
+## À paraître
+
+**Fiabilité :**
+
+- La mise à jour depuis n'importe quelle version précédemment publiée de l'app préserve
+  intégralement les traces, bivouacs et randonnées déjà enregistrés
+
 ## V1.3
 
 **Banque de traces (nouveau) :**
