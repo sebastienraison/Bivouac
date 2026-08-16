@@ -15,6 +15,7 @@ android {
         targetSdk = 34
         versionCode = 4
         versionName = "1.3.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -32,6 +33,31 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    sourceSets {
+        getByName("androidTest").assets.srcDirs("$projectDir/schemas")
+    }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+// room-migration (used by the Room KSP processor itself to validate/diff exported schema JSON
+// across versions, and transitively by room-testing's MigrationTestHelper) requires
+// kotlinx-serialization-json 1.8.1's GeneratedSerializer ABI, but a strict constraint published
+// alongside room:2.8.4 pins the whole kotlinx-serialization-bom back down to 1.7.3, causing an
+// AbstractMethodError both in the KSP processor classpath (once more than one schema version is
+// present, e.g. schemas/5.json and 6.json) and at androidTest runtime. Not used by any app
+// runtime code, so forcing it everywhere is safe.
+configurations.all {
+    resolutionStrategy {
+        force(
+            "org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.1",
+            "org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.8.1",
+            "org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1",
+            "org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:1.8.1",
+        )
     }
 }
 
@@ -63,4 +89,11 @@ dependencies {
     implementation(libs.navigation.compose)
     testImplementation("junit:junit:4.13.2")
     debugImplementation(libs.ui.tooling)
+    androidTestImplementation("junit:junit:4.13.2")
+    androidTestImplementation(libs.room.testing)
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

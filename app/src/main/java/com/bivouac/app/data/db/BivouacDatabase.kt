@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -14,7 +16,7 @@ import androidx.room.RoomDatabase
         LoggedTrackTagEntity::class,
     ],
     version = 6,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class BivouacDatabase : RoomDatabase() {
 
@@ -25,6 +27,26 @@ abstract class BivouacDatabase : RoomDatabase() {
     companion object {
         @Volatile private var instance: BivouacDatabase? = null
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `logged_track_tag` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`trackId` TEXT NOT NULL, " +
+                        "`tag` TEXT NOT NULL, " +
+                        "FOREIGN KEY(`trackId`) REFERENCES `logged_track`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                        "`index_logged_track_tag_trackId_tag` ON `logged_track_tag` (`trackId`, `tag`)",
+                )
+                db.execSQL(
+                    "ALTER TABLE `logged_track` ADD COLUMN `note` TEXT NOT NULL DEFAULT ''",
+                )
+            }
+        }
+
         fun getInstance(context: Context): BivouacDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -32,9 +54,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                     BivouacDatabase::class.java,
                     "bivouac.db",
                 )
-                    // No user base to migrate yet (still pre-release, cf. F-Droid submission in
-                    // progress) — a real Migration isn't worth writing for a single added table.
-                    .fallbackToDestructiveMigration(dropAllTables = true)
+                    .addMigrations(MIGRATION_5_6)
                     .build()
                     .also { instance = it }
             }
