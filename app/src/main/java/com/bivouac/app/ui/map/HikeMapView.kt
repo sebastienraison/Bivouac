@@ -35,6 +35,7 @@ import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.CopyrightOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Polyline
@@ -136,6 +137,10 @@ fun HikeMapView(
     }
     val cursorInfoWindow = remember(mapView) { CursorInfoWindow(mapView) }
     val cursorDragState = remember(mapView) { CursorDragState() }
+    // Esri's free tile access requires on-screen attribution (BIV-56). CopyrightOverlay reads the
+    // active tile source's copyright notice on every draw, so it tracks layer switches (Standard,
+    // Randonnée, Satellite) automatically without any extra plumbing here.
+    val copyrightOverlay = remember(mapView) { CopyrightOverlay(context) }
 
     // Only re-fit the camera when the track itself changes (a new import) or the user taps the
     // recenter button, not on every bivouac point edit, which would be a jarring reset while the
@@ -190,7 +195,7 @@ fun HikeMapView(
                 view, track, bivouacPoints, shouldFit, visibleHeightPx,
                 onTrackTapped, onBivouacMoved, onBivouacDragPreview,
                 cursorIndex, onCursorChanged, cursorInfoWindow, cursorDragState,
-                multiTracks, highlightedTrackId, onTraceTapped,
+                multiTracks, highlightedTrackId, onTraceTapped, copyrightOverlay,
             )
             pendingHeightCorrection.value = when {
                 trackChanged || recenterRequested -> visibleHeightPx == Int.MAX_VALUE
@@ -220,12 +225,14 @@ private fun renderTrack(
     multiTracks: List<ColoredTrack>,
     highlightedTrackId: String?,
     onTraceTapped: (String) -> Unit,
+    copyrightOverlay: CopyrightOverlay,
 ) {
     // onCursorChanged deliberately updates Compose on every snapped point so the elevation
     // profile follows live. Do not let that recomposition destroy osmdroid's current drag.
     if (cursorDragState.isDragging) return
 
     mapView.overlays.clear()
+    mapView.overlays.add(copyrightOverlay)
     cursorInfoWindow.close()
 
     if (multiTracks.isNotEmpty()) {
