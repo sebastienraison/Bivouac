@@ -10,6 +10,7 @@ import com.bivouac.app.data.db.BankedTrackEntity
 import com.bivouac.app.data.db.BankedTrackRepository
 import com.bivouac.app.data.db.SavedTrackRepository
 import com.bivouac.app.data.gpx.GpxParser
+import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.TrackStats
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.BivouacPoint
@@ -17,6 +18,7 @@ import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.data.prefs.MapLayerPreferences
+import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
 import java.io.IOException
 import java.util.UUID
@@ -54,9 +56,25 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     private val repository = SavedTrackRepository(application)
     private val bankRepository = BankedTrackRepository(application)
     private val mapLayerPreferences = MapLayerPreferences(application)
+    private val settingsPreferences = SettingsPreferences(application)
 
-    val selectedLayer: StateFlow<MapLayer> = mapLayerPreferences.selectedLayer
-        .stateIn(viewModelScope, SharingStarted.Eagerly, MapLayer.HIKING)
+    // Satellite falls back to the free default the instant non-free features get disabled, even
+    // though the stored preference is left untouched — re-enabling later restores the user's
+    // actual choice instead of having silently overwritten it.
+    val selectedLayer: StateFlow<MapLayer> = combine(
+        mapLayerPreferences.selectedLayer,
+        settingsPreferences.nonFreeFeaturesDisabled,
+    ) { layer, nonFreeDisabled ->
+        if (nonFreeDisabled && layer == MapLayer.SATELLITE) MapLayer.HIKING else layer
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, MapLayer.HIKING)
+
+    val nonFreeFeaturesDisabled: StateFlow<Boolean> = settingsPreferences.nonFreeFeaturesDisabled
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    // BIV-16 Vitesse personnalisée: whichever calibration (Manuel/Auto/Sélection) is currently
+    // active, applied to every TrackStatsCalculator.compute() call below.
+    val activeCalibration: StateFlow<SpeedCalibration> = settingsPreferences.effectiveCalibration
+        .stateIn(viewModelScope, SharingStarted.Eagerly, SpeedCalibration.DEFAULT)
 
     fun setSelectedLayer(layer: MapLayer) {
         viewModelScope.launch { mapLayerPreferences.setSelectedLayer(layer) }
@@ -80,10 +98,10 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         applyDragPreview(points, preview)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val segments: StateFlow<List<Segment>> = combine(_uiState, effectiveBivouacPoints) { state, points ->
+    val segments: StateFlow<List<Segment>> = combine(_uiState, effectiveBivouacPoints, activeCalibration) { state, points, calibration ->
         val track = (state as? GpxImportUiState.Loaded)?.track
         if (track == null || points.isEmpty()) return@combine emptyList()
-        computeSegments(track.points, points)
+        computeSegments(track.points, points, calibration)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // --- Banque de traces ---
@@ -220,7 +238,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
                 return@launch
             }
             val (track, points) = opened
-            _uiState.value = GpxImportUiState.Loaded(track, TrackStatsCalculator.compute(track.points))
+            _uiState.value = GpxImportUiState.Loaded(track, TrackStatsCalculator.compute(track.points, activeCalibration.value))
             _bivouacPoints.value = points
             _currentBankedId.value = id
             _dirty.value = false
@@ -301,7 +319,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
                 withContext(Dispatchers.IO) {
                     val track = resolver.openInputStream(uri)?.use { GpxParser.parse(it) }
                         ?: throw IOException("Impossible d'ouvrir le fichier sélectionné")
-                    track to TrackStatsCalculator.compute(track.points)
+                    track to TrackStatsCalculator.compute(track.points, activeCalibration.value)
                 }
             }
             _uiState.value = result.fold(
@@ -329,7 +347,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
                 return@launch
             }
             val (track, points) = restored
-            _uiState.value = GpxImportUiState.Loaded(track, TrackStatsCalculator.compute(track.points))
+            _uiState.value = GpxImportUiState.Loaded(track, TrackStatsCalculator.compute(track.points, activeCalibration.value))
             _bivouacPoints.value = points
             _currentBankedId.value = null
             _dirty.value = false
@@ -380,11 +398,11 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
             .sortedBy { it.trackPointIndex }
     }
 
-    private fun computeSegments(points: List<TrackPoint>, bivouacs: List<BivouacPoint>): List<Segment> {
+    private fun computeSegments(points: List<TrackPoint>, bivouacs: List<BivouacPoint>, calibration: SpeedCalibration): List<Segment> {
         val boundaries = listOf(0) + bivouacs.map { it.trackPointIndex } + listOf(points.lastIndex)
         return boundaries.zipWithNext { start, end ->
             val segmentPoints = points.subList(start, end + 1)
-            Segment(segmentPoints, TrackStatsCalculator.compute(segmentPoints))
+            Segment(segmentPoints, TrackStatsCalculator.compute(segmentPoints, calibration))
         }
     }
 }

@@ -146,9 +146,19 @@ fun JournalScreen(
     modifier: Modifier = Modifier,
     currentSection: AppSection,
     onSectionSelected: (AppSection) -> Unit,
+    // BIV-16: opened from Réglages ("Choisir les traces") instead of normally, to pick the
+    // Sélection calibration's tracks — pre-checks the current choice and swaps the usual
+    // "afficher sur la carte" action for a confirm/cancel pair that returns to Réglages.
+    calibrationSelectionMode: Boolean = false,
+    onCalibrationSelectionDone: () -> Unit = {},
     viewModel: JournalViewModel = viewModel(),
 ) {
     val context = LocalContext.current
+    val calibrationSelectionActive by viewModel.calibrationSelectionActive.collectAsStateWithLifecycle()
+
+    LaunchedEffect(calibrationSelectionMode) {
+        if (calibrationSelectionMode) viewModel.enterCalibrationSelectionMode()
+    }
     val filteredTracks by viewModel.filteredTracks.collectAsStateWithLifecycle()
     val tagsByTrackId by viewModel.tagsByTrackId.collectAsStateWithLifecycle()
     val selectedFilterTags by viewModel.selectedFilterTags.collectAsStateWithLifecycle()
@@ -156,6 +166,7 @@ fun JournalScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedLayer by viewModel.selectedLayer.collectAsStateWithLifecycle()
     val importError by viewModel.importError.collectAsStateWithLifecycle()
+    val nonFreeFeaturesDisabled by viewModel.nonFreeFeaturesDisabled.collectAsStateWithLifecycle()
     val probableDuplicate by viewModel.probableDuplicate.collectAsStateWithLifecycle()
     val deleteTarget by viewModel.deleteTarget.collectAsStateWithLifecycle()
     val selectionModeActive by viewModel.selectionModeActive.collectAsStateWithLifecycle()
@@ -212,10 +223,18 @@ fun JournalScreen(
                         selectionModeActive = selectionModeActive,
                         selectedTrackIds = selectedTrackIds,
                         onEnterSelectionMode = viewModel::enterSelectionMode,
-                        onExitSelectionMode = viewModel::exitSelectionMode,
+                        onExitSelectionMode = {
+                            viewModel.exitSelectionMode()
+                            if (calibrationSelectionActive) onCalibrationSelectionDone()
+                        },
                         onToggleSelection = viewModel::toggleTrackSelection,
                         onToggleYearSelection = viewModel::toggleYearSelection,
                         onShowOnMap = viewModel::showOnMap,
+                        calibrationSelectionActive = calibrationSelectionActive,
+                        onConfirmCalibrationSelection = {
+                            viewModel.confirmCalibrationSelection()
+                            onCalibrationSelectionDone()
+                        },
                         onSheetTopMeasured = { sheetTopPx = it },
                     )
                 }
@@ -236,6 +255,7 @@ fun JournalScreen(
                 multiTracks = coloredTracks,
                 highlightedTrackId = highlightedTrackId,
                 onTraceTapped = onToggleHighlight,
+                nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
             )
         }
     } else {
@@ -252,6 +272,7 @@ fun JournalScreen(
                 onMapTopMeasured = { mapBoxTopPx = it },
                 cursorIndex = cursorIndex,
                 onCursorChanged = { cursorIndex = it },
+                nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
             )
             ThreeStopJournalDetail(
                 entry = detail.entry,
@@ -357,6 +378,7 @@ private fun JournalMap(
     multiTracks: List<ColoredTrack> = emptyList(),
     highlightedTrackId: String? = null,
     onTraceTapped: (String) -> Unit = {},
+    nonFreeFeaturesDisabled: Boolean = false,
 ) {
     Box(
         modifier = Modifier.fillMaxSize().onGloballyPositioned {
@@ -389,6 +411,7 @@ private fun JournalMap(
                 onLayerSelected = onLayerSelected,
                 recenterEnabled = track != null || multiTracks.isNotEmpty(),
                 onRecenterClick = onRecenter,
+                nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
             )
         }
     }
@@ -409,6 +432,8 @@ private fun JournalListContent(
     onToggleSelection: (String) -> Unit,
     onToggleYearSelection: (List<String>) -> Unit,
     onShowOnMap: () -> Unit,
+    calibrationSelectionActive: Boolean = false,
+    onConfirmCalibrationSelection: () -> Unit = {},
     onSheetTopMeasured: (Int) -> Unit,
 ) {
     val groups = remember(tracks) { groupByYear(tracks) }
@@ -473,12 +498,15 @@ private fun JournalListContent(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedButton(onClick = onShowOnMap, modifier = Modifier.weight(1f)) {
+            OutlinedButton(
+                onClick = if (calibrationSelectionActive) onConfirmCalibrationSelection else onShowOnMap,
+                modifier = Modifier.weight(1f),
+            ) {
                 Text(
-                    if (selectedTrackIds.isEmpty()) {
-                        "Tout afficher sur la carte"
-                    } else {
-                        "Afficher la sélection (${selectedTrackIds.size})"
+                    when {
+                        calibrationSelectionActive -> "Confirmer la sélection (${selectedTrackIds.size})"
+                        selectedTrackIds.isEmpty() -> "Tout afficher sur la carte"
+                        else -> "Afficher la sélection (${selectedTrackIds.size})"
                     },
                 )
             }

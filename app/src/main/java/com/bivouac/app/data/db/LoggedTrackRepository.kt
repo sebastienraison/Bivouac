@@ -5,11 +5,14 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.bivouac.app.data.gpx.GpxParser
+import com.bivouac.app.data.gpx.SpeedCalibration
+import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.time.Duration
 import java.util.UUID
 import kotlin.math.abs
 
@@ -36,11 +39,15 @@ class LoggedTrackRepository(context: Context) {
      * [GpxParser]) to compute the denormalized stats and the hike's start date; it's stored
      * untouched separately (see LoggedTrackDayEntity).
      */
-    suspend fun prepareImport(resolver: ContentResolver, uri: Uri): PreparedImport {
+    suspend fun prepareImport(
+        resolver: ContentResolver,
+        uri: Uri,
+        calibration: SpeedCalibration = SpeedCalibration.DEFAULT,
+    ): PreparedImport {
         val rawGpx = resolver.openInputStream(uri)?.use { it.readBytes().toString(StandardCharsets.UTF_8) }
             ?: throw IOException("Impossible d'ouvrir le fichier sélectionné")
         val track = rawGpx.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }
-        val stats = TrackStatsCalculator.compute(track.points)
+        val stats = TrackStatsCalculator.compute(track.points, calibration)
         val startedAt = track.points.firstOrNull()?.time?.toEpochMilli() ?: System.currentTimeMillis()
 
         val id = UUID.randomUUID().toString()
@@ -113,6 +120,34 @@ class LoggedTrackRepository(context: Context) {
 
     suspend fun removeTag(trackId: String, tag: String) {
         dao.deleteTag(trackId, tag)
+    }
+
+    /**
+     * Calibration samples (BIV-16 Auto/Sélection) for every track in [ids], or the whole Journal
+     * when null. A track only contributes if at least one of its days has real GPX timestamps —
+     * silently skipped otherwise, same as [SpeedCalibrationCalculator] already tolerates.
+     */
+    suspend fun calibrationSamples(ids: Set<String>? = null): List<SpeedCalibrationCalculator.Sample> {
+        val entries = dao.list().filter { ids == null || it.id in ids }
+        return entries.mapNotNull { calibrationSample(it) }
+    }
+
+    // Elapsed time is summed per day (not first-to-last across the whole track) so an overnight
+    // gap on a multi-day hike never gets counted as "elapsed walking time" — see
+    // SpeedCalibrationCalculator's kdoc for why a real elapsed duration matters here.
+    private suspend fun calibrationSample(entry: LoggedTrackEntity): SpeedCalibrationCalculator.Sample? {
+        val elapsedHours = dao.getDays(entry.id).sumOf { day ->
+            val points = day.rawGpxContent.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }.points
+            val first = points.firstOrNull()?.time
+            val last = points.lastOrNull()?.time
+            if (first != null && last != null) Duration.between(first, last).toMillis() / 3_600_000.0 else 0.0
+        }
+        if (elapsedHours <= 0.0) return null
+        return SpeedCalibrationCalculator.Sample(
+            distanceMeters = entry.distanceMeters,
+            elevationGainMeters = entry.elevationGainMeters,
+            elapsedHours = elapsedHours,
+        )
     }
 
     private fun queryDisplayName(resolver: ContentResolver, uri: Uri): String? =

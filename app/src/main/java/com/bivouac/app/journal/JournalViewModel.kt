@@ -10,8 +10,11 @@ import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.db.PreparedImport
+import com.bivouac.app.data.gpx.SpeedCalibration
+import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.prefs.MapLayerPreferences
+import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +22,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -37,6 +41,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     private val repository = LoggedTrackRepository(application)
     private val mapLayerPreferences = MapLayerPreferences(application)
+    private val settingsPreferences = SettingsPreferences(application)
 
     private val _tracks = MutableStateFlow<List<LoggedTrackEntity>>(emptyList())
     val tracks: StateFlow<List<LoggedTrackEntity>> = _tracks.asStateFlow()
@@ -69,9 +74,22 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     val currentTags: StateFlow<List<String>> = _currentTags.asStateFlow()
 
     // Shared with Planification — one "which map style" preference for the whole app, not a
-    // per-screen setting.
-    val selectedLayer: StateFlow<MapLayer> = mapLayerPreferences.selectedLayer
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MapLayer.HIKING)
+    // per-screen setting. Satellite falls back to the free default while non-free features are
+    // disabled (BIV-16), same as Planification's own selectedLayer.
+    val selectedLayer: StateFlow<MapLayer> = combine(
+        mapLayerPreferences.selectedLayer,
+        settingsPreferences.nonFreeFeaturesDisabled,
+    ) { layer, nonFreeDisabled ->
+        if (nonFreeDisabled && layer == MapLayer.SATELLITE) MapLayer.HIKING else layer
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MapLayer.HIKING)
+
+    val nonFreeFeaturesDisabled: StateFlow<Boolean> = settingsPreferences.nonFreeFeaturesDisabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    // BIV-16 Vitesse personnalisée: whichever calibration is currently active, applied when
+    // importing a new hike (existing entries keep the duration they were imported with).
+    val activeCalibration: StateFlow<SpeedCalibration> = settingsPreferences.effectiveCalibration
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SpeedCalibration.DEFAULT)
 
     private val _importError = MutableStateFlow<String?>(null)
     val importError: StateFlow<String?> = _importError.asStateFlow()
@@ -90,6 +108,13 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     private val _selectedTrackIds = MutableStateFlow<Set<String>>(emptySet())
     val selectedTrackIds: StateFlow<Set<String>> = _selectedTrackIds.asStateFlow()
+
+    // BIV-16: same selection mechanics as BIV-47 above, reused rather than duplicated, but
+    // entered from Réglages ("Choisir les traces") to pick the Sélection calibration's tracks
+    // instead of the map. While true, JournalScreen swaps "Afficher la sélection" for "Confirmer
+    // la sélection" and confirming writes into SettingsPreferences instead of opening the map.
+    private val _calibrationSelectionActive = MutableStateFlow(false)
+    val calibrationSelectionActive: StateFlow<Boolean> = _calibrationSelectionActive.asStateFlow()
 
     init {
         refresh()
@@ -142,7 +167,28 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     fun exitSelectionMode() {
         _selectionModeActive.value = false
+        _calibrationSelectionActive.value = false
         _selectedTrackIds.value = emptySet()
+    }
+
+    // Pre-checks whatever is already saved as the Sélection calibration's tracks, so reopening
+    // this flow shows the current choice rather than starting from empty.
+    fun enterCalibrationSelectionMode() {
+        _calibrationSelectionActive.value = true
+        _selectionModeActive.value = true
+        viewModelScope.launch { _selectedTrackIds.value = settingsPreferences.selectedTrackIds.first() }
+    }
+
+    fun confirmCalibrationSelection() {
+        val ids = _selectedTrackIds.value
+        exitSelectionMode()
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                val samples = repository.calibrationSamples(ids)
+                val calibration = SpeedCalibrationCalculator.compute(samples) ?: SpeedCalibration.DEFAULT
+                settingsPreferences.setSelectionCalibration(calibration, ids)
+            }
+        }
     }
 
     fun toggleTrackSelection(id: String) {
@@ -247,7 +293,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val prepared = repository.prepareImport(resolver, uri)
+                    val prepared = repository.prepareImport(resolver, uri, activeCalibration.value)
                     prepared to repository.findDuplicate(prepared)
                 }
             }.onSuccess { (prepared, duplicate) ->
@@ -283,10 +329,20 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private suspend fun commit(prepared: PreparedImport) {
-        withContext(Dispatchers.IO) { repository.commitImport(prepared) }
+        withContext(Dispatchers.IO) {
+            repository.commitImport(prepared)
+            refreshAutoCalibration()
+        }
         refresh()
         // Mirrors Planification's "open a track" behavior: a just-imported trace should land
         // straight on its detail view, not merely appear in the list waiting to be tapped.
         openTrack(prepared.entity)
+    }
+
+    // BIV-16 Auto mode: recomputed on every import regardless of which mode is currently active,
+    // so switching to Auto later never shows a stale value from before the last import.
+    private suspend fun refreshAutoCalibration() {
+        val calibration = SpeedCalibrationCalculator.compute(repository.calibrationSamples()) ?: return
+        settingsPreferences.setAutoCalibration(calibration)
     }
 }
