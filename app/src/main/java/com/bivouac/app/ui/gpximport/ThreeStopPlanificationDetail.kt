@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -88,21 +89,19 @@ import com.bivouac.app.ui.journal.settleJournalDetailStop
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
-// Bounds the DETAIL stop's own height (unlike Journal's, which reaches fullHeightPx) — Planification
-// stays an active context, so the map behind/around the sheet must stay usable (placing and dragging
-// bivouacs) even with the segments list open. A long list still needs to scroll within that bound —
-// see detailNestedScroll below, the same hand-off pattern ThreeStopJournalDetail uses.
-private const val DETAIL_HEIGHT_FRACTION = 0.6f
-
 /**
  * Planification's take on Journal's three-stop drawer (BIV-54): same drag-to-resize mechanic and
  * stop set (Synthèse/Profil/Détails), reused via [JournalDetailStop] and [settleJournalDetailStop]
- * rather than reinvented, but with its own content and its own (bounded) Détails height — see
- * DETAIL_HEIGHT_FRACTION above. Kept as a separate composable from ThreeStopJournalDetail instead
- * of a shared abstraction: the two screens' content differs enough (tags/notes vs. segments/tags
- * editing lives only in Journal; here it's segments + bivouac points) that forcing one generic
- * component would cost more in indirection than the ~150 lines of shared drag/anchor/nested-scroll
- * plumbing it would save.
+ * rather than reinvented, but with its own content and its own DETAIL sizing — unlike Journal's,
+ * which always reaches fullHeightPx, Planification stays an active context (the map behind the
+ * sheet must stay usable for placing/dragging bivouacs), so DETAIL only grows to fullHeightPx when
+ * the segments table actually needs it: every stop's height is the real measured size of its own
+ * content, capped — never forced — at fullHeightPx (see segmentsMaxHeightPx below for how the
+ * segments list itself gets bounded and made to scroll once it would otherwise exceed that cap).
+ * Kept as a separate composable from ThreeStopJournalDetail instead of a shared abstraction: the
+ * two screens' content differs enough (tags/notes editing lives only in Journal; here it's segments
+ * + bivouac points) that forcing one generic component would cost more in indirection than the
+ * ~150 lines of shared drag/anchor/nested-scroll plumbing it would save.
  */
 @Composable
 internal fun ThreeStopPlanificationDetail(
@@ -130,16 +129,27 @@ internal fun ThreeStopPlanificationDetail(
         val fullHeightPx = with(density) { maxHeight.toPx() }
         var measuredSummaryHeightPx by remember { mutableIntStateOf(0) }
         var measuredProfileAdditionPx by remember { mutableIntStateOf(0) }
+        var measuredSegmentsAdditionPx by remember { mutableIntStateOf(0) }
         val fallbackSummaryHeightPx = with(density) { 150.dp.toPx() }
         val navigationBarHeightPx = WindowInsets.navigationBars.getBottom(density).toFloat()
+        // Every stop below is sized off what its own content actually measures, capped only by
+        // fullHeightPx as an absolute safety net — never by an arbitrary fraction, which is what
+        // was clipping the profile curve and the segments table on some real devices (BIV-57
+        // phone recette): a taller-than-expected header (larger system font, different insets)
+        // left less room than the fixed 55%/60% caps assumed, cutting off content below them.
         val summaryHeightPx = (if (measuredSummaryHeightPx > 0) {
             measuredSummaryHeightPx.toFloat() + navigationBarHeightPx + with(density) { 8.dp.toPx() }
         } else {
             fallbackSummaryHeightPx + navigationBarHeightPx
-        }).coerceAtMost(fullHeightPx * 0.46f)
+        }).coerceAtMost(fullHeightPx)
         val profileHeightPx = (summaryHeightPx + measuredProfileAdditionPx)
-            .coerceIn(summaryHeightPx, fullHeightPx * 0.55f)
-        val detailHeightPx = (fullHeightPx * DETAIL_HEIGHT_FRACTION).coerceAtLeast(profileHeightPx)
+            .coerceIn(summaryHeightPx, fullHeightPx)
+        // How much room is left for the segments list before DETAIL would have to exceed the
+        // screen — the segments Column below is capped to exactly this via heightIn(max), so it
+        // naturally scrolls instead of pushing DETAIL past fullHeightPx on long, multi-day traces.
+        val segmentsMaxHeightPx = (fullHeightPx - profileHeightPx).coerceAtLeast(0f)
+        val detailHeightPx = (profileHeightPx + measuredSegmentsAdditionPx)
+            .coerceIn(profileHeightPx, fullHeightPx)
         val anchors = remember(fullHeightPx, summaryHeightPx, profileHeightPx, detailHeightPx) {
             mapOf(
                 JournalDetailStop.DETAIL to fullHeightPx - detailHeightPx,
@@ -335,11 +345,12 @@ internal fun ThreeStopPlanificationDetail(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f)
+                            .heightIn(max = with(density) { segmentsMaxHeightPx.toDp() })
                             .nestedScroll(detailNestedScroll)
                             .verticalScroll(detailScrollState)
                             .navigationBarsPadding()
-                            .padding(horizontal = 20.dp),
+                            .padding(horizontal = 20.dp)
+                            .onGloballyPositioned { measuredSegmentsAdditionPx = it.size.height },
                     ) {
                         SegmentsList(
                             track = track,
