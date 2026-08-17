@@ -319,12 +319,19 @@ private fun SpeedCalibrationSection(
                 }
                 SpeedCalibrationMode.SELECTION -> {
                     Text(
-                        if (selectedTrackCount == 0) {
-                            "Aucune trace choisie pour l'instant — calibration par défaut en attendant."
-                        } else {
-                            "Calculée à partir de $selectedTrackCount " +
-                                (if (selectedTrackCount > 1) "traces choisies" else "trace choisie") +
-                                " dans le Journal."
+                        when (selectedTrackCount) {
+                            0 -> "Aucune trace choisie pour l'instant — calibration par défaut en attendant."
+                            // A single hike can't separate two unknowns (vitesse et pénalité D+)
+                            // from one another — the maths behind CalibrationStatGrid genuinely
+                            // has no way to isolate D+ from just one data point, so it's kept at
+                            // sa valeur par défaut rather than showing a number that looks computed
+                            // but isn't. Same reasoning applies with more traces if their profil
+                            // (rapport dénivelé/distance) est trop similaire d'une trace à l'autre.
+                            1 -> "Calculée à partir d'une seule trace : la vitesse s'ajuste, mais la " +
+                                "pénalité D+ ne peut pas être isolée avec un seul point de mesure — " +
+                                "elle reste à sa valeur par défaut. Choisis au moins 2 randonnées de " +
+                                "profils différents (plate et pentue) pour l'affiner aussi."
+                            else -> "Calculée à partir de $selectedTrackCount traces choisies dans le Journal."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

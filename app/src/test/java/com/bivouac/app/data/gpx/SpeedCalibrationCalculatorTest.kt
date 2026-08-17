@@ -68,6 +68,22 @@ class SpeedCalibrationCalculatorTest {
         assertTrue(result.elevationGainPenaltyMetersPerKm in 20.0..300.0)
     }
 
+    // Documents a real user-facing question (BIV-16 recette): with a single hike, speed and D+
+    // penalty can't be told apart mathematically — one data point, two unknowns — so penalty stays
+    // exactly at the default rather than a value that looks computed but isn't. SettingsScreen's
+    // Sélection mode explains this to the user once selectedTrackCount == 1; this test pins down
+    // the calculator-level behavior behind that message.
+    @Test
+    fun singleSampleKeepsDefaultPenaltyButStillFitsSpeed() {
+        val sample = syntheticSample(distanceKm = 14.0, gainMeters = 650.0, trueSpeedKmh = 4.6, truePenalty = 70.0)
+        val result = SpeedCalibrationCalculator.compute(listOf(sample))
+        assertTrue(result != null)
+        assertEquals(SpeedCalibration.DEFAULT.elevationGainPenaltyMetersPerKm, result!!.elevationGainPenaltyMetersPerKm, 1e-9)
+        // Speed still reflects that one hike's real pace, computed against the default penalty —
+        // not just silently falling back to SpeedCalibration.DEFAULT.walkingSpeedKmh too.
+        assertTrue(abs(result.walkingSpeedKmh - SpeedCalibration.DEFAULT.walkingSpeedKmh) > 0.1)
+    }
+
     @Test
     fun defaultCalibrationMatchesPreviousHardcodedConstants() {
         assertEquals(3.5, SpeedCalibration.DEFAULT.walkingSpeedKmh, 0.0)
