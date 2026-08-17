@@ -104,7 +104,6 @@ private class CursorDragState(var isDragging: Boolean = false)
 // out with StaticLayout so it wraps to the map's width instead of overflowing it.
 private class WrappingCopyrightOverlay(context: Context) : Overlay() {
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.BLACK
         textSize = 10f * context.resources.displayMetrics.density
     }
     var xOffset = 0
@@ -117,8 +116,16 @@ private class WrappingCopyrightOverlay(context: Context) : Overlay() {
 
     override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
         if (shadow) return
-        val notice = mapView.tileProvider.tileSource?.copyrightNotice
+        val tileSource = mapView.tileProvider.tileSource
+        val notice = tileSource?.copyrightNotice
         if (notice.isNullOrEmpty()) return
+        // Esri's satellite imagery is dark/busy edge-to-edge — black text (fine on the other two,
+        // paler layers) all but disappears on it. White reads reliably on aerial photography.
+        textPaint.color = if (tileSource?.name() == MapLayer.SATELLITE.tileSource.name()) {
+            android.graphics.Color.WHITE
+        } else {
+            android.graphics.Color.BLACK
+        }
         val maxWidth = mapView.width - xOffset * 2
         if (maxWidth <= 0) return
         val layout = StaticLayout.Builder
