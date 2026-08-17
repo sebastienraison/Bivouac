@@ -971,7 +971,7 @@ internal fun ThreeStopJournalDetail(
                                     when (candidate) {
                                         JournalDetailStop.SUMMARY -> "Synthèse"
                                         JournalDetailStop.PROFILE -> "Profil"
-                                        JournalDetailStop.DETAIL -> "Détail"
+                                        JournalDetailStop.DETAIL -> "Détails"
                                     },
                                     color = if (candidate == stop) {
                                         MaterialTheme.colorScheme.primary

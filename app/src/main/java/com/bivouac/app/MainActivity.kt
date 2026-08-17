@@ -26,16 +26,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Terrain
-import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
@@ -76,19 +69,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.bivouac.app.data.db.BankedTrackEntity
 import com.bivouac.app.data.gpx.GpxExporter
-import com.bivouac.app.data.gpx.TrackStats
-import com.bivouac.app.data.model.BivouacPoint
-import com.bivouac.app.data.model.HikeTrack
-import com.bivouac.app.data.model.Segment
-import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.data.weather.MeteoblueLink
 import com.bivouac.app.gpximport.DeleteTarget
 import com.bivouac.app.gpximport.GpxImportUiState
 import com.bivouac.app.gpximport.GpxImportViewModel
-import com.bivouac.app.ui.components.ElevationProfile
-import com.bivouac.app.ui.components.GainIconColor
-import com.bivouac.app.ui.components.InfoText
 import com.bivouac.app.ui.components.StatsRows
+import com.bivouac.app.ui.gpximport.ThreeStopPlanificationDetail
 import com.bivouac.app.ui.journal.JournalScreen
 import com.bivouac.app.ui.map.HikeMapView
 import com.bivouac.app.ui.map.MapControls
@@ -102,7 +88,6 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.roundToInt
 
 private val PEEK_HEIGHT_EMPTY = 150.dp
 
@@ -193,7 +178,6 @@ fun GpxImportScreen(
     val bivouacPoints by viewModel.bivouacPoints.collectAsStateWithLifecycle()
     val effectiveBivouacPoints by viewModel.effectiveBivouacPoints.collectAsStateWithLifecycle()
     val segments by viewModel.segments.collectAsStateWithLifecycle()
-    val loadedTrack = (uiState as? GpxImportUiState.Loaded)?.track
 
     val dirty by viewModel.dirty.collectAsStateWithLifecycle()
     val currentBankedId by viewModel.currentBankedId.collectAsStateWithLifecycle()
@@ -204,14 +188,6 @@ fun GpxImportScreen(
 
     val selectedLayer by viewModel.selectedLayer.collectAsStateWithLifecycle()
     var recenterSignal by remember { mutableIntStateOf(0) }
-
-    // The loaded-state peek content (title/stats/curve) is measured rather than given a fixed dp
-    // height: a static guess drifts out of sync the moment that content changes (as 240dp did the
-    // moment the elevation profile was added) and either wastes space or creates a dead zone
-    // above the sheet's declared touch bounds.
-    var loadedPeekHeightPx by remember { mutableIntStateOf(0) }
-    val density = LocalDensity.current
-    val loadedPeekHeight = with(density) { loadedPeekHeightPx.toDp() }
 
     // Recentering should fit the track into whatever the sheet doesn't currently cover, not the
     // full (partly hidden) map view — osmdroid has no asymmetric-fit API, so this is done by
@@ -245,53 +221,64 @@ fun GpxImportScreen(
     // the map in landscape, where total height is much smaller than the measured content needs.
     val maxPeekHeight = LocalConfiguration.current.screenHeightDp.dp * 0.5f
 
-    BottomSheetScaffold(
-        modifier = modifier,
-        sheetPeekHeight = if (loadedTrack != null) {
-            loadedPeekHeight.coerceIn(PEEK_HEIGHT_EMPTY, maxPeekHeight)
-        } else {
-            PEEK_HEIGHT_EMPTY.coerceAtMost(maxPeekHeight)
-        },
-        sheetContent = {
-            TrackSheetContent(
-                uiState = uiState,
-                bivouacPoints = bivouacPoints,
-                elevationMarkerPoints = effectiveBivouacPoints,
-                segments = segments,
-                dirty = dirty,
-                isBanked = currentBankedId != null,
-                bankedTraces = bankedTraces,
-                onOpenClick = { pickGpxLauncher.launch(arrayOf("*/*")) },
-                onCloseClick = viewModel::requestClose,
-                onSaveClick = viewModel::requestSave,
-                onRenameClick = viewModel::requestRename,
-                onDuplicateClick = viewModel::requestDuplicate,
-                onDeleteClick = viewModel::requestDelete,
-                onOpenBankedClick = viewModel::openFromBank,
-                onRenameBankedClick = viewModel::requestRenameFromList,
-                onDeleteBankedClick = viewModel::requestDeleteFromList,
-                onRemovePoint = viewModel::removeBivouacPoint,
-                onExportSegment = { index, segment ->
-                    val baseName = loadedTrack?.name ?: "Trace"
-                    val dayName = "$baseName - Jour ${index + 1}"
-                    context.startActivity(GpxExporter.openIntent(context, segment.points, dayName))
-                },
-                onWeatherClick = { point ->
-                    val url = MeteoblueLink.forCoordinates(point.latitude, point.longitude)
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                },
-                onPeekHeightMeasured = { loadedPeekHeightPx = it },
-                onSheetTopMeasured = { sheetTopPx = it },
-            )
-        },
-    ) {
+    val loaded = uiState as? GpxImportUiState.Loaded
+    if (loaded == null) {
+        BottomSheetScaffold(
+            modifier = modifier,
+            sheetPeekHeight = PEEK_HEIGHT_EMPTY.coerceAtMost(maxPeekHeight),
+            sheetContent = {
+                TrackSheetContent(
+                    uiState = uiState,
+                    bankedTraces = bankedTraces,
+                    onOpenClick = { pickGpxLauncher.launch(arrayOf("*/*")) },
+                    onOpenBankedClick = viewModel::openFromBank,
+                    onRenameBankedClick = viewModel::requestRenameFromList,
+                    onDeleteBankedClick = viewModel::requestDeleteFromList,
+                    onSheetTopMeasured = { sheetTopPx = it },
+                )
+            },
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onGloballyPositioned { mapBoxTopPx = it.positionInRoot().y },
+            ) {
+                HikeMapView(
+                    track = null,
+                    bivouacPoints = emptyList(),
+                    selectedLayer = selectedLayer,
+                    recenterSignal = recenterSignal,
+                    visibleHeightPx = visibleMapHeightPx,
+                    onTrackTapped = viewModel::addBivouacPoint,
+                    onBivouacMoved = viewModel::moveBivouacPoint,
+                    onBivouacDragPreview = viewModel::previewBivouacDrag,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .statusBarsPadding()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    SectionMenuButton(current = currentSection, onSelect = onSectionSelected)
+                    MapControls(
+                        selectedLayer = selectedLayer,
+                        onLayerSelected = viewModel::setSelectedLayer,
+                        recenterEnabled = false,
+                        onRecenterClick = { recenterSignal++ },
+                    )
+                }
+            }
+        }
+    } else {
         Box(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxSize()
                 .onGloballyPositioned { mapBoxTopPx = it.positionInRoot().y },
         ) {
             HikeMapView(
-                track = loadedTrack,
+                track = loaded.track,
                 bivouacPoints = bivouacPoints,
                 selectedLayer = selectedLayer,
                 recenterSignal = recenterSignal,
@@ -312,10 +299,35 @@ fun GpxImportScreen(
                 MapControls(
                     selectedLayer = selectedLayer,
                     onLayerSelected = viewModel::setSelectedLayer,
-                    recenterEnabled = loadedTrack != null,
+                    recenterEnabled = true,
                     onRecenterClick = { recenterSignal++ },
                 )
             }
+            ThreeStopPlanificationDetail(
+                track = loaded.track,
+                stats = loaded.stats,
+                bivouacPoints = bivouacPoints,
+                elevationMarkerPoints = effectiveBivouacPoints,
+                segments = segments,
+                dirty = dirty,
+                isBanked = currentBankedId != null,
+                onCloseClick = viewModel::requestClose,
+                onSaveClick = viewModel::requestSave,
+                onRenameClick = viewModel::requestRename,
+                onDuplicateClick = viewModel::requestDuplicate,
+                onDeleteClick = viewModel::requestDelete,
+                onRemovePoint = viewModel::removeBivouacPoint,
+                onExportSegment = { index, segment ->
+                    val baseName = loaded.track.name ?: "Trace"
+                    val dayName = "$baseName - Jour ${index + 1}"
+                    context.startActivity(GpxExporter.openIntent(context, segment.points, dayName))
+                },
+                onWeatherClick = { point ->
+                    val url = MeteoblueLink.forCoordinates(point.latitude, point.longitude)
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                },
+                onSheetTopMeasured = { sheetTopPx = it.toFloat() },
+            )
         }
     }
 
@@ -377,36 +389,22 @@ fun GpxImportScreen(
     }
 }
 
+// Only Idle/Loading/Error: the Loaded state has its own three-stop drawer (BIV-57), see
+// ThreeStopPlanificationDetail — GpxImportScreen switches away from this BottomSheetScaffold
+// entirely once a track is loaded, so this sheet never needs to represent that state.
 @Composable
 private fun TrackSheetContent(
     uiState: GpxImportUiState,
-    bivouacPoints: List<BivouacPoint>,
-    elevationMarkerPoints: List<BivouacPoint>,
-    segments: List<Segment>,
-    dirty: Boolean,
-    isBanked: Boolean,
     bankedTraces: List<BankedTrackEntity>,
     onOpenClick: () -> Unit,
-    onCloseClick: () -> Unit,
-    onSaveClick: () -> Unit,
-    onRenameClick: () -> Unit,
-    onDuplicateClick: () -> Unit,
-    onDeleteClick: () -> Unit,
     onOpenBankedClick: (String) -> Unit,
     onRenameBankedClick: (id: String, name: String) -> Unit,
     onDeleteBankedClick: (id: String, name: String) -> Unit,
-    onRemovePoint: (String) -> Unit,
-    onExportSegment: (index: Int, segment: Segment) -> Unit,
-    onWeatherClick: (TrackPoint) -> Unit,
-    onPeekHeightMeasured: (Int) -> Unit,
     onSheetTopMeasured: (Float) -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            // The sheet's own drag handles collapse/expand; once fully expanded, a long segments
-            // list (many bivouac points) still needs to scroll within that fixed height — nothing
-            // did that before, so the content beyond the screen's bottom was just unreachable.
             .verticalScroll(rememberScrollState())
             .navigationBarsPadding()
             .padding(horizontal = 20.dp)
@@ -443,118 +441,7 @@ private fun TrackSheetContent(
                     Text("Ouvrir une trace")
                 }
             }
-            is GpxImportUiState.Loaded -> {
-                // Only this part is always visible in the collapsed sheet — measured so the
-                // peek height can track it exactly, independently of the segments list below,
-                // which only renders (and only needs to be reachable) once expanded.
-                Column(modifier = Modifier.onGloballyPositioned { onPeekHeightMeasured(it.size.height) }) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Top,
-                    ) {
-                        Text(
-                            text = uiState.track.name ?: "Trace sans nom",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(end = 8.dp),
-                        )
-                        TrackActionsRow(
-                            dirty = dirty,
-                            isBanked = isBanked,
-                            onSaveClick = onSaveClick,
-                            onRenameClick = onRenameClick,
-                            onDuplicateClick = onDuplicateClick,
-                            onDeleteClick = onDeleteClick,
-                            onCloseClick = onCloseClick,
-                        )
-                    }
-                    if (bivouacPoints.isNotEmpty()) {
-                        Text(
-                            text = "Total",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    StatsRows(uiState.stats, muted = bivouacPoints.isNotEmpty())
-
-                    ElevationProfile(
-                        points = uiState.track.points,
-                        bivouacPoints = elevationMarkerPoints,
-                        modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
-                    )
-                }
-
-                if (bivouacPoints.isNotEmpty()) {
-                    SegmentsList(
-                        track = uiState.track,
-                        segments = segments,
-                        bivouacPoints = bivouacPoints,
-                        onRemovePoint = onRemovePoint,
-                        onExportSegment = onExportSegment,
-                        onWeatherClick = onWeatherClick,
-                    )
-                }
-            }
-        }
-    }
-}
-
-// Trailing icons on the title row of an open trace. Order matters and is deliberate: save, then
-// the overflow menu (duplicate/delete), then close last — see CONCEPTION notes. The overflow menu
-// never holds save or close, both stay standalone; reused identically on each home screen list row
-// (minus save, nothing to save from there) to keep the convention consistent across the app.
-@Composable
-private fun TrackActionsRow(
-    dirty: Boolean,
-    isBanked: Boolean,
-    onSaveClick: () -> Unit,
-    onRenameClick: () -> Unit,
-    onDuplicateClick: () -> Unit,
-    onDeleteClick: () -> Unit,
-    onCloseClick: () -> Unit,
-) {
-    var menuExpanded by remember { mutableStateOf(false) }
-    Row {
-        IconButton(onClick = onSaveClick) {
-            Icon(
-                Icons.Default.Save,
-                contentDescription = if (dirty) "Enregistrer (modifications non sauvegardées)" else "Enregistrer",
-                // Orange (GainIconColor) rather than the error/red role: an unsaved change isn't
-                // a critical error, just a state — red is reserved for destructive actions
-                // (delete), matching Material 3's role guidance.
-                tint = if (dirty) GainIconColor else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Box {
-            IconButton(onClick = { menuExpanded = true }) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Menu")
-            }
-            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                DropdownMenuItem(
-                    text = { Text("Renommer") },
-                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
-                    enabled = isBanked,
-                    onClick = { menuExpanded = false; onRenameClick() },
-                )
-                DropdownMenuItem(
-                    text = { Text("Dupliquer") },
-                    leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
-                    onClick = { menuExpanded = false; onDuplicateClick() },
-                )
-                DropdownMenuItem(
-                    text = { Text("Supprimer") },
-                    leadingIcon = {
-                        Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                    },
-                    enabled = isBanked,
-                    onClick = { menuExpanded = false; onDeleteClick() },
-                )
-            }
-        }
-        IconButton(onClick = onCloseClick) {
-            Icon(Icons.Default.Close, contentDescription = "Fermer la trace")
+            is GpxImportUiState.Loaded -> Unit
         }
     }
 }
@@ -627,109 +514,6 @@ private fun formatSavedAt(epochMillis: Long): String {
         "aujourd'hui à " + DateTimeFormatter.ofPattern("HH:mm").withZone(zone).format(instant)
     } else {
         DateTimeFormatter.ofPattern("d MMMM", Locale.FRANCE).withZone(zone).format(instant)
-    }
-}
-
-@Composable
-private fun SegmentsList(
-    track: HikeTrack,
-    segments: List<Segment>,
-    bivouacPoints: List<BivouacPoint>,
-    onRemovePoint: (String) -> Unit,
-    onExportSegment: (index: Int, segment: Segment) -> Unit,
-    onWeatherClick: (TrackPoint) -> Unit,
-) {
-    Column(modifier = Modifier.padding(top = 12.dp)) {
-        segments.forEachIndexed { index, segment ->
-            HorizontalDivider()
-            Column(modifier = Modifier.padding(vertical = 10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(text = "Jour ${index + 1}", style = MaterialTheme.typography.labelLarge)
-                    IconButton(onClick = { onExportSegment(index, segment) }, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            Icons.Default.FileDownload,
-                            contentDescription = "Télécharger ce segment en GPX",
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                }
-                StatsRows(segment.stats)
-            }
-
-            if (index < bivouacPoints.size) {
-                HorizontalDivider()
-                val bivouac = bivouacPoints[index]
-                val trackPoint = track.points[bivouac.trackPointIndex]
-                BivouacRow(
-                    trackPoint = trackPoint,
-                    onWeatherClick = { onWeatherClick(trackPoint) },
-                    onRemove = { onRemovePoint(bivouac.id) },
-                )
-            }
-        }
-        HorizontalDivider()
-    }
-}
-
-@Composable
-private fun BivouacRow(trackPoint: TrackPoint, onWeatherClick: () -> Unit, onRemove: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Image(
-            painter = painterResource(R.drawable.ic_bivouac_badge),
-            contentDescription = "Point de bivouac",
-            modifier = Modifier.size(24.dp),
-        )
-        val elevation = trackPoint.elevationMeters
-        if (elevation != null) {
-            InfoText(
-                text = "${elevation.roundToInt()} m",
-                icon = Icons.Default.Terrain,
-                iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Spacer(modifier = Modifier.weight(1f))
-        ComposedWeatherIconButton(onClick = onWeatherClick)
-        IconButton(onClick = onRemove, modifier = Modifier.padding(start = 6.dp)) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = "Supprimer ce point de bivouac",
-                tint = MaterialTheme.colorScheme.error,
-            )
-        }
-    }
-}
-
-// No native "partly cloudy" glyph in the Material icon set used, so the classic sun-behind-cloud
-// pictogram is composed from the two separate icons instead.
-@Composable
-private fun ComposedWeatherIconButton(onClick: () -> Unit) {
-    IconButton(onClick = onClick) {
-        Box(modifier = Modifier.size(22.dp)) {
-            Icon(
-                Icons.Default.Cloud,
-                contentDescription = "Météo au point de bivouac",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .size(16.dp)
-                    .align(Alignment.BottomStart),
-            )
-            Icon(
-                Icons.Default.WbSunny,
-                contentDescription = null,
-                tint = GainIconColor,
-                modifier = Modifier
-                    .size(12.dp)
-                    .align(Alignment.TopEnd),
-            )
-        }
     }
 }
 
