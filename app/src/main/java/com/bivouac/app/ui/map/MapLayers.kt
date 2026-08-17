@@ -21,7 +21,9 @@ private val EsriWorldImagery: ITileSource = object : OnlineTileSourceBase(
     256,
     "",
     arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"),
-    "Esri, Maxar, Earthstar Geographics",
+    // "Powered by Esri" prefix required by Esri's attribution guidelines (BIV-63), not just the
+    // provider list itself.
+    "Powered by Esri, Maxar, Earthstar Geographics",
 ) {
     override fun getTileURLString(pMapTileIndex: Long): String {
         val zoom = MapTileIndex.getZoom(pMapTileIndex)

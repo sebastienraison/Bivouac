@@ -9,16 +9,30 @@ import android.text.StaticLayout
 import android.text.TextPaint
 import android.view.MotionEvent
 import android.widget.TextView
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.DrawableCompat
@@ -225,41 +239,84 @@ fun HikeMapView(
         }
     }
 
-    AndroidView(
-        // osmdroid's MapView doesn't always re-layout its internal drawing surface promptly
-        // when Compose shrinks it (e.g. sibling text growing taller after a track loads),
-        // which left stale tile content painted outside its allocated bounds. Force clipping
-        // at the Compose layer so the map can never bleed over neighboring content.
-        modifier = modifier.fillMaxSize().clipToBounds(),
-        factory = { mapView },
-        update = { view ->
-            if (selectedLayer != lastLayer.value) {
-                view.setTileSource(selectedLayer.tileSource)
-                lastLayer.value = selectedLayer
-            }
-            val trackChanged = if (multiTracks.isNotEmpty()) {
-                multiTracks !== lastFittedMultiTracks.value
-            } else {
-                track !== lastFittedTrack.value
-            }
-            val recenterRequested = recenterSignal != lastRecenterSignal.value
-            val heightJustBecameKnown = pendingHeightCorrection.value && visibleHeightPx != Int.MAX_VALUE
-            val shouldFit = trackChanged || recenterRequested || heightJustBecameKnown
-            renderTrack(
-                view, track, bivouacPoints, shouldFit, visibleHeightPx,
-                onTrackTapped, onBivouacMoved, onBivouacDragPreview,
-                cursorIndex, onCursorChanged, cursorInfoWindow, cursorDragState,
-                multiTracks, highlightedTrackId, onTraceTapped, copyrightOverlay,
-            )
-            pendingHeightCorrection.value = when {
-                trackChanged || recenterRequested -> visibleHeightPx == Int.MAX_VALUE
-                heightJustBecameKnown -> false
-                else -> pendingHeightCorrection.value
-            }
-            lastFittedTrack.value = track
-            lastFittedMultiTracks.value = multiTracks
-            lastRecenterSignal.value = recenterSignal
-        },
+    Box(modifier = modifier.fillMaxSize()) {
+        AndroidView(
+            // osmdroid's MapView doesn't always re-layout its internal drawing surface promptly
+            // when Compose shrinks it (e.g. sibling text growing taller after a track loads),
+            // which left stale tile content painted outside its allocated bounds. Force clipping
+            // at the Compose layer so the map can never bleed over neighboring content.
+            modifier = Modifier.fillMaxSize().clipToBounds(),
+            factory = { mapView },
+            update = { view ->
+                if (selectedLayer != lastLayer.value) {
+                    view.setTileSource(selectedLayer.tileSource)
+                    lastLayer.value = selectedLayer
+                }
+                val trackChanged = if (multiTracks.isNotEmpty()) {
+                    multiTracks !== lastFittedMultiTracks.value
+                } else {
+                    track !== lastFittedTrack.value
+                }
+                val recenterRequested = recenterSignal != lastRecenterSignal.value
+                val heightJustBecameKnown = pendingHeightCorrection.value && visibleHeightPx != Int.MAX_VALUE
+                val shouldFit = trackChanged || recenterRequested || heightJustBecameKnown
+                renderTrack(
+                    view, track, bivouacPoints, shouldFit, visibleHeightPx,
+                    onTrackTapped, onBivouacMoved, onBivouacDragPreview,
+                    cursorIndex, onCursorChanged, cursorInfoWindow, cursorDragState,
+                    multiTracks, highlightedTrackId, onTraceTapped, copyrightOverlay,
+                )
+                pendingHeightCorrection.value = when {
+                    trackChanged || recenterRequested -> visibleHeightPx == Int.MAX_VALUE
+                    heightJustBecameKnown -> false
+                    else -> pendingHeightCorrection.value
+                }
+                lastFittedTrack.value = track
+                lastFittedMultiTracks.value = multiTracks
+                lastRecenterSignal.value = recenterSignal
+            },
+        )
+        // Esri requires a clickable link on "Esri" in its attribution (BIV-63). CopyrightOverlay/
+        // WrappingCopyrightOverlay draw on a plain Canvas with no touch target, so rather than
+        // hand-computing a tap hitbox against StaticLayout's line metrics, this Satellite-only
+        // notice is rendered as a real Compose text on top of the map instead — the canvas overlay
+        // steps aside for this one layer (see the isSatelliteLayer check in renderTrack) and this
+        // takes over its notice entirely, wrap included.
+        if (selectedLayer == MapLayer.SATELLITE) {
+            EsriAttributionLink(Modifier.align(Alignment.TopStart))
+        }
+    }
+}
+
+@Composable
+private fun EsriAttributionLink(modifier: Modifier = Modifier) {
+    val notice = MapLayer.SATELLITE.tileSource.copyrightNotice ?: return
+    val linkStart = notice.indexOf("Esri")
+    if (linkStart < 0) return
+    val linkEnd = linkStart + "Esri".length
+    val annotated = buildAnnotatedString {
+        append(notice.substring(0, linkStart))
+        withLink(
+            LinkAnnotation.Url(
+                url = "https://www.esri.com",
+                styles = TextLinkStyles(style = SpanStyle(textDecoration = TextDecoration.Underline)),
+            ),
+        ) {
+            append(notice.substring(linkStart, linkEnd))
+        }
+        append(notice.substring(linkEnd))
+    }
+    // Same white-on-dark-imagery reasoning as WrappingCopyrightOverlay's Satellite branch, and the
+    // same 8dp margin/status-bar clearance, so this reads as a drop-in replacement for that overlay
+    // rather than a visually distinct addition.
+    Text(
+        text = annotated,
+        color = Color.White,
+        fontSize = 10.sp,
+        style = LocalTextStyle.current,
+        modifier = modifier
+            .statusBarsPadding()
+            .padding(start = 8.dp, top = 8.dp, end = 8.dp),
     )
 }
 
@@ -286,7 +343,13 @@ private fun renderTrack(
     if (cursorDragState.isDragging) return
 
     mapView.overlays.clear()
-    mapView.overlays.add(copyrightOverlay)
+    // Esri's Satellite notice needs a clickable "Esri" link (BIV-63); EsriAttributionLink (a real
+    // Compose Text laid over the map) renders that layer's notice entirely instead, so the
+    // canvas-drawn overlay — which has no touch target — steps aside only for it.
+    val isSatelliteLayer = mapView.tileProvider.tileSource?.name() == MapLayer.SATELLITE.tileSource.name()
+    if (!isSatelliteLayer) {
+        mapView.overlays.add(copyrightOverlay)
+    }
     // The MapView draws edge-to-edge behind the status bar, so an uncorrected top-aligned
     // overlay would sit right under the clock/battery icons. ViewCompat mirrors the same
     // statusBarsPadding() the Compose-side layer controls already use for this (top-right, same
