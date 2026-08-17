@@ -473,6 +473,11 @@ private fun bivouacMarker(
     marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
     marker.icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_marker_bivouac)
     marker.title = "Bivouac"
+    // A short tap otherwise falls through to osmdroid's default (empty-looking, title-only) info
+    // window — the bivouac's actual details already live in the segments table, not on the map.
+    // Same treatment as the endpoint markers and the cursor marker just below.
+    marker.setInfoWindow(null)
+    marker.setOnMarkerClickListener { _, _ -> false }
     marker.isDraggable = true
 
     var lastPreviewIndex = bivouac.trackPointIndex
