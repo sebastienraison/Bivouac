@@ -2,6 +2,20 @@
 
 ## À paraître
 
+**Réglages (nouveau) :**
+
+- Écran de réglages, accessible depuis le menu de section
+- Vitesse personnalisée pour l'estimation de durée : manuelle (vitesse à plat et pénalité D+
+  éditables), automatique (calculée à partir de tout le Journal, recalculée à chaque import) ou par
+  sélection de traces (réutilise la sélection multiple du Journal)
+- Interrupteur pour désactiver les fonctionnalités non libres (fond satellite Esri, lien météo
+  Meteoblue), coupées aux deux points d'usage existants
+- Sauvegarde et restauration complètes de la base et des réglages (zip via le sélecteur système) —
+  pensées comme un filet de sécurité avant une session de test agressive, pas comme un remplacement
+  du backup cloud Android ; restaurer une sauvegarde plus récente que l'app installée est bloqué
+  avec un message clair plutôt que de planter ou d'écraser silencieusement
+- Crédits : fonds de carte, météo, bibliothèques, développement, lien vers le dépôt GitHub
+
 **Fiabilité :**
 
 - La mise à jour depuis n'importe quelle version précédemment publiée de l'app préserve
