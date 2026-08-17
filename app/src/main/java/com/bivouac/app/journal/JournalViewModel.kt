@@ -17,6 +17,7 @@ import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -179,11 +180,17 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch { _selectedTrackIds.value = settingsPreferences.selectedTrackIds.first() }
     }
 
+    // The caller (JournalScreen) navigates back to Réglages immediately after calling this —
+    // that pops this screen's NavBackStackEntry, which clears this ViewModel and cancels
+    // viewModelScope. Without NonCancellable, that race routinely won the race against the write
+    // below (calibrationSamples() parses GPX, never instant), so the confirmed selection just
+    // never made it to disk — this is why "Confirmer la sélection (N)" wasn't reliably updating
+    // Réglages' count. NonCancellable keeps this specific write alive past that cancellation.
     fun confirmCalibrationSelection() {
         val ids = _selectedTrackIds.value
         exitSelectionMode()
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
+            withContext(NonCancellable + Dispatchers.IO) {
                 val samples = repository.calibrationSamples(ids)
                 val calibration = SpeedCalibrationCalculator.compute(samples) ?: SpeedCalibration.DEFAULT
                 settingsPreferences.setSelectionCalibration(calibration, ids)

@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Log
 import com.bivouac.app.data.gpx.GpxParser
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
@@ -135,12 +136,24 @@ class LoggedTrackRepository(context: Context) {
     // Elapsed time is summed per day (not first-to-last across the whole track) so an overnight
     // gap on a multi-day hike never gets counted as "elapsed walking time" — see
     // SpeedCalibrationCalculator's kdoc for why a real elapsed duration matters here.
+    //
+    // dao.getDays() pulls a day's full rawGpxContent through a Room Cursor — for a long/verbose
+    // real hike that content can exceed CursorWindow's ~2MB per-row ceiling, which doesn't fail
+    // gracefully: it throws SQLiteBlobTooBigException and, uncaught, took down the whole app (BIV-16
+    // recette). One oversized track must not sink every other track's calibration along with it —
+    // same "silently skipped" treatment as a track with no usable timestamps, just from a different
+    // kind of unusable data.
     private suspend fun calibrationSample(entry: LoggedTrackEntity): SpeedCalibrationCalculator.Sample? {
-        val elapsedHours = dao.getDays(entry.id).sumOf { day ->
-            val points = day.rawGpxContent.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }.points
-            val first = points.firstOrNull()?.time
-            val last = points.lastOrNull()?.time
-            if (first != null && last != null) Duration.between(first, last).toMillis() / 3_600_000.0 else 0.0
+        val elapsedHours = runCatching {
+            dao.getDays(entry.id).sumOf { day ->
+                val points = day.rawGpxContent.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }.points
+                val first = points.firstOrNull()?.time
+                val last = points.lastOrNull()?.time
+                if (first != null && last != null) Duration.between(first, last).toMillis() / 3_600_000.0 else 0.0
+            }
+        }.getOrElse {
+            Log.w("LoggedTrackRepository", "Trace « ${entry.name} » illisible pour la calibration, ignorée", it)
+            return null
         }
         if (elapsedHours <= 0.0) return null
         return SpeedCalibrationCalculator.Sample(
