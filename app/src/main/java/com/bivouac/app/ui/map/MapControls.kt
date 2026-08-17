@@ -29,8 +29,13 @@ fun MapControls(
     recenterEnabled: Boolean,
     onRecenterClick: () -> Unit,
     modifier: Modifier = Modifier,
+    // BIV-16: Satellite (Esri) is one of the two features cut by "Désactiver les fonctions non
+    // libres" — removed from the picker entirely rather than shown disabled, since the ViewModels
+    // already fall the active layer back off it the moment this is true.
+    nonFreeFeaturesDisabled: Boolean = false,
 ) {
     var layerMenuExpanded by remember { mutableStateOf(false) }
+    val availableLayers = MapLayer.entries.filterNot { nonFreeFeaturesDisabled && it == MapLayer.SATELLITE }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         // The dropdown must live inside its own Box, scoped to just this button — as a direct
@@ -48,7 +53,7 @@ fun MapControls(
                 Icon(selectedLayer.icon, contentDescription = "Choisir le fond de carte (actuel : ${selectedLayer.label})")
             }
             DropdownMenu(expanded = layerMenuExpanded, onDismissRequest = { layerMenuExpanded = false }) {
-                MapLayer.entries.forEach { layer ->
+                availableLayers.forEach { layer ->
                     DropdownMenuItem(
                         text = { Text(layer.label) },
                         leadingIcon = {

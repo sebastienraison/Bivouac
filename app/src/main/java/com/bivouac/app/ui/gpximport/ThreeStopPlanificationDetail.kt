@@ -127,6 +127,7 @@ internal fun ThreeStopPlanificationDetail(
     onRemovePoint: (String) -> Unit,
     onExportSegment: (index: Int, segment: Segment) -> Unit,
     onWeatherClick: (TrackPoint) -> Unit,
+    nonFreeFeaturesDisabled: Boolean = false,
     onSheetTopMeasured: (Int) -> Unit,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -373,6 +374,7 @@ internal fun ThreeStopPlanificationDetail(
                             onRemovePoint = onRemovePoint,
                             onExportSegment = onExportSegment,
                             onWeatherClick = onWeatherClick,
+                            nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
                         )
                     }
                 }
@@ -447,6 +449,7 @@ private fun SegmentsList(
     onRemovePoint: (String) -> Unit,
     onExportSegment: (index: Int, segment: Segment) -> Unit,
     onWeatherClick: (TrackPoint) -> Unit,
+    nonFreeFeaturesDisabled: Boolean,
 ) {
     Column(modifier = Modifier.padding(top = 12.dp)) {
         segments.forEachIndexed { index, segment ->
@@ -477,6 +480,7 @@ private fun SegmentsList(
                     trackPoint = trackPoint,
                     onWeatherClick = { onWeatherClick(trackPoint) },
                     onRemove = { onRemovePoint(bivouac.id) },
+                    showWeather = !nonFreeFeaturesDisabled,
                 )
             }
         }
@@ -485,7 +489,7 @@ private fun SegmentsList(
 }
 
 @Composable
-private fun BivouacRow(trackPoint: TrackPoint, onWeatherClick: () -> Unit, onRemove: () -> Unit) {
+private fun BivouacRow(trackPoint: TrackPoint, onWeatherClick: () -> Unit, onRemove: () -> Unit, showWeather: Boolean = true) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -505,7 +509,7 @@ private fun BivouacRow(trackPoint: TrackPoint, onWeatherClick: () -> Unit, onRem
             )
         }
         Spacer(modifier = Modifier.weight(1f))
-        ComposedWeatherIconButton(onClick = onWeatherClick)
+        if (showWeather) ComposedWeatherIconButton(onClick = onWeatherClick)
         IconButton(onClick = onRemove, modifier = Modifier.padding(start = 6.dp)) {
             Icon(
                 Icons.Default.Delete,
