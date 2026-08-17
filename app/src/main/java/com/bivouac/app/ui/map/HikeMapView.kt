@@ -313,6 +313,12 @@ private fun renderTrack(
     val points = track.points
     val geoPoints = points.map { GeoPoint(it.latitude, it.longitude) }
 
+    // Without a listener, Polyline falls back to osmdroid's default onClick behavior — opening an
+    // empty default info window — on any tap that lands on the line but misses trackTapOverlay's
+    // (tighter, nearest-vertex) tolerance. trackTapOverlay is added after these and so gets first
+    // refusal on every tap; this only ever fires as its fallback, and consuming it here (instead
+    // of leaving it unhandled) is strictly better than popping an empty bubble.
+    val suppressDefaultInfoWindow = Polyline.OnClickListener { _, _, _ -> true }
     val outline = Polyline(mapView).apply {
         setPoints(geoPoints)
         paint.apply {
@@ -323,6 +329,7 @@ private fun renderTrack(
             strokeJoin = Paint.Join.ROUND
             pathEffect = null
         }
+        setOnClickListener(suppressDefaultInfoWindow)
     }
     val colorTrack = Polyline(mapView).apply {
         setPoints(geoPoints)
@@ -334,6 +341,7 @@ private fun renderTrack(
             strokeJoin = Paint.Join.ROUND
             pathEffect = null
         }
+        setOnClickListener(suppressDefaultInfoWindow)
     }
 
     mapView.overlays.add(outline)
