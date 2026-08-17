@@ -6,6 +6,7 @@ import android.net.Uri
 import com.bivouac.app.data.db.BivouacDatabase
 import com.bivouac.app.data.prefs.MAP_LAYER_DATASTORE_NAME
 import com.bivouac.app.data.prefs.SETTINGS_DATASTORE_NAME
+import com.bivouac.app.data.prefs.SettingsPreferences
 import java.io.File
 import java.io.IOException
 import java.util.zip.ZipEntry
@@ -41,6 +42,12 @@ object BackupManager {
 
     suspend fun backup(context: Context, destination: Uri): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
+            // Stamped into the settings file *before* it gets zipped, not after backup() returns —
+            // that way the backup is self-describing: restoring it later naturally shows the date
+            // it was taken as "Dernière sauvegarde", instead of whatever (or nothing) was live at
+            // restore time.
+            SettingsPreferences(context).setLastBackupAtMillis(System.currentTimeMillis())
+
             // Closing Room forces a WAL checkpoint and flushes any pending writes into bivouac.db
             // itself, so the plain file copy below is consistent even without a filesystem-level
             // transaction wrapping it.

@@ -102,11 +102,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun backup(uri: Uri) {
         viewModelScope.launch {
             _backupInProgress.value = true
+            // BackupManager stamps lastBackupAtMillis itself, before zipping — lastBackupAtMillis
+            // above picks it up reactively once the write lands, no need to set it again here.
             val result = BackupManager.backup(getApplication(), uri)
             _backupInProgress.value = false
-            result.onSuccess {
-                settingsPreferences.setLastBackupAtMillis(System.currentTimeMillis())
-            }.onFailure {
+            result.onFailure {
                 _backupError.value = it.message ?: "Échec de la sauvegarde."
             }
         }

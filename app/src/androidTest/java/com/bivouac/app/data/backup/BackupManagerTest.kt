@@ -71,21 +71,24 @@ class BackupManagerTest {
         settingsPrefs.setSpeedCalibrationMode(SpeedCalibrationMode.MANUAL)
         settingsPrefs.setManualCalibration(5.0, 120.0)
 
+        val backupResult = BackupManager.backup(context, Uri.fromFile(backupFile))
+        assertTrue(backupResult.isSuccess)
+        assertTrue(backupFile.length() > 0)
+
         // DataStore's delegate is a process-wide singleton per file — once opened (as it just was
         // above), it never re-reads from disk on its own, restore or no restore; only a fresh
         // process picks up a swapped file (see AppRestart's kdoc, and why the real UI flow forces
         // a restart after a successful restore). So preference correctness here is checked at the
         // file level — the layer this in-process test *can* actually observe — snapshotting the
-        // exact bytes DataStore itself just wrote, ahead of backup.
+        // exact bytes DataStore holds right after backup() (which itself stamps lastBackupAtMillis
+        // before zipping, so this snapshot already includes it — the whole point being verified).
         val datastoreDir = File(context.filesDir, "datastore")
         val mapPrefsFile = File(datastoreDir, "map_layer_prefs.preferences_pb")
         val settingsPrefsFile = File(datastoreDir, "bivouac_settings.preferences_pb")
         val mapPrefsBytesAtBackup = mapPrefsFile.readBytes()
         val settingsPrefsBytesAtBackup = settingsPrefsFile.readBytes()
-
-        val backupResult = BackupManager.backup(context, Uri.fromFile(backupFile))
-        assertTrue(backupResult.isSuccess)
-        assertTrue(backupFile.length() > 0)
+        val lastBackupAtBackupTime = settingsPrefs.lastBackupAtMillis.first()
+        assertTrue(lastBackupAtBackupTime != null)
 
         // Wipe everything, as if a fresh install (or an aggressive test session) had just erased
         // the app's data — the whole scenario this feature exists for.
