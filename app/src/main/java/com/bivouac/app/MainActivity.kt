@@ -324,7 +324,11 @@ fun GpxImportScreen(
             }
             ThreeStopPlanificationDetail(
                 track = loaded.track,
-                stats = loaded.stats,
+                // loaded.stats is a snapshot from whenever the trace was opened/imported — distance
+                // and elevation don't change, but the duration needs to track the *current*
+                // calibration for a trace that's still open while it's changed in Réglages (BIV-16
+                // recette: this was already handled for segments below, missed here).
+                stats = TrackStatsCalculator.recomputeDuration(loaded.stats, activeCalibration),
                 bivouacPoints = bivouacPoints,
                 elevationMarkerPoints = effectiveBivouacPoints,
                 segments = segments,

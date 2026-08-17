@@ -329,7 +329,15 @@ private fun SpeedCalibrationSection(
         }
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp).padding(top = 6.dp, bottom = 12.dp)) {
             when (mode) {
-                SpeedCalibrationMode.MANUAL -> ManualCalibrationFields(manual, onManualSpeedChanged, onManualPenaltyChanged)
+                SpeedCalibrationMode.MANUAL -> {
+                    Text(
+                        "Saisie directement, jamais recalculée automatiquement.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.size(8.dp))
+                    ManualCalibrationFields(manual, onManualSpeedChanged, onManualPenaltyChanged)
+                }
                 SpeedCalibrationMode.AUTO -> {
                     Text(
                         "Calculée à partir de toutes les randonnées du Journal, recalculée à chaque nouvel import.",
@@ -391,7 +399,11 @@ private fun ManualCalibrationFields(manual: SpeedCalibration, onSpeedChanged: (D
         )
         NumberField(
             label = "Pénalité D+",
-            unit = "m/km",
+            unit = "m",
+            // "+1 km / " prefix mirrors how Auto/Sélection show this same value read-only
+            // (CalibrationStatGrid: "+1 km / 100 m") — a bare "100 m/km" needed translating in
+            // your head to line up with that phrasing every time you switched modes.
+            prefix = "+1 km / ",
             value = manual.elevationGainPenaltyMetersPerKm,
             onValueCommitted = onPenaltyChanged,
             modifier = Modifier.weight(1f),
@@ -403,7 +415,14 @@ private fun ManualCalibrationFields(manual: SpeedCalibration, onSpeedChanged: (D
 // wide enough to wrap onto two lines in a half-width field, and the other two modes already show
 // the unit next to the value (CalibrationStatGrid) rather than folded into a label.
 @Composable
-private fun NumberField(label: String, unit: String, value: Double, onValueCommitted: (Double) -> Unit, modifier: Modifier = Modifier) {
+private fun NumberField(
+    label: String,
+    unit: String,
+    value: Double,
+    onValueCommitted: (Double) -> Unit,
+    modifier: Modifier = Modifier,
+    prefix: String? = null,
+) {
     var draft by remember(value) { mutableStateOf(formatNumber(value)) }
     OutlinedTextField(
         value = draft,
@@ -412,6 +431,7 @@ private fun NumberField(label: String, unit: String, value: Double, onValueCommi
             text.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0.0 }?.let(onValueCommitted)
         },
         label = { Text(label) },
+        prefix = prefix?.let { { Text(it) } },
         suffix = { Text(unit) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
