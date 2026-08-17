@@ -90,6 +90,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private val PEEK_HEIGHT_EMPTY = 150.dp
+private const val JOURNAL_CALIBRATION_ROUTE = "journal_calibration"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -137,14 +138,23 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUri: Uri? = nul
             )
         }
         composable(AppSection.REGLAGES.route) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                SettingsScreen(modifier = Modifier.fillMaxSize())
-                SectionMenuButton(
-                    current = AppSection.REGLAGES,
-                    onSelect = ::onSectionSelected,
-                    modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(16.dp),
-                )
-            }
+            SettingsScreen(
+                modifier = Modifier.fillMaxSize(),
+                currentSection = AppSection.REGLAGES,
+                onSectionSelected = ::onSectionSelected,
+                onOpenJournalSelection = { navController.navigate(JOURNAL_CALIBRATION_ROUTE) },
+            )
+        }
+        // Not an AppSection: only reachable from Réglages' "Choisir les traces" (BIV-16), never
+        // from the section menu — reuses JournalScreen wholesale rather than a second screen.
+        composable(JOURNAL_CALIBRATION_ROUTE) {
+            JournalScreen(
+                modifier = Modifier.fillMaxSize(),
+                currentSection = AppSection.JOURNAL,
+                onSectionSelected = ::onSectionSelected,
+                calibrationSelectionMode = true,
+                onCalibrationSelectionDone = { navController.popBackStack() },
+            )
         }
     }
 }
@@ -187,6 +197,7 @@ fun GpxImportScreen(
     val deleteTarget by viewModel.deleteTarget.collectAsStateWithLifecycle()
 
     val selectedLayer by viewModel.selectedLayer.collectAsStateWithLifecycle()
+    val nonFreeFeaturesDisabled by viewModel.nonFreeFeaturesDisabled.collectAsStateWithLifecycle()
     var recenterSignal by remember { mutableIntStateOf(0) }
 
     // Recentering should fit the track into whatever the sheet doesn't currently cover, not the
@@ -267,6 +278,7 @@ fun GpxImportScreen(
                         onLayerSelected = viewModel::setSelectedLayer,
                         recenterEnabled = false,
                         onRecenterClick = { recenterSignal++ },
+                        nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
                     )
                 }
             }
@@ -301,6 +313,7 @@ fun GpxImportScreen(
                     onLayerSelected = viewModel::setSelectedLayer,
                     recenterEnabled = true,
                     onRecenterClick = { recenterSignal++ },
+                    nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
                 )
             }
             ThreeStopPlanificationDetail(
@@ -326,6 +339,7 @@ fun GpxImportScreen(
                     val url = MeteoblueLink.forCoordinates(point.latitude, point.longitude)
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                 },
+                nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
                 onSheetTopMeasured = { sheetTopPx = it.toFloat() },
             )
         }
