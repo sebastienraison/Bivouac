@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LoggedTrackDayEntity::class,
         LoggedTrackTagEntity::class,
     ],
-    version = 6,
+    version = BivouacDatabase.SCHEMA_VERSION,
     exportSchema = true,
 )
 abstract class BivouacDatabase : RoomDatabase() {
@@ -25,6 +25,12 @@ abstract class BivouacDatabase : RoomDatabase() {
     abstract fun loggedTrackDao(): LoggedTrackDao
 
     companion object {
+        // Single source of truth for both the @Database version above and the BIV-66
+        // restore-time check ("this backup is newer than the app can open") — a real filename,
+        // not a comment reference, so the two can never silently drift apart.
+        const val SCHEMA_VERSION = 6
+        const val DATABASE_NAME = "bivouac.db"
+
         @Volatile private var instance: BivouacDatabase? = null
 
         // v1.2.0 (schema v1) is tagged and pinned in the F-Droid MR — real installs may still be
@@ -94,11 +100,22 @@ abstract class BivouacDatabase : RoomDatabase() {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     BivouacDatabase::class.java,
-                    "bivouac.db",
+                    DATABASE_NAME,
                 )
                     .addMigrations(MIGRATION_1_2, MIGRATION_2_5, MIGRATION_5_6)
                     .build()
                     .also { instance = it }
             }
+
+        // BIV-66: backup/restore needs the on-disk file quiescent (no open connection) while it's
+        // copied or replaced — closes the current instance and drops the singleton so the next
+        // getInstance() transparently reopens it (running the migration chain above against
+        // whatever schema version a just-restored file has, same as a normal app update would).
+        fun closeAndReset() {
+            synchronized(this) {
+                instance?.close()
+                instance = null
+            }
+        }
     }
 }

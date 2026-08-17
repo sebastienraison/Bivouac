@@ -8,7 +8,9 @@ import com.bivouac.app.ui.map.MapLayer
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.mapLayerDataStore by preferencesDataStore(name = "map_layer_prefs")
+// Exposed so BackupManager (BIV-66) can name this file explicitly instead of guessing.
+internal const val MAP_LAYER_DATASTORE_NAME = "map_layer_prefs"
+private val Context.mapLayerDataStore by preferencesDataStore(name = MAP_LAYER_DATASTORE_NAME)
 
 // Randonnée (OpenTopoMap) stays the fallback default when nothing is stored yet — matches the
 // V1.1 choice of the more useful default for hiking, before this preference existed.
