@@ -63,6 +63,19 @@ object TrackStatsCalculator {
     }
 
     /**
+     * Re-derives just the duration of an already-computed [TrackStats] under a different
+     * [calibration] — distance/elevation are physical facts of the track and don't change, but
+     * [TrackStats.estimatedDurationMinutes] does whenever the active calibration does. Used to
+     * keep list rows (banked traces, Journal) showing a duration consistent with the current
+     * Réglages calibration without re-parsing every trace's GPX just to redraw a list.
+     */
+    fun recomputeDuration(stats: TrackStats, calibration: SpeedCalibration): TrackStats {
+        val equivalentDistanceKm = stats.distanceMeters / 1000.0 + stats.elevationGainMeters / calibration.elevationGainPenaltyMetersPerKm
+        val durationMinutes = (equivalentDistanceKm / calibration.walkingSpeedKmh * 60).roundToInt()
+        return stats.copy(estimatedDurationMinutes = durationMinutes)
+    }
+
+    /**
      * Smoothed elevation for each point, index-aligned with [points] (for charting, where a
      * marker needs to land on the exact index a [com.bivouac.app.data.model.BivouacPoint]
      * refers to). Returns null if any point lacks elevation, rather than silently compacting the

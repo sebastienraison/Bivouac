@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -102,13 +105,16 @@ fun SettingsScreen(
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
         uri?.let { viewModel.backup(it) }
     }
+    // Picking a file only stages it — restoring overwrites the current database, so it still
+    // needs an explicit confirmation below before viewModel.restore() actually runs.
+    var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
     // "*/*" rather than a strict zip mimeType: several file pickers/providers don't tag a .zip
     // correctly, same reasoning already applied to the GPX pickers elsewhere in the app.
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        uri?.let { viewModel.restore(it) }
+        pendingRestoreUri = uri
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -141,7 +147,7 @@ fun SettingsScreen(
                 onRestoreClick = { restoreLauncher.launch(arrayOf("*/*")) },
             )
             CreditsSection(
-                onGitHubClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BIVOUAC_GITHUB_URL))) },
+                onOpenUrl = { url -> context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
             )
         }
 
@@ -158,6 +164,23 @@ fun SettingsScreen(
             title = { Text("Sauvegarde impossible") },
             text = { Text(message) },
             confirmButton = { TextButton(onClick = viewModel::dismissBackupError) { Text("OK") } },
+        )
+    }
+
+    pendingRestoreUri?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { pendingRestoreUri = null },
+            title = { Text("Restaurer cette sauvegarde ?") },
+            text = { Text("Les randonnées et réglages actuels seront remplacés par le contenu de cette sauvegarde. Cette action est irréversible.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.restore(uri)
+                    pendingRestoreUri = null
+                }) { Text("Restaurer", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRestoreUri = null }) { Text("Annuler") }
+            },
         )
     }
 
@@ -268,7 +291,7 @@ private fun SpeedCalibrationSection(
         SettingsRow(
             icon = Icons.Default.Speed,
             title = "Mode de calcul",
-            subtitle = "Utilisée pour estimer la durée des randonnées",
+            subtitle = "Utilisé pour estimer la durée des randonnées",
         )
         SingleChoiceSegmentedButtonRow(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 10.dp),
@@ -331,13 +354,15 @@ private fun SpeedCalibrationMode.label(): String = when (this) {
 private fun ManualCalibrationFields(manual: SpeedCalibration, onSpeedChanged: (Double) -> Unit, onPenaltyChanged: (Double) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         NumberField(
-            label = "Vitesse à plat (km/h)",
+            label = "Vitesse à plat",
+            unit = "km/h",
             value = manual.walkingSpeedKmh,
             onValueCommitted = onSpeedChanged,
             modifier = Modifier.weight(1f),
         )
         NumberField(
-            label = "Pénalité D+ (m/km)",
+            label = "Pénalité D+",
+            unit = "m/km",
             value = manual.elevationGainPenaltyMetersPerKm,
             onValueCommitted = onPenaltyChanged,
             modifier = Modifier.weight(1f),
@@ -345,8 +370,11 @@ private fun ManualCalibrationFields(manual: SpeedCalibration, onSpeedChanged: (D
     }
 }
 
+// The unit sits in a trailing suffix rather than inside the label — "Vitesse à plat (km/h)" was
+// wide enough to wrap onto two lines in a half-width field, and the other two modes already show
+// the unit next to the value (CalibrationStatGrid) rather than folded into a label.
 @Composable
-private fun NumberField(label: String, value: Double, onValueCommitted: (Double) -> Unit, modifier: Modifier = Modifier) {
+private fun NumberField(label: String, unit: String, value: Double, onValueCommitted: (Double) -> Unit, modifier: Modifier = Modifier) {
     var draft by remember(value) { mutableStateOf(formatNumber(value)) }
     OutlinedTextField(
         value = draft,
@@ -355,14 +383,17 @@ private fun NumberField(label: String, value: Double, onValueCommitted: (Double)
             text.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0.0 }?.let(onValueCommitted)
         },
         label = { Text(label) },
+        suffix = { Text(unit) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = modifier,
     )
 }
 
+// French convention (comma) to match every other number shown on this screen — accepting a typed
+// "." in onValueChange above is purely an input convenience, not what gets displayed back.
 private fun formatNumber(value: Double): String =
-    if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
+    if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString().replace('.', ',')
 
 @Composable
 private fun CalibrationStatGrid(calibration: SpeedCalibration) {
@@ -424,22 +455,36 @@ private fun DataSection(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Button(onClick = onBackupClick, enabled = !backupInProgress, modifier = Modifier.weight(1f)) {
+            // Default Button/OutlinedButton content padding (24dp horizontal) left "Sauvegarder"
+            // wrapping onto two lines once squeezed into a half-width slot alongside its icon —
+            // trimmed padding and a smaller icon/gap buy back just enough width.
+            val buttonContentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
+            Button(
+                onClick = onBackupClick,
+                enabled = !backupInProgress,
+                contentPadding = buttonContentPadding,
+                modifier = Modifier.weight(1f),
+            ) {
                 if (backupInProgress) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 } else {
-                    Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Sauvegarder")
+                    Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Sauvegarder", maxLines = 1)
                 }
             }
-            OutlinedButton(onClick = onRestoreClick, enabled = !restoreInProgress, modifier = Modifier.weight(1f)) {
+            OutlinedButton(
+                onClick = onRestoreClick,
+                enabled = !restoreInProgress,
+                contentPadding = buttonContentPadding,
+                modifier = Modifier.weight(1f),
+            ) {
                 if (restoreInProgress) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 } else {
-                    Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Restaurer")
+                    Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Restaurer", maxLines = 1)
                 }
             }
         }
@@ -451,17 +496,37 @@ private fun formatBackupTimestamp(epochMillis: Long): String =
         .withZone(ZoneId.systemDefault())
         .format(Instant.ofEpochMilli(epochMillis))
 
+private data class CreditLink(val label: String, val url: String)
+
+// stax-api rides alongside aalto-xml (see the comment on the aalto-xml/stax-api dependencies in
+// app/build.gradle.kts) to make GPX parsing work at all on Android — a real bundled third-party
+// library, not just an internal implementation detail, so it earns its own credit here too.
+private val MAP_LAYER_CREDITS = listOf(
+    CreditLink("Esri", "https://www.esri.com"),
+    CreditLink("OpenStreetMap", "https://www.openstreetmap.org"),
+    CreditLink("OpenTopoMap", "https://opentopomap.org"),
+)
+private val WEATHER_CREDITS = listOf(CreditLink("Meteoblue", "https://www.meteoblue.com"))
+private val LIBRARY_CREDITS = listOf(
+    CreditLink("osmdroid", "https://github.com/osmdroid/osmdroid"),
+    CreditLink("JPX", "https://github.com/jenetics/jpx"),
+    CreditLink("aalto-xml", "https://github.com/FasterXML/aalto-xml"),
+    CreditLink("stax-api", "https://mvnrepository.com/artifact/javax.xml.stream/stax-api"),
+)
+private val LICENSE_CREDITS = listOf(CreditLink("GPLv3", "https://www.gnu.org/licenses/gpl-3.0.html"))
+
 @Composable
-private fun CreditsSection(onGitHubClick: () -> Unit) {
+private fun CreditsSection(onOpenUrl: (String) -> Unit) {
     SettingsSection(label = "Crédits") {
-        CreditRow("Fonds de carte", "Esri · OpenStreetMap · OpenTopoMap")
-        CreditRow("Météo", "Meteoblue")
-        CreditRow("Bibliothèques", "osmdroid · JPX · aalto-xml")
-        CreditRow("Développement", "Sébastien Raison, avec Claude (Anthropic)")
+        CreditRow("Fonds de carte", MAP_LAYER_CREDITS, onOpenUrl)
+        CreditRow("Météo", WEATHER_CREDITS, onOpenUrl)
+        CreditRow("Bibliothèques", LIBRARY_CREDITS, onOpenUrl)
+        StaticCreditRow("Développement", "Sébastien Raison, avec Claude (Anthropic)")
+        CreditRow("Licence", LICENSE_CREDITS, onOpenUrl)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onGitHubClick)
+                .clickable { onOpenUrl(BIVOUAC_GITHUB_URL) }
                 .padding(horizontal = 12.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
@@ -477,8 +542,40 @@ private fun CreditsSection(onGitHubClick: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CreditRow(label: String, value: String) {
+private fun CreditRow(label: String, links: List<CreditLink>, onOpenUrl: (String) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        FlowRow(
+            modifier = Modifier.weight(1f, fill = false),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            links.forEachIndexed { index, link ->
+                if (index > 0) {
+                    Text(" · ", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                }
+                Text(
+                    link.label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { onOpenUrl(link.url) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StaticCreditRow(label: String, value: String) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,

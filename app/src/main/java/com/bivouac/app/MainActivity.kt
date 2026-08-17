@@ -69,6 +69,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.bivouac.app.data.db.BankedTrackEntity
 import com.bivouac.app.data.gpx.GpxExporter
+import com.bivouac.app.data.gpx.SpeedCalibration
+import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.weather.MeteoblueLink
 import com.bivouac.app.gpximport.DeleteTarget
 import com.bivouac.app.gpximport.GpxImportUiState
@@ -200,6 +202,7 @@ fun GpxImportScreen(
 
     val selectedLayer by viewModel.selectedLayer.collectAsStateWithLifecycle()
     val nonFreeFeaturesDisabled by viewModel.nonFreeFeaturesDisabled.collectAsStateWithLifecycle()
+    val activeCalibration by viewModel.activeCalibration.collectAsStateWithLifecycle()
     var recenterSignal by remember { mutableIntStateOf(0) }
 
     // Recentering should fit the track into whatever the sheet doesn't currently cover, not the
@@ -243,6 +246,7 @@ fun GpxImportScreen(
                 TrackSheetContent(
                     uiState = uiState,
                     bankedTraces = bankedTraces,
+                    activeCalibration = activeCalibration,
                     onOpenClick = { pickGpxLauncher.launch(arrayOf("*/*")) },
                     onOpenBankedClick = viewModel::openFromBank,
                     onRenameBankedClick = viewModel::requestRenameFromList,
@@ -412,6 +416,7 @@ fun GpxImportScreen(
 private fun TrackSheetContent(
     uiState: GpxImportUiState,
     bankedTraces: List<BankedTrackEntity>,
+    activeCalibration: SpeedCalibration,
     onOpenClick: () -> Unit,
     onOpenBankedClick: (String) -> Unit,
     onRenameBankedClick: (id: String, name: String) -> Unit,
@@ -439,6 +444,7 @@ private fun TrackSheetContent(
                     HorizontalDivider()
                     BankedTrackRow(
                         entry = entry,
+                        activeCalibration = activeCalibration,
                         onClick = { onOpenBankedClick(entry.id) },
                         onRename = { onRenameBankedClick(entry.id, entry.name) },
                         onDelete = { onDeleteBankedClick(entry.id, entry.name) },
@@ -463,7 +469,13 @@ private fun TrackSheetContent(
 }
 
 @Composable
-private fun BankedTrackRow(entry: BankedTrackEntity, onClick: () -> Unit, onRename: () -> Unit, onDelete: () -> Unit) {
+private fun BankedTrackRow(
+    entry: BankedTrackEntity,
+    activeCalibration: SpeedCalibration,
+    onClick: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+) {
     var menuExpanded by remember { mutableStateOf(false) }
     val bivouacCount = entry.bivouacTrackPointIndices.split(",").count { it.isNotBlank() }
     Column(
@@ -516,7 +528,7 @@ private fun BankedTrackRow(entry: BankedTrackEntity, onClick: () -> Unit, onRena
                 }
             }
         }
-        StatsRows(entry.toTrackStats())
+        StatsRows(TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration))
     }
 }
 

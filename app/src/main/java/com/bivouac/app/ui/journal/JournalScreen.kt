@@ -99,7 +99,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.SystemTag
+import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.TrackStats
+import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.journal.JournalUiState
 import com.bivouac.app.journal.JournalViewModel
@@ -167,6 +169,7 @@ fun JournalScreen(
     val selectedLayer by viewModel.selectedLayer.collectAsStateWithLifecycle()
     val importError by viewModel.importError.collectAsStateWithLifecycle()
     val nonFreeFeaturesDisabled by viewModel.nonFreeFeaturesDisabled.collectAsStateWithLifecycle()
+    val activeCalibration by viewModel.activeCalibration.collectAsStateWithLifecycle()
     val probableDuplicate by viewModel.probableDuplicate.collectAsStateWithLifecycle()
     val deleteTarget by viewModel.deleteTarget.collectAsStateWithLifecycle()
     val selectionModeActive by viewModel.selectionModeActive.collectAsStateWithLifecycle()
@@ -215,6 +218,7 @@ fun JournalScreen(
                 } else {
                     JournalListContent(
                         tracks = filteredTracks,
+                        activeCalibration = activeCalibration,
                         tagsByTrackId = tagsByTrackId,
                         selectedFilterTags = selectedFilterTags,
                         onToggleFilterTag = viewModel::toggleFilterTag,
@@ -277,6 +281,7 @@ fun JournalScreen(
             ThreeStopJournalDetail(
                 entry = detail.entry,
                 track = detail.track,
+                activeCalibration = activeCalibration,
                 onCloseClick = viewModel::closeTrack,
                 onDeleteClick = viewModel::requestDelete,
                 onSheetTopMeasured = { sheetTopPx = it },
@@ -420,6 +425,7 @@ private fun JournalMap(
 @Composable
 private fun JournalListContent(
     tracks: List<LoggedTrackEntity>,
+    activeCalibration: SpeedCalibration,
     tagsByTrackId: Map<String, List<String>>,
     selectedFilterTags: Set<String>,
     onToggleFilterTag: (String) -> Unit,
@@ -436,7 +442,7 @@ private fun JournalListContent(
     onConfirmCalibrationSelection: () -> Unit = {},
     onSheetTopMeasured: (Int) -> Unit,
 ) {
-    val groups = remember(tracks) { groupByYear(tracks) }
+    val groups = remember(tracks, activeCalibration) { groupByYear(tracks, activeCalibration) }
     // null (not an empty set) means "no manual choice yet" — only then does the most recent year
     // default to expanded. Keying remember on `groups` would look tempting but resets this to the
     // default on every recomposition where the list content changes (e.g. a new import), silently
@@ -542,6 +548,7 @@ private fun JournalListContent(
                     HorizontalDivider()
                     JournalTrackRow(
                         entry = entry,
+                        activeCalibration = activeCalibration,
                         selectionModeActive = selectionModeActive,
                         selected = entry.id in selectedTrackIds,
                         onClick = { onTrackClick(entry) },
@@ -563,22 +570,28 @@ private data class YearGroup(
     val totalStats: TrackStats,
 )
 
-private fun groupByYear(tracks: List<LoggedTrackEntity>): List<YearGroup> {
+// Duration is recomputed from the aggregate distance/gain under the *current* calibration rather
+// than summed from each entry's own stored estimate — those were frozen at whatever calibration
+// was active when each hike was imported, so summing them would mix calibrations together instead
+// of reflecting the one currently active (BIV-16 feedback: the Planification list had the same
+// staleness, fixed the same way — see TrackStatsCalculator.recomputeDuration).
+private fun groupByYear(tracks: List<LoggedTrackEntity>, activeCalibration: SpeedCalibration): List<YearGroup> {
     val zone = ZoneId.systemDefault()
     return tracks
         .groupBy { Instant.ofEpochMilli(it.startedAt).atZone(zone).year }
         .toSortedMap(compareByDescending { it })
         .map { (year, entries) ->
+            val aggregateStats = TrackStats(
+                distanceMeters = entries.sumOf { it.distanceMeters },
+                elevationGainMeters = entries.sumOf { it.elevationGainMeters },
+                elevationLossMeters = entries.sumOf { it.elevationLossMeters },
+                pointCount = 0,
+                estimatedDurationMinutes = 0,
+            )
             YearGroup(
                 year = year,
                 entries = entries,
-                totalStats = TrackStats(
-                    distanceMeters = entries.sumOf { it.distanceMeters },
-                    elevationGainMeters = entries.sumOf { it.elevationGainMeters },
-                    elevationLossMeters = entries.sumOf { it.elevationLossMeters },
-                    pointCount = 0,
-                    estimatedDurationMinutes = entries.sumOf { it.estimatedDurationMinutes },
-                ),
+                totalStats = TrackStatsCalculator.recomputeDuration(aggregateStats, activeCalibration),
             )
         }
 }
@@ -634,6 +647,7 @@ private fun YearHeader(
 @Composable
 private fun JournalTrackRow(
     entry: LoggedTrackEntity,
+    activeCalibration: SpeedCalibration,
     selectionModeActive: Boolean,
     selected: Boolean,
     onClick: () -> Unit,
@@ -661,7 +675,7 @@ private fun JournalTrackRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 4.dp),
             )
-            StatsRows(entry.toTrackStats())
+            StatsRows(TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration))
         }
     }
 }
@@ -762,6 +776,7 @@ private fun JournalMultiTrackContent(
 internal fun ThreeStopJournalDetail(
     entry: LoggedTrackEntity,
     track: HikeTrack,
+    activeCalibration: SpeedCalibration = SpeedCalibration.DEFAULT,
     onCloseClick: () -> Unit,
     onRenameClick: () -> Unit,
     onDeleteClick: () -> Unit,
@@ -988,7 +1003,7 @@ internal fun ThreeStopJournalDetail(
                             Icon(Icons.Default.Close, contentDescription = "Fermer")
                         }
                     }
-                    StatsRows(entry.toTrackStats())
+                    StatsRows(TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly,
