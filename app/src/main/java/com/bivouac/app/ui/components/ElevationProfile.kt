@@ -175,6 +175,12 @@ fun ElevationProfile(
         val leftPad = LEFT_LABEL_WIDTH.toPx()
         val plotWidth = size.width - leftPad
         val plotHeight = size.height - BOTTOM_AXIS_HEIGHT.toPx()
+        // A transient layout pass — an ancestor's height still catching up to newly measured
+        // content, for instance — can hand this Canvas less space than its own .height(...)
+        // modifier above asks for. Skip that one frame rather than feed a zero/negative extent
+        // into the coerceIn calls below (crashes: "maximum X is less than minimum 0"); it
+        // self-corrects on the next layout pass once the ancestor catches up.
+        if (plotWidth <= 0f || plotHeight <= 0f) return@Canvas
 
         fun xFor(distanceMeters: Double) = leftPad + (plotWidth * distanceMeters / totalDistance).toFloat()
         fun yFor(elevation: Double) = (plotHeight - (elevation - minElevation) / range * plotHeight).toFloat()
