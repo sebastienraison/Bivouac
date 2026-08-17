@@ -142,7 +142,9 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUri: Uri? = nul
                 modifier = Modifier.fillMaxSize(),
                 currentSection = AppSection.REGLAGES,
                 onSectionSelected = ::onSectionSelected,
-                onOpenJournalSelection = { navController.navigate(JOURNAL_CALIBRATION_ROUTE) },
+                onOpenJournalSelection = {
+                    navController.navigate(JOURNAL_CALIBRATION_ROUTE) { launchSingleTop = true }
+                },
             )
         }
         // Not an AppSection: only reachable from Réglages' "Choisir les traces" (BIV-16), never
