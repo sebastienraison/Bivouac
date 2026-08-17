@@ -89,6 +89,13 @@ import com.bivouac.app.ui.journal.settleJournalDetailStop
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
+// ElevationProfile's own Canvas is a fixed 72dp + its 14dp bottom axis regardless of content
+// (see BOTTOM_AXIS_HEIGHT in ElevationProfile.kt), plus the 10dp/2dp top/bottom padding this
+// composable wraps it in below (98dp), plus a small margin against label-descender/antialiasing
+// overhang right at the block's own bottom edge — see the comment on profileHeightPx below for
+// why this is a constant rather than an onGloballyPositioned measurement.
+private val PROFILE_BLOCK_HEIGHT_DP = 106.dp
+
 /**
  * Planification's take on Journal's three-stop drawer (BIV-54): same drag-to-resize mechanic and
  * stop set (Synthèse/Profil/Détails), reused via [JournalDetailStop] and [settleJournalDetailStop]
@@ -128,7 +135,6 @@ internal fun ThreeStopPlanificationDetail(
 
         val fullHeightPx = with(density) { maxHeight.toPx() }
         var measuredSummaryHeightPx by remember { mutableIntStateOf(0) }
-        var measuredProfileAdditionPx by remember { mutableIntStateOf(0) }
         var measuredSegmentsAdditionPx by remember { mutableIntStateOf(0) }
         val fallbackSummaryHeightPx = with(density) { 150.dp.toPx() }
         val navigationBarHeightPx = WindowInsets.navigationBars.getBottom(density).toFloat()
@@ -142,11 +148,20 @@ internal fun ThreeStopPlanificationDetail(
         } else {
             fallbackSummaryHeightPx + navigationBarHeightPx
         }).coerceAtMost(fullHeightPx)
-        val profileHeightPx = (summaryHeightPx + measuredProfileAdditionPx)
+        // PROFILE_BLOCK_HEIGHT_DP, not a live onGloballyPositioned measurement: ElevationProfile's
+        // Canvas is a fixed dp height regardless of content, so measuring it dynamically only added
+        // a multi-frame convergence lag (summary → profile → detail, each depending on the previous
+        // frame's measurement) — harmless most of the time, but a still-converging PROFILE anchor
+        // one frame short of the real value clipped the curve's X-axis labels right at the screen
+        // edge (BIV-57 phone recette: zero margin for error since PROFILE's anchor puts the block's
+        // bottom edge exactly at the screen's bottom). A known constant sidesteps the lag entirely.
+        val profileHeightPx = (summaryHeightPx + with(density) { PROFILE_BLOCK_HEIGHT_DP.toPx() })
             .coerceIn(summaryHeightPx, fullHeightPx)
         // How much room is left for the segments list before DETAIL would have to exceed the
         // screen — the segments Column below is capped to exactly this via heightIn(max), so it
         // naturally scrolls instead of pushing DETAIL past fullHeightPx on long, multi-day traces.
+        // Stable from the first frame now that profileHeightPx no longer depends on a measurement
+        // of its own, so the segments Column's own measurement converges in a single pass too.
         val segmentsMaxHeightPx = (fullHeightPx - profileHeightPx).coerceAtLeast(0f)
         val detailHeightPx = (profileHeightPx + measuredSegmentsAdditionPx)
             .coerceIn(profileHeightPx, fullHeightPx)
@@ -337,8 +352,7 @@ internal fun ThreeStopPlanificationDetail(
                     bivouacPoints = elevationMarkerPoints,
                     modifier = Modifier
                         .padding(horizontal = 20.dp)
-                        .padding(top = 10.dp, bottom = 2.dp)
-                        .onGloballyPositioned { measuredProfileAdditionPx = it.size.height },
+                        .padding(top = 10.dp, bottom = 2.dp),
                 )
 
                 if (bivouacPoints.isNotEmpty()) {
