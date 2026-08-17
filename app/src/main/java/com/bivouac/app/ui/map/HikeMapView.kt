@@ -1,7 +1,12 @@
 package com.bivouac.app.ui.map
 
+import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Point
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.view.MotionEvent
 import android.widget.TextView
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,9 +42,9 @@ import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.CopyrightOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.MapEventsOverlay
+import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.infowindow.InfoWindow
 
@@ -91,6 +96,42 @@ data class ColoredTrack(val id: String, val track: HikeTrack, val color: Color)
 // finger is released.
 private class CursorDragState(var isDragging: Boolean = false)
 
+// osmdroid's CopyrightOverlay draws its notice with a single Canvas.drawText call, which never
+// wraps — fine for Mapnik's short "© OpenStreetMap contributors" but runs off the right edge of
+// the screen with OpenTopo's much longer bilingual notice (BIV-56). This mirrors
+// CopyrightOverlay's behavior (re-reads the active tile source's notice every frame, so layer
+// switches update it automatically; same top-left anchor via xOffset/yOffset) but lays the text
+// out with StaticLayout so it wraps to the map's width instead of overflowing it.
+private class WrappingCopyrightOverlay(context: Context) : Overlay() {
+    private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.BLACK
+        textSize = 10f * context.resources.displayMetrics.density
+    }
+    var xOffset = 0
+    var yOffset = 0
+
+    fun setOffset(xOffset: Int, yOffset: Int) {
+        this.xOffset = xOffset
+        this.yOffset = yOffset
+    }
+
+    override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
+        if (shadow) return
+        val notice = mapView.tileProvider.tileSource?.copyrightNotice
+        if (notice.isNullOrEmpty()) return
+        val maxWidth = mapView.width - xOffset * 2
+        if (maxWidth <= 0) return
+        val layout = StaticLayout.Builder
+            .obtain(notice, 0, notice.length, textPaint, maxWidth)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .build()
+        canvas.save()
+        canvas.translate(xOffset.toFloat(), yOffset.toFloat())
+        layout.draw(canvas)
+        canvas.restore()
+    }
+}
+
 /**
  * Displays a [HikeTrack] on an offline-capable OSM map (osmdroid): the track as a solid blue
  * line with a white casing for contrast, start/finish pin markers, bivouac markers, and an
@@ -139,15 +180,14 @@ fun HikeMapView(
     }
     val cursorInfoWindow = remember(mapView) { CursorInfoWindow(mapView) }
     val cursorDragState = remember(mapView) { CursorDragState() }
-    // Esri's free tile access requires on-screen attribution (BIV-56). CopyrightOverlay reads the
-    // active tile source's copyright notice on every draw, so it tracks layer switches (Standard,
-    // Randonnée, Satellite) automatically without any extra plumbing here. Anchored top-left:
+    // Esri's free tile access requires on-screen attribution (BIV-56). WrappingCopyrightOverlay
+    // reads the active tile source's copyright notice on every draw, so it tracks layer switches
+    // (Standard, Randonnée, Satellite) automatically without any extra plumbing here, and wraps
+    // it to the map's width so OpenTopo's long notice doesn't run off-screen. Anchored top-left:
     // the bottom is a moving target (the detail sheet's peek height varies, drags open further),
     // while the top-left corner is free of persistent chrome on every screen HikeMapView is used
     // from (top-right only carries the layer/recenter controls).
-    val copyrightOverlay = remember(mapView) {
-        CopyrightOverlay(context).apply { setAlignBottom(false) }
-    }
+    val copyrightOverlay = remember(mapView) { WrappingCopyrightOverlay(context) }
 
     // Only re-fit the camera when the track itself changes (a new import) or the user taps the
     // recenter button, not on every bivouac point edit, which would be a jarring reset while the
@@ -232,7 +272,7 @@ private fun renderTrack(
     multiTracks: List<ColoredTrack>,
     highlightedTrackId: String?,
     onTraceTapped: (String) -> Unit,
-    copyrightOverlay: CopyrightOverlay,
+    copyrightOverlay: WrappingCopyrightOverlay,
 ) {
     // onCursorChanged deliberately updates Compose on every snapped point so the elevation
     // profile follows live. Do not let that recomposition destroy osmdroid's current drag.
