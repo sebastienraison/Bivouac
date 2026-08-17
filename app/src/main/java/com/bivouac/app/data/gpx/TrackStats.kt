@@ -11,21 +11,33 @@ data class TrackStats(
     val estimatedDurationMinutes: Int,
 )
 
+/**
+ * The two knobs behind the duration estimate (BIV-16 "Vitesse personnalisée") — flat walking pace
+ * and the Naismith-style D+ correction, both user-editable in Manuel mode or computed from Journal
+ * history in Auto/Sélection mode (see [com.bivouac.app.data.gpx.SpeedCalibrationCalculator]).
+ */
+data class SpeedCalibration(
+    val walkingSpeedKmh: Double,
+    val elevationGainPenaltyMetersPerKm: Double,
+    // Reserved for a future D- correction (docs/CONCEPTION.md §9, known limitation) — not yet
+    // factored into [TrackStatsCalculator.compute] or surfaced in the Réglages UI.
+    val elevationLossPenaltyMetersPerKm: Double? = null,
+) {
+    companion object {
+        val DEFAULT = SpeedCalibration(
+            walkingSpeedKmh = 3.5,
+            elevationGainPenaltyMetersPerKm = 100.0,
+        )
+    }
+}
+
 object TrackStatsCalculator {
 
     // Raw GPS/barometric elevation is noisy; smoothing it before summing deltas avoids
     // wildly overestimating D+/D- from point-to-point jitter.
     private const val ELEVATION_SMOOTHING_WINDOW = 5
 
-    // Flat walking pace used for the duration estimate.
-    private const val WALKING_SPEED_KMH = 3.5
-
-    // Simplified Naismith-style correction: every 100m of elevation gain counts as an extra km
-    // of flat-equivalent distance when estimating duration. Doesn't account for descent or
-    // terrain difficulty.
-    private const val ELEVATION_GAIN_METERS_PER_KM_EQUIVALENT = 100.0
-
-    fun compute(points: List<TrackPoint>): TrackStats {
+    fun compute(points: List<TrackPoint>, calibration: SpeedCalibration = SpeedCalibration.DEFAULT): TrackStats {
         val distance = points.zipWithNext { a, b ->
             GeoMath.haversineMeters(a.latitude, a.longitude, b.latitude, b.longitude)
         }.sum()
@@ -38,8 +50,8 @@ object TrackStatsCalculator {
             if (delta > 0) gain += delta else loss += -delta
         }
 
-        val equivalentDistanceKm = distance / 1000.0 + gain / ELEVATION_GAIN_METERS_PER_KM_EQUIVALENT
-        val durationMinutes = (equivalentDistanceKm / WALKING_SPEED_KMH * 60).roundToInt()
+        val equivalentDistanceKm = distance / 1000.0 + gain / calibration.elevationGainPenaltyMetersPerKm
+        val durationMinutes = (equivalentDistanceKm / calibration.walkingSpeedKmh * 60).roundToInt()
 
         return TrackStats(
             distanceMeters = distance,
