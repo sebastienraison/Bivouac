@@ -100,6 +100,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.SystemTag
 import com.bivouac.app.data.gpx.SpeedCalibration
+import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackStats
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
@@ -506,6 +507,11 @@ private fun JournalListContent(
         ) {
             OutlinedButton(
                 onClick = if (calibrationSelectionActive) onConfirmCalibrationSelection else onShowOnMap,
+                // A calibration fit needs at least 2 traces (see MIN_TRACKS_FOR_CALIBRATION) — the
+                // ordinary "show on map" action has no such floor, 0 or 1 is a perfectly normal
+                // selection there.
+                enabled = !calibrationSelectionActive ||
+                    selectedTrackIds.size >= SpeedCalibrationCalculator.MIN_TRACKS_FOR_CALIBRATION,
                 modifier = Modifier.weight(1f),
             ) {
                 Text(
@@ -521,6 +527,14 @@ private fun JournalListContent(
                     Icon(Icons.Default.Close, contentDescription = "Annuler la sélection")
                 }
             }
+        }
+        if (calibrationSelectionActive && selectedTrackIds.size < SpeedCalibrationCalculator.MIN_TRACKS_FOR_CALIBRATION) {
+            Text(
+                "Choisis au moins 2 traces pour valider.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
         }
         Spacer(modifier = Modifier.height(16.dp))
         groups.forEach { group ->

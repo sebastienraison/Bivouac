@@ -68,10 +68,24 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _restoreOutcome = MutableStateFlow<RestoreOutcome?>(null)
     val restoreOutcome: StateFlow<RestoreOutcome?> = _restoreOutcome.asStateFlow()
 
+    // Gates Auto/Sélection in the segmented control: below MIN_JOURNAL_TRACKS_FOR_CALIBRATION,
+    // neither mode has enough data to ever compute anything but the default — see
+    // SpeedCalibrationCalculator's kdoc on why one data point can't separate speed from D+ penalty.
+    // Snapshotted once per Settings-screen open (same refresh cadence as refreshAutoCalibration
+    // below), not observed live — consistent with the rest of this screen, and with why deleting
+    // a track elsewhere doesn't retroactively grey anything out until Réglages is reopened.
+    private val _journalTrackCount = MutableStateFlow(0)
+    val journalTrackCount: StateFlow<Int> = _journalTrackCount.asStateFlow()
+
     init {
-        // Populates the Auto readout even for a Journal that already had hikes before BIV-16
-        // shipped (JournalViewModel otherwise only refreshes this on a *new* import).
-        viewModelScope.launch { withContext(Dispatchers.IO) { refreshAutoCalibration() } }
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                _journalTrackCount.value = loggedTrackRepository.list().size
+                // Populates the Auto readout even for a Journal that already had hikes before
+                // BIV-16 shipped (JournalViewModel otherwise only refreshes this on a *new* import).
+                refreshAutoCalibration()
+            }
+        }
     }
 
     private suspend fun refreshAutoCalibration() {

@@ -17,6 +17,14 @@ object SpeedCalibrationCalculator {
 
     data class Sample(val distanceMeters: Double, val elevationGainMeters: Double, val elapsedHours: Double)
 
+    // UI-level gate (BIV-16 recette) for Auto (whole Journal) and Sélection (confirmed subset):
+    // below this, there's no meaningful calibration to compute, so the segmented control disables
+    // that mode entirely rather than silently showing SpeedCalibration.DEFAULT dressed up as a
+    // real calculation. Not enforced in compute() itself — a single sample is still handled there
+    // (fits speed, keeps the default penalty) for legacy selections confirmed before this gate
+    // existed, and because the pure calculation shouldn't know about a UI policy.
+    const val MIN_TRACKS_FOR_CALIBRATION = 2
+
     private const val MIN_SPEED_KMH = 1.0
     private const val MAX_SPEED_KMH = 8.0
     private const val MIN_PENALTY_M_PER_KM = 20.0

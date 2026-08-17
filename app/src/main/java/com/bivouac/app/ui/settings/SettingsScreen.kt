@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.data.gpx.SpeedCalibration
+import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.prefs.SpeedCalibrationMode
 import com.bivouac.app.settings.RestoreOutcome
 import com.bivouac.app.settings.SettingsViewModel
@@ -95,6 +96,7 @@ fun SettingsScreen(
     val auto by viewModel.autoCalibration.collectAsStateWithLifecycle()
     val selection by viewModel.selectionCalibration.collectAsStateWithLifecycle()
     val selectedTrackCount by viewModel.selectedTrackCount.collectAsStateWithLifecycle()
+    val journalTrackCount by viewModel.journalTrackCount.collectAsStateWithLifecycle()
     val nonFreeFeaturesDisabled by viewModel.nonFreeFeaturesDisabled.collectAsStateWithLifecycle()
     val lastBackupAtMillis by viewModel.lastBackupAtMillis.collectAsStateWithLifecycle()
     val backupInProgress by viewModel.backupInProgress.collectAsStateWithLifecycle()
@@ -130,6 +132,7 @@ fun SettingsScreen(
                 auto = auto,
                 selection = selection,
                 selectedTrackCount = selectedTrackCount,
+                journalTrackCount = journalTrackCount,
                 onModeSelected = viewModel::setMode,
                 onManualSpeedChanged = viewModel::setManualSpeed,
                 onManualPenaltyChanged = viewModel::setManualPenalty,
@@ -282,11 +285,18 @@ private fun SpeedCalibrationSection(
     auto: SpeedCalibration,
     selection: SpeedCalibration,
     selectedTrackCount: Int,
+    journalTrackCount: Int,
     onModeSelected: (SpeedCalibrationMode) -> Unit,
     onManualSpeedChanged: (Double) -> Unit,
     onManualPenaltyChanged: (Double) -> Unit,
     onChooseTracksClick: () -> Unit,
 ) {
+    // Auto (whole Journal) and Sélection (a subset of it) both need at least
+    // MIN_TRACKS_FOR_CALIBRATION hikes to ever compute more than the default — gated on the
+    // Journal's total rather than on Sélection's own confirmed count, since that's the real
+    // ceiling either mode can reach (BIV-16 recette). Whichever mode is already active stays
+    // reachable even if the Journal has since shrunk below that floor — see the note below.
+    val calibrationModesUsable = journalTrackCount >= SpeedCalibrationCalculator.MIN_TRACKS_FOR_CALIBRATION
     SettingsSection(label = "Vitesse personnalisée") {
         SettingsRow(
             icon = Icons.Default.Speed,
@@ -294,18 +304,30 @@ private fun SpeedCalibrationSection(
             subtitle = "Utilisé pour estimer la durée des randonnées",
         )
         SingleChoiceSegmentedButtonRow(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 10.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         ) {
             SpeedCalibrationMode.entries.forEachIndexed { index, candidate ->
                 SegmentedButton(
                     selected = candidate == mode,
                     onClick = { onModeSelected(candidate) },
+                    // Never locks the user OUT of their own current mode just because the Journal
+                    // shrank after the fact — only blocks switching INTO Auto/Sélection from
+                    // somewhere else when there isn't enough data for either to mean anything.
+                    enabled = candidate == SpeedCalibrationMode.MANUAL || candidate == mode || calibrationModesUsable,
                     shape = SegmentedButtonDefaults.itemShape(index = index, count = SpeedCalibrationMode.entries.size),
                     label = { Text(candidate.label()) },
                 )
             }
         }
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp).padding(bottom = 12.dp)) {
+        if (!calibrationModesUsable) {
+            Text(
+                "Auto et Sélection demandent au moins 2 randonnées dans le Journal.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 6.dp),
+            )
+        }
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp).padding(top = 6.dp, bottom = 12.dp)) {
             when (mode) {
                 SpeedCalibrationMode.MANUAL -> ManualCalibrationFields(manual, onManualSpeedChanged, onManualPenaltyChanged)
                 SpeedCalibrationMode.AUTO -> {

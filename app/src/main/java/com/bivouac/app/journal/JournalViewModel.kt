@@ -186,8 +186,12 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     // below (calibrationSamples() parses GPX, never instant), so the confirmed selection just
     // never made it to disk — this is why "Confirmer la sélection (N)" wasn't reliably updating
     // Réglages' count. NonCancellable keeps this specific write alive past that cancellation.
+    // JournalListContent already disables the confirm button below this — guarded again here in
+    // case that ever gets bypassed, since a 1-trace Sélection can't be told apart from a genuine
+    // 2+ fit (see SpeedCalibrationCalculator's MIN_TRACKS_FOR_CALIBRATION).
     fun confirmCalibrationSelection() {
         val ids = _selectedTrackIds.value
+        if (ids.size < SpeedCalibrationCalculator.MIN_TRACKS_FOR_CALIBRATION) return
         exitSelectionMode()
         viewModelScope.launch {
             withContext(NonCancellable + Dispatchers.IO) {
