@@ -396,6 +396,10 @@ private fun ManualCalibrationFields(manual: SpeedCalibration, onSpeedChanged: (D
             unit = "km/h",
             value = manual.walkingSpeedKmh,
             valueRange = 0.1..20.0,
+            // Caps at "20,0" / "19,9" (4 chars) — the longest a valid value in this range can be
+            // with one decimal digit — so typing past it is blocked the same way as Pénalité D+,
+            // not silently rejected only at parse/commit time.
+            maxLength = 4,
             onValueCommitted = onSpeedChanged,
             modifier = Modifier.weight(1f),
         )
