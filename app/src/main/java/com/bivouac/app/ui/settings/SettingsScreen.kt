@@ -443,7 +443,11 @@ private fun NumberField(
     OutlinedTextField(
         value = draft,
         onValueChange = { text ->
-            if (text.length <= maxLength && (!digitsOnly || text.all(Char::isDigit))) {
+            // Shrinking is always allowed, even past maxLength — otherwise a field pre-filled with
+            // a value longer than the cap (old data, or one entered before this limit existed)
+            // could never be edited at all, not even to delete a character.
+            val underLimit = text.length <= maxLength || text.length < draft.length
+            if (underLimit && (!digitsOnly || text.all(Char::isDigit))) {
                 draft = text
                 text.replace(',', '.').toDoubleOrNull()?.takeIf { it in valueRange }?.let(onValueCommitted)
             }
