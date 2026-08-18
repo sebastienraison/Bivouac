@@ -409,6 +409,7 @@ private fun ManualCalibrationFields(manual: SpeedCalibration, onSpeedChanged: (D
             value = manual.elevationGainPenaltyMetersPerKm,
             valueRange = 1.0..999.0,
             maxLength = 3,
+            digitsOnly = true,
             onValueCommitted = onPenaltyChanged,
             modifier = Modifier.weight(1f),
         )
@@ -430,12 +431,15 @@ private fun NumberField(
     // No limit by default — only Pénalité D+ needs one, to stop a 4th digit from ever appearing
     // rather than letting it show then get silently rejected at parse time.
     maxLength: Int = Int.MAX_VALUE,
+    // Pénalité D+ is entiers-only (confirmed) — rejects the comma outright rather than letting it
+    // through and relying on valueRange/parsing to catch it after the fact.
+    digitsOnly: Boolean = false,
 ) {
     var draft by remember(value) { mutableStateOf(formatNumber(value)) }
     OutlinedTextField(
         value = draft,
         onValueChange = { text ->
-            if (text.length <= maxLength) {
+            if (text.length <= maxLength && (!digitsOnly || text.all(Char::isDigit))) {
                 draft = text
                 text.replace(',', '.').toDoubleOrNull()?.takeIf { it in valueRange }?.let(onValueCommitted)
             }
@@ -445,7 +449,7 @@ private fun NumberField(
         suffix = { Text(unit) },
         singleLine = true,
         textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        keyboardOptions = KeyboardOptions(keyboardType = if (digitsOnly) KeyboardType.Number else KeyboardType.Decimal),
         modifier = modifier,
     )
 }
