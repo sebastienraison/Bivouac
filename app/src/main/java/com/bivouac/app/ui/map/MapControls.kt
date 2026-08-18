@@ -56,7 +56,8 @@ fun MapControls(
                 availableLayers.forEach { layer ->
                     DropdownMenuItem(
                         text = { Text(layer.label) },
-                        leadingIcon = {
+                        leadingIcon = { Icon(layer.icon, contentDescription = null) },
+                        trailingIcon = {
                             if (layer == selectedLayer) {
                                 Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(20.dp))
                             } else {
