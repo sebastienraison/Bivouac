@@ -55,6 +55,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -458,7 +459,19 @@ private fun NumberField(
         singleLine = true,
         textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End),
         keyboardOptions = KeyboardOptions(keyboardType = if (digitsOnly) KeyboardType.Number else KeyboardType.Decimal),
-        modifier = modifier,
+        // Typing a value that parses but sits outside valueRange is allowed to show as-is while
+        // the user is still typing (never committed — see onValueChange above) but must not
+        // survive once they're done editing: revert to the last valid committed value on blur.
+        // Also catches a draft that starts out invalid for reasons typing alone can't produce,
+        // e.g. a value restored from an old backup that predates this field's constraints.
+        modifier = modifier.onFocusChanged { focusState ->
+            if (!focusState.isFocused) {
+                val parsed = draft.replace(',', '.').toDoubleOrNull()
+                if (parsed == null || parsed !in valueRange || draft.length > maxLength) {
+                    draft = formatNumber(value)
+                }
+            }
+        },
     )
 }
 
