@@ -38,6 +38,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -394,6 +395,7 @@ private fun ManualCalibrationFields(manual: SpeedCalibration, onSpeedChanged: (D
             label = "Vitesse à plat",
             unit = "km/h",
             value = manual.walkingSpeedKmh,
+            valueRange = 0.1..20.0,
             onValueCommitted = onSpeedChanged,
             modifier = Modifier.weight(1f),
         )
@@ -405,6 +407,8 @@ private fun ManualCalibrationFields(manual: SpeedCalibration, onSpeedChanged: (D
             // your head to line up with that phrasing every time you switched modes.
             prefix = "+1 km / ",
             value = manual.elevationGainPenaltyMetersPerKm,
+            valueRange = 1.0..999.0,
+            maxLength = 3,
             onValueCommitted = onPenaltyChanged,
             modifier = Modifier.weight(1f),
         )
@@ -419,21 +423,28 @@ private fun NumberField(
     label: String,
     unit: String,
     value: Double,
+    valueRange: ClosedFloatingPointRange<Double>,
     onValueCommitted: (Double) -> Unit,
     modifier: Modifier = Modifier,
     prefix: String? = null,
+    // No limit by default — only Pénalité D+ needs one, to stop a 4th digit from ever appearing
+    // rather than letting it show then get silently rejected at parse time.
+    maxLength: Int = Int.MAX_VALUE,
 ) {
     var draft by remember(value) { mutableStateOf(formatNumber(value)) }
     OutlinedTextField(
         value = draft,
         onValueChange = { text ->
-            draft = text
-            text.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0.0 }?.let(onValueCommitted)
+            if (text.length <= maxLength) {
+                draft = text
+                text.replace(',', '.').toDoubleOrNull()?.takeIf { it in valueRange }?.let(onValueCommitted)
+            }
         },
         label = { Text(label) },
         prefix = prefix?.let { { Text(it) } },
         suffix = { Text(unit) },
         singleLine = true,
+        textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = modifier,
     )
