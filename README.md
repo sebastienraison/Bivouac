@@ -24,6 +24,17 @@ dénivelé, durée estimée) qui se met à jour automatiquement.
 
 Détail complet des fonctionnalités et limitations connues : [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
+## FAQ
+
+### L'appli fonctionne-t-elle sans réseau ?
+
+Oui, en partie. Les fonds de carte déjà consultés restent disponibles hors connexion : dès qu'une
+zone a été affichée une fois (par exemple en préparant ta rando chez toi), ses tuiles restent en
+cache sur le téléphone et se rechargent sans réseau. C'est pratique une fois sur le terrain, là où
+tu n'as souvent plus de réseau mobile — tu peux revoir la carte des zones déjà consultées, positionner
+ou ajuster tes bivouacs, sans avoir besoin de connexion. Seules les zones jamais affichées auparavant
+resteront vides tant que tu n'as pas de réseau.
+
 ## Stack technique
 
 - Kotlin + Jetpack Compose (Material3)
