@@ -72,6 +72,7 @@ import com.bivouac.app.data.gpx.GpxExporter
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.weather.MeteoblueLink
+import com.bivouac.app.gpximport.CloseConfirmationReason
 import com.bivouac.app.gpximport.DeleteTarget
 import com.bivouac.app.gpximport.GpxImportUiState
 import com.bivouac.app.gpximport.GpxImportViewModel
@@ -197,7 +198,7 @@ fun GpxImportScreen(
     val currentBankedId by viewModel.currentBankedId.collectAsStateWithLifecycle()
     val bankedTraces by viewModel.bankedTraces.collectAsStateWithLifecycle()
     val nameDialogRequest by viewModel.nameDialogRequest.collectAsStateWithLifecycle()
-    val closeConfirmationVisible by viewModel.closeConfirmationVisible.collectAsStateWithLifecycle()
+    val closeConfirmationReason by viewModel.closeConfirmationReason.collectAsStateWithLifecycle()
     val deleteTarget by viewModel.deleteTarget.collectAsStateWithLifecycle()
 
     val selectedLayer by viewModel.selectedLayer.collectAsStateWithLifecycle()
@@ -355,11 +356,17 @@ fun GpxImportScreen(
         }
     }
 
-    if (closeConfirmationVisible) {
+    closeConfirmationReason?.let { reason ->
+        val (title, message) = when (reason) {
+            CloseConfirmationReason.DIRTY ->
+                "Trace modifiée" to "Cette trace a des modifications non enregistrées."
+            CloseConfirmationReason.NEVER_SAVED ->
+                "Trace non enregistrée" to "Attention, cette trace n'a pas encore été enregistrée dans Bivouac."
+        }
         AlertDialog(
             onDismissRequest = viewModel::dismissCloseConfirmation,
-            title = { Text("Trace modifiée") },
-            text = { Text("Cette trace a des modifications non enregistrées.") },
+            title = { Text(title) },
+            text = { Text(message) },
             confirmButton = {
                 TextButton(onClick = viewModel::saveAndClose) { Text("Enregistrer") }
             },

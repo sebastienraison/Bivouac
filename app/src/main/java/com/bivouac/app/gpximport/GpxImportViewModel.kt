@@ -41,6 +41,10 @@ sealed interface GpxImportUiState {
 
 enum class NameDialogPurpose { FIRST_SAVE, RENAME, RENAME_FROM_LIST, DUPLICATE, SAVE_THEN_CLOSE }
 
+// RIC-27: pourquoi la fermeture est bloquée — modifications non enregistrées sur une trace déjà
+// banquée, ou trace jamais banquée du tout (même sans modification depuis son ouverture).
+enum class CloseConfirmationReason { DIRTY, NEVER_SAVED }
+
 data class NameDialogRequest(val suggestedName: String, val purpose: NameDialogPurpose, val targetId: String? = null)
 
 sealed interface DeleteTarget {
@@ -121,8 +125,8 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     private val _nameDialogRequest = MutableStateFlow<NameDialogRequest?>(null)
     val nameDialogRequest: StateFlow<NameDialogRequest?> = _nameDialogRequest.asStateFlow()
 
-    private val _closeConfirmationVisible = MutableStateFlow(false)
-    val closeConfirmationVisible: StateFlow<Boolean> = _closeConfirmationVisible.asStateFlow()
+    private val _closeConfirmationReason = MutableStateFlow<CloseConfirmationReason?>(null)
+    val closeConfirmationReason: StateFlow<CloseConfirmationReason?> = _closeConfirmationReason.asStateFlow()
 
     private val _deleteTarget = MutableStateFlow<DeleteTarget?>(null)
     val deleteTarget: StateFlow<DeleteTarget?> = _deleteTarget.asStateFlow()
@@ -271,25 +275,31 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         _deleteTarget.value = null
     }
 
+    // Jamais banquée l'emporte sur simplement modifiée : dans ce cas c'est la trace entière qui
+    // n'est pas enregistrée, pas seulement les changements depuis le dernier save.
     fun requestClose() {
-        if (_dirty.value) {
-            _closeConfirmationVisible.value = true
-        } else {
+        val reason = when {
+            _currentBankedId.value == null -> CloseConfirmationReason.NEVER_SAVED
+            _dirty.value -> CloseConfirmationReason.DIRTY
+            else -> null
+        }
+        _closeConfirmationReason.value = reason
+        if (reason == null) {
             performClose()
         }
     }
 
     fun dismissCloseConfirmation() {
-        _closeConfirmationVisible.value = false
+        _closeConfirmationReason.value = null
     }
 
     fun discardAndClose() {
-        _closeConfirmationVisible.value = false
+        _closeConfirmationReason.value = null
         performClose()
     }
 
     fun saveAndClose() {
-        _closeConfirmationVisible.value = false
+        _closeConfirmationReason.value = null
         val state = _uiState.value as? GpxImportUiState.Loaded ?: run { performClose(); return }
         val name = state.track.name
         when {
