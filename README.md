@@ -47,16 +47,18 @@ moins deux randonnées différentes pour que le calcul ait un sens — c'est pou
 Sélection restent grisés tant que ton Journal (ou ta sélection de traces) n'en contient pas au moins
 deux.
 
-### Une de mes randonnées n'apparaît pas dans le calcul de vitesse automatique, pourquoi ?
+### Une trace très volumineuse peut-elle poser problème ?
 
-Sur certaines versions d'Android plus anciennes, une trace très volumineuse (une rando de plusieurs
-heures avec un relevé GPS très dense) peut dépasser une limite technique interne (environ 2 Mo par
-ligne de base de données) au moment d'être lue pour ce calcul précis. Plutôt que de faire planter
-l'application, Bivouac ignore silencieusement cette trace pour ce calcul-là — elle reste normalement
-consultable dans le Journal comme n'importe quelle autre, juste exclue de ce calcul de vitesse
-automatique. Rien n'est perdu ni corrompu. Comportement observé en émulation (Android 14) mais pas
-sur un appareil réel plus récent (Android 16) — le risque dépend donc surtout de l'ancienneté du
-téléphone.
+Oui, potentiellement, sur certaines versions d'Android plus anciennes : une trace très volumineuse
+(une rando de plusieurs heures avec un relevé GPS très dense) peut dépasser une limite technique
+interne (environ 2 Mo par ligne de base de données) au moment d'être lue. Le calcul automatique de
+vitesse (mode Auto/Sélection) gère déjà ce cas proprement : une trace trop volumineuse en est
+simplement exclue, sans planter — rien n'est perdu, elle reste dans le Journal, juste ignorée pour
+ce calcul-là. En revanche, **ouvrir directement une trace de ce gabarit dans le Journal n'a pas
+encore le même filet** : ça peut faire planter l'application. Comportement observé en émulation
+(Android 14) mais pas reproduit sur un appareil réel plus récent (Android 16) — le risque dépend
+surtout de l'ancienneté du téléphone et de la densité du relevé GPS. Limitation connue, correctif
+plus général pas encore fait (suivi dans le suivi de projet interne, pas dans ce dépôt).
 
 ## Stack technique
 
