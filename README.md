@@ -35,6 +35,29 @@ tu n'as souvent plus de réseau mobile — tu peux revoir la carte des zones dé
 ou ajuster tes bivouacs, sans avoir besoin de connexion. Seules les zones jamais affichées auparavant
 resteront vides tant que tu n'as pas de réseau.
 
+### Pourquoi le mode Auto/Sélection de vitesse personnalisée demande-t-il au moins 2 randonnées ?
+
+Bivouac peut calculer automatiquement ta vitesse de marche à plat et ta pénalité de dénivelé à
+partir de tes randonnées déjà présentes dans le Journal, plutôt que de te demander de les saisir
+toi-même. Ce calcul répartit le temps mis sur une rando entre deux facteurs distincts — la distance
+parcourue à plat, et le dénivelé grimpé — un peu comme résoudre une équation à deux inconnues. Avec
+une seule randonnée, il n'y a pas assez d'information pour les séparer : impossible de savoir si tu
+as mis du temps parce que le terrain était plat mais long, ou court mais très pentu. Il faut au
+moins deux randonnées différentes pour que le calcul ait un sens — c'est pourquoi les modes Auto et
+Sélection restent grisés tant que ton Journal (ou ta sélection de traces) n'en contient pas au moins
+deux.
+
+### Une de mes randonnées n'apparaît pas dans le calcul de vitesse automatique, pourquoi ?
+
+Sur certaines versions d'Android plus anciennes, une trace très volumineuse (une rando de plusieurs
+heures avec un relevé GPS très dense) peut dépasser une limite technique interne (environ 2 Mo par
+ligne de base de données) au moment d'être lue pour ce calcul précis. Plutôt que de faire planter
+l'application, Bivouac ignore silencieusement cette trace pour ce calcul-là — elle reste normalement
+consultable dans le Journal comme n'importe quelle autre, juste exclue de ce calcul de vitesse
+automatique. Rien n'est perdu ni corrompu. Comportement observé en émulation (Android 14) mais pas
+sur un appareil réel plus récent (Android 16) — le risque dépend donc surtout de l'ancienneté du
+téléphone.
+
 ## Stack technique
 
 - Kotlin + Jetpack Compose (Material3)
