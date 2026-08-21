@@ -95,6 +95,8 @@ import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackStats
 import com.bivouac.app.data.gpx.TrackStatsCalculator
+import com.bivouac.app.data.model.BivouacPoint
+import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrekDatesFormatter
@@ -270,9 +272,22 @@ fun JournalScreen(
             )
         }
     } else {
+        // Constat E : sur une sortie de plusieurs jours, chaque coupure entre deux fichiers est
+        // une nuit passée dehors. La donnée existait déjà, elle ne servait qu'à la duplication
+        // vers la Planification (RIC-40) — la carte et le profil recevaient une liste vide.
+        //
+        // Identifiants dérivés du rang et non tirés au hasard : rien ici n'est enregistré, et un
+        // identifiant stable évite de recréer les marqueurs à chaque recomposition.
+        val journalBivouacs = remember(detail.daySegments) {
+            DayJunctions.bivouacTrackPointIndices(detail.daySegments.map { it.points.size })
+                .mapIndexed { index, pointIndex ->
+                    BivouacPoint(id = "jonction-$index", trackPointIndex = pointIndex)
+                }
+        }
         Box(modifier = modifier.fillMaxSize()) {
             JournalMap(
                 track = detail.track,
+                bivouacPoints = journalBivouacs,
                 selectedLayer = selectedLayer,
                 recenterSignal = recenterSignal,
                 visibleMapHeightPx = visibleMapHeightPx,
@@ -289,6 +304,7 @@ fun JournalScreen(
                 entry = detail.entry,
                 track = detail.track,
                 daySegments = detail.daySegments,
+                bivouacPoints = journalBivouacs,
                 activeCalibration = activeCalibration,
                 onCloseClick = viewModel::closeTrack,
                 onDeleteClick = viewModel::requestDelete,
@@ -553,6 +569,7 @@ private fun formatSeparateImportReport(report: SeparateImportReport): String {
 @Composable
 private fun JournalMap(
     track: HikeTrack?,
+    bivouacPoints: List<BivouacPoint> = emptyList(),
     selectedLayer: com.bivouac.app.ui.map.MapLayer,
     recenterSignal: Int,
     visibleMapHeightPx: Int,
@@ -575,13 +592,14 @@ private fun JournalMap(
     ) {
         HikeMapView(
             track = track,
-            bivouacPoints = emptyList(),
+            bivouacPoints = bivouacPoints,
             selectedLayer = selectedLayer,
             recenterSignal = recenterSignal,
             visibleHeightPx = visibleMapHeightPx,
             onTrackTapped = onCursorChanged,
             onBivouacMoved = { _, _ -> },
             onBivouacDragPreview = { _, _ -> },
+            bivouacsReadOnly = true,
             cursorIndex = cursorIndex,
             onCursorChanged = onCursorChanged,
             multiTracks = multiTracks,
@@ -981,6 +999,9 @@ internal fun ThreeStopJournalDetail(
     // RIC-41 : un élément par jour importé, dans l'ordre — la ventilation ne s'affiche qu'au-delà
     // d'un jour, même convention que les segments de Planification.
     daySegments: List<Segment> = emptyList(),
+    // Constat E : un point par jonction entre deux jours, en lecture seule — le profil les trace
+    // comme la Planification, mais rien ici ne se déplace ni ne se supprime.
+    bivouacPoints: List<BivouacPoint> = emptyList(),
     activeCalibration: SpeedCalibration = SpeedCalibration.DEFAULT,
     onCloseClick: () -> Unit,
     onRenameClick: () -> Unit,
@@ -1136,7 +1157,7 @@ internal fun ThreeStopJournalDetail(
 
                 ElevationProfile(
                     points = track.points,
-                    bivouacPoints = emptyList(),
+                    bivouacPoints = bivouacPoints,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                     cursorIndex = cursorIndex,
                     onCursorDragged = onCursorDragged,

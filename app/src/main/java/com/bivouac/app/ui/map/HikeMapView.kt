@@ -178,6 +178,9 @@ fun HikeMapView(
     // Journal-only (BIV-52): a single "point du parcours" cursor, distinct from bivouacs — no
     // preview/commit split like bivouacs get, every intermediate drag position is already final
     // since nothing about the cursor is ever persisted.
+    // Journal (constat E) : les bivouacs d'une trace importée sont des faits passés, déduits des
+    // coupures entre fichiers. Affichés pour situer les nuits, jamais déplaçables.
+    bivouacsReadOnly: Boolean = false,
     cursorIndex: Int? = null,
     onCursorChanged: (trackPointIndex: Int) -> Unit = {},
     // Journal-only (BIV-48): when non-empty, overrides single-track rendering entirely — a
@@ -261,7 +264,7 @@ fun HikeMapView(
                 val heightJustBecameKnown = pendingHeightCorrection.value && visibleHeightPx != Int.MAX_VALUE
                 val shouldFit = trackChanged || recenterRequested || heightJustBecameKnown
                 renderTrack(
-                    view, track, bivouacPoints, shouldFit, visibleHeightPx,
+                    view, track, bivouacPoints, bivouacsReadOnly, shouldFit, visibleHeightPx,
                     onTrackTapped, onBivouacMoved, onBivouacDragPreview,
                     cursorIndex, onCursorChanged, cursorInfoWindow, cursorDragState,
                     multiTracks, highlightedTrackId, onTraceTapped, copyrightOverlay,
@@ -324,6 +327,7 @@ private fun renderTrack(
     mapView: MapView,
     track: HikeTrack?,
     bivouacPoints: List<BivouacPoint>,
+    bivouacsReadOnly: Boolean,
     shouldFit: Boolean,
     visibleHeightPx: Int,
     onTrackTapped: (Int) -> Unit,
@@ -412,7 +416,12 @@ private fun renderTrack(
     mapView.overlays.add(trackTapOverlay(mapView, points, geoPoints, density, onTrackTapped))
 
     bivouacPoints.forEach { bivouac ->
-        mapView.overlays.add(bivouacMarker(mapView, points, geoPoints, bivouac, onBivouacMoved, onBivouacDragPreview))
+        mapView.overlays.add(
+            bivouacMarker(
+                mapView, points, geoPoints, bivouac, onBivouacMoved, onBivouacDragPreview,
+                draggable = !bivouacsReadOnly,
+            ),
+        )
     }
 
     mapView.overlays.addAll(endpointMarkers(mapView, points))
@@ -538,6 +547,9 @@ private fun bivouacMarker(
     bivouac: BivouacPoint,
     onBivouacMoved: (String, Int) -> Unit,
     onBivouacDragPreview: (String, Int) -> Unit,
+    // Journal : la nuit est un fait passé, déduit de la coupure entre deux fichiers importés. La
+    // déplacer n'aurait aucun sens, et la trace du Journal est de toute façon immuable.
+    draggable: Boolean = true,
 ): Marker {
     val marker = Marker(mapView)
     marker.position = geoPoints[bivouac.trackPointIndex]
@@ -548,7 +560,8 @@ private fun bivouacMarker(
     // Same treatment as the endpoint markers and the cursor marker just below.
     marker.setInfoWindow(null)
     marker.setOnMarkerClickListener { _, _ -> false }
-    marker.isDraggable = true
+    marker.isDraggable = draggable
+    if (!draggable) return marker
 
     var lastPreviewIndex = bivouac.trackPointIndex
     marker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
