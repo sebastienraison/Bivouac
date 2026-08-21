@@ -155,4 +155,39 @@ class BackupManagerTest {
         val tracksAfterBlockedRestore = BivouacDatabase.getInstance(context).loggedTrackDao().list()
         assertEquals(1, tracksAfterBlockedRestore.size)
     }
+
+    // RIC-95 : une archive dont le bivouac.db n'est pas une base SQLite saine doit être refusée
+    // par le PRAGMA integrity_check AVANT tout remplacement — les données en place survivent.
+    @Test
+    fun restoreRejectsCorruptedArchiveAndKeepsCurrentData() = runBlocking {
+        val dao = BivouacDatabase.getInstance(context).loggedTrackDao()
+        dao.insert(
+            LoggedTrackEntity(
+                id = "t1",
+                name = "Trace à préserver",
+                startedAt = 0L,
+                contentHash = "hash1",
+                distanceMeters = 1000.0,
+                elevationGainMeters = 0.0,
+                elevationLossMeters = 0.0,
+                pointCount = 2,
+                estimatedDurationMinutes = 10,
+            ),
+            listOf(LoggedTrackDayEntity(trackId = "t1", dayIndex = 0, rawGpxContent = "<gpx/>")),
+        )
+        BivouacDatabase.closeAndReset()
+
+        ZipOutputStream(backupFile.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("db/${BivouacDatabase.DATABASE_NAME}"))
+            zip.write("ceci n'est pas une base SQLite".toByteArray())
+            zip.closeEntry()
+        }
+
+        val result = BackupManager.restore(context, Uri.fromFile(backupFile))
+        assertTrue(result is RestoreResult.Error)
+
+        val tracksAfterRejectedRestore = BivouacDatabase.getInstance(context).loggedTrackDao().list()
+        assertEquals(1, tracksAfterRejectedRestore.size)
+        assertEquals("Trace à préserver", tracksAfterRejectedRestore.first().name)
+    }
 }

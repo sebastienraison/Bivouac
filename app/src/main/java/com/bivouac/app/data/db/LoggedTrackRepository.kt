@@ -44,7 +44,9 @@ class LoggedTrackRepository(context: Context) {
         uri: Uri,
         calibration: SpeedCalibration = SpeedCalibration.DEFAULT,
     ): PreparedImport {
-        val rawGpx = resolver.openInputStream(uri)?.use { it.readBytes().toString(StandardCharsets.UTF_8) }
+        // readBounded plutôt que readBytes() : même plafond de taille que le parseur, appliqué
+        // avant la première allocation pleine du fichier (entrée externe non maîtrisée, RIC-95).
+        val rawGpx = resolver.openInputStream(uri)?.use { GpxParser.readBounded(it) }
             ?: throw IOException("Impossible d'ouvrir le fichier sélectionné")
         val track = rawGpx.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }
         val stats = TrackStatsCalculator.compute(track.points, calibration)

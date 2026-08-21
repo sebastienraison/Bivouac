@@ -88,6 +88,15 @@ object BackupManager {
                 return@withContext RestoreResult.Error("Cette archive ne contient pas de base Bivouac (bivouac.db manquant).")
             }
 
+            // RIC-95 : l'intégrité de la base extraite est vérifiée AVANT de toucher au moindre
+            // fichier en place — une archive tronquée ou corrompue ne doit jamais remplacer une
+            // base saine.
+            if (!passesIntegrityCheck(extractedDb)) {
+                return@withContext RestoreResult.Error(
+                    "L'archive contient une base corrompue ou illisible — restauration annulée, les données actuelles sont intactes.",
+                )
+            }
+
             val backupVersion = readUserVersion(extractedDb)
             if (backupVersion > BivouacDatabase.SCHEMA_VERSION) {
                 return@withContext RestoreResult.VersionTooNew(backupVersion, BivouacDatabase.SCHEMA_VERSION)
@@ -95,20 +104,7 @@ object BackupManager {
 
             BivouacDatabase.closeAndReset()
             try {
-                val dbFile = context.getDatabasePath(BivouacDatabase.DATABASE_NAME)
-                for (suffix in DB_SIDECAR_SUFFIXES) {
-                    val destinationFile = File(dbFile.parentFile, dbFile.name + suffix)
-                    val extracted = File(tempDir, dbFile.name + suffix)
-                    // A sidecar absent from the backup must not survive from whatever database is
-                    // being overwritten — an old -wal replaying stale pages on top of a freshly
-                    // restored main file would silently corrupt the restore.
-                    if (extracted.exists()) extracted.copyTo(destinationFile, overwrite = true) else destinationFile.delete()
-                }
-                val datastoreDir = File(context.filesDir, "datastore").apply { mkdirs() }
-                for (name in PREFS_FILE_NAMES) {
-                    val extracted = File(tempDir, name)
-                    if (extracted.exists()) extracted.copyTo(File(datastoreDir, name), overwrite = true)
-                }
+                replaceWithRollback(context, tempDir)
             } finally {
                 BivouacDatabase.getInstance(context)
             }
@@ -119,6 +115,78 @@ object BackupManager {
             tempDir.deleteRecursively()
         }
     }
+
+    private const val PRE_RESTORE_SUFFIX = ".pre-restore"
+
+    /**
+     * RIC-95 : le remplacement couvre plusieurs fichiers (base + sidecars + préférences), il ne
+     * peut pas être atomique au sens filesystem — mais chaque fichier existant est d'abord écarté
+     * par un rename (atomique, même répertoire) en `*.pre-restore` avant d'écrire son remplaçant.
+     * Si une copie échoue à mi-chemin, tout l'état d'origine est remis en place tel quel au lieu
+     * de laisser un mélange mi-ancien mi-nouveau ; l'ancien état n'est purgé qu'une fois tous les
+     * nouveaux fichiers écrits.
+     */
+    private fun replaceWithRollback(context: Context, tempDir: File) {
+        val dbFile = context.getDatabasePath(BivouacDatabase.DATABASE_NAME)
+        val datastoreDir = File(context.filesDir, "datastore").apply { mkdirs() }
+
+        // destination -> fichier extrait à y copier (null : rien à copier, la destination doit
+        // juste disparaître). Un sidecar absent de l'archive ne doit pas survivre au remplacement
+        // (un vieux -wal rejouant des pages périmées sur la base fraîchement restaurée la
+        // corromprait) ; un fichier de préférences absent de l'archive, lui, reste intact.
+        val replacements = mutableMapOf<File, File?>()
+        for (suffix in DB_SIDECAR_SUFFIXES) {
+            val destination = File(dbFile.parentFile, dbFile.name + suffix)
+            val extracted = File(tempDir, dbFile.name + suffix).takeIf { it.exists() }
+            if (extracted != null || destination.exists()) replacements[destination] = extracted
+        }
+        for (name in PREFS_FILE_NAMES) {
+            val extracted = File(tempDir, name).takeIf { it.exists() } ?: continue
+            replacements[File(datastoreDir, name)] = extracted
+        }
+
+        // destination -> son original écarté (null : la destination n'existait pas avant).
+        // Seules les destinations présentes dans cette map ont été mises en sûreté — c'est elle
+        // (et pas `replacements`) que le rollback parcourt, pour ne jamais supprimer un original
+        // encore en place si un rename a échoué au milieu de la première boucle.
+        val originals = mutableMapOf<File, File?>()
+        try {
+            for (destination in replacements.keys) {
+                if (destination.exists()) {
+                    val aside = File(destination.path + PRE_RESTORE_SUFFIX)
+                    aside.delete()
+                    if (!destination.renameTo(aside)) {
+                        throw IOException("Impossible d'écarter ${destination.name} avant remplacement.")
+                    }
+                    originals[destination] = aside
+                } else {
+                    originals[destination] = null
+                }
+            }
+            for ((destination, extracted) in replacements) {
+                extracted?.copyTo(destination, overwrite = true)
+            }
+        } catch (e: Exception) {
+            for ((destination, aside) in originals) {
+                destination.delete()
+                aside?.renameTo(destination)
+            }
+            throw e
+        }
+        for (aside in originals.values) aside?.delete()
+    }
+
+    // PRAGMA integrity_check sur la base extraite, ouverte en lecture-écriture pour qu'un
+    // éventuel -wal extrait à côté soit d'abord rejoué (l'archive est déjà dans un dossier
+    // temporaire à nous, l'écriture y est sans conséquence). Un contenu qui n'est même pas une
+    // base SQLite lève à l'ouverture : même verdict.
+    private fun passesIntegrityCheck(dbFile: File): Boolean = runCatching {
+        SQLiteDatabase.openDatabase(dbFile.path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+            db.rawQuery("PRAGMA integrity_check", null).use { cursor ->
+                cursor.moveToFirst() && cursor.getString(0).equals("ok", ignoreCase = true)
+            }
+        }
+    }.getOrDefault(false)
 
     /** Returns an error message on failure, null on success. Flattens entries by basename — the
      * db/ and prefs/ zip prefixes exist only to make a manually-opened archive self-explanatory,
