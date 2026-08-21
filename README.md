@@ -49,16 +49,16 @@ deux.
 
 ### Une trace très volumineuse peut-elle poser problème ?
 
-Oui, potentiellement, sur certaines versions d'Android plus anciennes : une trace très volumineuse
-(une rando de plusieurs heures avec un relevé GPS très dense) peut dépasser une limite technique
-interne (environ 2 Mo par ligne de base de données) au moment d'être lue. Le calcul automatique de
-vitesse (mode Auto/Sélection) gère déjà ce cas proprement : une trace trop volumineuse en est
-simplement exclue, sans planter — rien n'est perdu, elle reste dans le Journal, juste ignorée pour
-ce calcul-là. En revanche, **ouvrir directement une trace de ce gabarit dans le Journal n'a pas
-encore le même filet** : ça peut faire planter l'application. Comportement observé en émulation
-(Android 14) mais pas reproduit sur un appareil réel plus récent (Android 16) — le risque dépend
-surtout de l'ancienneté du téléphone et de la densité du relevé GPS. Limitation connue, correctif
-plus général pas encore fait (suivi dans le suivi de projet interne, pas dans ce dépôt).
+Non, plus maintenant. Les versions précédentes stockaient le contenu GPX d'une trace du Journal
+directement en base de données, où une limite technique d'Android (environ 2 Mo par ligne au moment
+de la lecture) pouvait faire planter l'ouverture d'une trace très volumineuse (une rando de
+plusieurs heures avec un relevé GPS très dense), surtout sur les versions d'Android plus anciennes.
+Le contenu GPX est désormais conservé dans des fichiers du stockage interne de l'application, en
+dehors de la base : cette limite ne s'applique structurellement plus, quelle que soit la taille de
+la trace (dans la limite générale de 50 Mo par fichier GPX appliquée à l'import). La conversion des
+données existantes se fait automatiquement et sans perte à la première ouverture de l'application
+après mise à jour ; les traces restent incluses dans les sauvegardes (Réglages → Sauvegarder), qui
+embarquent ces fichiers avec la base.
 
 ## Stack technique
 
