@@ -543,7 +543,6 @@ private fun bivouacMarker(
     marker.position = geoPoints[bivouac.trackPointIndex]
     marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
     marker.icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_marker_bivouac)
-    marker.title = "Bivouac"
     // A short tap otherwise falls through to osmdroid's default (empty-looking, title-only) info
     // window — the bivouac's actual details already live in the segments table, not on the map.
     // Same treatment as the endpoint markers and the cursor marker just below.
@@ -594,7 +593,6 @@ private fun cursorMarker(
     marker.position = geoPoints[cursorIndex]
     marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
     marker.icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_marker_cursor)
-    marker.title = "Point du parcours"
     marker.isDraggable = true
     marker.setInfoWindow(null)
     // The cursor's dedicated CursorInfoWindow is opened explicitly with distance/altitude.
@@ -678,11 +676,11 @@ private fun endpointMarkers(mapView: MapView, points: List<TrackPoint>): List<Ma
     val isLoop = TrackGeometry.isLoop(points, LOOP_THRESHOLD_METERS)
 
     return if (isLoop) {
-        listOf(marker(mapView, first, R.drawable.ic_marker_start_finish, "Départ / Arrivée"))
+        listOf(marker(mapView, first, R.drawable.ic_marker_start_finish))
     } else {
         listOf(
-            marker(mapView, first, R.drawable.ic_marker_start, "Départ"),
-            marker(mapView, last, R.drawable.ic_marker_finish, "Arrivée"),
+            marker(mapView, first, R.drawable.ic_marker_start),
+            marker(mapView, last, R.drawable.ic_marker_finish),
         )
     }
 }
@@ -758,12 +756,11 @@ private fun nearestIndexForDistance(cumulative: DoubleArray, targetDistance: Dou
     return lo
 }
 
-private fun marker(mapView: MapView, point: TrackPoint, iconRes: Int, label: String): Marker =
+private fun marker(mapView: MapView, point: TrackPoint, iconRes: Int): Marker =
     Marker(mapView).apply {
         position = GeoPoint(point.latitude, point.longitude)
         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
         icon = ContextCompat.getDrawable(mapView.context, iconRes)
-        title = label
         // Endpoint pins are labels, not controls. Let taps near them be handled by the track
         // cursor overlay without opening osmdroid's oversized default speech bubble.
         setInfoWindow(null)

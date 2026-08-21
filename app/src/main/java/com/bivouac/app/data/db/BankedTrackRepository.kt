@@ -30,7 +30,7 @@ class BankedTrackRepository(context: Context) {
             distanceMeters = stats.distanceMeters,
             elevationGainMeters = stats.elevationGainMeters,
             elevationLossMeters = stats.elevationLossMeters,
-            pointCount = stats.pointCount,
+            pointCount = track.points.size,
             estimatedDurationMinutes = stats.estimatedDurationMinutes,
             savedAt = System.currentTimeMillis(),
         )

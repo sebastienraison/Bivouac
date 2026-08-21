@@ -3,7 +3,6 @@ package com.bivouac.app.data.db
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
-import android.provider.OpenableColumns
 import android.util.Log
 import com.bivouac.app.data.gpx.GpxParser
 import com.bivouac.app.data.gpx.SpeedCalibration
@@ -55,13 +54,12 @@ class LoggedTrackRepository(context: Context) {
         val entity = LoggedTrackEntity(
             id = id,
             name = track.name ?: "Trace sans nom",
-            sourceFileName = queryDisplayName(resolver, uri),
             startedAt = startedAt,
             contentHash = sha256(rawGpx),
             distanceMeters = stats.distanceMeters,
             elevationGainMeters = stats.elevationGainMeters,
             elevationLossMeters = stats.elevationLossMeters,
-            pointCount = stats.pointCount,
+            pointCount = track.points.size,
             estimatedDurationMinutes = stats.estimatedDurationMinutes,
         )
         val day = LoggedTrackDayEntity(trackId = id, dayIndex = 0, rawGpxContent = rawGpx)
@@ -162,11 +160,6 @@ class LoggedTrackRepository(context: Context) {
             elapsedHours = elapsedHours,
         )
     }
-
-    private fun queryDisplayName(resolver: ContentResolver, uri: Uri): String? =
-        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) cursor.getString(0) else null
-        }
 
     private fun isProbablySameHike(a: LoggedTrackEntity, b: LoggedTrackEntity): Boolean {
         val startCloseEnough = abs(a.startedAt - b.startedAt) <= ONE_HOUR_MILLIS

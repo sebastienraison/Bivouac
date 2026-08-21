@@ -173,11 +173,12 @@ class BivouacDatabaseMigrationTest {
 
         val migrated = helper.runMigrationsAndValidate(
             testDbName,
-            6,
+            7,
             true,
             BivouacDatabase.MIGRATION_1_2,
             BivouacDatabase.MIGRATION_2_5,
             BivouacDatabase.MIGRATION_5_6,
+            BivouacDatabase.MIGRATION_6_7,
         )
 
         migrated.query("SELECT id, trackName, gpxContent, bivouacTrackPointIndices FROM saved_track").use { cursor ->
@@ -199,10 +200,10 @@ class BivouacDatabaseMigrationTest {
             assertEquals(0, cursor.getInt(0))
         }
         migrated.execSQL(
-            "INSERT INTO logged_track (id, name, sourceFileName, startedAt, contentHash, " +
+            "INSERT INTO logged_track (id, name, startedAt, contentHash, " +
                 "distanceMeters, elevationGainMeters, elevationLossMeters, pointCount, " +
                 "estimatedDurationMinutes) VALUES " +
-                "('track-1', 'Randonnee Belledonne', 'belledonne.gpx', 1780300800000, " +
+                "('track-1', 'Randonnee Belledonne', 1780300800000, " +
                 "'hash-track-1', 8200.0, 650.0, 300.0, 3, 240)",
         )
         migrated.execSQL(
@@ -296,6 +297,63 @@ class BivouacDatabaseMigrationTest {
         migrated.execSQL(
             "INSERT INTO logged_track_tag (trackId, tag) VALUES ('track-1', 'solo')",
         )
+        migrated.query("SELECT trackId, tag FROM logged_track_tag").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("track-1", cursor.getString(0))
+            assertEquals("solo", cursor.getString(1))
+        }
+
+        migrated.close()
+    }
+
+    // RIC-95 : la migration recrée logged_track sans sourceFileName. Les lignes des tables
+    // filles (jours, tags) référencent le parent par id : elles doivent survivre au
+    // drop/rename du parent, données intactes.
+    @Test
+    fun migrate6To7_dropsSourceFileNameAndKeepsChildRows() {
+        helper.createDatabase(testDbName, 6).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, sourceFileName, startedAt, contentHash, " +
+                    "distanceMeters, elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note) VALUES " +
+                    "('track-1', 'Randonnee Belledonne', 'belledonne.gpx', 1780300800000, " +
+                    "'hash-track-1', 8200.0, 650.0, 300.0, 3, 240, 'Superbe meteo')",
+            )
+            execSQL(
+                "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxContent) VALUES " +
+                    "(1, 'track-1', 0, '${TRACK_1_GPX.escapeSql()}')",
+            )
+            execSQL(
+                "INSERT INTO logged_track_tag (trackId, tag) VALUES ('track-1', 'solo')",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            7,
+            true,
+            BivouacDatabase.MIGRATION_6_7,
+        )
+
+        migrated.query("SELECT id, name, contentHash, note FROM logged_track").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("track-1", cursor.getString(0))
+            assertEquals("Randonnee Belledonne", cursor.getString(1))
+            assertEquals("hash-track-1", cursor.getString(2))
+            assertEquals("Superbe meteo", cursor.getString(3))
+        }
+        migrated.query("SELECT * FROM logged_track LIMIT 1").use { cursor ->
+            assertEquals(-1, cursor.getColumnIndex("sourceFileName"))
+        }
+        migrated.query("SELECT trackId, rawGpxContent FROM logged_track_day").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("track-1", cursor.getString(0))
+            assertEquals(TRACK_1_GPX, cursor.getString(1))
+        }
         migrated.query("SELECT trackId, tag FROM logged_track_tag").use { cursor ->
             assertEquals(1, cursor.count)
             assertTrue(cursor.moveToFirst())

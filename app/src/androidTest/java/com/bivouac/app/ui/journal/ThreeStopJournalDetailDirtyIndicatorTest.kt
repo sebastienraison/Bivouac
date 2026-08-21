@@ -22,7 +22,6 @@ class ThreeStopJournalDetailDirtyIndicatorTest {
     private val entry = LoggedTrackEntity(
         id = "track-test",
         name = "Trace test",
-        sourceFileName = null,
         startedAt = 1_700_000_000_000L,
         contentHash = "hash-test",
         distanceMeters = 5000.0,

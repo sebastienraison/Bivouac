@@ -28,7 +28,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open") — a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 6
+        const val SCHEMA_VERSION = 7
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -95,6 +95,37 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-95 : logged_track.sourceFileName n'était écrit qu'à l'import et jamais lu nulle
+        // part ; la colonne part avec le champ. SQLite d'avant l'API 34 n'a pas d'ALTER TABLE
+        // DROP COLUMN, d'où le schéma classique recréer-copier-basculer (cible : schemas/7.json).
+        // Les enfants logged_track_day / logged_track_tag référencent la table par son nom et les
+        // contraintes FK ne sont pas appliquées pendant une migration Room (le PRAGMA foreign_keys
+        // n'est activé qu'à l'onOpen, après onUpgrade) : le DROP ne déclenche donc aucun CASCADE
+        // et leurs lignes retrouvent leur parent une fois la nouvelle table renommée.
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `logged_track_new` (" +
+                        "`id` TEXT NOT NULL, `name` TEXT NOT NULL, " +
+                        "`startedAt` INTEGER NOT NULL, `contentHash` TEXT NOT NULL, " +
+                        "`distanceMeters` REAL NOT NULL, `elevationGainMeters` REAL NOT NULL, " +
+                        "`elevationLossMeters` REAL NOT NULL, `pointCount` INTEGER NOT NULL, " +
+                        "`estimatedDurationMinutes` INTEGER NOT NULL, " +
+                        "`note` TEXT NOT NULL DEFAULT '', PRIMARY KEY(`id`))",
+                )
+                db.execSQL(
+                    "INSERT INTO `logged_track_new` (`id`, `name`, `startedAt`, `contentHash`, " +
+                        "`distanceMeters`, `elevationGainMeters`, `elevationLossMeters`, " +
+                        "`pointCount`, `estimatedDurationMinutes`, `note`) " +
+                        "SELECT `id`, `name`, `startedAt`, `contentHash`, `distanceMeters`, " +
+                        "`elevationGainMeters`, `elevationLossMeters`, `pointCount`, " +
+                        "`estimatedDurationMinutes`, `note` FROM `logged_track`",
+                )
+                db.execSQL("DROP TABLE `logged_track`")
+                db.execSQL("ALTER TABLE `logged_track_new` RENAME TO `logged_track`")
+            }
+        }
+
         fun getInstance(context: Context): BivouacDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -102,7 +133,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                     BivouacDatabase::class.java,
                     DATABASE_NAME,
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
                     .also { instance = it }
             }

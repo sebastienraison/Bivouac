@@ -14,10 +14,6 @@ import com.bivouac.app.data.gpx.TrackStats
 data class LoggedTrackEntity(
     @PrimaryKey val id: String,
     val name: String,
-    // The picked file's own display name, kept purely for traceability/provenance and as a
-    // rename suggestion later — real GPX exports are often better-named than the in-file <name>
-    // tag (which can be a generic device/location label repeated across several different hikes).
-    val sourceFileName: String?,
     val startedAt: Long,
     // SHA-256 of the concatenated raw day files, in order — catches re-importing the exact same
     // file(s) again. Deliberately not used alone for near-duplicate detection (a re-export of the
@@ -37,7 +33,6 @@ data class LoggedTrackEntity(
         distanceMeters = distanceMeters,
         elevationGainMeters = elevationGainMeters,
         elevationLossMeters = elevationLossMeters,
-        pointCount = pointCount,
         estimatedDurationMinutes = estimatedDurationMinutes,
     )
 }

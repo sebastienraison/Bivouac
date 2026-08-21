@@ -568,7 +568,6 @@ private fun groupByYear(tracks: List<LoggedTrackEntity>, activeCalibration: Spee
                 distanceMeters = entries.sumOf { it.distanceMeters },
                 elevationGainMeters = entries.sumOf { it.elevationGainMeters },
                 elevationLossMeters = entries.sumOf { it.elevationLossMeters },
-                pointCount = 0,
                 estimatedDurationMinutes = 0,
             )
             YearGroup(
@@ -1031,18 +1030,6 @@ internal fun ThreeStopJournalDetail(
                     } else {
                         Text(withBullets(entry.note), style = MaterialTheme.typography.bodyMedium)
                     }
-                    HorizontalDivider()
-                    Text("Photos", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "Emplacement réservé — bientôt disponible",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    HorizontalDivider()
-                    Text("Autres contenus", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "Cet espace accueillera les futurs enrichissements du Journal.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                     Spacer(Modifier.height(36.dp))
                 }
             }

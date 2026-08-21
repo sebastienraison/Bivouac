@@ -45,7 +45,6 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val settingsPreferences = SettingsPreferences(application)
 
     private val _tracks = MutableStateFlow<List<LoggedTrackEntity>>(emptyList())
-    val tracks: StateFlow<List<LoggedTrackEntity>> = _tracks.asStateFlow()
 
     // trackId -> its tags, for every track that has at least one — drives both the filter chips
     // (distinct values across all tracks) and which entries a filter selection keeps.

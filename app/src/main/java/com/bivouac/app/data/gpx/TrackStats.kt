@@ -7,7 +7,6 @@ data class TrackStats(
     val distanceMeters: Double,
     val elevationGainMeters: Double,
     val elevationLossMeters: Double,
-    val pointCount: Int,
     val estimatedDurationMinutes: Int,
 )
 
@@ -19,9 +18,6 @@ data class TrackStats(
 data class SpeedCalibration(
     val walkingSpeedKmh: Double,
     val elevationGainPenaltyMetersPerKm: Double,
-    // Reserved for a future D- correction (docs/CONCEPTION.md §9, known limitation) — not yet
-    // factored into [TrackStatsCalculator.compute] or surfaced in the Réglages UI.
-    val elevationLossPenaltyMetersPerKm: Double? = null,
 ) {
     companion object {
         val DEFAULT = SpeedCalibration(
@@ -57,7 +53,6 @@ object TrackStatsCalculator {
             distanceMeters = distance,
             elevationGainMeters = gain,
             elevationLossMeters = loss,
-            pointCount = points.size,
             estimatedDurationMinutes = durationMinutes,
         )
     }

@@ -28,7 +28,6 @@ data class BankedTrackEntity(
         distanceMeters = distanceMeters,
         elevationGainMeters = elevationGainMeters,
         elevationLossMeters = elevationLossMeters,
-        pointCount = pointCount,
         estimatedDurationMinutes = estimatedDurationMinutes,
     )
 }

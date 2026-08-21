@@ -54,7 +54,6 @@ class BackupManagerTest {
             LoggedTrackEntity(
                 id = "t1",
                 name = "Trace test backup",
-                sourceFileName = null,
                 startedAt = 0L,
                 contentHash = "hash1",
                 distanceMeters = 5000.0,
@@ -115,7 +114,6 @@ class BackupManagerTest {
             LoggedTrackEntity(
                 id = "t1",
                 name = "Trace pré-restauration",
-                sourceFileName = null,
                 startedAt = 0L,
                 contentHash = "hash1",
                 distanceMeters = 1000.0,
