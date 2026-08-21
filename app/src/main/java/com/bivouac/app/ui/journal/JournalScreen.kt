@@ -437,6 +437,8 @@ private fun MultiFileImportChoiceDialog(
     )
 }
 
+private const val MaxReportedProbableDuplicates = 5
+
 private fun formatSeparateImportReport(report: SeparateImportReport): String {
     val lines = mutableListOf<String>()
     lines += when (report.imported) {
@@ -453,6 +455,25 @@ private fun formatSeparateImportReport(report: SeparateImportReport): String {
     }
     if (report.failed > 0) {
         lines += if (report.failed == 1) "1 fichier illisible." else "${report.failed} fichiers illisibles."
+    }
+    // Le signalement des doublons probables tient dans ce bilan plutôt que dans un popup par
+    // fichier : le bilan est déjà l'écran à simple acquittement de fin de lot, et multiplier les
+    // popups sur un import de masse reviendrait à réintroduire l'interruption qu'on vient
+    // justement de supprimer. En dernier, c'est la seule ligne qui appelle une vérification.
+    if (report.probableDuplicateNames.isNotEmpty()) {
+        // Plafonné : le corps d'un AlertDialog ne défile pas, une liste de 20 noms déborderait de
+        // l'écran. Le reste est compté, jamais escamoté en silence.
+        val shown = report.probableDuplicateNames.take(MaxReportedProbableDuplicates)
+        val hidden = report.probableDuplicateNames.size - shown.size
+        val names = shown.joinToString("\n") { "• $it" } +
+            if (hidden > 0) "\n• et $hidden autre${if (hidden > 1) "s" else ""}" else ""
+        lines += if (report.probableDuplicateNames.size == 1) {
+            "\nÀ vérifier : cette trace ressemble à une sortie déjà présente (même date, distance " +
+                "très proche) et a quand même été importée.\n$names"
+        } else {
+            "\nÀ vérifier : ces traces ressemblent à des sorties déjà présentes (même date, " +
+                "distance très proche) et ont quand même été importées.\n$names"
+        }
     }
     return lines.joinToString("\n")
 }

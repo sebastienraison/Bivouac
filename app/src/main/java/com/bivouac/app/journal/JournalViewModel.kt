@@ -55,7 +55,15 @@ data class MultiFileImportChoice(val fileCount: Int)
 // Bilan d'un import « sorties séparées » : chaque fichier est traité indépendamment, donc l'échec
 // ou le doublon de l'un n'empêche pas les autres d'entrer — d'où ce compte rendu de fin de lot,
 // là où un import d'une seule sortie se contente d'ouvrir la trace importée.
-data class SeparateImportReport(val imported: Int, val duplicatesSkipped: Int, val failed: Int)
+// probableDuplicateNames : les traces importées malgré une ressemblance avec une sortie déjà
+// présente (cf. processNextSeparateImport). Nommées, et pas seulement comptées : « 3 doublons
+// possibles » n'est pas actionnable, l'utilisateur ne saurait pas lesquelles aller vérifier.
+data class SeparateImportReport(
+    val imported: Int,
+    val duplicatesSkipped: Int,
+    val failed: Int,
+    val probableDuplicateNames: List<String> = emptyList(),
+)
 
 // RIC-40 : tout ce dont la Planification a besoin pour ouvrir cette trace du Journal comme un
 // nouveau plan éditable — construit ici, et pas dans GpxImportViewModel, parce que seul le côté
@@ -150,6 +158,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private var separateImported = 0
     private var separateDuplicatesSkipped = 0
     private var separateFailed = 0
+    private val separateProbableNames = mutableListOf<String>()
 
     private val _deleteTarget = MutableStateFlow<LoggedTrackEntity?>(null)
     val deleteTarget: StateFlow<LoggedTrackEntity?> = _deleteTarget.asStateFlow()
@@ -397,6 +406,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         separateImported = 0
         separateDuplicatesSkipped = 0
         separateFailed = 0
+        separateProbableNames.clear()
         processNextSeparateImport()
     }
 
@@ -446,8 +456,9 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Un fichier à la fois : le suivant n'est lu qu'une fois le précédent tranché, y compris quand
-    // l'avertissement de doublon rend la main à l'utilisateur au milieu du lot.
+    // Un fichier à la fois, mais sans jamais rendre la main : rien dans ce mode n'interrompt le lot
+    // pour poser une question. Le suivant n'est lu qu'une fois le précédent écrit, pour ne pas
+    // paralléliser des écritures en base sur un lot de plusieurs dizaines de fichiers.
     private fun processNextSeparateImport() {
         val queue = separateQueue ?: return
         val uri = queue.removeFirstOrNull() ?: return finishSeparateImports()
@@ -465,9 +476,19 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                         separateDuplicatesSkipped++
                         processNextSeparateImport()
                     }
+                    // Importé quand même, et signalé dans le bilan de fin plutôt que par une
+                    // question bloquante : sur un import de masse, une erreur visible et
+                    // réversible (un doublon apparaît dans la liste, se supprime en deux taps)
+                    // vaut mieux qu'un oubli silencieux, et se faire arrêter plusieurs fois au
+                    // milieu de 66 fichiers est exactement la friction que ce mode doit éviter.
+                    // La politique devient au passage cohérente entre les deux niveaux de
+                    // détection : doublon certain écarté en silence, doublon probable importé
+                    // puis signalé.
                     is DuplicateMatch.Probable -> {
-                        pendingImport = prepared
-                        _probableDuplicate.value = duplicate.existing
+                        commit(prepared, openAfterCommit = false, refreshCalibration = false)
+                        separateImported++
+                        separateProbableNames += prepared.entity.name
+                        processNextSeparateImport()
                     }
                     null -> {
                         commit(prepared, openAfterCommit = false, refreshCalibration = false)
@@ -490,6 +511,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             imported = imported,
             duplicatesSkipped = separateDuplicatesSkipped,
             failed = separateFailed,
+            probableDuplicateNames = separateProbableNames.toList(),
         )
         // Une seule fois pour tout le lot, et pas après chaque fichier : recalculer la calibration
         // Auto reparse le GPX de tout le Journal, donc la faire N fois d'affilée coûte N passes
@@ -503,29 +525,19 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _separateImportReport.value = null
     }
 
+    // L'avertissement de doublon probable ne concerne plus que l'import d'une sortie seule : une
+    // question pour un fichier ne coûte rien, et l'utilisateur a le contexte pour y répondre. Un
+    // lot de sorties séparées, lui, ne pose jamais la question (cf. processNextSeparateImport).
     fun confirmImportAnyway() {
         val prepared = pendingImport ?: return
-        val inBatch = separateQueue != null
         pendingImport = null
         _probableDuplicate.value = null
-        viewModelScope.launch {
-            commit(prepared, openAfterCommit = !inBatch, refreshCalibration = !inBatch)
-            if (inBatch) {
-                separateImported++
-                processNextSeparateImport()
-            }
-        }
+        viewModelScope.launch { commit(prepared, openAfterCommit = true) }
     }
 
-    // « Annuler » sur l'avertissement de doublon : au milieu d'un lot, ça écarte ce seul fichier
-    // et enchaîne sur le suivant, ça n'abandonne pas le reste du lot.
     fun dismissDuplicateWarning() {
         pendingImport = null
         _probableDuplicate.value = null
-        if (separateQueue != null) {
-            separateDuplicatesSkipped++
-            processNextSeparateImport()
-        }
     }
 
     fun dismissImportError() {
