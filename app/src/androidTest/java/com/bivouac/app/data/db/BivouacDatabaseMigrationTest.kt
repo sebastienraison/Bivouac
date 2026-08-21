@@ -1,8 +1,11 @@
 package com.bivouac.app.data.db
 
+import android.database.sqlite.SQLiteBlobTooBigException
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -37,16 +40,38 @@ private const val TRACK_2_DAY_2_GPX = """<?xml version="1.0" encoding="UTF-8"?>
   </trkseg></trk>
 </gpx>"""
 
+// RIC-62 : contenu dépassant la CursorWindow (~2 Mo/ligne), généré plutôt que réel — aucune trace
+// réelle n'est embarquable dans les sources de test (données personnelles, hors dépôt public).
+// Une répétition de points suffit : la migration copie des caractères, elle ne parse pas.
+private fun buildOversizedGpx(): String = buildString {
+    append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+    append("<gpx version=\"1.1\" creator=\"bivouac-migration-test\">\n")
+    append("  <trk><name>Trace géante</name><trkseg>\n")
+    repeat(30_000) { i ->
+        append("    <trkpt lat=\"45.${100000 + i}\" lon=\"5.${200000 + i}\">")
+        append("<ele>${1200 + i % 800}.0</ele><time>2026-06-01T08:00:00Z</time></trkpt>\n")
+    }
+    append("  </trkseg></trk>\n</gpx>")
+}
+
 @RunWith(AndroidJUnit4::class)
 class BivouacDatabaseMigrationTest {
 
     private val testDbName = "bivouac-migration-test.db"
+    private val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
 
     @get:Rule
     val helper: MigrationTestHelper = MigrationTestHelper(
         InstrumentationRegistry.getInstrumentation(),
         BivouacDatabase::class.java,
     )
+
+    // Les fichiers écrits par migration7To8 atterrissent dans le vrai filesDir/gpx du contexte
+    // d'instrumentation — nettoyés pour ne pas polluer les autres tests (ni les runs suivants).
+    @After
+    fun cleanUpGpxFiles() {
+        LoggedTrackGpxStore.dir(targetContext).deleteRecursively()
+    }
 
     @Test
     fun migrate1To2_preservesExistingDataAndAddsBankedTrackTable() {
@@ -173,12 +198,13 @@ class BivouacDatabaseMigrationTest {
 
         val migrated = helper.runMigrationsAndValidate(
             testDbName,
-            7,
+            8,
             true,
             BivouacDatabase.MIGRATION_1_2,
             BivouacDatabase.MIGRATION_2_5,
             BivouacDatabase.MIGRATION_5_6,
             BivouacDatabase.MIGRATION_6_7,
+            BivouacDatabase.migration7To8(targetContext),
         )
 
         migrated.query("SELECT id, trackName, gpxContent, bivouacTrackPointIndices FROM saved_track").use { cursor ->
@@ -359,6 +385,107 @@ class BivouacDatabaseMigrationTest {
             assertTrue(cursor.moveToFirst())
             assertEquals("track-1", cursor.getString(0))
             assertEquals("solo", cursor.getString(1))
+        }
+
+        migrated.close()
+    }
+
+    // RIC-62 : le GPX brut sort de SQLite vers un fichier par jour. Base peuplée y compris d'un
+    // contenu au-delà de la CursorWindow (~2 Mo/ligne) : le test commence par prouver la prémisse
+    // du chantier (le lire d'un coup via un Cursor, comme le ferait une migration naïve, jette
+    // SQLiteBlobTooBigException) puis vérifie que la lecture par tranches de migration7To8 sort
+    // tous les contenus intacts, y compris celui-là.
+    @Test
+    fun migrate7To8_movesRawGpxToFiles_evenPastCursorWindowLimit() {
+        val oversizedGpx = buildOversizedGpx()
+        assertTrue(oversizedGpx.length > 2 * 1024 * 1024)
+
+        helper.createDatabase(testDbName, 7).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note) VALUES " +
+                    "('track-1', 'Randonnee Belledonne', 1780300800000, 'hash-track-1', " +
+                    "8200.0, 650.0, 300.0, 3, 240, '')",
+            )
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note) VALUES " +
+                    "('track-2', 'Traversee Vanoise', 1781078400000, 'hash-track-2', " +
+                    "21500.0, 1400.0, 900.0, 5, 660, '')",
+            )
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note) VALUES " +
+                    "('track-big', 'Trace geante', 1782000000000, 'hash-track-big', " +
+                    "42000.0, 2800.0, 2800.0, 30000, 900, '')",
+            )
+            execSQL(
+                "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxContent) VALUES " +
+                    "(1, 'track-1', 0, '${TRACK_1_GPX.escapeSql()}')",
+            )
+            execSQL(
+                "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxContent) VALUES " +
+                    "(2, 'track-2', 0, '${TRACK_2_DAY_1_GPX.escapeSql()}')",
+            )
+            execSQL(
+                "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxContent) VALUES " +
+                    "(3, 'track-2', 1, '${TRACK_2_DAY_2_GPX.escapeSql()}')",
+            )
+            execSQL(
+                "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxContent) VALUES " +
+                    "(4, 'track-big', 0, ?)",
+                arrayOf(oversizedGpx),
+            )
+
+            // Prémisse RIC-62, vérifiée sur place : une migration qui relirait la colonne entière
+            // via un Cursor ordinaire hériterait telle quelle de la limite CursorWindow.
+            var naiveReadFailed = false
+            try {
+                query("SELECT rawGpxContent FROM logged_track_day WHERE id = 4").use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0)
+                }
+            } catch (expected: SQLiteBlobTooBigException) {
+                naiveReadFailed = true
+            }
+            assertTrue("La lecture naïve aurait dû dépasser la CursorWindow", naiveReadFailed)
+
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            8,
+            true,
+            BivouacDatabase.migration7To8(targetContext),
+        )
+
+        val expectedContentByRowId = mapOf(
+            1L to TRACK_1_GPX,
+            2L to TRACK_2_DAY_1_GPX,
+            3L to TRACK_2_DAY_2_GPX,
+            4L to oversizedGpx,
+        )
+        migrated.query(
+            "SELECT id, trackId, dayIndex, rawGpxFilePath FROM logged_track_day ORDER BY id",
+        ).use { cursor ->
+            assertEquals(4, cursor.count)
+            while (cursor.moveToNext()) {
+                val rowId = cursor.getLong(0)
+                val path = cursor.getString(3)
+                val file = File(targetContext.filesDir, path)
+                assertTrue("Fichier manquant pour la ligne $rowId : $path", file.exists())
+                assertEquals(
+                    "Contenu altéré pour la ligne $rowId",
+                    expectedContentByRowId.getValue(rowId),
+                    file.readText(Charsets.UTF_8),
+                )
+            }
+        }
+        migrated.query("SELECT * FROM logged_track_day LIMIT 1").use { cursor ->
+            assertEquals(-1, cursor.getColumnIndex("rawGpxContent"))
         }
 
         migrated.close()

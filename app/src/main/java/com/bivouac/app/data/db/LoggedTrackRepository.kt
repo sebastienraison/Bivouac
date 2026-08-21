@@ -18,8 +18,9 @@ import kotlin.math.abs
 
 // A parsed-and-ready-to-store import that hasn't been written to the DB yet — lets the caller
 // check for duplicates (findDuplicate) before committing (commitImport), without re-reading or
-// re-parsing the file.
-data class PreparedImport(val entity: LoggedTrackEntity, val days: List<LoggedTrackDayEntity>)
+// re-parsing the file. Carries the raw content itself (one entry per day, in day order): the
+// backing file only gets written at commit time, so a discarded duplicate leaves no orphan.
+data class PreparedImport(val entity: LoggedTrackEntity, val rawGpxByDay: List<String>)
 
 sealed interface DuplicateMatch {
     val existing: LoggedTrackEntity
@@ -29,6 +30,7 @@ sealed interface DuplicateMatch {
 
 class LoggedTrackRepository(context: Context) {
 
+    private val appContext = context.applicationContext
     private val dao = BivouacDatabase.getInstance(context).loggedTrackDao()
 
     suspend fun list(): List<LoggedTrackEntity> = dao.list()
@@ -64,8 +66,7 @@ class LoggedTrackRepository(context: Context) {
             pointCount = track.points.size,
             estimatedDurationMinutes = stats.estimatedDurationMinutes,
         )
-        val day = LoggedTrackDayEntity(trackId = id, dayIndex = 0, rawGpxContent = rawGpx)
-        return PreparedImport(entity, listOf(day))
+        return PreparedImport(entity, listOf(rawGpx))
     }
 
     /**
@@ -83,8 +84,22 @@ class LoggedTrackRepository(context: Context) {
         return null
     }
 
+    // Fichiers d'abord, lignes ensuite : si l'insert échoue, les fichiers tout juste écrits sont
+    // retirés ; si une écriture de fichier échoue, rien n'a touché la base — dans les deux cas
+    // aucune ligne ne peut pointer vers un fichier absent.
     suspend fun commitImport(prepared: PreparedImport): String {
-        dao.insert(prepared.entity, prepared.days)
+        LoggedTrackGpxStore.dir(appContext).mkdirs()
+        val days = prepared.rawGpxByDay.mapIndexed { dayIndex, rawGpx ->
+            val relativePath = LoggedTrackGpxStore.relativePath(prepared.entity.id, dayIndex)
+            LoggedTrackGpxStore.resolve(appContext, relativePath).writeText(rawGpx, StandardCharsets.UTF_8)
+            LoggedTrackDayEntity(trackId = prepared.entity.id, dayIndex = dayIndex, rawGpxFilePath = relativePath)
+        }
+        try {
+            dao.insert(prepared.entity, days)
+        } catch (e: Exception) {
+            days.forEach { LoggedTrackGpxStore.resolve(appContext, it.rawGpxFilePath).delete() }
+            throw e
+        }
         return prepared.entity.id
     }
 
@@ -94,13 +109,18 @@ class LoggedTrackRepository(context: Context) {
         val days = dao.getDays(id)
         if (days.isEmpty()) return null
         val points = days.sortedBy { it.dayIndex }.flatMap { day ->
-            day.rawGpxContent.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }.points
+            LoggedTrackGpxStore.resolve(appContext, day.rawGpxFilePath).inputStream()
+                .use { GpxParser.parse(it) }.points
         }
         return HikeTrack(name = entity.name, points = points)
     }
 
     suspend fun delete(id: String) {
+        // Chemins relevés avant le DELETE (le CASCADE emporte les lignes de jours) ; la ligne
+        // disparaît avant son fichier, jamais l'inverse.
+        val days = dao.getDays(id)
         dao.delete(id)
+        days.forEach { LoggedTrackGpxStore.resolve(appContext, it.rawGpxFilePath).delete() }
     }
 
     suspend fun updateNote(id: String, note: String) {
@@ -137,16 +157,15 @@ class LoggedTrackRepository(context: Context) {
     // gap on a multi-day hike never gets counted as "elapsed walking time" — see
     // SpeedCalibrationCalculator's kdoc for why a real elapsed duration matters here.
     //
-    // dao.getDays() pulls a day's full rawGpxContent through a Room Cursor — for a long/verbose
-    // real hike that content can exceed CursorWindow's ~2MB per-row ceiling, which doesn't fail
-    // gracefully: it throws SQLiteBlobTooBigException and, uncaught, took down the whole app (BIV-16
-    // recette). One oversized track must not sink every other track's calibration along with it —
-    // same "silently skipped" treatment as a track with no usable timestamps, just from a different
-    // kind of unusable data.
+    // Le plafond CursorWindow qui faisait planter ici (BIV-16 recette) est levé depuis RIC-62 —
+    // le contenu vient d'un fichier, plus d'un Cursor. Le runCatching reste : un fichier manquant
+    // ou un GPX corrompu ne doit pas couler la calibration des autres traces — même traitement
+    // "silently skipped" qu'une trace sans horodatages exploitables.
     private suspend fun calibrationSample(entry: LoggedTrackEntity): SpeedCalibrationCalculator.Sample? {
         val elapsedHours = runCatching {
             dao.getDays(entry.id).sumOf { day ->
-                val points = day.rawGpxContent.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }.points
+                val points = LoggedTrackGpxStore.resolve(appContext, day.rawGpxFilePath).inputStream()
+                    .use { GpxParser.parse(it) }.points
                 val first = points.firstOrNull()?.time
                 val last = points.lastOrNull()?.time
                 if (first != null && last != null) Duration.between(first, last).toMillis() / 3_600_000.0 else 0.0

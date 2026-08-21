@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.bivouac.app.data.db.BivouacDatabase
 import com.bivouac.app.data.db.LoggedTrackDayEntity
 import com.bivouac.app.data.db.LoggedTrackEntity
+import com.bivouac.app.data.db.LoggedTrackGpxStore
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.data.prefs.SpeedCalibrationMode
@@ -38,6 +39,7 @@ class BackupManagerTest {
         backupFile = File(context.cacheDir, "test-backup-${System.nanoTime()}.zip")
         BivouacDatabase.closeAndReset()
         context.deleteDatabase(BivouacDatabase.DATABASE_NAME)
+        LoggedTrackGpxStore.dir(context).deleteRecursively()
     }
 
     @After
@@ -45,6 +47,16 @@ class BackupManagerTest {
         backupFile.delete()
         BivouacDatabase.closeAndReset()
         context.deleteDatabase(BivouacDatabase.DATABASE_NAME)
+        LoggedTrackGpxStore.dir(context).deleteRecursively()
+    }
+
+    // RIC-62 : le contenu GPX vit dans un fichier, la ligne n'en porte que le chemin — l'insertion
+    // de test reproduit le couple fichier + ligne tel que LoggedTrackRepository.commitImport l'écrit.
+    private fun writeDay(trackId: String, dayIndex: Int, rawGpx: String): LoggedTrackDayEntity {
+        val relativePath = LoggedTrackGpxStore.relativePath(trackId, dayIndex)
+        LoggedTrackGpxStore.dir(context).mkdirs()
+        LoggedTrackGpxStore.resolve(context, relativePath).writeText(rawGpx)
+        return LoggedTrackDayEntity(trackId = trackId, dayIndex = dayIndex, rawGpxFilePath = relativePath)
     }
 
     @Test
@@ -62,7 +74,7 @@ class BackupManagerTest {
                 pointCount = 10,
                 estimatedDurationMinutes = 90,
             ),
-            listOf(LoggedTrackDayEntity(trackId = "t1", dayIndex = 0, rawGpxContent = "<gpx/>")),
+            listOf(writeDay("t1", 0, "<gpx><!-- contenu test backup --></gpx>")),
         )
         val mapPrefs = MapLayerPreferences(context)
         mapPrefs.setSelectedLayer(MapLayer.SATELLITE)
@@ -93,6 +105,7 @@ class BackupManagerTest {
         // the app's data — the whole scenario this feature exists for.
         BivouacDatabase.closeAndReset()
         context.deleteDatabase(BivouacDatabase.DATABASE_NAME)
+        LoggedTrackGpxStore.dir(context).deleteRecursively()
         mapPrefs.setSelectedLayer(MapLayer.HIKING)
         settingsPrefs.setManualCalibration(3.5, 100.0)
         assertEquals(0, BivouacDatabase.getInstance(context).loggedTrackDao().list().size)
@@ -103,6 +116,13 @@ class BackupManagerTest {
         val restoredTracks = BivouacDatabase.getInstance(context).loggedTrackDao().list()
         assertEquals(1, restoredTracks.size)
         assertEquals("Trace test backup", restoredTracks.first().name)
+        // RIC-62 : l'archive doit ramener le fichier GPX avec la base — une ligne restaurée qui
+        // pointerait vers un fichier absent serait une trace vide.
+        val restoredDays = BivouacDatabase.getInstance(context).loggedTrackDao().getDays("t1")
+        assertEquals(1, restoredDays.size)
+        val restoredGpxFile = LoggedTrackGpxStore.resolve(context, restoredDays.first().rawGpxFilePath)
+        assertTrue(restoredGpxFile.exists())
+        assertEquals("<gpx><!-- contenu test backup --></gpx>", restoredGpxFile.readText())
         assertTrue(mapPrefsBytesAtBackup.contentEquals(mapPrefsFile.readBytes()))
         assertTrue(settingsPrefsBytesAtBackup.contentEquals(settingsPrefsFile.readBytes()))
     }
@@ -173,7 +193,7 @@ class BackupManagerTest {
                 pointCount = 2,
                 estimatedDurationMinutes = 10,
             ),
-            listOf(LoggedTrackDayEntity(trackId = "t1", dayIndex = 0, rawGpxContent = "<gpx/>")),
+            listOf(writeDay("t1", 0, "<gpx><!-- contenu à préserver --></gpx>")),
         )
         BivouacDatabase.closeAndReset()
 
@@ -189,5 +209,9 @@ class BackupManagerTest {
         val tracksAfterRejectedRestore = BivouacDatabase.getInstance(context).loggedTrackDao().list()
         assertEquals(1, tracksAfterRejectedRestore.size)
         assertEquals("Trace à préserver", tracksAfterRejectedRestore.first().name)
+        // RIC-62 : le fichier GPX en place doit lui aussi survivre à une restauration refusée.
+        val gpxFile = LoggedTrackGpxStore.resolve(context, LoggedTrackGpxStore.relativePath("t1", 0))
+        assertTrue(gpxFile.exists())
+        assertEquals("<gpx><!-- contenu à préserver --></gpx>", gpxFile.readText())
     }
 }

@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import java.io.File
 
 @Database(
     entities = [
@@ -28,7 +29,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open") — a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 7
+        const val SCHEMA_VERSION = 8
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -126,6 +127,100 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-62 : logged_track_day.rawGpxContent (TEXT) sort de SQLite vers un fichier par jour
+        // sous filesDir/gpx/ (voir LoggedTrackGpxStore), la colonne devient rawGpxFilePath.
+        // Même schéma recréer-copier-basculer que MIGRATION_6_7 ci-dessus (cible : schemas/8.json),
+        // plus l'écriture d'un fichier par ligne avant la bascule.
+        //
+        // Lecture par tranches via substr(), jamais la colonne entière : un db.query() dans une
+        // migration passe par un SQLiteCursor ordinaire adossé à la même CursorWindow (~2 Mo/ligne)
+        // que le reste de l'app — lire rawGpxContent d'un coup reproduirait exactement le
+        // SQLiteBlobTooBigException que cette migration répare (vérifié empiriquement par
+        // BivouacDatabaseMigrationTest sur un contenu > 2 Mo). Android n'exposant pas l'API blob
+        // incrémentale de SQLite, substr() est le canal de lecture bornée disponible ; il compte en
+        // points de code, et chaque tranche tient largement dans une fenêtre.
+        //
+        // Fabrique plutôt que val statique : contrairement aux migrations précédentes, celle-ci a
+        // besoin d'un Context pour localiser filesDir.
+        fun migration7To8(context: Context): Migration {
+            val appContext = context.applicationContext
+            return object : Migration(7, 8) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    LoggedTrackGpxStore.dir(appContext).mkdirs()
+
+                    data class DayRow(val id: Long, val trackId: String, val dayIndex: Int)
+                    val rows = mutableListOf<DayRow>()
+                    db.query("SELECT id, trackId, dayIndex FROM logged_track_day").use { cursor ->
+                        while (cursor.moveToNext()) {
+                            rows += DayRow(cursor.getLong(0), cursor.getString(1), cursor.getInt(2))
+                        }
+                    }
+
+                    // Le schéma n'impose pas l'unicité de (trackId, dayIndex) : en cas de doublon
+                    // le rowid départage, plutôt que d'écraser silencieusement le fichier d'une
+                    // autre ligne. Écraser un fichier resté d'une tentative de migration échouée
+                    // (la transaction SQL est annulée, pas les fichiers) est en revanche voulu.
+                    val claimedPaths = mutableSetOf<String>()
+                    val pathByRowId = mutableMapOf<Long, String>()
+                    for (row in rows) {
+                        var relativePath = LoggedTrackGpxStore.relativePath(row.trackId, row.dayIndex)
+                        if (!claimedPaths.add(relativePath)) {
+                            relativePath = "${LoggedTrackGpxStore.DIR_NAME}/${row.trackId}-day${row.dayIndex}-${row.id}.gpx"
+                            claimedPaths.add(relativePath)
+                        }
+                        writeRawGpxInChunks(db, row.id, File(appContext.filesDir, relativePath))
+                        pathByRowId[row.id] = relativePath
+                    }
+
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `logged_track_day_new` (" +
+                            "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `trackId` TEXT NOT NULL, " +
+                            "`dayIndex` INTEGER NOT NULL, `rawGpxFilePath` TEXT NOT NULL, " +
+                            "FOREIGN KEY(`trackId`) REFERENCES `logged_track`(`id`) " +
+                            "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                    )
+                    for (row in rows) {
+                        db.execSQL(
+                            "INSERT INTO `logged_track_day_new` (`id`, `trackId`, `dayIndex`, `rawGpxFilePath`) " +
+                                "VALUES (?, ?, ?, ?)",
+                            arrayOf(row.id, row.trackId, row.dayIndex, pathByRowId.getValue(row.id)),
+                        )
+                    }
+                    db.execSQL("DROP TABLE `logged_track_day`")
+                    db.execSQL("ALTER TABLE `logged_track_day_new` RENAME TO `logged_track_day`")
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS " +
+                            "`index_logged_track_day_trackId` ON `logged_track_day` (`trackId`)",
+                    )
+                }
+            }
+        }
+
+        // ~256K points de code par tranche : au pire quadruplé en UTF-8 ça reste sous la fenêtre de
+        // 2 Mo, et un GPX réel (ASCII pour l'essentiel) en est très loin.
+        private const val MIGRATION_CHUNK_CODE_POINTS = 256 * 1024
+
+        private fun writeRawGpxInChunks(db: SupportSQLiteDatabase, rowId: Long, target: File) {
+            target.outputStream().bufferedWriter(Charsets.UTF_8).use { writer ->
+                var position = 1L
+                while (true) {
+                    val chunk = db.query(
+                        "SELECT substr(rawGpxContent, ?, ?) FROM logged_track_day WHERE id = ?",
+                        arrayOf(position, MIGRATION_CHUNK_CODE_POINTS, rowId),
+                    ).use { cursor ->
+                        if (cursor.moveToFirst()) cursor.getString(0).orEmpty() else ""
+                    }
+                    if (chunk.isEmpty()) break
+                    writer.write(chunk)
+                    // substr() avance en points de code ; String.length compte en unités UTF-16,
+                    // d'où le codePointCount pour comparer des grandeurs identiques.
+                    val codePoints = chunk.codePointCount(0, chunk.length)
+                    if (codePoints < MIGRATION_CHUNK_CODE_POINTS) break
+                    position += codePoints
+                }
+            }
+        }
+
         fun getInstance(context: Context): BivouacDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -133,7 +228,13 @@ abstract class BivouacDatabase : RoomDatabase() {
                     BivouacDatabase::class.java,
                     DATABASE_NAME,
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7,
+                        migration7To8(context),
+                    )
                     .build()
                     .also { instance = it }
             }
