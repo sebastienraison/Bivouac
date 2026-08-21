@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -136,7 +137,17 @@ internal fun ThreeStopPlanificationDetail(
         // one frame short of the real value clipped the curve's X-axis labels right at the screen
         // edge (BIV-57 phone recette: zero margin for error since PROFILE's anchor puts the block's
         // bottom edge exactly at the screen's bottom). A known constant sidesteps the lag entirely.
-        val profileHeightPx = (summaryHeightPx + with(density) { PROFILE_BLOCK_HEIGHT_DP.toPx() })
+        // Sans segments en dessous, le bord bas du bloc profil coïncidait exactement avec le bord
+        // bas de l'écran au cran Profil, et les libellés de l'axe X passaient sous la barre
+        // système (RIC-95 recette) : un séparateur + l'espace de la barre de navigation sont
+        // posés sous la courbe dans ce cas (voir le bloc sous ElevationProfile), et comptés ici
+        // dans l'anchor Profil pour remonter la courbe d'autant.
+        val profileBottomReservePx = if (bivouacPoints.isEmpty()) {
+            navigationBarHeightPx + with(density) { 1.dp.toPx() }
+        } else {
+            0f
+        }
+        val profileHeightPx = (summaryHeightPx + with(density) { PROFILE_BLOCK_HEIGHT_DP.toPx() } + profileBottomReservePx)
             .coerceIn(summaryHeightPx, fullHeightPx)
         // How much room is left for the segments list before DETAIL would have to exceed the
         // screen — the segments Column below is capped to exactly this via heightIn(max), so it
@@ -229,6 +240,14 @@ internal fun ThreeStopPlanificationDetail(
                         .padding(horizontal = 20.dp)
                         .padding(top = 10.dp, bottom = 2.dp),
                 )
+
+                if (bivouacPoints.isEmpty()) {
+                    // Pendant du profileBottomReservePx calculé plus haut : même clôture visuelle
+                    // que lorsque la table des segments suit la courbe (son premier séparateur),
+                    // et l'axe X ne colle plus la barre système.
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 20.dp))
+                    Spacer(modifier = Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
+                }
 
                 if (bivouacPoints.isNotEmpty()) {
                     Column(
