@@ -33,6 +33,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
@@ -91,6 +92,7 @@ import com.bivouac.app.data.gpx.TrackStats
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
+import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.journal.JournalUiState
 import com.bivouac.app.journal.JournalViewModel
 import com.bivouac.app.journal.SeparateImportReport
@@ -125,6 +127,10 @@ fun JournalScreen(
     // "afficher sur la carte" action for a confirm/cancel pair that returns to Réglages.
     calibrationSelectionMode: Boolean = false,
     onCalibrationSelectionDone: () -> Unit = {},
+    // RIC-40 : reçoit une demande prête à charger, construite depuis la trace ouverte en vue
+    // détail — c'est l'appelant (MainActivity) qui prend en charge le passage vers la
+    // Planification, seul endroit où les ViewModels des deux écrans sont atteignables ensemble.
+    onDuplicateToPlanification: (DuplicatePlanRequest) -> Unit = {},
     viewModel: JournalViewModel = viewModel(),
 ) {
     val calibrationSelectionActive by viewModel.calibrationSelectionActive.collectAsStateWithLifecycle()
@@ -275,6 +281,7 @@ fun JournalScreen(
                 activeCalibration = activeCalibration,
                 onCloseClick = viewModel::closeTrack,
                 onDeleteClick = viewModel::requestDelete,
+                onDuplicateClick = { viewModel.buildDuplicateForPlanification()?.let(onDuplicateToPlanification) },
                 onSheetTopMeasured = { sheetTopPx = it },
                 cursorIndex = cursorIndex,
                 onCursorDragged = { cursorIndex = it },
@@ -878,6 +885,7 @@ internal fun ThreeStopJournalDetail(
     onCloseClick: () -> Unit,
     onRenameClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    onDuplicateClick: () -> Unit = {},
     onSheetTopMeasured: (Int) -> Unit,
     cursorIndex: Int?,
     onCursorDragged: (Int) -> Unit,
@@ -1000,7 +1008,11 @@ internal fun ThreeStopJournalDetail(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        JournalDetailMenu(onRenameClick = onRenameClick, onDeleteClick = onDeleteClick)
+                        JournalDetailMenu(
+                            onRenameClick = onRenameClick,
+                            onDuplicateClick = onDuplicateClick,
+                            onDeleteClick = onDeleteClick,
+                        )
                         IconButton(onClick = { requestExit(onCloseClick) }) {
                             Icon(Icons.Default.Close, contentDescription = "Fermer")
                         }
@@ -1253,7 +1265,7 @@ private fun withBullets(text: String): String = text.lines().joinToString("\n") 
 }
 
 @Composable
-private fun JournalDetailMenu(onRenameClick: () -> Unit, onDeleteClick: () -> Unit) {
+private fun JournalDetailMenu(onRenameClick: () -> Unit, onDuplicateClick: () -> Unit, onDeleteClick: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
@@ -1267,8 +1279,8 @@ private fun JournalDetailMenu(onRenameClick: () -> Unit, onDeleteClick: () -> Un
             )
             DropdownMenuItem(
                 text = { Text("Dupliquer vers la planification") },
-                enabled = false,
-                onClick = { expanded = false },
+                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                onClick = { expanded = false; onDuplicateClick() },
             )
             DropdownMenuItem(
                 text = { Text("Supprimer") },

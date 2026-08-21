@@ -65,6 +65,7 @@ import com.bivouac.app.data.weather.MeteoblueLink
 import com.bivouac.app.gpximport.CloseConfirmationReason
 import com.bivouac.app.gpximport.GpxImportUiState
 import com.bivouac.app.gpximport.GpxImportViewModel
+import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.ui.components.StatsRows
 import com.bivouac.app.ui.map.HikeMapView
 import com.bivouac.app.ui.map.MapControls
@@ -85,6 +86,10 @@ fun GpxImportScreen(
     incomingGpxUri: Uri? = null,
     currentSection: AppSection,
     onSectionSelected: (AppSection) -> Unit,
+    // RIC-40 : posé par « Dupliquer vers la planification » côté Journal, consommé une seule fois
+    // ici (voir la boîte aux lettres dans MainActivity).
+    pendingDuplicate: DuplicatePlanRequest? = null,
+    onPendingDuplicateConsumed: () -> Unit = {},
     viewModel: GpxImportViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -114,13 +119,26 @@ fun GpxImportScreen(
     var sheetTopPx by remember { mutableFloatStateOf(Float.MAX_VALUE) }
     val visibleMapHeightPx = (sheetTopPx - mapBoxTopPx).let { if (it.isFinite() && it > 0) it.toInt() else Int.MAX_VALUE }
 
+    // RIC-40 : se déclenche une fois par demande entrante (identité de la requête en clé, remise à
+    // null par l'appelant juste après) — c'est openDuplicateFromLoggedTrack qui décide s'il peut
+    // charger tout de suite ou s'il doit d'abord passer par la confirmation de fermeture.
+    LaunchedEffect(pendingDuplicate) {
+        val request = pendingDuplicate ?: return@LaunchedEffect
+        viewModel.openDuplicateFromLoggedTrack(request.track, request.bivouacPoints, request.suggestedName)
+        onPendingDuplicateConsumed()
+    }
+
     // A rotation destroys and recreates the Activity, so onCreate re-evaluates the incoming
     // intent's URI and this effect fires again with the same (non-null) value — only guarding on
     // Idle stops that replay from re-importing (and wiping bivouac points) on every rotation. An
     // explicit incoming GPX (opened from another app) always wins over whatever was saved from
     // the previous session; otherwise, restore that previous trace so a restart doesn't lose it.
+    //
+    // Une duplication en attente (RIC-40) court-circuite les deux : arriver ici avec une trace du
+    // Journal à dupliquer est un choix explicite, il ne doit pas se faire écraser par la trace de
+    // la session précédente que l'effet ci-dessus restaurerait en parallèle.
     LaunchedEffect(incomingGpxUri) {
-        if (uiState is GpxImportUiState.Idle) {
+        if (uiState is GpxImportUiState.Idle && pendingDuplicate == null) {
             if (incomingGpxUri != null) {
                 viewModel.importGpx(context.contentResolver, incomingGpxUri)
             } else {

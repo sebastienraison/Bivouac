@@ -278,19 +278,28 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     // Jamais banquée l'emporte sur simplement modifiée : dans ce cas c'est la trace entière qui
     // n'est pas enregistrée, pas seulement les changements depuis le dernier save.
     fun requestClose() {
-        val reason = when {
-            _currentBankedId.value == null -> CloseConfirmationReason.NEVER_SAVED
-            _dirty.value -> CloseConfirmationReason.DIRTY
-            else -> null
-        }
+        val reason = closeConfirmationReasonForCurrentTrack()
         _closeConfirmationReason.value = reason
         if (reason == null) {
             performClose()
         }
     }
 
+    // Null quand fermer ne fait rien perdre — parce que rien n'est ouvert, ou parce que ce qui
+    // l'est est déjà banqué et intact.
+    private fun closeConfirmationReasonForCurrentTrack(): CloseConfirmationReason? = when {
+        _uiState.value !is GpxImportUiState.Loaded -> null
+        _currentBankedId.value == null -> CloseConfirmationReason.NEVER_SAVED
+        _dirty.value -> CloseConfirmationReason.DIRTY
+        else -> null
+    }
+
     fun dismissCloseConfirmation() {
         _closeConfirmationReason.value = null
+        // L'utilisateur a choisi de garder ce qui est ouvert plutôt que de le lâcher — une
+        // duplication en attente (voir openDuplicateFromLoggedTrack) n'attendait que cette même
+        // confirmation, elle doit donc être abandonnée aussi, pas rejouée en douce.
+        pendingDuplicateLoad = null
     }
 
     fun discardAndClose() {
@@ -315,6 +324,57 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         _currentBankedId.value = null
         _dirty.value = false
         viewModelScope.launch { withContext(Dispatchers.IO) { repository.clear() } }
+        // Chaque appel à performClose() (abandon, enregistrer-puis-fermer, supprimer-puis-fermer)
+        // est un moment valide pour appliquer une duplication qui n'attendait que la fermeture de
+        // la trace en cours — voir openDuplicateFromLoggedTrack.
+        pendingDuplicateLoad?.let { loadDuplicate(it) }
+        pendingDuplicateLoad = null
+    }
+
+    // --- RIC-40 : dupliquer une trace du Journal vers la Planification ---
+
+    private var pendingDuplicateLoad: DuplicatePlan? = null
+
+    private data class DuplicatePlan(
+        val track: HikeTrack,
+        val bivouacPoints: List<BivouacPoint>,
+        val suggestedName: String,
+    )
+
+    /**
+     * Charge une trace dupliquée depuis le Journal (immuable là-bas — on ne fait que la lire) en
+     * tant que nouveau plan éditable, avec un point de bivouac déjà posé à chaque jonction de
+     * fichiers (voir JournalViewModel.buildDuplicateForPlanification). Le reste emprunte le flux
+     * « Dupliquer » déjà en place — même dialogue de nom, même chemin
+     * [NameDialogPurpose.DUPLICATE] vers une nouvelle entrée de la banque — plutôt que
+     * d'inventer une seconde façon de faire atterrir un plan.
+     *
+     * Si une trace est déjà ouverte ici et que la fermer poserait question, ça ne l'écrase pas en
+     * silence : la même confirmation qu'une fermeture manuelle s'affiche d'abord, et la
+     * duplication ne se charge qu'une fois l'utilisateur décidé (voir performClose /
+     * dismissCloseConfirmation).
+     */
+    fun openDuplicateFromLoggedTrack(track: HikeTrack, bivouacPoints: List<BivouacPoint>, suggestedName: String) {
+        val plan = DuplicatePlan(track, bivouacPoints, suggestedName)
+        val reason = closeConfirmationReasonForCurrentTrack()
+        if (reason == null) {
+            loadDuplicate(plan)
+        } else {
+            pendingDuplicateLoad = plan
+            _closeConfirmationReason.value = reason
+        }
+    }
+
+    private fun loadDuplicate(plan: DuplicatePlan) {
+        _uiState.value = GpxImportUiState.Loaded(
+            plan.track,
+            TrackStatsCalculator.compute(plan.track.points, activeCalibration.value),
+        )
+        _bivouacPoints.value = plan.bivouacPoints
+        _currentBankedId.value = null
+        _dirty.value = false
+        persistCurrentState()
+        _nameDialogRequest.value = NameDialogRequest(plan.suggestedName, NameDialogPurpose.DUPLICATE)
     }
 
     // --- Import / restauration ---

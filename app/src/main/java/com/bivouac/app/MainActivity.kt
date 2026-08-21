@@ -9,11 +9,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.ui.gpximport.GpxImportScreen
 import com.bivouac.app.ui.journal.JournalScreen
 import com.bivouac.app.ui.nav.AppSection
@@ -39,6 +44,13 @@ class MainActivity : ComponentActivity() {
 private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUri: Uri? = null) {
     val navController = rememberNavController()
 
+    // RIC-40 : une boîte aux lettres entre les ViewModels du Journal et de la Planification, qui
+    // ne se voient jamais autrement — ce composable est le seul endroit où les deux écrans sont
+    // atteignables à la fois. Ici plutôt que dans l'un des deux ViewModels, ou dans un dépôt
+    // partagé : une duplication est un passage de relais ponctuel, pas un état que l'un des deux
+    // écrans possède durablement.
+    var pendingDuplicate by remember { mutableStateOf<DuplicatePlanRequest?>(null) }
+
     // Standard top-level-destination navigation: pop back to the graph's start so switching
     // sections never piles up a back stack, but save/restore each section's own state (scroll
     // position, and — via the ViewModel's own store — the trace currently open in Planification)
@@ -58,6 +70,8 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUri: Uri? = nul
                 incomingGpxUri = incomingGpxUri,
                 currentSection = AppSection.PLANIFICATION,
                 onSectionSelected = ::onSectionSelected,
+                pendingDuplicate = pendingDuplicate,
+                onPendingDuplicateConsumed = { pendingDuplicate = null },
             )
         }
         composable(AppSection.JOURNAL.route) {
@@ -65,6 +79,10 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUri: Uri? = nul
                 modifier = Modifier.fillMaxSize(),
                 currentSection = AppSection.JOURNAL,
                 onSectionSelected = ::onSectionSelected,
+                onDuplicateToPlanification = { request ->
+                    pendingDuplicate = request
+                    onSectionSelected(AppSection.PLANIFICATION)
+                },
             )
         }
         composable(AppSection.REGLAGES.route) {

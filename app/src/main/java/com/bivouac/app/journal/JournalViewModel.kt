@@ -11,11 +11,14 @@ import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.db.PreparedImport
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
+import com.bivouac.app.data.model.BivouacPoint
+import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,6 +56,18 @@ data class MultiFileImportChoice(val fileCount: Int)
 // ou le doublon de l'un n'empêche pas les autres d'entrer — d'où ce compte rendu de fin de lot,
 // là où un import d'une seule sortie se contente d'ouvrir la trace importée.
 data class SeparateImportReport(val imported: Int, val duplicatesSkipped: Int, val failed: Int)
+
+// RIC-40 : tout ce dont la Planification a besoin pour ouvrir cette trace du Journal comme un
+// nouveau plan éditable — construit ici, et pas dans GpxImportViewModel, parce que seul le côté
+// Journal connaît les frontières entre jours. La trace du Journal, elle, n'est jamais touchée :
+// elle est immuable une fois importée. bivouacPoints porte déjà un point par jonction de fichiers
+// (vide pour une trace d'un seul jour) ; l'écran d'arrivée le charge comme n'importe quelle autre
+// sélection de bivouacs.
+data class DuplicatePlanRequest(
+    val track: HikeTrack,
+    val bivouacPoints: List<BivouacPoint>,
+    val suggestedName: String,
+)
 
 class JournalViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -192,6 +207,22 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.value = JournalUiState.Error("Trace incorrecte ou fichier illisible.")
             }
         }
+    }
+
+    /**
+     * RIC-40 : null quand il n'y a rien à dupliquer (on n'est pas sur la vue détail). Les points
+     * de bivouac tombent aux jonctions entre jours, voir [DayJunctions] — liste vide pour une
+     * trace d'un seul jour, que la Planification ouvre alors comme n'importe quelle trace sans
+     * bivouac. Rien n'est écrit ici : la trace du Journal reste telle qu'elle a été importée.
+     */
+    fun buildDuplicateForPlanification(): DuplicatePlanRequest? {
+        val state = _uiState.value as? JournalUiState.Detail ?: return null
+        val junctions = DayJunctions.bivouacTrackPointIndices(state.daySegments.map { it.points.size })
+        return DuplicatePlanRequest(
+            track = state.track,
+            bivouacPoints = junctions.map { BivouacPoint(id = UUID.randomUUID().toString(), trackPointIndex = it) },
+            suggestedName = "Copie de ${state.entry.name}",
+        )
     }
 
     fun closeTrack() {
