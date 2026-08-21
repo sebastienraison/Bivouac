@@ -76,6 +76,19 @@ class LoggedTrackRepository(context: Context) {
     suspend fun backfillDenormalizedFields() = LoggedTrackBackfill.run(appContext, dao)
 
     /**
+     * Horodatage du premier point de chaque jour, par trace et dans l'ordre des jours, pour
+     * afficher la plage de dates réelle d'un trek sans ouvrir le moindre fichier. Une requête pour
+     * toute la banque.
+     *
+     * Les jours sans horodatage exploitable, et ceux que le rattrapage n'a pas encore traités,
+     * sont absents : afficher les dates connues vaut mieux qu'inventer les autres.
+     */
+    suspend fun dayStartMillisByTrackId(): Map<String, List<Long>> =
+        dao.getAllDays()
+            .groupBy { it.trackId }
+            .mapValues { (_, days) -> days.sortedBy { it.dayIndex }.mapNotNull { it.startedAtMillis } }
+
+    /**
      * Reads, parses and hashes one or more raw GPX files into a single logged track (RIC-41 : un
      * fichier = un jour d'une même sortie), without writing anything to the DB yet — the raw
      * content itself is only used transiently here (via [GpxParser]) to compute the denormalized

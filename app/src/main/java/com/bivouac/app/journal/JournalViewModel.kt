@@ -18,6 +18,9 @@ import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -111,6 +114,12 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _selectedFilterTags = MutableStateFlow<Set<String>>(emptySet())
     val selectedFilterTags: StateFlow<Set<String>> = _selectedFilterTags.asStateFlow()
 
+    // trackId -> les dates de ses jours, pour que la liste distingue un trek d'une sortie d'un
+    // jour. Vide pour les traces dont le rattrapage n'a pas encore relevé les dates, auquel cas la
+    // liste se contente de la date de départ, comme avant.
+    private val _dayDatesByTrackId = MutableStateFlow<Map<String, List<LocalDate>>>(emptyMap())
+    val dayDatesByTrackId: StateFlow<Map<String, List<LocalDate>>> = _dayDatesByTrackId.asStateFlow()
+
     // OR semantics: a track matching any one selected tag is kept — narrows what's browsable,
     // doesn't require an exact combination match.
     val filteredTracks: StateFlow<List<LoggedTrackEntity>> =
@@ -203,10 +212,14 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         // plutôt qu'à l'ouverture de la base : c'est le seul endroit où le travail a un scope qui
         // s'annule (quitter le Journal l'interrompt) et où il ne retarde l'affichage de rien.
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
+            val backfilled = withContext(Dispatchers.IO) {
                 runCatching { repository.backfillDenormalizedFields() }
                     .onFailure { Log.w("JournalViewModel", "Rattrapage interrompu", it) }
+                    .isSuccess
             }
+            // Les plages de dates de la liste viennent des colonnes que le rattrapage remplit :
+            // sans ce second passage, elles n'apparaîtraient qu'au prochain lancement.
+            if (backfilled) refresh()
         }
     }
 
@@ -215,6 +228,11 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             withContext(Dispatchers.IO) {
                 _tracks.value = repository.list()
                 _tagsByTrackId.value = repository.tagsByTrackId()
+                val zone = ZoneId.systemDefault()
+                _dayDatesByTrackId.value = repository.dayStartMillisByTrackId()
+                    .mapValues { (_, millis) ->
+                        millis.map { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() }
+                    }
             }
         }
     }

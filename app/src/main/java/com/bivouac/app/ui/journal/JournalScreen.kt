@@ -94,6 +94,7 @@ import com.bivouac.app.data.gpx.TrackStats
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
+import com.bivouac.app.data.model.TrekDatesFormatter
 import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.journal.ImportProgress
 import com.bivouac.app.journal.JournalUiState
@@ -112,6 +113,7 @@ import com.bivouac.app.ui.map.MapControls
 import com.bivouac.app.ui.nav.AppSection
 import com.bivouac.app.ui.nav.SectionMenuButton
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -143,6 +145,7 @@ fun JournalScreen(
     }
     val filteredTracks by viewModel.filteredTracks.collectAsStateWithLifecycle()
     val tagsByTrackId by viewModel.tagsByTrackId.collectAsStateWithLifecycle()
+    val dayDatesByTrackId by viewModel.dayDatesByTrackId.collectAsStateWithLifecycle()
     val selectedFilterTags by viewModel.selectedFilterTags.collectAsStateWithLifecycle()
     val currentTags by viewModel.currentTags.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -220,6 +223,7 @@ fun JournalScreen(
                         tracks = filteredTracks,
                         activeCalibration = activeCalibration,
                         tagsByTrackId = tagsByTrackId,
+                        dayDatesByTrackId = dayDatesByTrackId,
                         selectedFilterTags = selectedFilterTags,
                         onToggleFilterTag = viewModel::toggleFilterTag,
                         onImportClick = { pickGpxLauncher.launch(arrayOf("*/*")) },
@@ -603,6 +607,7 @@ private fun JournalListContent(
     tracks: List<LoggedTrackEntity>,
     activeCalibration: SpeedCalibration,
     tagsByTrackId: Map<String, List<String>>,
+    dayDatesByTrackId: Map<String, List<LocalDate>>,
     selectedFilterTags: Set<String>,
     onToggleFilterTag: (String) -> Unit,
     onImportClick: () -> Unit,
@@ -737,6 +742,7 @@ private fun JournalListContent(
                     HorizontalDivider()
                     JournalTrackRow(
                         entry = entry,
+                        dayDates = dayDatesByTrackId[entry.id].orEmpty(),
                         activeCalibration = activeCalibration,
                         selectionModeActive = selectionModeActive,
                         selected = entry.id in selectedTrackIds,
@@ -835,6 +841,7 @@ private fun YearHeader(
 @Composable
 private fun JournalTrackRow(
     entry: LoggedTrackEntity,
+    dayDates: List<LocalDate>,
     activeCalibration: SpeedCalibration,
     selectionModeActive: Boolean,
     selected: Boolean,
@@ -857,8 +864,12 @@ private fun JournalTrackRow(
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(text = entry.name, style = MaterialTheme.typography.titleSmall)
+            // Une sortie de plusieurs jours affiche ses dates réelles plutôt que son seul jour de
+            // départ, sans quoi rien ne la distingue d'une sortie d'un jour dans cette liste.
+            // Retombe sur la date de départ seule quand les dates des jours sont inconnues : GPX
+            // sans horodatage, ou trace pas encore rattrapée après la migration 8 vers 9.
             Text(
-                text = formatStartedAt(entry.startedAt),
+                text = TrekDatesFormatter.format(dayDates) ?: formatStartedAt(entry.startedAt),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 4.dp),
