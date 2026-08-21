@@ -65,6 +65,19 @@ data class SeparateImportReport(
     val probableDuplicateNames: List<String> = emptyList(),
 )
 
+// Non nul du premier fichier lu jusqu'à la toute fin de l'opération, calibration comprise. Sert à
+// bloquer l'écran : pouvoir ouvrir une autre trace pendant qu'un import écrit en base est un
+// risque d'état incohérent, pas seulement un inconfort. La calibration en fait partie parce
+// qu'elle est, aujourd'hui, l'étape la plus lente des deux (voir refreshAutoCalibration).
+sealed interface ImportProgress {
+    // done vaut 0 pour un trek en plusieurs jours : prepareImport lit ses fichiers d'un bloc, il
+    // n'y a pas d'étape intermédiaire à montrer. Un lot de sorties séparées, lui, avance fichier
+    // par fichier et peut donc compter.
+    data class Reading(val done: Int, val total: Int) : ImportProgress
+
+    data object Calibrating : ImportProgress
+}
+
 // RIC-40 : tout ce dont la Planification a besoin pour ouvrir cette trace du Journal comme un
 // nouveau plan éditable — construit ici, et pas dans GpxImportViewModel, parce que seul le côté
 // Journal connaît les frontières entre jours. La trace du Journal, elle, n'est jamais touchée :
@@ -151,6 +164,10 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     private val _separateImportReport = MutableStateFlow<SeparateImportReport?>(null)
     val separateImportReport: StateFlow<SeparateImportReport?> = _separateImportReport.asStateFlow()
+
+    private val _importProgress = MutableStateFlow<ImportProgress?>(null)
+    val importProgress: StateFlow<ImportProgress?> = _importProgress.asStateFlow()
+    private var separateTotal = 0
 
     // File d'attente de l'import « sorties séparées » : non nulle du premier fichier au bilan de
     // fin. Elle survit à l'avertissement de doublon, qui la suspend puis la relance.
@@ -403,6 +420,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     fun chooseSeparateImports() {
         val uris = consumeImportChoice() ?: return
         separateQueue = ArrayDeque(uris)
+        separateTotal = uris.size
         separateImported = 0
         separateDuplicatesSkipped = 0
         separateFailed = 0
@@ -433,6 +451,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * fichiers est justement ce qui a été demandé.
      */
     private fun importAsSingleTrack(uris: List<Uri>) {
+        _importProgress.value = ImportProgress.Reading(done = 0, total = uris.size)
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -453,6 +472,9 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 Log.e("JournalViewModel", "Échec de l'import GPX (Journal)", it)
                 _importError.value = "Trace incorrecte ou fichier illisible."
             }
+            // Après le commit et sa calibration, donc après l'opération entière : ce qui suit
+            // (avertissement de doublon, erreur, vue détail) est de nouveau manipulable.
+            _importProgress.value = null
         }
     }
 
@@ -462,6 +484,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private fun processNextSeparateImport() {
         val queue = separateQueue ?: return
         val uri = queue.removeFirstOrNull() ?: return finishSeparateImports()
+        _importProgress.value = ImportProgress.Reading(done = separateTotal - queue.size - 1, total = separateTotal)
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -507,7 +530,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private fun finishSeparateImports() {
         separateQueue = null
         val imported = separateImported
-        _separateImportReport.value = SeparateImportReport(
+        val report = SeparateImportReport(
             imported = imported,
             duplicatesSkipped = separateDuplicatesSkipped,
             failed = separateFailed,
@@ -516,8 +539,17 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         // Une seule fois pour tout le lot, et pas après chaque fichier : recalculer la calibration
         // Auto reparse le GPX de tout le Journal, donc la faire N fois d'affilée coûte N passes
         // complètes pour un résultat que seule la dernière détermine.
-        if (imported > 0) {
-            viewModelScope.launch { withContext(Dispatchers.IO) { refreshAutoCalibration() } }
+        //
+        // Le bilan n'est posé qu'après : sur une banque un peu fournie cette passe se compte en
+        // secondes, et afficher « Import terminé » par-dessus un traitement encore en cours
+        // reviendrait à rendre l'écran manipulable au pire moment.
+        viewModelScope.launch {
+            if (imported > 0) {
+                _importProgress.value = ImportProgress.Calibrating
+                withContext(Dispatchers.IO) { refreshAutoCalibration() }
+            }
+            _importProgress.value = null
+            _separateImportReport.value = report
         }
     }
 
@@ -532,7 +564,10 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         val prepared = pendingImport ?: return
         pendingImport = null
         _probableDuplicate.value = null
-        viewModelScope.launch { commit(prepared, openAfterCommit = true) }
+        viewModelScope.launch {
+            commit(prepared, openAfterCommit = true)
+            _importProgress.value = null
+        }
     }
 
     fun dismissDuplicateWarning() {
@@ -549,9 +584,10 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         openAfterCommit: Boolean,
         refreshCalibration: Boolean = true,
     ) {
-        withContext(Dispatchers.IO) {
-            repository.commitImport(prepared)
-            if (refreshCalibration) refreshAutoCalibration()
+        withContext(Dispatchers.IO) { repository.commitImport(prepared) }
+        if (refreshCalibration) {
+            _importProgress.value = ImportProgress.Calibrating
+            withContext(Dispatchers.IO) { refreshAutoCalibration() }
         }
         refresh()
         // Mirrors Planification's "open a track" behavior: a just-imported trace should land

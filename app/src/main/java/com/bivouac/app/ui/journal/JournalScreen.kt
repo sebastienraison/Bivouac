@@ -80,6 +80,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -93,6 +94,7 @@ import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.journal.DuplicatePlanRequest
+import com.bivouac.app.journal.ImportProgress
 import com.bivouac.app.journal.JournalUiState
 import com.bivouac.app.journal.JournalViewModel
 import com.bivouac.app.journal.SeparateImportReport
@@ -150,6 +152,7 @@ fun JournalScreen(
     val probableDuplicate by viewModel.probableDuplicate.collectAsStateWithLifecycle()
     val multiFileImportChoice by viewModel.multiFileImportChoice.collectAsStateWithLifecycle()
     val separateImportReport by viewModel.separateImportReport.collectAsStateWithLifecycle()
+    val importProgress by viewModel.importProgress.collectAsStateWithLifecycle()
     val deleteTarget by viewModel.deleteTarget.collectAsStateWithLifecycle()
     val selectionModeActive by viewModel.selectionModeActive.collectAsStateWithLifecycle()
     val selectedTrackIds by viewModel.selectedTrackIds.collectAsStateWithLifecycle()
@@ -351,6 +354,8 @@ fun JournalScreen(
         )
     }
 
+    importProgress?.let { progress -> ImportProgressDialog(progress) }
+
     separateImportReport?.let { report ->
         AlertDialog(
             onDismissRequest = viewModel::dismissSeparateImportReport,
@@ -434,6 +439,40 @@ private fun MultiFileImportChoiceDialog(
         confirmButton = {
             TextButton(onClick = onCancel) { Text("Abandonner") }
         },
+    )
+}
+
+/**
+ * Attente d'import : volontairement sans aucune porte de sortie, ni bouton, ni retour arrière, ni
+ * clic à côté. Un import écrit en base fichier par fichier ; laisser l'écran manipulable pendant
+ * ce temps, c'est laisser ouvrir une trace dont l'import n'est pas fini, ou en relancer un second
+ * par-dessus le premier. L'annuler proprement supposerait de savoir défaire un lot à moitié
+ * écrit, ce qui n'existe pas ici.
+ */
+@Composable
+private fun ImportProgressDialog(progress: ImportProgress) {
+    AlertDialog(
+        onDismissRequest = {},
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+        title = { Text("Import en cours") },
+        text = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+                Text(
+                    when (progress) {
+                        // La calibration Auto reparse tout le journal : sur une banque fournie
+                        // c'est l'étape la plus longue, et la nommer évite de croire à un blocage.
+                        ImportProgress.Calibrating -> "Mise à jour de la vitesse personnalisée…"
+                        is ImportProgress.Reading -> when {
+                            progress.total == 1 -> "Lecture de la trace…"
+                            progress.done == 0 && progress.total > 1 -> "Lecture de ${progress.total} fichiers…"
+                            else -> "Fichier ${progress.done + 1} sur ${progress.total}…"
+                        }
+                    },
+                )
+            }
+        },
+        confirmButton = {},
     )
 }
 
