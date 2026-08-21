@@ -72,7 +72,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.state.ToggleableState
@@ -91,6 +90,7 @@ import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackStats
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
+import com.bivouac.app.data.model.Segment
 import com.bivouac.app.journal.JournalUiState
 import com.bivouac.app.journal.JournalViewModel
 import com.bivouac.app.ui.components.DrawerStop
@@ -126,7 +126,6 @@ fun JournalScreen(
     onCalibrationSelectionDone: () -> Unit = {},
     viewModel: JournalViewModel = viewModel(),
 ) {
-    val context = LocalContext.current
     val calibrationSelectionActive by viewModel.calibrationSelectionActive.collectAsStateWithLifecycle()
 
     LaunchedEffect(calibrationSelectionMode) {
@@ -163,8 +162,11 @@ fun JournalScreen(
     }
     var sheetTopPx by remember(sheetIdentity) { mutableIntStateOf(Int.MAX_VALUE) }
     val visibleMapHeightPx = (sheetTopPx - mapBoxTopPx).let { if (it > 0) it else Int.MAX_VALUE }
-    val pickGpxLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        uri?.let { viewModel.importTrack(context.contentResolver, it) }
+    // RIC-41 : sélection multiple autorisée. Ce qu'un lot de plusieurs fichiers signifie (un trek
+    // en plusieurs jours ou plusieurs sorties) n'est pas deviné ici, c'est le dialogue de choix
+    // plus bas qui tranche — voir JournalViewModel.importTracks.
+    val pickGpxLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+        viewModel.importTracks(uris)
     }
 
     val coloredTracks = remember(multiTrack) { multiTrack?.entries?.let { assignTrackColors(it) }.orEmpty() }
@@ -266,6 +268,7 @@ fun JournalScreen(
             ThreeStopJournalDetail(
                 entry = detail.entry,
                 track = detail.track,
+                daySegments = detail.daySegments,
                 activeCalibration = activeCalibration,
                 onCloseClick = viewModel::closeTrack,
                 onDeleteClick = viewModel::requestDelete,
@@ -786,6 +789,9 @@ private fun JournalMultiTrackContent(
 internal fun ThreeStopJournalDetail(
     entry: LoggedTrackEntity,
     track: HikeTrack,
+    // RIC-41 : un élément par jour importé, dans l'ordre — la ventilation ne s'affiche qu'au-delà
+    // d'un jour, même convention que les segments de Planification.
+    daySegments: List<Segment> = emptyList(),
     activeCalibration: SpeedCalibration = SpeedCalibration.DEFAULT,
     onCloseClick: () -> Unit,
     onRenameClick: () -> Unit,
@@ -917,7 +923,20 @@ internal fun ThreeStopJournalDetail(
                             Icon(Icons.Default.Close, contentDescription = "Fermer")
                         }
                     }
-                    StatsRows(TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration))
+                    // Sur une sortie de plusieurs jours, la ligne agrégée devient un « Total » en
+                    // retrait : c'est la ventilation par jour, au cran Détails, qui porte
+                    // l'information utile — même hiérarchie visuelle qu'en Planification.
+                    if (daySegments.size > 1) {
+                        Text(
+                            text = "Total",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    StatsRows(
+                        TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration),
+                        muted = daySegments.size > 1,
+                    )
                     ThreeStopDrawerStopRow(drawer)
                 }
 
@@ -939,6 +958,22 @@ internal fun ThreeStopJournalDetail(
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    // RIC-41 : uniquement pour un import de plusieurs jours — sur un seul jour, la
+                    // ligne « Total » ci-dessus dit déjà tout, une ventilation à une entrée ne
+                    // serait que du bruit.
+                    if (daySegments.size > 1) {
+                        Text("Jours", style = MaterialTheme.typography.titleSmall)
+                        Column {
+                            daySegments.forEachIndexed { index, segment ->
+                                HorizontalDivider()
+                                Column(modifier = Modifier.padding(vertical = 10.dp)) {
+                                    Text(text = "Jour ${index + 1}", style = MaterialTheme.typography.labelLarge)
+                                    StatsRows(TrackStatsCalculator.recomputeDuration(segment.stats, activeCalibration))
+                                }
+                            }
+                            HorizontalDivider()
+                        }
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,

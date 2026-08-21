@@ -1,7 +1,6 @@
 package com.bivouac.app.journal
 
 import android.app.Application
-import android.content.ContentResolver
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -13,6 +12,7 @@ import com.bivouac.app.data.db.PreparedImport
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.model.HikeTrack
+import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
@@ -31,7 +31,13 @@ import kotlinx.coroutines.withContext
 sealed interface JournalUiState {
     data object Overview : JournalUiState
     data object Loading : JournalUiState
-    data class Detail(val entry: LoggedTrackEntity, val track: HikeTrack) : JournalUiState
+    // daySegments (RIC-41) : la trace redécoupée par jour importé, pour la ventilation
+    // « Total » + « Jour N » — voir LoggedTrackRepository.openDetail.
+    data class Detail(
+        val entry: LoggedTrackEntity,
+        val track: HikeTrack,
+        val daySegments: List<Segment>,
+    ) : JournalUiState
     // BIV-48: a contemplative overview of several traces at once — entries in the order they
     // should get their (rotating) legend color, each paired with its parsed track.
     data class MultiTrack(val entries: List<Pair<LoggedTrackEntity, HikeTrack>>) : JournalUiState
@@ -41,6 +47,11 @@ sealed interface JournalUiState {
 class JournalViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = LoggedTrackRepository(application)
+    // Resolver de l'application, et pas celui passé par l'écran : un import peut s'étaler sur
+    // plusieurs allers-retours avec l'utilisateur (avertissement de doublon), il ne doit pas
+    // garder une référence vers un Context d'Activity pendant ce temps. Les permissions de
+    // lecture accordées par le sélecteur valent pour tout le process.
+    private val contentResolver = application.contentResolver
     private val mapLayerPreferences = MapLayerPreferences(application)
     private val settingsPreferences = SettingsPreferences(application)
 
@@ -141,11 +152,11 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _uiState.value = JournalUiState.Loading
         viewModelScope.launch {
             runCatching {
-                withContext(Dispatchers.IO) { repository.open(entry.id) }
-            }.onSuccess { track ->
-                _uiState.value = if (track != null) {
+                withContext(Dispatchers.IO) { repository.openDetail(entry.id) }
+            }.onSuccess { detail ->
+                _uiState.value = if (detail != null) {
                     _currentTags.value = _tagsByTrackId.value[entry.id].orEmpty()
-                    JournalUiState.Detail(entry, track)
+                    JournalUiState.Detail(entry, detail.track, detail.daySegments)
                 } else {
                     JournalUiState.Error("Trace introuvable.")
                 }
@@ -242,7 +253,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             _tracks.value = _tracks.value.map { if (it.id == entry.id) it.copy(name = trimmed) else it }
             val state = _uiState.value as? JournalUiState.Detail
             if (state != null && state.entry.id == entry.id) {
-                _uiState.value = JournalUiState.Detail(state.entry.copy(name = trimmed), state.track)
+                _uiState.value = JournalUiState.Detail(state.entry.copy(name = trimmed), state.track, state.daySegments)
             }
         }
     }
@@ -277,7 +288,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _tracks.value = _tracks.value.map { if (it.id == id) it.copy(note = note) else it }
         val state = _uiState.value as? JournalUiState.Detail
         if (state != null && state.entry.id == id) {
-            _uiState.value = JournalUiState.Detail(state.entry.copy(note = note), state.track)
+            _uiState.value = JournalUiState.Detail(state.entry.copy(note = note), state.track, state.daySegments)
         }
     }
 
@@ -299,11 +310,20 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun importTrack(resolver: ContentResolver, uri: Uri) {
+    /**
+     * RIC-41 : plusieurs fichiers sélectionnés en une fois forment une seule sortie de plusieurs
+     * jours (un fichier = un jour) — c'est [LoggedTrackRepository.prepareImport] qui ordonne les
+     * jours et agrège les statistiques.
+     *
+     * Import tout-ou-rien : un fichier illisible fait échouer le lot entier plutôt que de laisser
+     * une sortie multi-jours amputée d'un jour, plus trompeuse qu'une absence d'import.
+     */
+    fun importTracks(uris: List<Uri>) {
+        if (uris.isEmpty()) return
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val prepared = repository.prepareImport(resolver, uri, activeCalibration.value)
+                    val prepared = repository.prepareImport(contentResolver, uris, activeCalibration.value)
                     prepared to repository.findDuplicate(prepared)
                 }
             }.onSuccess { (prepared, duplicate) ->

@@ -9,6 +9,7 @@ import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
+import com.bivouac.app.data.model.Segment
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -21,6 +22,14 @@ import kotlin.math.abs
 // re-parsing the file. Carries the raw content itself (one entry per day, in day order): the
 // backing file only gets written at commit time, so a discarded duplicate leaves no orphan.
 data class PreparedImport(val entity: LoggedTrackEntity, val rawGpxByDay: List<String>)
+
+// Une trace du Journal ouverte pour affichage : [track] est l'ensemble des jours concaténés (la
+// carte et le profil altimétrique n'ont pas à connaître le découpage), [daySegments] ces mêmes
+// points redécoupés par jour, un par LoggedTrackDayEntity et dans l'ordre des jours, pour la
+// ventilation « Total » + « Jour N » de la vue détail (RIC-41). Une trace d'un seul jour donne une
+// liste à un élément ; l'affichage de la ventilation ne se déclenche qu'au-delà, même convention
+// que les segments de Planification.
+data class LoggedTrackDetail(val track: HikeTrack, val daySegments: List<Segment>)
 
 sealed interface DuplicateMatch {
     val existing: LoggedTrackEntity
@@ -36,37 +45,52 @@ class LoggedTrackRepository(context: Context) {
     suspend fun list(): List<LoggedTrackEntity> = dao.list()
 
     /**
-     * Reads, parses and hashes a single raw GPX file into a one-day logged track, without writing
-     * anything to the DB yet — the raw content itself is only used transiently here (via
-     * [GpxParser]) to compute the denormalized stats and the hike's start date; it's stored
-     * untouched separately (see LoggedTrackDayEntity).
+     * Reads, parses and hashes one or more raw GPX files into a single logged track (RIC-41 : un
+     * fichier = un jour d'une même sortie), without writing anything to the DB yet — the raw
+     * content itself is only used transiently here (via [GpxParser]) to compute the denormalized
+     * stats and the hike's start date; it's stored untouched separately (see LoggedTrackDayEntity).
+     *
+     * L'ordre des jours ne suit pas l'ordre de sélection mais l'horodatage de chaque fichier, voir
+     * [ImportDayOrdering]. Les statistiques agrégées sont la somme de celles de chaque jour, pas
+     * un calcul sur la concaténation : ça évite de compter le trajet fictif entre l'arrivée d'un
+     * jour et le départ du lendemain.
      */
     suspend fun prepareImport(
         resolver: ContentResolver,
-        uri: Uri,
+        uris: List<Uri>,
         calibration: SpeedCalibration = SpeedCalibration.DEFAULT,
     ): PreparedImport {
+        require(uris.isNotEmpty()) { "Aucun fichier sélectionné" }
         // readBounded plutôt que readBytes() : même plafond de taille que le parseur, appliqué
         // avant la première allocation pleine du fichier (entrée externe non maîtrisée, RIC-95).
-        val rawGpx = resolver.openInputStream(uri)?.use { GpxParser.readBounded(it) }
-            ?: throw IOException("Impossible d'ouvrir le fichier sélectionné")
-        val track = rawGpx.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }
-        val stats = TrackStatsCalculator.compute(track.points, calibration)
-        val startedAt = track.points.firstOrNull()?.time?.toEpochMilli() ?: System.currentTimeMillis()
+        val parsed = uris.map { uri ->
+            val rawGpx = resolver.openInputStream(uri)?.use { GpxParser.readBounded(it) }
+                ?: throw IOException("Impossible d'ouvrir le fichier sélectionné")
+            rawGpx to rawGpx.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }
+        }
+        val ordered = ImportDayOrdering.orderIndices(parsed.map { (_, track) -> track.points.firstOrNull()?.time })
+            .map { parsed[it] }
+        val dayStats = ordered.map { (_, track) -> TrackStatsCalculator.compute(track.points, calibration) }
+        val startedAt = ordered.first().second.points.firstOrNull()?.time?.toEpochMilli()
+            ?: System.currentTimeMillis()
 
         val id = UUID.randomUUID().toString()
         val entity = LoggedTrackEntity(
             id = id,
-            name = track.name ?: "Trace sans nom",
+            name = ordered.first().second.name ?: "Trace sans nom",
             startedAt = startedAt,
-            contentHash = sha256(rawGpx),
-            distanceMeters = stats.distanceMeters,
-            elevationGainMeters = stats.elevationGainMeters,
-            elevationLossMeters = stats.elevationLossMeters,
-            pointCount = track.points.size,
-            estimatedDurationMinutes = stats.estimatedDurationMinutes,
+            // Concaténation des contenus dans l'ordre des jours, pas une combinaison de hachages
+            // par fichier : réimporter exactement le même lot doit retomber sur le même hash pour
+            // que findDuplicate le bloque. Sur un fichier unique, ça reste le hash de ce fichier,
+            // donc les traces déjà importées gardent le leur.
+            contentHash = sha256(ordered.joinToString("\n") { (rawGpx, _) -> rawGpx }),
+            distanceMeters = dayStats.sumOf { it.distanceMeters },
+            elevationGainMeters = dayStats.sumOf { it.elevationGainMeters },
+            elevationLossMeters = dayStats.sumOf { it.elevationLossMeters },
+            pointCount = ordered.sumOf { (_, track) -> track.points.size },
+            estimatedDurationMinutes = dayStats.sumOf { it.estimatedDurationMinutes },
         )
-        return PreparedImport(entity, listOf(rawGpx))
+        return PreparedImport(entity, ordered.map { (rawGpx, _) -> rawGpx })
     }
 
     /**
@@ -113,6 +137,25 @@ class LoggedTrackRepository(context: Context) {
                 .use { GpxParser.parse(it) }.points
         }
         return HikeTrack(name = entity.name, points = points)
+    }
+
+    /**
+     * Même trace concaténée que [open], plus la ventilation par jour (RIC-41) dont la vue détail a
+     * besoin pour afficher « Total » et « Jour N ». La durée de chaque jour est calculée avec la
+     * calibration par défaut : c'est l'appelant qui la re-dérive sous la calibration active, comme
+     * [LoggedTrackEntity.toTrackStats] le fait déjà pour la ligne agrégée.
+     */
+    suspend fun openDetail(id: String): LoggedTrackDetail? {
+        val entity = dao.get(id) ?: return null
+        val days = dao.getDays(id).sortedBy { it.dayIndex }
+        if (days.isEmpty()) return null
+        val dayTracks = days.map { day ->
+            LoggedTrackGpxStore.resolve(appContext, day.rawGpxFilePath).inputStream().use { GpxParser.parse(it) }
+        }
+        return LoggedTrackDetail(
+            track = HikeTrack(name = entity.name, points = dayTracks.flatMap { it.points }),
+            daySegments = dayTracks.map { Segment(it.points, TrackStatsCalculator.compute(it.points)) },
+        )
     }
 
     suspend fun delete(id: String) {
