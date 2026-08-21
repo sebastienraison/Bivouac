@@ -93,6 +93,7 @@ import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.journal.JournalUiState
 import com.bivouac.app.journal.JournalViewModel
+import com.bivouac.app.journal.SeparateImportReport
 import com.bivouac.app.ui.components.DrawerStop
 import com.bivouac.app.ui.components.ElevationProfile
 import com.bivouac.app.ui.components.GainIconColor
@@ -141,6 +142,8 @@ fun JournalScreen(
     val nonFreeFeaturesDisabled by viewModel.nonFreeFeaturesDisabled.collectAsStateWithLifecycle()
     val activeCalibration by viewModel.activeCalibration.collectAsStateWithLifecycle()
     val probableDuplicate by viewModel.probableDuplicate.collectAsStateWithLifecycle()
+    val multiFileImportChoice by viewModel.multiFileImportChoice.collectAsStateWithLifecycle()
+    val separateImportReport by viewModel.separateImportReport.collectAsStateWithLifecycle()
     val deleteTarget by viewModel.deleteTarget.collectAsStateWithLifecycle()
     val selectionModeActive by viewModel.selectionModeActive.collectAsStateWithLifecycle()
     val selectedTrackIds by viewModel.selectedTrackIds.collectAsStateWithLifecycle()
@@ -332,6 +335,26 @@ fun JournalScreen(
         )
     }
 
+    multiFileImportChoice?.let { choice ->
+        MultiFileImportChoiceDialog(
+            fileCount = choice.fileCount,
+            onMultiDay = viewModel::chooseMultiDayImport,
+            onSeparate = viewModel::chooseSeparateImports,
+            onCancel = viewModel::cancelMultiFileImport,
+        )
+    }
+
+    separateImportReport?.let { report ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissSeparateImportReport,
+            title = { Text("Import terminé") },
+            text = { Text(formatSeparateImportReport(report)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissSeparateImportReport) { Text("OK") }
+            },
+        )
+    }
+
     probableDuplicate?.let { existing ->
         AlertDialog(
             onDismissRequest = viewModel::dismissDuplicateWarning,
@@ -366,6 +389,65 @@ fun JournalScreen(
             },
         )
     }
+}
+
+/**
+ * RIC-65 écran 3 : dès que le sélecteur renvoie plus d'un fichier. Les deux interprétations
+ * possibles sont proposées telles quelles, sans détection automatique — « Un seul trek » est mis
+ * en avant comme cas jugé le plus fréquent, « Abandonner » reste une porte de sortie explicite
+ * quand le lot est un mélange des deux.
+ */
+@Composable
+private fun MultiFileImportChoiceDialog(
+    fileCount: Int,
+    onMultiDay: () -> Unit,
+    onSeparate: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("$fileCount fichiers sélectionnés") },
+        // Les deux choix vivent dans le corps du dialogue plutôt que dans ses slots d'action :
+        // c'est ce qui permet de les empiler pleine largeur et de hiérarchiser visuellement le
+        // trek multi-jours. Ne reste dans les actions que la porte de sortie.
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Un seul trek en plusieurs jours, ou plusieurs sorties indépendantes ? " +
+                        "Rien n'est importé tant que tu n'as pas choisi.",
+                )
+                Button(onClick = onMultiDay, modifier = Modifier.fillMaxWidth()) {
+                    Text("Un seul trek en plusieurs jours")
+                }
+                OutlinedButton(onClick = onSeparate, modifier = Modifier.fillMaxWidth()) {
+                    Text("Sorties séparées")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onCancel) { Text("Abandonner") }
+        },
+    )
+}
+
+private fun formatSeparateImportReport(report: SeparateImportReport): String {
+    val lines = mutableListOf<String>()
+    lines += when (report.imported) {
+        0 -> "Aucune trace importée."
+        1 -> "1 trace importée."
+        else -> "${report.imported} traces importées."
+    }
+    if (report.duplicatesSkipped > 0) {
+        lines += if (report.duplicatesSkipped == 1) {
+            "1 fichier écarté (déjà dans le journal)."
+        } else {
+            "${report.duplicatesSkipped} fichiers écartés (déjà dans le journal)."
+        }
+    }
+    if (report.failed > 0) {
+        lines += if (report.failed == 1) "1 fichier illisible." else "${report.failed} fichiers illisibles."
+    }
+    return lines.joinToString("\n")
 }
 
 @Composable

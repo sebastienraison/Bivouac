@@ -44,6 +44,16 @@ sealed interface JournalUiState {
     data class Error(val message: String) : JournalUiState
 }
 
+// RIC-65 écran 3 : le sélecteur a renvoyé plusieurs fichiers, et rien ne permet de deviner s'il
+// s'agit d'un trek en plusieurs jours ou de plusieurs sorties indépendantes — l'utilisateur
+// tranche explicitement à chaque fois, sans heuristique de date ni de proximité.
+data class MultiFileImportChoice(val fileCount: Int)
+
+// Bilan d'un import « sorties séparées » : chaque fichier est traité indépendamment, donc l'échec
+// ou le doublon de l'un n'empêche pas les autres d'entrer — d'où ce compte rendu de fin de lot,
+// là où un import d'une seule sortie se contente d'ouvrir la trace importée.
+data class SeparateImportReport(val imported: Int, val duplicatesSkipped: Int, val failed: Int)
+
 class JournalViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = LoggedTrackRepository(application)
@@ -108,6 +118,23 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _probableDuplicate = MutableStateFlow<LoggedTrackEntity?>(null)
     val probableDuplicate: StateFlow<LoggedTrackEntity?> = _probableDuplicate.asStateFlow()
     private var pendingImport: PreparedImport? = null
+
+    // RIC-65 écran 3 : non nul tant que l'utilisateur n'a pas tranché entre trek multi-jours et
+    // sorties séparées. Aucun fichier n'est lu avant ce choix — « Abandonner » ne peut donc pas
+    // laisser d'import partiel derrière lui.
+    private val _multiFileImportChoice = MutableStateFlow<MultiFileImportChoice?>(null)
+    val multiFileImportChoice: StateFlow<MultiFileImportChoice?> = _multiFileImportChoice.asStateFlow()
+    private var pendingChoiceUris: List<Uri> = emptyList()
+
+    private val _separateImportReport = MutableStateFlow<SeparateImportReport?>(null)
+    val separateImportReport: StateFlow<SeparateImportReport?> = _separateImportReport.asStateFlow()
+
+    // File d'attente de l'import « sorties séparées » : non nulle du premier fichier au bilan de
+    // fin. Elle survit à l'avertissement de doublon, qui la suspend puis la relance.
+    private var separateQueue: ArrayDeque<Uri>? = null
+    private var separateImported = 0
+    private var separateDuplicatesSkipped = 0
+    private var separateFailed = 0
 
     private val _deleteTarget = MutableStateFlow<LoggedTrackEntity?>(null)
     val deleteTarget: StateFlow<LoggedTrackEntity?> = _deleteTarget.asStateFlow()
@@ -311,15 +338,60 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * RIC-41 : plusieurs fichiers sélectionnés en une fois forment une seule sortie de plusieurs
-     * jours (un fichier = un jour) — c'est [LoggedTrackRepository.prepareImport] qui ordonne les
-     * jours et agrège les statistiques.
-     *
-     * Import tout-ou-rien : un fichier illisible fait échouer le lot entier plutôt que de laisser
-     * une sortie multi-jours amputée d'un jour, plus trompeuse qu'une absence d'import.
+     * Point d'entrée unique de l'import depuis le sélecteur de fichiers. Un seul fichier passe
+     * directement (il n'y a rien à trancher) ; plusieurs déclenchent le choix de RIC-65 écran 3,
+     * avant toute lecture de fichier.
      */
     fun importTracks(uris: List<Uri>) {
-        if (uris.isEmpty()) return
+        when {
+            uris.isEmpty() -> return
+            uris.size == 1 -> importAsSingleTrack(uris)
+            else -> {
+                pendingChoiceUris = uris
+                _multiFileImportChoice.value = MultiFileImportChoice(uris.size)
+            }
+        }
+    }
+
+    /** « Un seul trek en plusieurs jours » : un fichier = un jour d'une même entrée du Journal. */
+    fun chooseMultiDayImport() {
+        val uris = consumeImportChoice() ?: return
+        importAsSingleTrack(uris)
+    }
+
+    /** « Sorties séparées » : N entrées indépendantes du Journal, traitées une par une. */
+    fun chooseSeparateImports() {
+        val uris = consumeImportChoice() ?: return
+        separateQueue = ArrayDeque(uris)
+        separateImported = 0
+        separateDuplicatesSkipped = 0
+        separateFailed = 0
+        processNextSeparateImport()
+    }
+
+    /** « Abandonner » : rien n'a encore été lu ni écrit, il n'y a donc rien à défaire. */
+    fun cancelMultiFileImport() {
+        consumeImportChoice()
+    }
+
+    private fun consumeImportChoice(): List<Uri>? {
+        val uris = pendingChoiceUris.takeIf { it.isNotEmpty() }
+        pendingChoiceUris = emptyList()
+        _multiFileImportChoice.value = null
+        return uris
+    }
+
+    /**
+     * RIC-41 : plusieurs fichiers ici forment une seule sortie de plusieurs jours (un fichier =
+     * un jour) — c'est [LoggedTrackRepository.prepareImport] qui ordonne les jours et agrège les
+     * statistiques.
+     *
+     * Import tout-ou-rien : un fichier illisible fait échouer le lot entier plutôt que de laisser
+     * une sortie multi-jours amputée d'un jour, plus trompeuse qu'une absence d'import. C'est
+     * exactement l'inverse du mode « sorties séparées » ci-dessous, où l'indépendance des
+     * fichiers est justement ce qui a été demandé.
+     */
+    private fun importAsSingleTrack(uris: List<Uri>) {
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -334,7 +406,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                         pendingImport = prepared
                         _probableDuplicate.value = duplicate.existing
                     }
-                    null -> commit(prepared)
+                    null -> commit(prepared, openAfterCommit = true)
                 }
             }.onFailure {
                 Log.e("JournalViewModel", "Échec de l'import GPX (Journal)", it)
@@ -343,30 +415,107 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun confirmImportAnyway() {
-        val prepared = pendingImport ?: return
-        dismissDuplicateWarning()
-        viewModelScope.launch { commit(prepared) }
+    // Un fichier à la fois : le suivant n'est lu qu'une fois le précédent tranché, y compris quand
+    // l'avertissement de doublon rend la main à l'utilisateur au milieu du lot.
+    private fun processNextSeparateImport() {
+        val queue = separateQueue ?: return
+        val uri = queue.removeFirstOrNull() ?: return finishSeparateImports()
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val prepared = repository.prepareImport(contentResolver, listOf(uri), activeCalibration.value)
+                    prepared to repository.findDuplicate(prepared)
+                }
+            }.onSuccess { (prepared, duplicate) ->
+                when (duplicate) {
+                    // Écarté sans dialogue, contrairement à l'import d'une sortie seule : c'est le
+                    // bilan de fin de lot qui le rapporte, sans interrompre les fichiers suivants.
+                    is DuplicateMatch.Exact -> {
+                        separateDuplicatesSkipped++
+                        processNextSeparateImport()
+                    }
+                    is DuplicateMatch.Probable -> {
+                        pendingImport = prepared
+                        _probableDuplicate.value = duplicate.existing
+                    }
+                    null -> {
+                        commit(prepared, openAfterCommit = false, refreshCalibration = false)
+                        separateImported++
+                        processNextSeparateImport()
+                    }
+                }
+            }.onFailure {
+                Log.e("JournalViewModel", "Échec de l'import GPX (Journal, sorties séparées)", it)
+                separateFailed++
+                processNextSeparateImport()
+            }
+        }
     }
 
+    private fun finishSeparateImports() {
+        separateQueue = null
+        val imported = separateImported
+        _separateImportReport.value = SeparateImportReport(
+            imported = imported,
+            duplicatesSkipped = separateDuplicatesSkipped,
+            failed = separateFailed,
+        )
+        // Une seule fois pour tout le lot, et pas après chaque fichier : recalculer la calibration
+        // Auto reparse le GPX de tout le Journal, donc la faire N fois d'affilée coûte N passes
+        // complètes pour un résultat que seule la dernière détermine.
+        if (imported > 0) {
+            viewModelScope.launch { withContext(Dispatchers.IO) { refreshAutoCalibration() } }
+        }
+    }
+
+    fun dismissSeparateImportReport() {
+        _separateImportReport.value = null
+    }
+
+    fun confirmImportAnyway() {
+        val prepared = pendingImport ?: return
+        val inBatch = separateQueue != null
+        pendingImport = null
+        _probableDuplicate.value = null
+        viewModelScope.launch {
+            commit(prepared, openAfterCommit = !inBatch, refreshCalibration = !inBatch)
+            if (inBatch) {
+                separateImported++
+                processNextSeparateImport()
+            }
+        }
+    }
+
+    // « Annuler » sur l'avertissement de doublon : au milieu d'un lot, ça écarte ce seul fichier
+    // et enchaîne sur le suivant, ça n'abandonne pas le reste du lot.
     fun dismissDuplicateWarning() {
         pendingImport = null
         _probableDuplicate.value = null
+        if (separateQueue != null) {
+            separateDuplicatesSkipped++
+            processNextSeparateImport()
+        }
     }
 
     fun dismissImportError() {
         _importError.value = null
     }
 
-    private suspend fun commit(prepared: PreparedImport) {
+    private suspend fun commit(
+        prepared: PreparedImport,
+        openAfterCommit: Boolean,
+        refreshCalibration: Boolean = true,
+    ) {
         withContext(Dispatchers.IO) {
             repository.commitImport(prepared)
-            refreshAutoCalibration()
+            if (refreshCalibration) refreshAutoCalibration()
         }
         refresh()
         // Mirrors Planification's "open a track" behavior: a just-imported trace should land
-        // straight on its detail view, not merely appear in the list waiting to be tapped.
-        openTrack(prepared.entity)
+        // straight on its detail view, not merely appear in the list waiting to be tapped. Un lot
+        // de sorties séparées y échappe : en ouvrir une seule, arbitrairement, ne dirait rien du
+        // reste du lot — c'est le bilan de fin qui tient ce rôle.
+        if (openAfterCommit) openTrack(prepared.entity)
     }
 
     // BIV-16 Auto mode: recomputed on every import regardless of which mode is currently active,
