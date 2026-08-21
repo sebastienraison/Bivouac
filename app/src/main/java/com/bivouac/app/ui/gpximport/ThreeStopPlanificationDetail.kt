@@ -178,7 +178,13 @@ internal fun ThreeStopPlanificationDetail(
         // recreates the drawer state, which lands it back on the PROFILE stop (RIC-95 decision,
         // aligned with Journal; the previous "keep the current stop across traces" behavior of
         // this screen is gone on purpose).
-        val drawer = rememberThreeStopDrawerState(anchors, track)
+        val drawer = rememberThreeStopDrawerState(
+            anchors = anchors,
+            trackKey = track,
+            // Sans bivouac, le cran Détails n'a aucun contenu propre : bouton grisé et inerte
+            // plutôt qu'une navigation vers un cran vide (RIC-95 recette 2, décision produit).
+            detailEnabled = bivouacPoints.isNotEmpty(),
+        )
 
         Surface(
             modifier = Modifier

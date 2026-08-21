@@ -80,6 +80,15 @@ internal class ThreeStopDrawerState(
     /** Positions (offset Y du haut de la feuille) de chaque cran ; réécrites à chaque recalcul. */
     var anchors: Map<DrawerStop, Float> = initialAnchors
 
+    /**
+     * Cran Détails autorisé ou non (RIC-95 recette 2, décision produit) : Planification le
+     * désactive quand la trace n'a aucun point de bivouac, puisqu'il n'y a alors rien à montrer
+     * à ce cran ; Journal le laisse toujours actif. Piloté par [rememberThreeStopDrawerState].
+     * Désactivé : le bouton de la rangée est grisé et inerte, la poignée saute le cran, et toute
+     * cible DETAIL restante (geste qui se pose dessus) est redirigée sur PROFILE.
+     */
+    var detailEnabled: Boolean by mutableStateOf(true)
+
     var stop: DrawerStop by mutableStateOf(DrawerStop.PROFILE)
         private set
 
@@ -103,10 +112,11 @@ internal class ThreeStopDrawerState(
         (statusBarHeightPx - offset.value).coerceIn(0f, statusBarHeightPx)
 
     fun animateTo(target: DrawerStop, initialVelocity: Float = 0f) {
-        stop = target
+        val effectiveTarget = if (target == DrawerStop.DETAIL && !detailEnabled) DrawerStop.PROFILE else target
+        stop = effectiveTarget
         scope.launch {
             offset.animateTo(
-                targetValue = anchors.getValue(target),
+                targetValue = anchors.getValue(effectiveTarget),
                 animationSpec = spring(),
                 initialVelocity = initialVelocity,
             )
@@ -169,10 +179,18 @@ internal class ThreeStopDrawerState(
 internal fun rememberThreeStopDrawerState(
     anchors: Map<DrawerStop, Float>,
     trackKey: Any?,
+    detailEnabled: Boolean = true,
 ): ThreeStopDrawerState {
     val scope = rememberCoroutineScope()
     val state = remember(trackKey) { ThreeStopDrawerState(scope, anchors) }
     state.anchors = anchors
+    state.detailEnabled = detailEnabled
+    // Cran Détails désactivé pendant qu'on y est (dernier bivouac supprimé depuis la table) :
+    // le tiroir vient déjà de se rétracter à la hauteur Profil (les deux anchors coïncident),
+    // le cran affiché suit pour ne pas laisser un surlignage sur un cran devenu inerte.
+    LaunchedEffect(state, detailEnabled) {
+        if (!detailEnabled && state.stop == DrawerStop.DETAIL) state.animateTo(DrawerStop.PROFILE)
+    }
     // Les hauteurs mesurées arrivent après la première composition (0 ou un fallback d'abord),
     // donc les tout premiers anchors sous-estiment les vrais crans ; à chaque recalcul, l'offset
     // est réaligné sur la position recalculée du cran courant. Le retour au cran Profil au
@@ -201,7 +219,7 @@ internal fun ThreeStopDrawerHandle(state: ThreeStopDrawerState, modifier: Modifi
                 state.animateTo(
                     when (state.stop) {
                         DrawerStop.SUMMARY -> DrawerStop.PROFILE
-                        DrawerStop.PROFILE -> DrawerStop.DETAIL
+                        DrawerStop.PROFILE -> if (state.detailEnabled) DrawerStop.DETAIL else DrawerStop.SUMMARY
                         DrawerStop.DETAIL -> DrawerStop.SUMMARY
                     },
                 )
@@ -209,22 +227,28 @@ internal fun ThreeStopDrawerHandle(state: ThreeStopDrawerState, modifier: Modifi
     )
 }
 
-/** Rangée Synthèse / Profil / Détails : le cran courant en couleur primaire, un tap y anime. */
+/**
+ * Rangée Synthèse / Profil / Détails : le cran courant en couleur primaire, un tap y anime.
+ * « Détails » est grisé et inerte quand [ThreeStopDrawerState.detailEnabled] est faux.
+ */
 @Composable
 internal fun ThreeStopDrawerStopRow(state: ThreeStopDrawerState) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
         DrawerStop.entries.forEach { candidate ->
-            TextButton(onClick = { state.animateTo(candidate) }) {
+            val enabled = candidate != DrawerStop.DETAIL || state.detailEnabled
+            TextButton(onClick = { state.animateTo(candidate) }, enabled = enabled) {
                 Text(
                     when (candidate) {
                         DrawerStop.SUMMARY -> "Synthèse"
                         DrawerStop.PROFILE -> "Profil"
                         DrawerStop.DETAIL -> "Détails"
                     },
-                    color = if (candidate == state.stop) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                    // La couleur est posée explicitement sur le Text, donc l'état désactivé du
+                    // TextButton ne suffit pas à griser : alpha 38 % à la main (convention M3).
+                    color = when {
+                        !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        candidate == state.stop -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
                     },
                 )
             }
