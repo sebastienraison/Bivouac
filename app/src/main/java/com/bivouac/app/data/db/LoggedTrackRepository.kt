@@ -21,7 +21,17 @@ import kotlin.math.abs
 // check for duplicates (findDuplicate) before committing (commitImport), without re-reading or
 // re-parsing the file. Carries the raw content itself (one entry per day, in day order): the
 // backing file only gets written at commit time, so a discarded duplicate leaves no orphan.
-data class PreparedImport(val entity: LoggedTrackEntity, val rawGpxByDay: List<String>)
+data class PreparedImport(val entity: LoggedTrackEntity, val days: List<PreparedDay>)
+
+// Un jour d'un import en attente, avec ce qui a été relevé pendant le parsing — le fichier est
+// déjà lu et parsé à ce moment-là, donc dénormaliser ne coûte rien de plus ici, alors que le
+// relire ensuite coûte une passe complète. Voir LoggedTrackDayEntity pour le sens des champs.
+data class PreparedDay(
+    val rawGpx: String,
+    val contentHash: String,
+    val startedAtMillis: Long?,
+    val elapsedSeconds: Long?,
+)
 
 // Une trace du Journal ouverte pour affichage : [track] est l'ensemble des jours concaténés (la
 // carte et le profil altimétrique n'ont pas à connaître le découpage), [daySegments] ces mêmes
@@ -43,6 +53,12 @@ class LoggedTrackRepository(context: Context) {
     private val dao = BivouacDatabase.getInstance(context).loggedTrackDao()
 
     suspend fun list(): List<LoggedTrackEntity> = dao.list()
+
+    /**
+     * Rattrape les colonnes dénormalisées des traces importées avant la migration 8 vers 9. Sans
+     * effet une fois la banque à jour, et interruptible : voir [LoggedTrackBackfill].
+     */
+    suspend fun backfillDenormalizedFields() = LoggedTrackBackfill.run(appContext, dao)
 
     /**
      * Reads, parses and hashes one or more raw GPX files into a single logged track (RIC-41 : un
@@ -90,7 +106,23 @@ class LoggedTrackRepository(context: Context) {
             pointCount = ordered.sumOf { (_, track) -> track.points.size },
             estimatedDurationMinutes = dayStats.sumOf { it.estimatedDurationMinutes },
         )
-        return PreparedImport(entity, ordered.map { (rawGpx, _) -> rawGpx })
+        val days = ordered.map { (rawGpx, track) ->
+            PreparedDay(
+                rawGpx = rawGpx,
+                contentHash = sha256(rawGpx),
+                startedAtMillis = track.points.firstOrNull()?.time?.toEpochMilli(),
+                elapsedSeconds = elapsedSeconds(track),
+            )
+        }
+        return PreparedImport(entity, days)
+    }
+
+    // null quand le jour n'a pas d'horodatage exploitable, ce qui est un cas réel : la calibration
+    // écarte alors la trace au lieu de lui prêter une durée inventée.
+    private fun elapsedSeconds(track: HikeTrack): Long? {
+        val first = track.points.firstOrNull()?.time ?: return null
+        val last = track.points.lastOrNull()?.time ?: return null
+        return Duration.between(first, last).seconds.takeIf { it > 0 }
     }
 
     /**
@@ -113,10 +145,17 @@ class LoggedTrackRepository(context: Context) {
     // aucune ligne ne peut pointer vers un fichier absent.
     suspend fun commitImport(prepared: PreparedImport): String {
         LoggedTrackGpxStore.dir(appContext).mkdirs()
-        val days = prepared.rawGpxByDay.mapIndexed { dayIndex, rawGpx ->
+        val days = prepared.days.mapIndexed { dayIndex, day ->
             val relativePath = LoggedTrackGpxStore.relativePath(prepared.entity.id, dayIndex)
-            LoggedTrackGpxStore.resolve(appContext, relativePath).writeText(rawGpx, StandardCharsets.UTF_8)
-            LoggedTrackDayEntity(trackId = prepared.entity.id, dayIndex = dayIndex, rawGpxFilePath = relativePath)
+            LoggedTrackGpxStore.resolve(appContext, relativePath).writeText(day.rawGpx, StandardCharsets.UTF_8)
+            LoggedTrackDayEntity(
+                trackId = prepared.entity.id,
+                dayIndex = dayIndex,
+                rawGpxFilePath = relativePath,
+                contentHash = day.contentHash,
+                startedAtMillis = day.startedAtMillis,
+                elapsedSeconds = day.elapsedSeconds,
+            )
         }
         try {
             dao.insert(prepared.entity, days)
@@ -193,7 +232,31 @@ class LoggedTrackRepository(context: Context) {
      */
     suspend fun calibrationSamples(ids: Set<String>? = null): List<SpeedCalibrationCalculator.Sample> {
         val entries = dao.list().filter { ids == null || it.id in ids }
-        return entries.mapNotNull { calibrationSample(it) }
+        // Deux requêtes pour toute la banque, contre une par trace plus un parsing complet de
+        // chacun de ses fichiers auparavant. C'était la cause de la lenteur d'import : le coût ne
+        // dépendait pas de ce qu'on importait mais du nombre de traces déjà en banque, donc il
+        // grossissait tout seul (constat B de la recette).
+        val daysByTrack = dao.getAllDays().groupBy { it.trackId }
+        return entries.mapNotNull { entry ->
+            val days = daysByTrack[entry.id].orEmpty()
+            // Une trace dont un seul jour n'est pas encore rattrapé repasse entièrement par
+            // l'ancien chemin : mélanger une somme partielle avec des jours ignorés donnerait une
+            // durée écoulée trop courte, donc une vitesse trop rapide, silencieusement.
+            if (days.isNotEmpty() && days.all { it.contentHash != null }) {
+                val elapsedHours = days.sumOf { it.elapsedSeconds ?: 0L } / 3_600.0
+                if (elapsedHours <= 0.0) {
+                    null
+                } else {
+                    SpeedCalibrationCalculator.Sample(
+                        distanceMeters = entry.distanceMeters,
+                        elevationGainMeters = entry.elevationGainMeters,
+                        elapsedHours = elapsedHours,
+                    )
+                }
+            } else {
+                calibrationSample(entry)
+            }
+        }
     }
 
     // Elapsed time is summed per day (not first-to-last across the whole track) so an overnight

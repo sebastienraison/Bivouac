@@ -197,6 +197,15 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         refresh()
+        // Rattrapage des colonnes dénormalisées, sans effet une fois la banque à jour. Lancé ici
+        // plutôt qu'à l'ouverture de la base : c'est le seul endroit où le travail a un scope qui
+        // s'annule (quitter le Journal l'interrompt) et où il ne retarde l'affichage de rien.
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching { repository.backfillDenormalizedFields() }
+                    .onFailure { Log.w("JournalViewModel", "Rattrapage interrompu", it) }
+            }
+        }
     }
 
     private fun refresh() {
