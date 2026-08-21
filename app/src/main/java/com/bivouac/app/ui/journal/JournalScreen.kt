@@ -85,6 +85,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.SystemTag
 import com.bivouac.app.data.gpx.SpeedCalibration
@@ -149,7 +150,7 @@ fun JournalScreen(
     val importError by viewModel.importError.collectAsStateWithLifecycle()
     val nonFreeFeaturesDisabled by viewModel.nonFreeFeaturesDisabled.collectAsStateWithLifecycle()
     val activeCalibration by viewModel.activeCalibration.collectAsStateWithLifecycle()
-    val probableDuplicate by viewModel.probableDuplicate.collectAsStateWithLifecycle()
+    val duplicateWarning by viewModel.duplicateWarning.collectAsStateWithLifecycle()
     val multiFileImportChoice by viewModel.multiFileImportChoice.collectAsStateWithLifecycle()
     val separateImportReport by viewModel.separateImportReport.collectAsStateWithLifecycle()
     val importProgress by viewModel.importProgress.collectAsStateWithLifecycle()
@@ -367,16 +368,18 @@ fun JournalScreen(
         )
     }
 
-    probableDuplicate?.let { existing ->
+    duplicateWarning?.let { warning ->
         AlertDialog(
             onDismissRequest = viewModel::dismissDuplicateWarning,
-            title = { Text("Trace peut-être déjà présente") },
-            text = {
+            title = {
                 Text(
-                    "« ${existing.name} » (${formatStartedAtWithTime(existing.startedAt)}) a une date et une " +
-                        "distance très proches. Importer quand même ?",
+                    when (warning) {
+                        is DuplicateMatch.SharedDay -> "Journée déjà présente"
+                        else -> "Trace peut-être déjà présente"
+                    },
                 )
             },
+            text = { Text(formatDuplicateWarning(warning)) },
             confirmButton = {
                 TextButton(onClick = viewModel::confirmImportAnyway) { Text("Importer quand même") }
             },
@@ -474,6 +477,29 @@ private fun ImportProgressDialog(progress: ImportProgress) {
         },
         confirmButton = {},
     )
+}
+
+/**
+ * Deux ressemblances de nature différente, donc deux formulations. Le doublon probable relève de
+ * l'indice (même date, distance voisine), le jour partagé relève du fait établi : le fichier est
+ * identique à l'octet près. La question posée reste la même dans les deux cas, parce que
+ * l'intention, elle, n'est certaine ni dans un cas ni dans l'autre.
+ */
+private fun formatDuplicateWarning(warning: DuplicateMatch): String {
+    val existingName = warning.existing.name
+    val existingDate = formatStartedAtWithTime(warning.existing.startedAt)
+    return when (warning) {
+        is DuplicateMatch.SharedDay -> {
+            val subject = when {
+                warning.incomingDays == 1 -> "Cette journée est déjà"
+                warning.sharedDays == 1 -> "Une des journées de ce trek est déjà"
+                else -> "${warning.sharedDays} des journées de ce trek sont déjà"
+            }
+            "$subject dans « $existingName » ($existingDate). Importer quand même ?"
+        }
+        else -> "« $existingName » ($existingDate) a une date et une distance très proches. " +
+            "Importer quand même ?"
+    }
 }
 
 private const val MaxReportedProbableDuplicates = 5

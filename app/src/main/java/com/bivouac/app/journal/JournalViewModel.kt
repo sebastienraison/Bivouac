@@ -151,8 +151,10 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _importError = MutableStateFlow<String?>(null)
     val importError: StateFlow<String?> = _importError.asStateFlow()
 
-    private val _probableDuplicate = MutableStateFlow<LoggedTrackEntity?>(null)
-    val probableDuplicate: StateFlow<LoggedTrackEntity?> = _probableDuplicate.asStateFlow()
+    // Le match entier et pas seulement la trace ressemblante : l'avertissement ne dit pas la même
+    // chose selon qu'il s'agit d'une sortie qui ressemble à une autre ou d'un jour déjà présent.
+    private val _duplicateWarning = MutableStateFlow<DuplicateMatch?>(null)
+    val duplicateWarning: StateFlow<DuplicateMatch?> = _duplicateWarning.asStateFlow()
     private var pendingImport: PreparedImport? = null
 
     // RIC-65 écran 3 : non nul tant que l'utilisateur n'a pas tranché entre trek multi-jours et
@@ -471,9 +473,9 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 when (duplicate) {
                     is DuplicateMatch.Exact ->
                         _importError.value = "« ${duplicate.existing.name} » est déjà dans le journal."
-                    is DuplicateMatch.Probable -> {
+                    is DuplicateMatch.Probable, is DuplicateMatch.SharedDay -> {
                         pendingImport = prepared
-                        _probableDuplicate.value = duplicate.existing
+                        _duplicateWarning.value = duplicate
                     }
                     null -> commit(prepared, openAfterCommit = true)
                 }
@@ -516,7 +518,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                     // La politique devient au passage cohérente entre les deux niveaux de
                     // détection : doublon certain écarté en silence, doublon probable importé
                     // puis signalé.
-                    is DuplicateMatch.Probable -> {
+                    is DuplicateMatch.Probable, is DuplicateMatch.SharedDay -> {
                         commit(prepared, openAfterCommit = false, refreshCalibration = false)
                         separateImported++
                         separateProbableNames += prepared.entity.name
@@ -572,7 +574,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     fun confirmImportAnyway() {
         val prepared = pendingImport ?: return
         pendingImport = null
-        _probableDuplicate.value = null
+        _duplicateWarning.value = null
         viewModelScope.launch {
             commit(prepared, openAfterCommit = true)
             _importProgress.value = null
@@ -581,7 +583,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     fun dismissDuplicateWarning() {
         pendingImport = null
-        _probableDuplicate.value = null
+        _duplicateWarning.value = null
     }
 
     fun dismissImportError() {

@@ -45,6 +45,21 @@ sealed interface DuplicateMatch {
     val existing: LoggedTrackEntity
     data class Exact(override val existing: LoggedTrackEntity) : DuplicateMatch
     data class Probable(override val existing: LoggedTrackEntity) : DuplicateMatch
+
+    /**
+     * Au moins un jour du lot entrant est déjà, à l'octet près, un jour d'une sortie du Journal,
+     * sans que les deux sorties soient identiques : importer une seule journée d'un trek déjà en
+     * banque, ou le trek entier alors qu'une de ses journées y est déjà seule.
+     *
+     * Traité comme un avertissement et jamais comme un blocage, dans les deux sens : la
+     * ressemblance est certaine mais l'intention ne l'est pas, et refuser un trek de six jours
+     * parce que son jour 3 existe déjà à part serait pire que le doublon.
+     */
+    data class SharedDay(
+        override val existing: LoggedTrackEntity,
+        val sharedDays: Int,
+        val incomingDays: Int,
+    ) : DuplicateMatch
 }
 
 class LoggedTrackRepository(context: Context) {
@@ -136,8 +151,35 @@ class LoggedTrackRepository(context: Context) {
     suspend fun findDuplicate(prepared: PreparedImport): DuplicateMatch? {
         val all = dao.list()
         all.find { it.contentHash == prepared.entity.contentHash }?.let { return DuplicateMatch.Exact(it) }
+        findSharedDay(prepared, all)?.let { return it }
         all.find { isProbablySameHike(it, prepared.entity) }?.let { return DuplicateMatch.Probable(it) }
         return null
+    }
+
+    /**
+     * Constat A de la recette : le hash de `logged_track` porte sur la concaténation des jours
+     * dans l'ordre, donc un fichier seul ne peut jamais correspondre à un trek de trois jours, et
+     * le repli « doublon probable » ne rattrape pas non plus, le jour 1 partageant la date de
+     * départ du trek entier mais pas sa distance. D'où cette comparaison jour à jour, qui n'est
+     * possible que depuis que le hash de chaque fichier est stocké.
+     *
+     * Ne voit que les jours déjà rattrapés (voir [LoggedTrackBackfill]) : sur une banque en cours
+     * de rattrapage la détection est partielle, jamais fausse.
+     */
+    private suspend fun findSharedDay(prepared: PreparedImport, all: List<LoggedTrackEntity>): DuplicateMatch? {
+        val incomingHashes = prepared.days.map { it.contentHash }.toSet()
+        val matchesByTrack = dao.getAllDays()
+            .filter { it.contentHash != null && it.contentHash in incomingHashes }
+            .groupBy { it.trackId }
+        // La sortie qui partage le plus de jours avec le lot entrant : sur un trek réimporté
+        // journée par journée, c'est celle qui rend l'avertissement compréhensible.
+        val (trackId, days) = matchesByTrack.maxByOrNull { it.value.size } ?: return null
+        val existing = all.find { it.id == trackId } ?: return null
+        return DuplicateMatch.SharedDay(
+            existing = existing,
+            sharedDays = days.size,
+            incomingDays = prepared.days.size,
+        )
     }
 
     // Fichiers d'abord, lignes ensuite : si l'insert échoue, les fichiers tout juste écrits sont
