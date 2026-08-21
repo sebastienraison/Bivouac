@@ -25,8 +25,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -1145,7 +1148,15 @@ internal fun ThreeStopJournalDetail(
                         .weight(1f)
                         .nestedScroll(drawer.nestedScrollConnection)
                         .verticalScroll(drawer.detailScrollState)
-                        .navigationBarsPadding()
+                        // Le tiroir a une hauteur fixe et l'app est en edge-to-edge, donc la
+                        // fenêtre ne se redimensionne pas à l'ouverture du clavier : sans réserver
+                        // sa hauteur ici, la zone défilante croit s'étendre jusqu'en bas de
+                        // l'écran, le défilement automatique vers le champ actif le juge déjà
+                        // visible, et le bas de la saisie des notes reste sous le clavier.
+                        //
+                        // union et non deux paddings enchaînés : les insets se cumuleraient, alors
+                        // que l'inset du clavier englobe déjà la barre de navigation.
+                        .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
