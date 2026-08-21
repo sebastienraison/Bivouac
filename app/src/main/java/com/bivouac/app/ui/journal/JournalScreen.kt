@@ -42,6 +42,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -176,7 +177,21 @@ fun JournalScreen(
             modifier = modifier,
             sheetPeekHeight = PEEK_HEIGHT_EMPTY.coerceAtMost(LocalConfiguration.current.screenHeightDp.dp * 0.5f),
             sheetContent = {
-                if (multiTrack != null) {
+                // Loading est émis par openTrack() comme par showOnMap() : sans ce rendu, taper
+                // une trace ne donnait aucun retour visuel le temps du parsing (RIC-95) — et une
+                // trace illisible semblait juste ne rien faire (l'état Error est rendu en dialogue
+                // plus bas, la liste restant visible derrière).
+                if (uiState is JournalUiState.Loading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(vertical = 40.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                } else if (multiTrack != null) {
                     JournalMultiTrackContent(
                         entries = multiTrack.entries,
                         coloredTracks = coloredTracks,
@@ -297,6 +312,19 @@ fun JournalScreen(
             text = { Text(importError ?: "") },
             confirmButton = {
                 TextButton(onClick = viewModel::dismissImportError) { Text("OK") }
+            },
+        )
+    }
+
+    // Échec d'ouverture d'une trace déjà dans le journal (fichier stocké illisible, trace
+    // introuvable...) : fermer le dialogue ramène à la liste, déjà affichée derrière.
+    (uiState as? JournalUiState.Error)?.let { error ->
+        AlertDialog(
+            onDismissRequest = viewModel::closeTrack,
+            title = { Text("Ouverture impossible") },
+            text = { Text(error.message) },
+            confirmButton = {
+                TextButton(onClick = viewModel::closeTrack) { Text("OK") }
             },
         )
     }
