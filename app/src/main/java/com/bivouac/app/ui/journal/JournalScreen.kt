@@ -4,17 +4,12 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -65,33 +60,24 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.RectangleShape
@@ -106,9 +92,13 @@ import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.journal.JournalUiState
 import com.bivouac.app.journal.JournalViewModel
+import com.bivouac.app.ui.components.DrawerStop
 import com.bivouac.app.ui.components.ElevationProfile
 import com.bivouac.app.ui.components.GainIconColor
 import com.bivouac.app.ui.components.StatsRows
+import com.bivouac.app.ui.components.ThreeStopDrawerHandle
+import com.bivouac.app.ui.components.ThreeStopDrawerStopRow
+import com.bivouac.app.ui.components.rememberThreeStopDrawerState
 import com.bivouac.app.ui.map.ColoredTrack
 import com.bivouac.app.ui.map.HikeMapView
 import com.bivouac.app.ui.map.MapControls
@@ -118,30 +108,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.abs
 import kotlin.math.roundToInt
-import kotlinx.coroutines.launch
 
 private val PEEK_HEIGHT_EMPTY = 150.dp
-
-internal enum class JournalDetailStop { SUMMARY, PROFILE, DETAIL }
-
-internal fun settleJournalDetailStop(
-    currentOffset: Float,
-    velocity: Float,
-    anchors: Map<JournalDetailStop, Float>,
-): JournalDetailStop {
-    if (abs(velocity) >= 900f) {
-        val ordered = anchors.entries.sortedBy { it.value }
-        val nearestIndex = ordered.indices.minBy { abs(ordered[it].value - currentOffset) }
-        return if (velocity < 0f) {
-            ordered[(nearestIndex - 1).coerceAtLeast(0)].key
-        } else {
-            ordered[(nearestIndex + 1).coerceAtMost(ordered.lastIndex)].key
-        }
-    }
-    return anchors.minBy { abs(it.value - currentOffset) }.key
-}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -803,7 +772,6 @@ internal fun ThreeStopJournalDetail(
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = LocalDensity.current
-        val scope = rememberCoroutineScope()
         var isEditing by remember(entry.id) { mutableStateOf(false) }
         var draftTags by remember(entry.id) { mutableStateOf(currentTags.toSet()) }
         var draftNote by remember(entry.id) { mutableStateOf(entry.note) }
@@ -866,98 +834,21 @@ internal fun ThreeStopJournalDetail(
         val detailHeightPx = fullHeightPx
         val anchors = remember(fullHeightPx, summaryHeightPx, profileHeightPx, detailHeightPx) {
             mapOf(
-                JournalDetailStop.DETAIL to fullHeightPx - detailHeightPx,
-                JournalDetailStop.PROFILE to fullHeightPx - profileHeightPx,
-                JournalDetailStop.SUMMARY to fullHeightPx - summaryHeightPx,
+                DrawerStop.DETAIL to fullHeightPx - detailHeightPx,
+                DrawerStop.PROFILE to fullHeightPx - profileHeightPx,
+                DrawerStop.SUMMARY to fullHeightPx - summaryHeightPx,
             )
         }
-        var stop by remember(entry.id) { mutableStateOf(JournalDetailStop.PROFILE) }
-        val offset = remember(entry.id) { Animatable(anchors.getValue(JournalDetailStop.PROFILE)) }
-
-        LaunchedEffect(anchors, entry.id) {
-            offset.snapTo(anchors.getValue(JournalDetailStop.PROFILE))
-            stop = JournalDetailStop.PROFILE
-        }
-
-        fun animateTo(target: JournalDetailStop, initialVelocity: Float = 0f) {
-            stop = target
-            scope.launch {
-                offset.animateTo(
-                    targetValue = anchors.getValue(target),
-                    animationSpec = spring(),
-                    initialVelocity = initialVelocity,
-                )
-            }
-        }
-
-        val dragModifier = Modifier.draggable(
-            state = rememberDraggableState { delta ->
-                scope.launch {
-                    offset.snapTo(
-                        (offset.value + delta).coerceIn(
-                            anchors.getValue(JournalDetailStop.DETAIL),
-                            anchors.getValue(JournalDetailStop.SUMMARY),
-                        ),
-                    )
-                }
-            },
-            orientation = Orientation.Vertical,
-            onDragStopped = { velocity ->
-                animateTo(settleJournalDetailStop(offset.value, velocity, anchors), velocity)
-            },
-        )
-        val detailScrollState = rememberScrollState()
-        val detailNestedScroll = remember(entry.id, anchors) {
-            object : NestedScrollConnection {
-                private var handedToSheet = false
-
-                override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                    val atBoundary = (available.y > 0f && detailScrollState.value == 0) ||
-                        (available.y < 0f && detailScrollState.value == detailScrollState.maxValue)
-                    if (source != NestedScrollSource.UserInput || !atBoundary) return Offset.Zero
-                    handedToSheet = true
-                    scope.launch {
-                        offset.snapTo(
-                            (offset.value + available.y).coerceIn(
-                                anchors.getValue(JournalDetailStop.DETAIL),
-                                anchors.getValue(JournalDetailStop.SUMMARY),
-                            ),
-                        )
-                    }
-                    return Offset(0f, available.y)
-                }
-
-                override suspend fun onPreFling(available: Velocity): Velocity {
-                    if (!handedToSheet) return Velocity.Zero
-                    handedToSheet = false
-                    animateTo(settleJournalDetailStop(offset.value, available.y, anchors), available.y)
-                    return available
-                }
-
-                override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                    if (handedToSheet) {
-                        handedToSheet = false
-                        animateTo(settleJournalDetailStop(offset.value, available.y, anchors), available.y)
-                    }
-                    return Velocity.Zero
-                }
-            }
-        }
+        val drawer = rememberThreeStopDrawerState(anchors, entry.id)
         val statusBarHeightPx = WindowInsets.statusBars.getTop(density).toFloat()
-        val detailTravelPx = anchors.getValue(JournalDetailStop.PROFILE) -
-            anchors.getValue(JournalDetailStop.DETAIL)
-        val detailExpansion = if (detailTravelPx <= 0f) 1f else {
-            ((anchors.getValue(JournalDetailStop.PROFILE) - offset.value) / detailTravelPx)
-                .coerceIn(0f, 1f)
-        }
 
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(with(density) { detailHeightPx.toDp() })
-                .offset { IntOffset(0, offset.value.roundToInt()) }
+                .offset { IntOffset(0, drawer.offset.value.roundToInt()) }
                 .onGloballyPositioned { onSheetTopMeasured(it.positionInRoot().y.toInt()) },
-            shape = if (offset.value <= 1f) {
+            shape = if (drawer.offset.value <= 1f) {
                 RectangleShape
             } else {
                 RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
@@ -968,11 +859,11 @@ internal fun ThreeStopJournalDetail(
             Column(modifier = Modifier.fillMaxSize()) {
                 Spacer(
                     modifier = Modifier.height(
-                        with(density) { (statusBarHeightPx * detailExpansion).toDp() },
+                        with(density) { (statusBarHeightPx * drawer.detailExpansion).toDp() },
                     ),
                 )
                 Column(
-                    modifier = dragModifier
+                    modifier = drawer.dragModifier
                         .padding(
                             start = 20.dp,
                             end = 20.dp,
@@ -980,25 +871,7 @@ internal fun ThreeStopJournalDetail(
                         )
                         .onGloballyPositioned { measuredSummaryHeightPx = it.size.height },
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .padding(top = 10.dp, bottom = 4.dp)
-                            .size(width = 44.dp, height = 4.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(MaterialTheme.colorScheme.onSurfaceVariant)
-                            .graphicsLayer { alpha = 0.45f }
-                            .semantics { contentDescription = "Poignée du tiroir" }
-                            .clickable {
-                                animateTo(
-                                    when (stop) {
-                                        JournalDetailStop.SUMMARY -> JournalDetailStop.PROFILE
-                                        JournalDetailStop.PROFILE -> JournalDetailStop.DETAIL
-                                        JournalDetailStop.DETAIL -> JournalDetailStop.SUMMARY
-                                    },
-                                )
-                            },
-                    )
+                    ThreeStopDrawerHandle(drawer, Modifier.align(Alignment.CenterHorizontally))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1018,27 +891,7 @@ internal fun ThreeStopJournalDetail(
                         }
                     }
                     StatsRows(TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                    ) {
-                        JournalDetailStop.entries.forEach { candidate ->
-                            TextButton(onClick = { animateTo(candidate) }) {
-                                Text(
-                                    when (candidate) {
-                                        JournalDetailStop.SUMMARY -> "Synthèse"
-                                        JournalDetailStop.PROFILE -> "Profil"
-                                        JournalDetailStop.DETAIL -> "Détails"
-                                    },
-                                    color = if (candidate == stop) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                )
-                            }
-                        }
-                    }
+                    ThreeStopDrawerStopRow(drawer)
                 }
 
                 ElevationProfile(
@@ -1053,8 +906,8 @@ internal fun ThreeStopJournalDetail(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .nestedScroll(detailNestedScroll)
-                        .verticalScroll(detailScrollState)
+                        .nestedScroll(drawer.nestedScrollConnection)
+                        .verticalScroll(drawer.detailScrollState)
                         .navigationBarsPadding()
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
