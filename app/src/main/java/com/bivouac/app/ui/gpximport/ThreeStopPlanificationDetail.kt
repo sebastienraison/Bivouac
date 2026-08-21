@@ -116,7 +116,10 @@ internal fun ThreeStopPlanificationDetail(
 
         val fullHeightPx = with(density) { maxHeight.toPx() }
         var measuredSummaryHeightPx by remember { mutableIntStateOf(0) }
-        var measuredSegmentsAdditionPx by remember { mutableIntStateOf(0) }
+        // Rekeyé quand le bloc segments se démonte (dernier bivouac supprimé) : une mesure
+        // figée d'un bloc qui n'existe plus gardait sinon le cran Détails à sa vieille hauteur,
+        // avec une grande zone vide à la place de la table (RIC-95 recette, 2e passe).
+        var measuredSegmentsAdditionPx by remember(bivouacPoints.isEmpty()) { mutableIntStateOf(0) }
         val fallbackSummaryHeightPx = with(density) { 150.dp.toPx() }
         val navigationBarHeightPx = WindowInsets.navigationBars.getBottom(density).toFloat()
         val statusBarHeightPx = WindowInsets.statusBars.getTop(density).toFloat()
@@ -137,16 +140,16 @@ internal fun ThreeStopPlanificationDetail(
         // one frame short of the real value clipped the curve's X-axis labels right at the screen
         // edge (BIV-57 phone recette: zero margin for error since PROFILE's anchor puts the block's
         // bottom edge exactly at the screen's bottom). A known constant sidesteps the lag entirely.
-        // Sans segments en dessous, le bord bas du bloc profil coïncidait exactement avec le bord
-        // bas de l'écran au cran Profil, et les libellés de l'axe X passaient sous la barre
-        // système (RIC-95 recette) : un séparateur + l'espace de la barre de navigation sont
-        // posés sous la courbe dans ce cas (voir le bloc sous ElevationProfile), et comptés ici
-        // dans l'anchor Profil pour remonter la courbe d'autant.
-        val profileBottomReservePx = if (bivouacPoints.isEmpty()) {
-            navigationBarHeightPx + with(density) { 1.dp.toPx() }
-        } else {
-            0f
-        }
+        // Le bord bas du bloc profil coïncidait exactement avec le bord bas de l'écran au cran
+        // Profil, et les libellés de l'axe X passaient sous la barre système (RIC-95 recette) :
+        // un séparateur + la hauteur de la barre de navigation sont réservés sous la courbe et
+        // comptés dans l'anchor Profil pour remonter la courbe d'autant. Inconditionnel, segments
+        // ou pas (2e passe de recette) : la version réservée au cas « aucun bivouac » faisait
+        // sauter le tiroir et retomber les libellés sous la barre système dès l'ajout du premier
+        // point. Avec des segments, cette réserve est remplie par le haut de la table (son
+        // padding), et elle couvre aussi le padding barre-de-navigation du bloc segments dans le
+        // calcul de detailHeightPx plus bas.
+        val profileBottomReservePx = navigationBarHeightPx + with(density) { 1.dp.toPx() }
         val profileHeightPx = (summaryHeightPx + with(density) { PROFILE_BLOCK_HEIGHT_DP.toPx() } + profileBottomReservePx)
             .coerceIn(summaryHeightPx, fullHeightPx)
         // How much room is left for the segments list before DETAIL would have to exceed the
@@ -159,11 +162,10 @@ internal fun ThreeStopPlanificationDetail(
         // status-bar protection spacer (statusBarOverlapPx) at zero on this screen and the whole
         // measured content visible without internal scroll until it genuinely runs out of room.
         val segmentsMaxHeightPx = (fullHeightPx - profileHeightPx - statusBarHeightPx).coerceAtLeast(0f)
-        // The segments block carries its own navigation-bar bottom padding, which its measured
-        // (inner) height does not include — count it in, or the drawer comes up exactly that
-        // short at DETAIL and clips/scrolls the bottom of the table (RIC-95 recette).
-        val segmentsNavigationBarPx = if (bivouacPoints.isNotEmpty()) navigationBarHeightPx else 0f
-        val detailHeightPx = (profileHeightPx + measuredSegmentsAdditionPx + segmentsNavigationBarPx)
+        // Pas de terme séparé pour le padding barre-de-navigation du bloc segments (que sa mesure
+        // interne n'inclut pas) : profileBottomReservePx, inconditionnel et déjà dans
+        // profileHeightPx, réserve exactement cette hauteur-là.
+        val detailHeightPx = (profileHeightPx + measuredSegmentsAdditionPx)
             .coerceIn(profileHeightPx, fullHeightPx)
         val anchors = remember(fullHeightPx, summaryHeightPx, profileHeightPx, detailHeightPx) {
             mapOf(
@@ -241,11 +243,12 @@ internal fun ThreeStopPlanificationDetail(
                         .padding(top = 10.dp, bottom = 2.dp),
                 )
 
+                // Clôture permanente sous la courbe (pendant de profileBottomReservePx) : avec des
+                // segments, elle fait office de premier séparateur de la table (qui saute donc le
+                // sien) ; sans segments, l'espace barre-de-navigation en dessous garde les
+                // libellés de l'axe X au-dessus de la barre système.
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 20.dp))
                 if (bivouacPoints.isEmpty()) {
-                    // Pendant du profileBottomReservePx calculé plus haut : même clôture visuelle
-                    // que lorsque la table des segments suit la courbe (son premier séparateur),
-                    // et l'axe X ne colle plus la barre système.
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 20.dp))
                     Spacer(modifier = Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
                 }
 
@@ -346,7 +349,8 @@ private fun SegmentsList(
 ) {
     Column(modifier = Modifier.padding(top = 12.dp)) {
         segments.forEachIndexed { index, segment ->
-            HorizontalDivider()
+            // Pas de séparateur de tête : la clôture permanente sous la courbe le fournit déjà.
+            if (index > 0) HorizontalDivider()
             Column(modifier = Modifier.padding(vertical = 10.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
