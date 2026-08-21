@@ -91,14 +91,16 @@ internal class ThreeStopDrawerState(
      */
     val detailScrollState = ScrollState(0)
 
-    /** 0 = au cran Profil (ou en dessous), 1 = déployé au cran Détails ; sert à faire apparaître
-     * progressivement l'espace réservé à la barre de statut en haut de la feuille. */
-    val detailExpansion: Float
-        get() {
-            val travel = anchors.getValue(DrawerStop.PROFILE) - anchors.getValue(DrawerStop.DETAIL)
-            if (travel <= 0f) return 1f
-            return ((anchors.getValue(DrawerStop.PROFILE) - offset.value) / travel).coerceIn(0f, 1f)
-        }
+    /**
+     * Portion (en px) de la barre de statut réellement recouverte par la feuille : 0 tant que son
+     * bord haut est en dessous, la hauteur complète quand elle touche le bord de l'écran. Sert à
+     * insérer l'espace protégeant le contenu de la barre de statut. Basé sur la position absolue
+     * et non sur la progression vers le cran Détails (RIC-95 recette) : côté Planification, le
+     * cran Détails s'arrête souvent en milieu d'écran, et l'ancienne logique y insérait l'espace
+     * complet dès ce cran, volant sa hauteur au contenu qui partait en scroll interne.
+     */
+    fun statusBarOverlapPx(statusBarHeightPx: Float): Float =
+        (statusBarHeightPx - offset.value).coerceIn(0f, statusBarHeightPx)
 
     fun animateTo(target: DrawerStop, initialVelocity: Float = 0f) {
         stop = target

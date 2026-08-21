@@ -886,7 +886,7 @@ internal fun ThreeStopJournalDetail(
             Column(modifier = Modifier.fillMaxSize()) {
                 Spacer(
                     modifier = Modifier.height(
-                        with(density) { (statusBarHeightPx * drawer.detailExpansion).toDp() },
+                        with(density) { drawer.statusBarOverlapPx(statusBarHeightPx).toDp() },
                     ),
                 )
                 Column(

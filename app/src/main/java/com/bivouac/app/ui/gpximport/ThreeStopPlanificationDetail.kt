@@ -118,6 +118,7 @@ internal fun ThreeStopPlanificationDetail(
         var measuredSegmentsAdditionPx by remember { mutableIntStateOf(0) }
         val fallbackSummaryHeightPx = with(density) { 150.dp.toPx() }
         val navigationBarHeightPx = WindowInsets.navigationBars.getBottom(density).toFloat()
+        val statusBarHeightPx = WindowInsets.statusBars.getTop(density).toFloat()
         // Every stop below is sized off what its own content actually measures, capped only by
         // fullHeightPx as an absolute safety net — never by an arbitrary fraction, which is what
         // was clipping the profile curve and the segments table on some real devices (BIV-57
@@ -139,11 +140,19 @@ internal fun ThreeStopPlanificationDetail(
             .coerceIn(summaryHeightPx, fullHeightPx)
         // How much room is left for the segments list before DETAIL would have to exceed the
         // screen — the segments Column below is capped to exactly this via heightIn(max), so it
-        // naturally scrolls instead of pushing DETAIL past fullHeightPx on long, multi-day traces.
+        // naturally scrolls instead of pushing DETAIL past what fits on long, multi-day traces.
         // Stable from the first frame now that profileHeightPx no longer depends on a measurement
         // of its own, so the segments Column's own measurement converges in a single pass too.
-        val segmentsMaxHeightPx = (fullHeightPx - profileHeightPx).coerceAtLeast(0f)
-        val detailHeightPx = (profileHeightPx + measuredSegmentsAdditionPx)
+        // The status bar's height is reserved out of the cap (RIC-95 recette): DETAIL therefore
+        // tops out just under the status bar instead of at true fullscreen, which keeps the
+        // status-bar protection spacer (statusBarOverlapPx) at zero on this screen and the whole
+        // measured content visible without internal scroll until it genuinely runs out of room.
+        val segmentsMaxHeightPx = (fullHeightPx - profileHeightPx - statusBarHeightPx).coerceAtLeast(0f)
+        // The segments block carries its own navigation-bar bottom padding, which its measured
+        // (inner) height does not include — count it in, or the drawer comes up exactly that
+        // short at DETAIL and clips/scrolls the bottom of the table (RIC-95 recette).
+        val segmentsNavigationBarPx = if (bivouacPoints.isNotEmpty()) navigationBarHeightPx else 0f
+        val detailHeightPx = (profileHeightPx + measuredSegmentsAdditionPx + segmentsNavigationBarPx)
             .coerceIn(profileHeightPx, fullHeightPx)
         val anchors = remember(fullHeightPx, summaryHeightPx, profileHeightPx, detailHeightPx) {
             mapOf(
@@ -157,7 +166,6 @@ internal fun ThreeStopPlanificationDetail(
         // aligned with Journal; the previous "keep the current stop across traces" behavior of
         // this screen is gone on purpose).
         val drawer = rememberThreeStopDrawerState(anchors, track)
-        val statusBarHeightPx = WindowInsets.statusBars.getTop(density).toFloat()
 
         Surface(
             modifier = Modifier
@@ -171,7 +179,7 @@ internal fun ThreeStopPlanificationDetail(
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 Box(
-                    modifier = Modifier.height(with(density) { (statusBarHeightPx * drawer.detailExpansion).toDp() }),
+                    modifier = Modifier.height(with(density) { drawer.statusBarOverlapPx(statusBarHeightPx).toDp() }),
                 )
                 Column(
                     modifier = drawer.dragModifier
