@@ -16,11 +16,10 @@ object TrekDatesFormatter {
 
     /**
      * Au-delà de ce nombre de jours, l'énumération cède la place à une plage « du X au Y ».
-     * Énumérer six dates tient sur trois lignes dans une liste et se lit moins bien qu'un
-     * intervalle, alors que sur deux ou trois jours l'énumération dit exactement ce qui s'est
-     * passé, week-end de trois jours compris.
+     * Deux jours se citent, trois s'énumèrent déjà moins bien qu'ils ne s'encadrent, et le gain
+     * d'information est nul dès lors que les jours d'un trek sont contigus.
      */
-    const val MAX_ENUMERATED_DAYS = 3
+    const val MAX_ENUMERATED_DAYS = 2
 
     /**
      * [days] dans l'ordre chronologique, une entrée par jour de la sortie. Les jours dont
@@ -29,32 +28,28 @@ object TrekDatesFormatter {
      *
      * Renvoie null quand il n'y a rien d'utile à dire, c'est-à-dire aucune date ou une seule — la
      * date de départ seule est déjà affichée par ailleurs, la répéter n'apprendrait rien.
+     *
+     * Deux jours se citent (« 12 et 13 mai 2025 »), au-delà on encadre (« du 3 au 6 mars 2026 »).
      */
     fun format(days: List<LocalDate>, locale: Locale = Locale.FRANCE): String? {
         val distinct = days.distinct().sorted()
         if (distinct.size < 2) return null
-        if (distinct.size > MAX_ENUMERATED_DAYS) {
-            return "du ${dayAndMonth(distinct.first(), locale)} au ${full(distinct.last(), locale)}"
+        val first = distinct.first()
+        val last = distinct.last()
+        // Le premier jour ne porte son mois que si celui d'arrivée diffère, et jamais son année.
+        // « du 3 mars au 6 mars 2026 » rallonge sans rien ajouter, alors que « du 30 mars au
+        // 1er avril 2020 » a besoin des deux mois.
+        //
+        // L'année de départ est toujours tue, y compris à cheval sur deux années : une sortie ne
+        // dure pas onze mois, donc un changement d'année ne peut être que décembre vers janvier,
+        // et « du 31 décembre au 2 janvier 2021 » ne se lit pas autrement.
+        val start = if (first.month == last.month && first.year == last.year) {
+            dayNumber(first, locale)
+        } else {
+            dayAndMonth(first, locale)
         }
-        return enumerate(distinct, locale)
-    }
-
-    // Le mois et l'année ne se répètent que quand ils changent : « 12 et 13 mai 2025 » plutôt que
-    // « 12 mai 2025 et 13 mai 2025 », mais « 31 décembre 2025 et 1er janvier 2026 » en entier.
-    private fun enumerate(days: List<LocalDate>, locale: Locale): String {
-        val parts = days.mapIndexed { index, day ->
-            val next = days.getOrNull(index + 1)
-            when {
-                next == null -> full(day, locale)
-                next.year != day.year -> full(day, locale)
-                next.month != day.month -> dayAndMonth(day, locale)
-                else -> dayNumber(day, locale)
-            }
-        }
-        return when (parts.size) {
-            2 -> "${parts[0]} et ${parts[1]}"
-            else -> parts.dropLast(1).joinToString(", ") + " et ${parts.last()}"
-        }
+        val end = full(last, locale)
+        return if (distinct.size <= MAX_ENUMERATED_DAYS) "$start et $end" else "du $start au $end"
     }
 
     private fun full(day: LocalDate, locale: Locale): String =
