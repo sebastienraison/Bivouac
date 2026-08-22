@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -56,6 +57,14 @@ class KeyboardProbe {
     /** Bas du champ de notes, en coordonnées fenêtre. Comparé à [floorPx] pour savoir s'il est masqué. */
     var noteBottomPx by mutableIntStateOf(0)
 
+    /**
+     * Nombre de demandes de défilement émises vers le bas du champ, et pourquoi la dernière a été
+     * refusée le cas échéant. Sépare « la demande n'est jamais émise » de « elle est émise mais
+     * sans effet », deux causes qui ne se corrigent pas au même endroit.
+     */
+    var bringCount by mutableIntStateOf(0)
+    var bringSkip by mutableStateOf("-")
+
     /** Hauteur totale disponible, pour situer [noteBottomPx]. */
     var windowHeightPx by mutableIntStateOf(0)
 
@@ -85,7 +94,11 @@ fun KeyboardDiagnosticsOverlay(probe: KeyboardProbe, modifier: Modifier = Modifi
             "ime ${probe.imeBottomPx}  vp ${probe.viewportHeightPx}  cnt ${probe.contentHeightPx}  win ${probe.windowHeightPx}",
             style = style,
         )
-        Text("scr ${probe.scrollValue}/${probe.scrollMax}  note ${probe.noteBottomPx}", style = style)
+        Text(
+            "scr ${probe.scrollValue}/${probe.scrollMax}  note ${probe.noteBottomPx}  " +
+                "bring ${probe.bringCount} ${probe.bringSkip}",
+            style = style,
+        )
         Text(
             "sol ${probe.floorPx}  masqué ${probe.hiddenPx}",
             style = style.copy(color = if (probe.hiddenPx > 0) Color(0xFFFF8A80) else Color(0xFF9CCC65)),

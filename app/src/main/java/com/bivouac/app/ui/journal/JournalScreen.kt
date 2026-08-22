@@ -1475,12 +1475,30 @@ internal fun ThreeStopJournalDetail(
                         var noteHeightPx by remember(entry.id) { mutableIntStateOf(0) }
                         val cursorBandPx = with(density) { 56.dp.toPx() }
                         LaunchedEffect(draftNote, noteFocused, noteHeightPx) {
-                            if (!noteFocused || noteHeightPx == 0) return@LaunchedEffect
-                            if (draftNote.selection.end < draftNote.text.length) return@LaunchedEffect
+                            if (!noteFocused) {
+                                keyboardProbe?.bringSkip = "nofocus"
+                                return@LaunchedEffect
+                            }
+                            if (noteHeightPx == 0) {
+                                keyboardProbe?.bringSkip = "noheight"
+                                return@LaunchedEffect
+                            }
+                            // trimEnd et non length : une note qui se termine par un retour à la
+                            // ligne ou une espace laisse le curseur juste avant sa toute fin, et
+                            // une comparaison stricte cesserait alors de suivre la frappe sans
+                            // raison. Observé sur appareil, c'est ce qui faisait échouer le suivi
+                            // une fois sur deux selon la note.
+                            if (draftNote.selection.end < draftNote.text.trimEnd().length) {
+                                keyboardProbe?.bringSkip = "midtext"
+                                return@LaunchedEffect
+                            }
                             val bottom = noteHeightPx.toFloat()
+                            keyboardProbe?.bringSkip = "ask"
+                            keyboardProbe?.bringCount = (keyboardProbe?.bringCount ?: 0) + 1
                             noteVisibility.bringIntoView(
                                 Rect(0f, (bottom - cursorBandPx).coerceAtLeast(0f), 1f, bottom),
                             )
+                            keyboardProbe?.bringSkip = "done"
                         }
                         TextField(
                             value = draftNote,
