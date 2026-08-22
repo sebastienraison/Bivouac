@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -1124,6 +1125,9 @@ internal fun ThreeStopJournalDetail(
         // TextFieldValue et non String : le correctif de RIC-100 a besoin de la position du
         // curseur pour la ramener dans la vue, et seule cette forme la porte.
         var draftNote by remember(entry.id) { mutableStateOf(TextFieldValue(entry.note)) }
+        // Déclaré ici et non dans la section notes : le focus du champ pilote aussi le repli de
+        // l'en-tête et du profil (RIC-100, décision 3.2), qui se joue bien plus haut dans l'arbre.
+        var noteFocused by remember(entry.id) { mutableStateOf(false) }
         var newTagText by remember(entry.id) { mutableStateOf("") }
         var pendingExit by remember(entry.id) { mutableStateOf<(() -> Unit)?>(null) }
         val knownFreeTags = remember(tagsByTrackId) {
@@ -1137,6 +1141,9 @@ internal fun ThreeStopJournalDetail(
             draftTags = currentTags.toSet()
             // Curseur en fin de texte : reprendre une note, c'est presque toujours la compléter.
             draftNote = TextFieldValue(entry.note, TextRange(entry.note.length))
+            // Le champ renaît sans focus ; l'état hissé repart de même, sans quoi un focus jamais
+            // relâché à la sortie précédente replierait l'en-tête avant le premier tap.
+            noteFocused = false
             isEditing = true
         }
 
@@ -1191,6 +1198,13 @@ internal fun ThreeStopJournalDetail(
         }
         val drawer = rememberThreeStopDrawerState(anchors, entry.id)
         val statusBarHeightPx = WindowInsets.statusBars.getTop(density).toFloat()
+        // RIC-100, décision 3.2 : clavier ouvert, la fenêtre de saisie des notes se réduit à
+        // trois lignes environ. L'en-tête et le profil occupent le haut du tiroir sans rien
+        // apporter à la frappe : ils se replient tant que le champ de notes a le focus, et
+        // seulement lui. L'édition des tags garde tout son contexte, elle n'a pas ce problème
+        // de place. isEditing borne le repli : quitter l'édition le défait toujours, même si
+        // le champ disparaît sans avoir signalé la perte de son focus.
+        val noteTakesAllSpace = isEditing && noteFocused
 
         Surface(
             modifier = Modifier
@@ -1222,30 +1236,36 @@ internal fun ThreeStopJournalDetail(
                         .onGloballyPositioned { measuredSummaryHeightPx = it.size.height },
                 ) {
                     ThreeStopDrawerHandle(drawer, Modifier.align(Alignment.CenterHorizontally))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Top,
-                    ) {
-                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                            Text(text = entry.name, style = MaterialTheme.typography.titleMedium)
-                            // Même plage de dates que dans la liste : une sortie ouverte ne doit
-                            // pas en dire moins qu'une sortie survolée. Les dates viennent ici des
-                            // points déjà chargés, pas des colonnes dénormalisées, la trace étant
-                            // de toute façon parsée pour être affichée.
-                            Text(
-                                text = TrekDatesFormatter.format(dayStartDates) ?: formatStartedAt(entry.startedAt),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // La rangée entière se replie, actions comprises : renommer, dupliquer ou
+                    // fermer ne se font pas en pleine frappe, et le retour arrière couvre la
+                    // sortie. Ne replier que les textes laisserait la hauteur des boutons.
+                    AnimatedVisibility(visible = !noteTakesAllSpace) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                Text(text = entry.name, style = MaterialTheme.typography.titleMedium)
+                                // Même plage de dates que dans la liste : une sortie ouverte ne
+                                // doit pas en dire moins qu'une sortie survolée. Les dates
+                                // viennent ici des points déjà chargés, pas des colonnes
+                                // dénormalisées, la trace étant de toute façon parsée pour être
+                                // affichée.
+                                Text(
+                                    text = TrekDatesFormatter.format(dayStartDates) ?: formatStartedAt(entry.startedAt),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            JournalDetailMenu(
+                                onRenameClick = onRenameClick,
+                                onDuplicateClick = onDuplicateClick,
+                                onDeleteClick = onDeleteClick,
                             )
-                        }
-                        JournalDetailMenu(
-                            onRenameClick = onRenameClick,
-                            onDuplicateClick = onDuplicateClick,
-                            onDeleteClick = onDeleteClick,
-                        )
-                        IconButton(onClick = { requestExit(onCloseClick) }) {
-                            Icon(Icons.Default.Close, contentDescription = "Fermer")
+                            IconButton(onClick = { requestExit(onCloseClick) }) {
+                                Icon(Icons.Default.Close, contentDescription = "Fermer")
+                            }
                         }
                     }
                     // Sur une sortie de plusieurs jours, la ligne agrégée devient un « Total » en
@@ -1265,14 +1285,16 @@ internal fun ThreeStopJournalDetail(
                     ThreeStopDrawerStopRow(drawer)
                 }
 
-                ElevationProfile(
-                    points = track.points,
-                    bivouacPoints = bivouacPoints,
-                    dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                    cursorIndex = cursorIndex,
-                    onCursorDragged = onCursorDragged,
-                )
+                AnimatedVisibility(visible = !noteTakesAllSpace) {
+                    ElevationProfile(
+                        points = track.points,
+                        bivouacPoints = bivouacPoints,
+                        dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                        cursorIndex = cursorIndex,
+                        onCursorDragged = onCursorDragged,
+                    )
+                }
 
                 Column(
                     modifier = Modifier
@@ -1471,7 +1493,6 @@ internal fun ThreeStopJournalDetail(
                         // tant que ce repli suffit. Conséquence assumée : une frappe insérée au
                         // milieu d'une note longue n'est pas suivie, seule la fin de texte l'est.
                         val noteVisibility = remember { BringIntoViewRequester() }
-                        var noteFocused by remember(entry.id) { mutableStateOf(false) }
                         var noteHeightPx by remember(entry.id) { mutableIntStateOf(0) }
                         val cursorBandPx = with(density) { 56.dp.toPx() }
                         LaunchedEffect(draftNote, noteFocused, noteHeightPx) {
