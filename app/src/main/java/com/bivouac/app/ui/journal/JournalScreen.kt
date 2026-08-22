@@ -295,6 +295,10 @@ fun JournalScreen(
                     BivouacPoint(id = "jonction-$index", trackPointIndex = pointIndex)
                 }
         }
+        // RIC-100 : la sonde vit ici, au-dessus du tiroir, pour que le bandeau reste visible quand
+        // le tiroir occupe tout l'écran. Retirer avec KeyboardDiagnostics.kt une fois la cause
+        // établie.
+        val keyboardProbe = remember { if (KEYBOARD_DIAGNOSTICS_ENABLED) KeyboardProbe() else null }
         Box(modifier = modifier.fillMaxSize()) {
             JournalMap(
                 track = detail.track,
@@ -317,6 +321,7 @@ fun JournalScreen(
                 track = detail.track,
                 daySegments = detail.daySegments,
                 bivouacPoints = journalBivouacs,
+                keyboardProbe = keyboardProbe,
                 activeCalibration = activeCalibration,
                 onCloseClick = viewModel::closeTrack,
                 onDeleteClick = viewModel::requestDelete,
@@ -329,6 +334,11 @@ fun JournalScreen(
                 onSaveDetails = viewModel::saveDetails,
                 onRenameClick = { renameDialogVisible = true },
             )
+            // En dernier enfant du Box, donc dessiné par-dessus le tiroir, qui occupe tout l'écran
+            // au cran Détails.
+            if (keyboardProbe != null) {
+                KeyboardDiagnosticsOverlay(keyboardProbe, modifier = Modifier.align(Alignment.TopCenter))
+            }
         }
     }
 
@@ -1074,6 +1084,8 @@ internal fun ThreeStopJournalDetail(
     // Constat E : un point par jonction entre deux jours, en lecture seule — le profil les trace
     // comme la Planification, mais rien ici ne se déplace ni ne se supprime.
     bivouacPoints: List<BivouacPoint> = emptyList(),
+    // RIC-100 : relevé de diagnostic, null hors instrumentation. Voir KeyboardDiagnostics.
+    keyboardProbe: KeyboardProbe? = null,
     activeCalibration: SpeedCalibration = SpeedCalibration.DEFAULT,
     onCloseClick: () -> Unit,
     onRenameClick: () -> Unit,
@@ -1089,6 +1101,12 @@ internal fun ThreeStopJournalDetail(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = LocalDensity.current
         val zone = remember { ZoneId.systemDefault() }
+        // RIC-100 : lire l'inset ici suffit à faire recomposer à chaque changement de hauteur du
+        // clavier, donc à voir le relevé bouger en direct pendant l'ouverture.
+        if (keyboardProbe != null) {
+            keyboardProbe.imeBottomPx = WindowInsets.ime.getBottom(density)
+            keyboardProbe.windowHeightPx = with(density) { maxHeight.toPx() }.toInt()
+        }
         // Date de début de chaque jour, tirée directement des points déjà chargés. Les jours sans
         // horodatage sont écartés plutôt qu'inventés, comme dans la liste.
         val dayStartDates = remember(daySegments, zone) {
@@ -1267,9 +1285,19 @@ internal fun ThreeStopJournalDetail(
                         // que l'inset du clavier englobe déjà la barre de navigation.
                         .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
                         .verticalScroll(drawer.detailScrollState)
+                        // RIC-100 : la hauteur relevée ici est celle de la zone défilante après
+                        // rognage par l'inset, celle-là même qui doit diminuer quand le clavier
+                        // s'ouvre. Si elle ne bouge pas, la place n'est pas réservée.
+                        .onGloballyPositioned { coordinates ->
+                            keyboardProbe?.viewportHeightPx = coordinates.size.height
+                        }
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    if (keyboardProbe != null) {
+                        keyboardProbe.scrollValue = drawer.detailScrollState.value
+                        keyboardProbe.scrollMax = drawer.detailScrollState.maxValue
+                    }
                     // RIC-41 : uniquement pour un import de plusieurs jours — sur un seul jour, la
                     // ligne « Total » ci-dessus dit déjà tout, une ventilation à une entrée ne
                     // serait que du bruit.
@@ -1429,7 +1457,15 @@ internal fun ThreeStopJournalDetail(
                             // doit se lire d'un bloc, en consultation comme en édition. Ce qui
                             // maintient le curseur visible pendant la frappe, c'est la zone de
                             // défilement du tiroir, correctement rognée par l'inset du clavier.
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 120.dp)
+                                // RIC-100 : bas du champ en coordonnées fenêtre, à comparer à la
+                                // ligne de flottaison du clavier.
+                                .onGloballyPositioned { coordinates ->
+                                    keyboardProbe?.noteBottomPx =
+                                        (coordinates.positionInRoot().y + coordinates.size.height).toInt()
+                                },
                         )
                     } else if (entry.note.isBlank()) {
                         NotebookEmptyHint()
