@@ -88,8 +88,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
@@ -1122,8 +1120,8 @@ internal fun ThreeStopJournalDetail(
         }
         var isEditing by remember(entry.id) { mutableStateOf(false) }
         var draftTags by remember(entry.id) { mutableStateOf(currentTags.toSet()) }
-        // TextFieldValue et non String : le correctif de RIC-100 a besoin de la position du
-        // curseur pour la ramener dans la vue, et seule cette forme la porte.
+        // TextFieldValue et non String : le suivi du curseur pendant la frappe (RIC-100) a
+        // besoin de sa position, que seule cette forme porte.
         var draftNote by remember(entry.id) { mutableStateOf(TextFieldValue(entry.note)) }
         // Déclaré ici et non dans la section notes : le focus du champ pilote aussi le repli de
         // l'en-tête et du profil (RIC-100, décision 3.2), qui se joue bien plus haut dans l'arbre.
@@ -1301,11 +1299,11 @@ internal fun ThreeStopJournalDetail(
                         .fillMaxWidth()
                         .weight(1f)
                         .nestedScroll(drawer.nestedScrollConnection)
-                        // Avant verticalScroll, et c'est tout l'enjeu : placé après, le padding
-                        // s'applique au contenu qui défile, pas à la zone de défilement. Celle-ci
-                        // gardait alors toute la hauteur du tiroir, clavier compris, donc Compose
-                        // jugeait le curseur déjà visible et ne défilait pas. Placé ici, il rogne
-                        // la zone elle-même, qui s'arrête au-dessus du clavier.
+                        // Avant verticalScroll, et l'ordre est décisif : placé ici, l'inset rogne
+                        // la zone de défilement elle-même, qui s'arrête au-dessus du clavier.
+                        // Placé après, il s'appliquerait au contenu qui défile, la zone garderait
+                        // toute la hauteur du tiroir, clavier compris, et Compose jugerait le
+                        // curseur déjà visible sans jamais défiler.
                         //
                         // Le tiroir a une hauteur fixe et l'app est en edge-to-edge : la fenêtre
                         // ne se redimensionne pas à l'ouverture du clavier, personne d'autre ne
@@ -1480,10 +1478,10 @@ internal fun ThreeStopJournalDetail(
                     }
                     Text("Notes", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
                     if (isEditing) {
-                        // RIC-100. Le relevé sur appareil a montré que la fenêtre de saisie fait
-                        // 409 px pour un champ qui en fait le double : demander à voir le champ,
-                        // ce que Compose fait de lui-même, ne peut donc pas suffire. Il en aligne
-                        // le haut, le bas déborde sous le clavier, et le curseur avec.
+                        // RIC-100. La note n'a pas de plafond de hauteur, donc le champ peut
+                        // dépasser la fenêtre de saisie ; le défilement que Compose déclenche de
+                        // lui-même vise le champ entier, et faute de pouvoir le contenir il en
+                        // aligne le haut : le bas déborde sous le clavier, curseur compris.
                         //
                         // On demande donc à voir le bas du champ, là où atterrit le curseur quand
                         // on complète une note, avec une marge pour que la ligne suivante respire.
@@ -1507,8 +1505,7 @@ internal fun ThreeStopJournalDetail(
                             // trimEnd et non length : une note qui se termine par un retour à la
                             // ligne ou une espace laisse le curseur juste avant sa toute fin, et
                             // une comparaison stricte cesserait alors de suivre la frappe sans
-                            // raison. Observé sur appareil, c'est ce qui faisait échouer le suivi
-                            // une fois sur deux selon la note.
+                            // raison.
                             if (draftNote.selection.end < draftNote.text.trimEnd().length) {
                                 keyboardProbe?.bringSkip = "midtext"
                                 return@LaunchedEffect
