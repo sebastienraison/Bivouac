@@ -86,6 +86,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.IntOffset
@@ -1116,7 +1121,9 @@ internal fun ThreeStopJournalDetail(
         }
         var isEditing by remember(entry.id) { mutableStateOf(false) }
         var draftTags by remember(entry.id) { mutableStateOf(currentTags.toSet()) }
-        var draftNote by remember(entry.id) { mutableStateOf(entry.note) }
+        // TextFieldValue et non String : le correctif de RIC-100 a besoin de la position du
+        // curseur pour la ramener dans la vue, et seule cette forme la porte.
+        var draftNote by remember(entry.id) { mutableStateOf(TextFieldValue(entry.note)) }
         var newTagText by remember(entry.id) { mutableStateOf("") }
         var pendingExit by remember(entry.id) { mutableStateOf<(() -> Unit)?>(null) }
         val knownFreeTags = remember(tagsByTrackId) {
@@ -1124,11 +1131,12 @@ internal fun ThreeStopJournalDetail(
                 .filterNot { tag -> SystemTag.entries.any { it.value == tag } }
                 .distinct()
         }
-        val isDirty = draftTags != currentTags.toSet() || draftNote != entry.note
+        val isDirty = draftTags != currentTags.toSet() || draftNote.text != entry.note
 
         fun beginEditing() {
             draftTags = currentTags.toSet()
-            draftNote = entry.note
+            // Curseur en fin de texte : reprendre une note, c'est presque toujours la compléter.
+            draftNote = TextFieldValue(entry.note, TextRange(entry.note.length))
             isEditing = true
         }
 
@@ -1140,7 +1148,7 @@ internal fun ThreeStopJournalDetail(
         }
 
         fun saveAndStopEditing() {
-            if (isDirty) onSaveDetails(draftTags, draftNote)
+            if (isDirty) onSaveDetails(draftTags, draftNote.text)
             isEditing = false
         }
 
@@ -1450,6 +1458,30 @@ internal fun ThreeStopJournalDetail(
                     }
                     Text("Notes", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
                     if (isEditing) {
+                        // RIC-100. Le relevé sur appareil a montré que la fenêtre de saisie fait
+                        // 409 px pour un champ qui en fait le double : demander à voir le champ,
+                        // ce que Compose fait de lui-même, ne peut donc pas suffire. Il en aligne
+                        // le haut, le bas déborde sous le clavier, et le curseur avec.
+                        //
+                        // On demande donc à voir le bas du champ, là où atterrit le curseur quand
+                        // on complète une note, avec une marge pour que la ligne suivante respire.
+                        // Le TextField de Material3 n'expose pas son TextLayoutResult, donc viser
+                        // le rectangle exact du curseur supposerait de repasser par
+                        // BasicTextField et de reconstruire tout le décor : hors de proportion
+                        // tant que ce repli suffit. Conséquence assumée : une frappe insérée au
+                        // milieu d'une note longue n'est pas suivie, seule la fin de texte l'est.
+                        val noteVisibility = remember { BringIntoViewRequester() }
+                        var noteFocused by remember(entry.id) { mutableStateOf(false) }
+                        var noteHeightPx by remember(entry.id) { mutableIntStateOf(0) }
+                        val cursorBandPx = with(density) { 56.dp.toPx() }
+                        LaunchedEffect(draftNote, noteFocused, noteHeightPx) {
+                            if (!noteFocused || noteHeightPx == 0) return@LaunchedEffect
+                            if (draftNote.selection.end < draftNote.text.length) return@LaunchedEffect
+                            val bottom = noteHeightPx.toFloat()
+                            noteVisibility.bringIntoView(
+                                Rect(0f, (bottom - cursorBandPx).coerceAtLeast(0f), 1f, bottom),
+                            )
+                        }
                         TextField(
                             value = draftNote,
                             onValueChange = { draftNote = it },
@@ -1457,15 +1489,16 @@ internal fun ThreeStopJournalDetail(
                             placeholder = { Text("Quelques mots sur cette rando…") },
                             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                             // Volontairement sans hauteur maximale : c'est un journal, la note
-                            // doit se lire d'un bloc, en consultation comme en édition. Ce qui
-                            // maintient le curseur visible pendant la frappe, c'est la zone de
-                            // défilement du tiroir, correctement rognée par l'inset du clavier.
+                            // doit se lire d'un bloc, en consultation comme en édition.
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 120.dp)
-                                // RIC-100 : bas du champ en coordonnées fenêtre, à comparer à la
-                                // ligne de flottaison du clavier.
+                                .bringIntoViewRequester(noteVisibility)
+                                .onFocusChanged { noteFocused = it.isFocused }
                                 .onGloballyPositioned { coordinates ->
+                                    noteHeightPx = coordinates.size.height
+                                    // RIC-100 : bas du champ en coordonnées fenêtre, à comparer à
+                                    // la ligne de flottaison du clavier.
                                     keyboardProbe?.noteBottomPx =
                                         (coordinates.positionInRoot().y + coordinates.size.height).toInt()
                                 },
