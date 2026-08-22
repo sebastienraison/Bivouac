@@ -41,6 +41,9 @@ data class PreparedDay(
 // que les segments de Planification.
 data class LoggedTrackDetail(val track: HikeTrack, val daySegments: List<Segment>)
 
+// Ce que la liste du Journal doit savoir des jours d'une trace, sans ouvrir de fichier.
+data class DaySummary(val dayCount: Int, val startMillis: List<Long>)
+
 sealed interface DuplicateMatch {
     val existing: LoggedTrackEntity
     data class Exact(override val existing: LoggedTrackEntity) : DuplicateMatch
@@ -76,17 +79,21 @@ class LoggedTrackRepository(context: Context) {
     suspend fun backfillDenormalizedFields() = LoggedTrackBackfill.run(appContext, dao)
 
     /**
-     * Horodatage du premier point de chaque jour, par trace et dans l'ordre des jours, pour
-     * afficher la plage de dates réelle d'un trek sans ouvrir le moindre fichier. Une requête pour
-     * toute la banque.
-     *
-     * Les jours sans horodatage exploitable, et ceux que le rattrapage n'a pas encore traités,
-     * sont absents : afficher les dates connues vaut mieux qu'inventer les autres.
+     * Ce que la liste doit savoir des jours d'une trace sans ouvrir le moindre fichier : combien
+     * elle en compte, et quand chacun a commencé. Une requête pour toute la banque.
      */
-    suspend fun dayStartMillisByTrackId(): Map<String, List<Long>> =
+    suspend fun daySummariesByTrackId(): Map<String, DaySummary> =
         dao.getAllDays()
             .groupBy { it.trackId }
-            .mapValues { (_, days) -> days.sortedBy { it.dayIndex }.mapNotNull { it.startedAtMillis } }
+            .mapValues { (_, days) ->
+                DaySummary(
+                    dayCount = days.size,
+                    // Les jours sans horodatage exploitable, et ceux que le rattrapage n'a pas
+                    // encore traités, sont absents : afficher les dates connues vaut mieux
+                    // qu'inventer les autres. dayCount, lui, est toujours juste.
+                    startMillis = days.sortedBy { it.dayIndex }.mapNotNull { it.startedAtMillis },
+                )
+            }
 
     /**
      * Reads, parses and hashes one or more raw GPX files into a single logged track (RIC-41 : un

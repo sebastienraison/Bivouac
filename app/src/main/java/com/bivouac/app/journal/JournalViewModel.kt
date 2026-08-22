@@ -81,6 +81,17 @@ sealed interface ImportProgress {
     data object Calibrating : ImportProgress
 }
 
+/**
+ * Ce que la liste du Journal sait des jours d'une trace. [dates] peut être vide ou incomplète, un
+ * GPX pouvant n'avoir aucun horodatage, alors que [dayCount] est toujours juste.
+ *
+ * D'où [bivouacCount] tiré de [dayCount] et non du nombre de dates : sur une trace importée, une
+ * nuit dehors est exactement une coupure entre deux fichiers, connue même sans horodatage.
+ */
+data class JournalDayInfo(val dayCount: Int, val dates: List<LocalDate>) {
+    val bivouacCount: Int get() = (dayCount - 1).coerceAtLeast(0)
+}
+
 // RIC-40 : tout ce dont la Planification a besoin pour ouvrir cette trace du Journal comme un
 // nouveau plan éditable — construit ici, et pas dans GpxImportViewModel, parce que seul le côté
 // Journal connaît les frontières entre jours. La trace du Journal, elle, n'est jamais touchée :
@@ -114,11 +125,12 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _selectedFilterTags = MutableStateFlow<Set<String>>(emptySet())
     val selectedFilterTags: StateFlow<Set<String>> = _selectedFilterTags.asStateFlow()
 
-    // trackId -> les dates de ses jours, pour que la liste distingue un trek d'une sortie d'un
-    // jour. Vide pour les traces dont le rattrapage n'a pas encore relevé les dates, auquel cas la
-    // liste se contente de la date de départ, comme avant.
-    private val _dayDatesByTrackId = MutableStateFlow<Map<String, List<LocalDate>>>(emptyMap())
-    val dayDatesByTrackId: StateFlow<Map<String, List<LocalDate>>> = _dayDatesByTrackId.asStateFlow()
+    // trackId -> ce que la liste doit savoir de ses jours, pour distinguer un trek d'une sortie
+    // d'un jour : leurs dates, et leur nombre. Les dates manquent tant que le rattrapage n'a pas
+    // relevé celles d'une trace, auquel cas la liste se contente de la date de départ, comme
+    // avant ; le nombre de jours, lui, est toujours connu.
+    private val _dayInfoByTrackId = MutableStateFlow<Map<String, JournalDayInfo>>(emptyMap())
+    val dayInfoByTrackId: StateFlow<Map<String, JournalDayInfo>> = _dayInfoByTrackId.asStateFlow()
 
     // OR semantics: a track matching any one selected tag is kept — narrows what's browsable,
     // doesn't require an exact combination match.
@@ -229,9 +241,12 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 _tracks.value = repository.list()
                 _tagsByTrackId.value = repository.tagsByTrackId()
                 val zone = ZoneId.systemDefault()
-                _dayDatesByTrackId.value = repository.dayStartMillisByTrackId()
-                    .mapValues { (_, millis) ->
-                        millis.map { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() }
+                _dayInfoByTrackId.value = repository.daySummariesByTrackId()
+                    .mapValues { (_, summary) ->
+                        JournalDayInfo(
+                            dayCount = summary.dayCount,
+                            dates = summary.startMillis.map { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() },
+                        )
                     }
             }
         }

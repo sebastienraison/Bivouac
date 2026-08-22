@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -81,6 +82,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.input.ImeAction
@@ -92,6 +94,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bivouac.app.R
 import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.SystemTag
@@ -106,6 +109,7 @@ import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrekDatesFormatter
 import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.journal.ImportProgress
+import com.bivouac.app.journal.JournalDayInfo
 import com.bivouac.app.journal.JournalUiState
 import com.bivouac.app.journal.JournalViewModel
 import com.bivouac.app.journal.SeparateImportReport
@@ -154,7 +158,7 @@ fun JournalScreen(
     }
     val filteredTracks by viewModel.filteredTracks.collectAsStateWithLifecycle()
     val tagsByTrackId by viewModel.tagsByTrackId.collectAsStateWithLifecycle()
-    val dayDatesByTrackId by viewModel.dayDatesByTrackId.collectAsStateWithLifecycle()
+    val dayInfoByTrackId by viewModel.dayInfoByTrackId.collectAsStateWithLifecycle()
     val selectedFilterTags by viewModel.selectedFilterTags.collectAsStateWithLifecycle()
     val currentTags by viewModel.currentTags.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -232,7 +236,7 @@ fun JournalScreen(
                         tracks = filteredTracks,
                         activeCalibration = activeCalibration,
                         tagsByTrackId = tagsByTrackId,
-                        dayDatesByTrackId = dayDatesByTrackId,
+                        dayInfoByTrackId = dayInfoByTrackId,
                         selectedFilterTags = selectedFilterTags,
                         onToggleFilterTag = viewModel::toggleFilterTag,
                         onImportClick = { pickGpxLauncher.launch(arrayOf("*/*")) },
@@ -632,7 +636,7 @@ private fun JournalListContent(
     tracks: List<LoggedTrackEntity>,
     activeCalibration: SpeedCalibration,
     tagsByTrackId: Map<String, List<String>>,
-    dayDatesByTrackId: Map<String, List<LocalDate>>,
+    dayInfoByTrackId: Map<String, JournalDayInfo>,
     selectedFilterTags: Set<String>,
     onToggleFilterTag: (String) -> Unit,
     onImportClick: () -> Unit,
@@ -767,7 +771,7 @@ private fun JournalListContent(
                     HorizontalDivider()
                     JournalTrackRow(
                         entry = entry,
-                        dayDates = dayDatesByTrackId[entry.id].orEmpty(),
+                        dayInfo = dayInfoByTrackId[entry.id],
                         activeCalibration = activeCalibration,
                         selectionModeActive = selectionModeActive,
                         selected = entry.id in selectedTrackIds,
@@ -866,7 +870,7 @@ private fun YearHeader(
 @Composable
 private fun JournalTrackRow(
     entry: LoggedTrackEntity,
-    dayDates: List<LocalDate>,
+    dayInfo: JournalDayInfo?,
     activeCalibration: SpeedCalibration,
     selectionModeActive: Boolean,
     selected: Boolean,
@@ -893,12 +897,27 @@ private fun JournalTrackRow(
             // départ, sans quoi rien ne la distingue d'une sortie d'un jour dans cette liste.
             // Retombe sur la date de départ seule quand les dates des jours sont inconnues : GPX
             // sans horodatage, ou trace pas encore rattrapée après la migration 8 vers 9.
-            Text(
-                text = TrekDatesFormatter.format(dayDates) ?: formatStartedAt(entry.startedAt),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 4.dp),
-            )
+            //
+            // Le nombre de nuits et son badge reprennent trait pour trait la ligne de la liste de
+            // Planification (BankedTrackRow), pour que la même information se lise pareil des deux
+            // côtés — même si ici elle se déduit du nombre de jours.
+            val bivouacCount = dayInfo?.bivouacCount ?: 0
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = (TrekDatesFormatter.format(dayInfo?.dates.orEmpty()) ?: formatStartedAt(entry.startedAt)) +
+                        if (bivouacCount > 0) " · $bivouacCount" else "",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (bivouacCount > 0) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_bivouac_badge),
+                        contentDescription = "nuit${if (bivouacCount != 1) "s" else ""} de bivouac",
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
             StatsRows(TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration))
         }
     }
