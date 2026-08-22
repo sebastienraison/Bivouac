@@ -299,6 +299,7 @@ fun JournalScreen(
             JournalMap(
                 track = detail.track,
                 bivouacPoints = journalBivouacs,
+                dayBoundaryIndices = journalBivouacs.map { it.trackPointIndex },
                 selectedLayer = selectedLayer,
                 recenterSignal = recenterSignal,
                 visibleMapHeightPx = visibleMapHeightPx,
@@ -581,6 +582,7 @@ private fun formatSeparateImportReport(report: SeparateImportReport): String {
 private fun JournalMap(
     track: HikeTrack?,
     bivouacPoints: List<BivouacPoint> = emptyList(),
+    dayBoundaryIndices: List<Int> = emptyList(),
     selectedLayer: com.bivouac.app.ui.map.MapLayer,
     recenterSignal: Int,
     visibleMapHeightPx: Int,
@@ -611,6 +613,7 @@ private fun JournalMap(
             onBivouacMoved = { _, _ -> },
             onBivouacDragPreview = { _, _ -> },
             bivouacsReadOnly = true,
+            dayBoundaryIndices = dayBoundaryIndices,
             cursorIndex = cursorIndex,
             onCursorChanged = onCursorChanged,
             multiTracks = multiTracks,
@@ -1225,6 +1228,7 @@ internal fun ThreeStopJournalDetail(
                 ElevationProfile(
                     points = track.points,
                     bivouacPoints = bivouacPoints,
+                    dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                     cursorIndex = cursorIndex,
                     onCursorDragged = onCursorDragged,

@@ -2,6 +2,7 @@ package com.bivouac.app.ui.map
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Point
 import android.text.Layout
@@ -44,6 +45,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.bivouac.app.R
 import com.bivouac.app.data.gpx.TrackGeometry
 import com.bivouac.app.data.model.BivouacPoint
+import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.TrackPoint
 import java.util.Locale
@@ -181,6 +183,9 @@ fun HikeMapView(
     // Journal (constat E) : les bivouacs d'une trace importée sont des faits passés, déduits des
     // coupures entre fichiers. Affichés pour situer les nuits, jamais déplaçables.
     bivouacsReadOnly: Boolean = false,
+    // Journal : dernier point de chaque jour qui s'achève, sur une sortie de plusieurs fichiers.
+    // Vide en Planification, où la trace est d'un seul tenant.
+    dayBoundaryIndices: List<Int> = emptyList(),
     cursorIndex: Int? = null,
     onCursorChanged: (trackPointIndex: Int) -> Unit = {},
     // Journal-only (BIV-48): when non-empty, overrides single-track rendering entirely — a
@@ -264,7 +269,7 @@ fun HikeMapView(
                 val heightJustBecameKnown = pendingHeightCorrection.value && visibleHeightPx != Int.MAX_VALUE
                 val shouldFit = trackChanged || recenterRequested || heightJustBecameKnown
                 renderTrack(
-                    view, track, bivouacPoints, bivouacsReadOnly, shouldFit, visibleHeightPx,
+                    view, track, bivouacPoints, bivouacsReadOnly, dayBoundaryIndices, shouldFit, visibleHeightPx,
                     onTrackTapped, onBivouacMoved, onBivouacDragPreview,
                     cursorIndex, onCursorChanged, cursorInfoWindow, cursorDragState,
                     multiTracks, highlightedTrackId, onTraceTapped, copyrightOverlay,
@@ -328,6 +333,7 @@ private fun renderTrack(
     track: HikeTrack?,
     bivouacPoints: List<BivouacPoint>,
     bivouacsReadOnly: Boolean,
+    dayBoundaryIndices: List<Int>,
     shouldFit: Boolean,
     visibleHeightPx: Int,
     onTrackTapped: (Int) -> Unit,
@@ -386,33 +392,48 @@ private fun renderTrack(
     // refusal on every tap; this only ever fires as its fallback, and consuming it here (instead
     // of leaving it unhandled) is strictly better than popping an empty bubble.
     val suppressDefaultInfoWindow = Polyline.OnClickListener { _, _, _ -> true }
-    val outline = Polyline(mapView).apply {
-        setPoints(geoPoints)
-        paint.apply {
-            color = ContextCompat.getColor(context, R.color.track_line_outline)
-            style = Paint.Style.STROKE
-            strokeWidth = 10f * density
-            strokeCap = Paint.Cap.ROUND
-            strokeJoin = Paint.Join.ROUND
-            pathEffect = null
-        }
-        setOnClickListener(suppressDefaultInfoWindow)
-    }
-    val colorTrack = Polyline(mapView).apply {
-        setPoints(geoPoints)
-        paint.apply {
-            color = ContextCompat.getColor(context, R.color.track_line)
-            style = Paint.Style.STROKE
-            strokeWidth = 4f * density
-            strokeCap = Paint.Cap.ROUND
-            strokeJoin = Paint.Join.ROUND
-            pathEffect = null
-        }
-        setOnClickListener(suppressDefaultInfoWindow)
-    }
 
-    mapView.overlays.add(outline)
-    mapView.overlays.add(colorTrack)
+    fun strokedPolyline(pts: List<GeoPoint>, colorRes: Int, widthDp: Float, dashed: Boolean) =
+        Polyline(mapView).apply {
+            setPoints(pts)
+            paint.apply {
+                color = ContextCompat.getColor(context, colorRes)
+                style = Paint.Style.STROKE
+                strokeWidth = widthDp * density
+                strokeCap = if (dashed) Paint.Cap.BUTT else Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+                pathEffect = if (dashed) {
+                    DashPathEffect(floatArrayOf(6f * density, 6f * density), 0f)
+                } else {
+                    null
+                }
+            }
+            setOnClickListener(suppressDefaultInfoWindow)
+        }
+
+    // Une nuit où l'enregistrement a été coupé loin du camp laisse deux points distants que rien
+    // ne relie réellement. Le tracé s'interrompt donc entre eux, et un pointillé prend le relais :
+    // un trait plein s'y lirait comme un trajet parcouru, alors qu'il n'a jamais été enregistré.
+    val gaps = DayJunctions.recordingGaps(points, dayBoundaryIndices).sorted()
+    val continuousRuns = buildList {
+        var runStart = 0
+        for (gapEnd in gaps) {
+            add(geoPoints.subList(runStart, gapEnd + 1))
+            runStart = gapEnd + 1
+        }
+        add(geoPoints.subList(runStart, geoPoints.size))
+    }.filter { it.size >= 2 }
+
+    continuousRuns.forEach { run ->
+        mapView.overlays.add(strokedPolyline(run, R.color.track_line_outline, 10f, dashed = false))
+    }
+    continuousRuns.forEach { run ->
+        mapView.overlays.add(strokedPolyline(run, R.color.track_line, 4f, dashed = false))
+    }
+    gaps.forEach { gapEnd ->
+        val bridge = listOf(geoPoints[gapEnd], geoPoints[gapEnd + 1])
+        mapView.overlays.add(strokedPolyline(bridge, R.color.track_line, 3f, dashed = true))
+    }
     mapView.overlays.add(trackTapOverlay(mapView, points, geoPoints, density, onTrackTapped))
 
     bivouacPoints.forEach { bivouac ->

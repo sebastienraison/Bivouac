@@ -26,6 +26,7 @@ import com.bivouac.app.R
 import com.bivouac.app.data.gpx.GeoMath
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.BivouacPoint
+import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.TrackPoint
 import java.util.Locale
 import kotlin.math.abs
@@ -110,18 +111,32 @@ fun ElevationProfile(
     modifier: Modifier = Modifier,
     cursorIndex: Int? = null,
     onCursorDragged: (Int) -> Unit = {},
+    // Journal : dernier point de chaque jour qui s'achève, sur une sortie de plusieurs fichiers.
+    // Vide en Planification, où la trace est d'un seul tenant.
+    dayBoundaryIndices: List<Int> = emptyList(),
 ) {
     val elevations = remember(points) { TrackStatsCalculator.smoothedElevationSeries(points) }
     if (elevations == null || elevations.size < 2) return
 
     // Distance-based, not index-based: GPS point density varies along a track (denser on slow or
     // steep sections), so evenly spacing by index would visually distort the horizontal scale.
-    val cumulativeDistances = remember(points) {
+    // Les jonctions où l'enregistrement a réellement été coupé, à ne surtout pas compter comme du
+    // parcours : l'axe annoncerait plus de kilomètres que les statistiques de la même vue, qui
+    // sont sommées jour par jour précisément pour éviter ce trajet fictif.
+    val recordingGaps = remember(points, dayBoundaryIndices) {
+        DayJunctions.recordingGaps(points, dayBoundaryIndices)
+    }
+    val cumulativeDistances = remember(points, recordingGaps) {
         val distances = DoubleArray(points.size)
         for (i in 1 until points.size) {
             val a = points[i - 1]
             val b = points[i]
-            distances[i] = distances[i - 1] + GeoMath.haversineMeters(a.latitude, a.longitude, b.latitude, b.longitude)
+            val step = if (i - 1 in recordingGaps) {
+                0.0
+            } else {
+                GeoMath.haversineMeters(a.latitude, a.longitude, b.latitude, b.longitude)
+            }
+            distances[i] = distances[i - 1] + step
         }
         distances
     }
@@ -217,12 +232,14 @@ fun ElevationProfile(
             )
         }
 
-        // Curve.
+        // Curve. Une coupure d'enregistrement rompt le tracé plutôt que de le prolonger : les deux
+        // points partagent la même abscisse, puisque rien n'a été parcouru entre eux, et les
+        // relier d'un trait plein donnerait à lire une montée verticale qui n'a pas eu lieu.
         val path = Path().apply {
             elevations.forEachIndexed { index, elevation ->
                 val x = xFor(cumulativeDistances[index])
                 val y = yFor(elevation)
-                if (index == 0) moveTo(x, y) else lineTo(x, y)
+                if (index == 0 || index - 1 in recordingGaps) moveTo(x, y) else lineTo(x, y)
             }
         }
         drawPath(
@@ -230,6 +247,21 @@ fun ElevationProfile(
             color = curveColor,
             style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
         )
+
+        // Le lien entre les deux bouts, en pointillé : la nuit a bien relié ces deux altitudes,
+        // mais aucun trajet enregistré ne les joint.
+        recordingGaps.forEach { index ->
+            val next = index + 1
+            if (index !in elevations.indices || next !in elevations.indices) return@forEach
+            drawLine(
+                color = curveColor,
+                start = Offset(xFor(cumulativeDistances[index]), yFor(elevations[index])),
+                end = Offset(xFor(cumulativeDistances[next]), yFor(elevations[next])),
+                strokeWidth = 2.dp.toPx(),
+                alpha = 0.5f,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx())),
+            )
+        }
 
         // Bivouac markers: dot on the curve, drop line down to the axis, and — since that line
         // already marks the spot — its exact distance labelled right there on the axis.
