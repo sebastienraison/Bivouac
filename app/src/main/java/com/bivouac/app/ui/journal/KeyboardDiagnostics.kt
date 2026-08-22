@@ -43,8 +43,11 @@ class KeyboardProbe {
     /** Hauteur de l'inset clavier. 0 clavier fermé, sinon la hauteur du clavier. */
     var imeBottomPx by mutableIntStateOf(0)
 
-    /** Hauteur mesurée de la zone défilante du tiroir, celle qui doit se rogner à l'ouverture. */
+    /** Hauteur de la fenêtre de défilement, celle qui doit se rogner à l'ouverture du clavier. */
     var viewportHeightPx by mutableIntStateOf(0)
+
+    /** Hauteur du contenu défilant. Ne bouge pas avec le clavier, sert de repère. */
+    var contentHeightPx by mutableIntStateOf(0)
 
     /** Position et amplitude du défilement de cette zone. */
     var scrollValue by mutableIntStateOf(0)
@@ -78,7 +81,10 @@ fun KeyboardDiagnosticsOverlay(probe: KeyboardProbe, modifier: Modifier = Modifi
             .background(Color(0xCC000000))
             .padding(horizontal = 8.dp, vertical = 4.dp),
     ) {
-        Text("ime ${probe.imeBottomPx}  vp ${probe.viewportHeightPx}  win ${probe.windowHeightPx}", style = style)
+        Text(
+            "ime ${probe.imeBottomPx}  vp ${probe.viewportHeightPx}  cnt ${probe.contentHeightPx}  win ${probe.windowHeightPx}",
+            style = style,
+        )
         Text("scr ${probe.scrollValue}/${probe.scrollMax}  note ${probe.noteBottomPx}", style = style)
         Text(
             "sol ${probe.floorPx}  masqué ${probe.hiddenPx}",

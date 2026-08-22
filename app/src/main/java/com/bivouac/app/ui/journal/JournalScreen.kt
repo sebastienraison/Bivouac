@@ -1284,12 +1284,15 @@ internal fun ThreeStopJournalDetail(
                         // union et non deux paddings enchaînés : les insets se cumuleraient, alors
                         // que l'inset du clavier englobe déjà la barre de navigation.
                         .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
-                        .verticalScroll(drawer.detailScrollState)
-                        // RIC-100 : la hauteur relevée ici est celle de la zone défilante après
-                        // rognage par l'inset, celle-là même qui doit diminuer quand le clavier
-                        // s'ouvre. Si elle ne bouge pas, la place n'est pas réservée.
+                        // RIC-100, avant verticalScroll : c'est ici qu'on mesure la fenêtre de
+                        // défilement, celle qui doit se rogner à l'ouverture du clavier. Après
+                        // verticalScroll on mesurerait le contenu, qui lui ne bouge pas.
                         .onGloballyPositioned { coordinates ->
                             keyboardProbe?.viewportHeightPx = coordinates.size.height
+                        }
+                        .verticalScroll(drawer.detailScrollState)
+                        .onGloballyPositioned { coordinates ->
+                            keyboardProbe?.contentHeightPx = coordinates.size.height
                         }
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
