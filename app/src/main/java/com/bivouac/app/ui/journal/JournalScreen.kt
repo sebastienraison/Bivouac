@@ -1022,9 +1022,13 @@ private fun JournalMultiTrackContent(
  * La nuit passée entre deux jours d'une sortie du Journal, dans la ventilation par jour. Reprend
  * la ligne de bivouac de la Planification, badge et altitude compris, moins tout ce qui agit :
  * ni suppression ni météo, la trace est immuable et la nuit a déjà eu lieu.
+ *
+ * [arrival] est le dernier point du jour qui s'achève, [departure] le premier du lendemain. Leurs
+ * heures encadrent la nuit ; la flèche suffit à les qualifier, sans libellé. Les deux ou aucune :
+ * une heure d'arrivée orpheline se lirait mal et n'apprendrait pas grand-chose.
  */
 @Composable
-private fun ReadOnlyBivouacRow(trackPoint: TrackPoint?) {
+private fun ReadOnlyBivouacRow(arrival: TrackPoint?, departure: TrackPoint?) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1035,12 +1039,22 @@ private fun ReadOnlyBivouacRow(trackPoint: TrackPoint?) {
             contentDescription = "Nuit de bivouac",
             modifier = Modifier.size(24.dp),
         )
-        val elevation = trackPoint?.elevationMeters
+        val elevation = arrival?.elevationMeters
         if (elevation != null) {
             InfoText(
                 text = "${elevation.roundToInt()} m",
                 icon = Icons.Default.Terrain,
                 iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        val arrivedAt = arrival?.time
+        val leftAt = departure?.time
+        if (arrivedAt != null && leftAt != null) {
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = "${formatTimeOfDay(arrivedAt)} → ${formatTimeOfDay(leftAt)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -1276,7 +1290,10 @@ internal fun ThreeStopJournalDetail(
                                 val bivouac = bivouacPoints.getOrNull(index)
                                 if (bivouac != null) {
                                     HorizontalDivider()
-                                    ReadOnlyBivouacRow(track.points.getOrNull(bivouac.trackPointIndex))
+                                    ReadOnlyBivouacRow(
+                                        arrival = track.points.getOrNull(bivouac.trackPointIndex),
+                                        departure = track.points.getOrNull(bivouac.trackPointIndex + 1),
+                                    )
                                 }
                             }
                             HorizontalDivider()
@@ -1524,6 +1541,12 @@ private fun JournalDetailMenu(onRenameClick: () -> Unit, onDuplicateClick: () ->
         }
     }
 }
+
+// Heure locale d'un instant GPX, pour encadrer une nuit de bivouac.
+private fun formatTimeOfDay(instant: Instant): String =
+    DateTimeFormatter.ofPattern("HH:mm", Locale.FRANCE)
+        .withZone(ZoneId.systemDefault())
+        .format(instant)
 
 private fun formatStartedAt(epochMillis: Long): String =
     DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.FRANCE)
