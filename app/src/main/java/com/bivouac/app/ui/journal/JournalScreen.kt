@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
@@ -106,6 +107,7 @@ import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
+import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.data.model.TrekDatesFormatter
 import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.journal.ImportProgress
@@ -116,6 +118,7 @@ import com.bivouac.app.journal.SeparateImportReport
 import com.bivouac.app.ui.components.DrawerStop
 import com.bivouac.app.ui.components.ElevationProfile
 import com.bivouac.app.ui.components.GainIconColor
+import com.bivouac.app.ui.components.InfoText
 import com.bivouac.app.ui.components.StatsRows
 import com.bivouac.app.ui.components.ThreeStopDrawerHandle
 import com.bivouac.app.ui.components.ThreeStopDrawerStopRow
@@ -1012,6 +1015,34 @@ private fun JournalMultiTrackContent(
     }
 }
 
+/**
+ * La nuit passée entre deux jours d'une sortie du Journal, dans la ventilation par jour. Reprend
+ * la ligne de bivouac de la Planification, badge et altitude compris, moins tout ce qui agit :
+ * ni suppression ni météo, la trace est immuable et la nuit a déjà eu lieu.
+ */
+@Composable
+private fun ReadOnlyBivouacRow(trackPoint: TrackPoint?) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_bivouac_badge),
+            contentDescription = "Nuit de bivouac",
+            modifier = Modifier.size(24.dp),
+        )
+        val elevation = trackPoint?.elevationMeters
+        if (elevation != null) {
+            InfoText(
+                text = "${elevation.roundToInt()} m",
+                icon = Icons.Default.Terrain,
+                iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 // internal rather than private: exercised directly by BivouacDatabaseMigrationTest's sibling,
 // ThreeStopJournalDetailDirtyIndicatorTest (androidTest), to test the isDirty save-icon states
 // without driving the whole Journal screen through a real ViewModel.
@@ -1040,6 +1071,14 @@ internal fun ThreeStopJournalDetail(
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = LocalDensity.current
+        val zone = remember { ZoneId.systemDefault() }
+        // Date de début de chaque jour, tirée directement des points déjà chargés. Les jours sans
+        // horodatage sont écartés plutôt qu'inventés, comme dans la liste.
+        val dayStartDates = remember(daySegments, zone) {
+            daySegments.mapNotNull { segment ->
+                segment.points.firstOrNull()?.time?.atZone(zone)?.toLocalDate()
+            }
+        }
         var isEditing by remember(entry.id) { mutableStateOf(false) }
         var draftTags by remember(entry.id) { mutableStateOf(currentTags.toSet()) }
         var draftNote by remember(entry.id) { mutableStateOf(entry.note) }
@@ -1147,8 +1186,12 @@ internal fun ThreeStopJournalDetail(
                     ) {
                         Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                             Text(text = entry.name, style = MaterialTheme.typography.titleMedium)
+                            // Même plage de dates que dans la liste : une sortie ouverte ne doit
+                            // pas en dire moins qu'une sortie survolée. Les dates viennent ici des
+                            // points déjà chargés, pas des colonnes dénormalisées, la trace étant
+                            // de toute façon parsée pour être affichée.
                             Text(
-                                text = formatStartedAt(entry.startedAt),
+                                text = TrekDatesFormatter.format(dayStartDates) ?: formatStartedAt(entry.startedAt),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -1220,6 +1263,16 @@ internal fun ThreeStopJournalDetail(
                                 Column(modifier = Modifier.padding(vertical = 10.dp)) {
                                     Text(text = "Jour ${index + 1}", style = MaterialTheme.typography.labelLarge)
                                     StatsRows(TrackStatsCalculator.recomputeDuration(segment.stats, activeCalibration))
+                                }
+                                // La nuit s'intercale entre deux jours, exactement comme la
+                                // Planification l'intercale entre deux segments : c'est la même
+                                // lecture d'un même itinéraire, seulement figée. Sans action
+                                // possible ici, ni suppression ni météo — la trace est immuable et
+                                // la nuit a déjà eu lieu.
+                                val bivouac = bivouacPoints.getOrNull(index)
+                                if (bivouac != null) {
+                                    HorizontalDivider()
+                                    ReadOnlyBivouacRow(track.points.getOrNull(bivouac.trackPointIndex))
                                 }
                             }
                             HorizontalDivider()
