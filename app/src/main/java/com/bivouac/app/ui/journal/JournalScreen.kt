@@ -1198,11 +1198,21 @@ internal fun ThreeStopJournalDetail(
         val statusBarHeightPx = WindowInsets.statusBars.getTop(density).toFloat()
         // RIC-100, décision 3.2 : clavier ouvert, la fenêtre de saisie des notes se réduit à
         // trois lignes environ. L'en-tête et le profil occupent le haut du tiroir sans rien
-        // apporter à la frappe : ils se replient tant que le champ de notes a le focus, et
-        // seulement lui. L'édition des tags garde tout son contexte, elle n'a pas ce problème
-        // de place. isEditing borne le repli : quitter l'édition le défait toujours, même si
-        // le champ disparaît sans avoir signalé la perte de son focus.
-        val noteTakesAllSpace = isEditing && noteFocused
+        // apporter à la frappe : ils se replient pendant qu'on tape une note, et rendent leur
+        // hauteur à la saisie. Chaque terme borne le repli à ce seul moment :
+        // - noteFocused et non isEditing : l'édition des tags garde tout son contexte, elle
+        //   n'a pas ce problème de place ;
+        // - clavier visible : le refermer au retour arrière laisse le focus au champ, et sans
+        //   clavier le repli ne rend aucune place, il ne ferait que cacher l'en-tête sans
+        //   porte de sortie évidente ;
+        // - cran Détails, le seul où l'on tape : la poignée et la rangée de crans restent
+        //   actives pendant la frappe, et un cran Profil doit montrer sa courbe, une
+        //   Synthèse son titre ;
+        // - isEditing : quitter l'édition défait toujours le repli, même si le champ
+        //   disparaît sans avoir signalé la perte de son focus.
+        val imeVisible = WindowInsets.ime.getBottom(density) > 0
+        val noteTakesAllSpace =
+            isEditing && noteFocused && imeVisible && drawer.stop == DrawerStop.DETAIL
 
         Surface(
             modifier = Modifier
