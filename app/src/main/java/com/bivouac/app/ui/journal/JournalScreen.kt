@@ -1192,16 +1192,20 @@ internal fun ThreeStopJournalDetail(
                         .fillMaxWidth()
                         .weight(1f)
                         .nestedScroll(drawer.nestedScrollConnection)
-                        .verticalScroll(drawer.detailScrollState)
-                        // Le tiroir a une hauteur fixe et l'app est en edge-to-edge, donc la
-                        // fenêtre ne se redimensionne pas à l'ouverture du clavier : sans réserver
-                        // sa hauteur ici, la zone défilante croit s'étendre jusqu'en bas de
-                        // l'écran, le défilement automatique vers le champ actif le juge déjà
-                        // visible, et le bas de la saisie des notes reste sous le clavier.
+                        // Avant verticalScroll, et c'est tout l'enjeu : placé après, le padding
+                        // s'applique au contenu qui défile, pas à la zone de défilement. Celle-ci
+                        // gardait alors toute la hauteur du tiroir, clavier compris, donc Compose
+                        // jugeait le curseur déjà visible et ne défilait pas. Placé ici, il rogne
+                        // la zone elle-même, qui s'arrête au-dessus du clavier.
+                        //
+                        // Le tiroir a une hauteur fixe et l'app est en edge-to-edge : la fenêtre
+                        // ne se redimensionne pas à l'ouverture du clavier, personne d'autre ne
+                        // fera ce travail.
                         //
                         // union et non deux paddings enchaînés : les insets se cumuleraient, alors
                         // que l'inset du clavier englobe déjà la barre de navigation.
                         .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                        .verticalScroll(drawer.detailScrollState)
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -1347,11 +1351,11 @@ internal fun ThreeStopJournalDetail(
                             visualTransformation = BulletVisualTransformation,
                             placeholder = { Text("Quelques mots sur cette rando…") },
                             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                            // Hauteur bornée, donc le champ défile de lui-même et suit son curseur.
-                            // Sans borne il grandit à chaque ligne ajoutée, ne défile pas, et
-                            // compte sur le conteneur pour le suivre : c'est ce qui faisait
-                            // disparaître les nouvelles lignes sous le clavier au fil de la frappe.
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 220.dp),
+                            // Volontairement sans hauteur maximale : c'est un journal, la note
+                            // doit se lire d'un bloc, en consultation comme en édition. Ce qui
+                            // maintient le curseur visible pendant la frappe, c'est la zone de
+                            // défilement du tiroir, correctement rognée par l'inset du clavier.
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
                         )
                     } else if (entry.note.isBlank()) {
                         NotebookEmptyHint()
