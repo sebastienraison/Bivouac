@@ -9,7 +9,11 @@ import java.util.UUID
 
 class SavedTrackRepository(context: Context) {
 
-    private val dao = BivouacDatabase.getInstance(context).savedTrackDao()
+    private val appContext = context.applicationContext
+
+    // RIC-103 : résolu à chaque accès et non figé à la construction, pour survivre au cycle
+    // fermeture/réouverture d'une sauvegarde — voir LoggedTrackRepository.
+    private val dao get() = BivouacDatabase.getInstance(appContext).savedTrackDao()
 
     suspend fun save(track: HikeTrack, bivouacPoints: List<BivouacPoint>) {
         val entity = SavedTrackEntity(

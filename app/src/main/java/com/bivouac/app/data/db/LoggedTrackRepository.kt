@@ -68,7 +68,14 @@ sealed interface DuplicateMatch {
 class LoggedTrackRepository(context: Context) {
 
     private val appContext = context.applicationContext
-    private val dao = BivouacDatabase.getInstance(context).loggedTrackDao()
+
+    // RIC-103 : propriété calculée, jamais figée. BackupManager.backup() ferme puis rouvre la
+    // base (closeAndReset) pendant que ce repository vit dans un ViewModel : un DAO capturé à la
+    // construction resterait accroché à la connexion fermée, et chaque lecture mourrait ensuite
+    // en JobCancellationException, silencieusement avalée par viewModelScope, jusqu'au
+    // redémarrage du process. Résoudre ici est bon marché : getInstance() comme le xxxDao()
+    // généré par Room se réduisent à une lecture volatile une fois initialisés.
+    private val dao get() = BivouacDatabase.getInstance(appContext).loggedTrackDao()
 
     suspend fun list(): List<LoggedTrackEntity> = dao.list()
 
