@@ -127,6 +127,7 @@ import com.bivouac.app.journal.JournalDayInfo
 import com.bivouac.app.journal.JournalUiState
 import com.bivouac.app.journal.JournalViewModel
 import com.bivouac.app.journal.SeparateImportReport
+import com.bivouac.app.ui.components.ChoiceOptionCard
 import com.bivouac.app.ui.components.DrawerStop
 import com.bivouac.app.ui.components.ElevationProfile
 import com.bivouac.app.ui.components.GainIconColor
@@ -495,10 +496,14 @@ fun JournalScreen(
 }
 
 /**
- * RIC-65 écran 3 : dès que le sélecteur renvoie plus d'un fichier. Les deux interprétations
+ * RIC-65 écran 4 : dès que le sélecteur renvoie plus d'un fichier. Les deux interprétations
  * possibles sont proposées telles quelles, sans détection automatique — « Un seul trek » est mis
  * en avant comme cas jugé le plus fréquent, « Abandonner » reste une porte de sortie explicite
  * quand le lot est un mélange des deux.
+ *
+ * Même habillage que le choix d'univers de RIC-104, via [ChoiceOptionCard] : les deux dialogues
+ * posent la même sorte de question et se suivent parfois dans la même seconde, quand un lot arrive
+ * de l'extérieur.
  */
 @Composable
 private fun MultiFileImportChoiceDialog(
@@ -509,26 +514,32 @@ private fun MultiFileImportChoiceDialog(
 ) {
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text("$fileCount fichiers sélectionnés") },
+        title = { Text("Comment ajouter ces $fileCount traces ?") },
         // Les deux choix vivent dans le corps du dialogue plutôt que dans ses slots d'action :
         // c'est ce qui permet de les empiler pleine largeur et de hiérarchiser visuellement le
         // trek multi-jours. Ne reste dans les actions que la porte de sortie.
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "Un seul trek en plusieurs jours, ou plusieurs sorties indépendantes ? " +
-                        "Rien n'est importé tant que tu n'as pas choisi.",
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Conservé de RIC-41 : importer un lot a l'air irréversible, et savoir que rien
+                // n'est encore écrit est ce qui permet d'ouvrir ce dialogue sans crainte.
+                Text("Rien n'est importé tant que tu n'as pas choisi.")
+                ChoiceOptionCard(
+                    icon = Icons.Default.ContentCopy,
+                    title = "Sorties séparées",
+                    subtitle = "$fileCount randos indépendantes, une entrée chacune dans le Journal",
+                    onClick = onSeparate,
                 )
-                Button(onClick = onMultiDay, modifier = Modifier.fillMaxWidth()) {
-                    Text("Un seul trek en plusieurs jours")
-                }
-                OutlinedButton(onClick = onSeparate, modifier = Modifier.fillMaxWidth()) {
-                    Text("Sorties séparées")
-                }
+                ChoiceOptionCard(
+                    icon = Icons.Default.Terrain,
+                    title = "Un seul trek en plusieurs jours",
+                    subtitle = "Un fichier = un jour, réunis en une seule sortie multi-jours",
+                    onClick = onMultiDay,
+                    recommended = true,
+                )
             }
         },
         confirmButton = {
-            TextButton(onClick = onCancel) { Text("Abandonner") }
+            TextButton(onClick = onCancel) { Text("Abandonner l'ajout") }
         },
     )
 }
