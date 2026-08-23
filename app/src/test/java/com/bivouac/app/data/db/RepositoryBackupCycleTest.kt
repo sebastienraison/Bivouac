@@ -57,6 +57,8 @@ class RepositoryBackupCycleTest {
         val saved = SavedTrackRepository(context)
 
         val gpx = GpxWriter.write(listOf(TrackPoint(45.0, 6.0, 1000.0, null)), "Trace test")
+        // PreparedDay et non une String brute : forme de PreparedImport.days sur cette branche
+        // (RIC-41/98), différente de celle sur main d'où ce test a été rapporté par cherry-pick.
         logged.commitImport(
             PreparedImport(
                 LoggedTrackEntity(
@@ -70,7 +72,14 @@ class RepositoryBackupCycleTest {
                     pointCount = 1,
                     estimatedDurationMinutes = 4,
                 ),
-                listOf(gpx),
+                listOf(
+                    PreparedDay(
+                        rawGpx = gpx,
+                        contentHash = "hash",
+                        startedAtMillis = 0L,
+                        elapsedSeconds = null,
+                    ),
+                ),
             ),
         )
         val database = BivouacDatabase.getInstance(context)
