@@ -12,6 +12,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -22,16 +23,27 @@ import org.robolectric.RobolectricTestRunner
  * repositories. Ceux-ci doivent résoudre une connexion vivante à chaque accès, pas celle qu'ils
  * ont vue à leur construction — sinon toute lecture qui suit une sauvegarde échoue jusqu'au
  * redémarrage du process, sur les trois écrans à la fois : Journal (LoggedTrackRepository),
- * Planification (BankedTrackRepository et SavedTrackRepository) et Réglages.
+ * Planification (BankedTrackRepository et SavedTrackRepository) et Réglages, qui lit le Journal
+ * par la même classe LoggedTrackRepository.
+ *
+ * Limite connue : backup() écrit aussi dans le DataStore de SettingsPreferences, un singleton de
+ * process qu'aucun tearDown ne peut réinitialiser — il reste lié au sandbox Robolectric de la
+ * première classe de test qui l'a touché. Sans conséquence ici, mais une future classe de test
+ * qui voudrait ASSERTER sur le contenu du DataStore devra en tenir compte.
  */
 @RunWith(RobolectricTestRunner::class)
 class RepositoryBackupCycleTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
 
-    // Le singleton survit d'un test à l'autre alors que Robolectric change de sandbox : sans ce
-    // reset, le test suivant hériterait d'une base pointant sur les fichiers d'un environnement
-    // disparu.
+    // Le singleton survit d'un test à l'autre alors que Robolectric change de sandbox : reset
+    // avant ET après, pour ne pas hériter d'une base pointant sur les fichiers d'un environnement
+    // disparu (classe de test antérieure), ni en léguer une au test suivant.
+    @Before
+    fun resetSingleton() {
+        BivouacDatabase.closeAndReset()
+    }
+
     @After
     fun tearDown() {
         BivouacDatabase.closeAndReset()
