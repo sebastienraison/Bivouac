@@ -18,9 +18,11 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
@@ -31,6 +33,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -366,10 +369,22 @@ private fun TrackSheetContent(
     ) {
         when (uiState) {
             is GpxImportUiState.Idle -> {
-                Button(onClick = onOpenClick, modifier = Modifier.fillMaxWidth()) {
-                    Text("Ouvrir une trace")
-                }
-                if (bankedTraces.isNotEmpty()) {
+                // RIC-105 : même prestance que le CTA du tout premier lancement du Journal tant
+                // que la banque est vide (seule action possible ici) ; une fois qu'elle ne l'est
+                // plus, le bouton rétrécit vers un extended FAB en flux — pas flottant, ce tiroir
+                // a déjà sa liste juste en dessous, un vrai FAB ferait doublon.
+                if (bankedTraces.isEmpty()) {
+                    Button(onClick = onOpenClick, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(17.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Ouvrir une trace")
+                    }
+                } else {
+                    ExtendedFloatingActionButton(
+                        onClick = onOpenClick,
+                        icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                        text = { Text("Ouvrir une trace") },
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 bankedTraces.forEach { entry ->
