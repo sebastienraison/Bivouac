@@ -62,7 +62,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -77,6 +77,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -749,9 +750,27 @@ private fun JournalHomeScreen(
             // Le CTA plein écran de l'état vraiment vide (ci-dessous) est la seule action possible
             // de cet écran : un FAB par-dessus ferait doublon.
             if (!neverImported) {
-                FloatingActionButton(onClick = onImportClick) {
-                    Icon(Icons.Default.Add, contentDescription = "Ajouter une trace")
+                // Patron Material : le FAB étendu se replie en carré arrondi quand le contenu
+                // prend le dessus. Déclenché par la position de défilement et non par la longueur
+                // de la liste — c'est ce que documente M3, et ça garde le libellé tant qu'il y a
+                // la place de le lire. derivedStateOf pour ne recomposer qu'au basculement, pas à
+                // chaque pixel défilé.
+                val expanded by remember(listScrollState) {
+                    derivedStateOf { listScrollState.value == 0 }
                 }
+                ExtendedFloatingActionButton(
+                    onClick = onImportClick,
+                    expanded = expanded,
+                    // Une fois replié, l'icône est tout ce qui reste à annoncer ; étendu, le
+                    // libellé s'en charge déjà et le répéter ferait doublon à la lecture d'écran.
+                    icon = {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = if (expanded) null else "Ajouter une trace",
+                        )
+                    },
+                    text = { Text("Ajouter une trace") },
+                )
             }
         },
     ) { paddingValues ->
