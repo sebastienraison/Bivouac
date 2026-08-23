@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
@@ -39,6 +40,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -58,12 +61,14 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -92,6 +97,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -163,6 +169,7 @@ fun JournalScreen(
     LaunchedEffect(calibrationSelectionMode) {
         if (calibrationSelectionMode) viewModel.enterCalibrationSelectionMode()
     }
+    val tracks by viewModel.tracks.collectAsStateWithLifecycle()
     val filteredTracks by viewModel.filteredTracks.collectAsStateWithLifecycle()
     val tagsByTrackId by viewModel.tagsByTrackId.collectAsStateWithLifecycle()
     val dayInfoByTrackId by viewModel.dayInfoByTrackId.collectAsStateWithLifecycle()
@@ -210,139 +217,149 @@ fun JournalScreen(
     val onToggleHighlight = { id: String -> highlightedTrackId = if (highlightedTrackId == id) null else id }
     var renameDialogVisible by remember { mutableStateOf(false) }
     var cursorIndex by remember(detail?.entry?.id) { mutableStateOf<Int?>(null) }
-    if (detail == null) {
-        BottomSheetScaffold(
-            modifier = modifier,
-            sheetPeekHeight = PEEK_HEIGHT_EMPTY.coerceAtMost(LocalConfiguration.current.screenHeightDp.dp * 0.5f),
-            sheetContent = {
-                // Loading est émis par openTrack() comme par showOnMap() : sans ce rendu, taper
-                // une trace ne donnait aucun retour visuel le temps du parsing (RIC-95) — et une
-                // trace illisible semblait juste ne rien faire (l'état Error est rendu en dialogue
-                // plus bas, la liste restant visible derrière).
-                if (uiState is JournalUiState.Loading) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(vertical = 40.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator()
+    when {
+        detail != null -> {
+            // Constat E : sur une sortie de plusieurs jours, chaque coupure entre deux fichiers est
+            // une nuit passée dehors. La donnée existait déjà, elle ne servait qu'à la duplication
+            // vers la Planification (RIC-40) — la carte et le profil recevaient une liste vide.
+            //
+            // Identifiants dérivés du rang et non tirés au hasard : rien ici n'est enregistré, et un
+            // identifiant stable évite de recréer les marqueurs à chaque recomposition.
+            val journalBivouacs = remember(detail.daySegments) {
+                DayJunctions.bivouacTrackPointIndices(detail.daySegments.map { it.points.size })
+                    .mapIndexed { index, pointIndex ->
+                        BivouacPoint(id = "jonction-$index", trackPointIndex = pointIndex)
                     }
-                } else if (multiTrack != null) {
-                    JournalMultiTrackContent(
-                        entries = multiTrack.entries,
-                        coloredTracks = coloredTracks,
-                        highlightedTrackId = highlightedTrackId,
-                        onHighlightToggle = onToggleHighlight,
-                        onCloseClick = viewModel::closeMultiTrack,
-                        onSheetTopMeasured = { sheetTopPx = it },
-                    )
-                } else {
-                    JournalListContent(
-                        tracks = filteredTracks,
-                        activeCalibration = activeCalibration,
-                        tagsByTrackId = tagsByTrackId,
-                        dayInfoByTrackId = dayInfoByTrackId,
-                        selectedFilterTags = selectedFilterTags,
-                        onToggleFilterTag = viewModel::toggleFilterTag,
-                        onImportClick = { pickGpxLauncher.launch(arrayOf("*/*")) },
-                        onTrackClick = viewModel::openTrack,
-                        selectionModeActive = selectionModeActive,
-                        selectedTrackIds = selectedTrackIds,
-                        onEnterSelectionMode = viewModel::enterSelectionMode,
-                        onExitSelectionMode = {
-                            viewModel.exitSelectionMode()
-                            if (calibrationSelectionActive) onCalibrationSelectionDone()
-                        },
-                        onToggleSelection = viewModel::toggleTrackSelection,
-                        onToggleYearSelection = viewModel::toggleYearSelection,
-                        onShowOnMap = viewModel::showOnMap,
-                        calibrationSelectionActive = calibrationSelectionActive,
-                        onConfirmCalibrationSelection = {
-                            viewModel.confirmCalibrationSelection()
-                            onCalibrationSelectionDone()
-                        },
-                        onSheetTopMeasured = { sheetTopPx = it },
-                    )
-                }
-            },
-        ) {
-            JournalMap(
-                track = null,
-                selectedLayer = selectedLayer,
-                recenterSignal = recenterSignal,
-                visibleMapHeightPx = visibleMapHeightPx,
-                currentSection = currentSection,
-                onSectionSelected = onSectionSelected,
-                onLayerSelected = viewModel::setSelectedLayer,
-                onRecenter = { recenterSignal++ },
-                onMapTopMeasured = { mapBoxTopPx = it },
-                cursorIndex = null,
-                onCursorChanged = {},
-                multiTracks = coloredTracks,
-                highlightedTrackId = highlightedTrackId,
-                onTraceTapped = onToggleHighlight,
-                nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
-            )
-        }
-    } else {
-        // Constat E : sur une sortie de plusieurs jours, chaque coupure entre deux fichiers est
-        // une nuit passée dehors. La donnée existait déjà, elle ne servait qu'à la duplication
-        // vers la Planification (RIC-40) — la carte et le profil recevaient une liste vide.
-        //
-        // Identifiants dérivés du rang et non tirés au hasard : rien ici n'est enregistré, et un
-        // identifiant stable évite de recréer les marqueurs à chaque recomposition.
-        val journalBivouacs = remember(detail.daySegments) {
-            DayJunctions.bivouacTrackPointIndices(detail.daySegments.map { it.points.size })
-                .mapIndexed { index, pointIndex ->
-                    BivouacPoint(id = "jonction-$index", trackPointIndex = pointIndex)
-                }
-        }
-        // RIC-100 : la sonde vit ici, au-dessus du tiroir, pour que le bandeau reste visible quand
-        // le tiroir occupe tout l'écran. Retirer avec KeyboardDiagnostics.kt une fois la cause
-        // établie.
-        val keyboardProbe = remember { if (KEYBOARD_DIAGNOSTICS_ENABLED) KeyboardProbe() else null }
-        Box(modifier = modifier.fillMaxSize()) {
-            JournalMap(
-                track = detail.track,
-                bivouacPoints = journalBivouacs,
-                dayBoundaryIndices = journalBivouacs.map { it.trackPointIndex },
-                selectedLayer = selectedLayer,
-                recenterSignal = recenterSignal,
-                visibleMapHeightPx = visibleMapHeightPx,
-                currentSection = currentSection,
-                onSectionSelected = onSectionSelected,
-                onLayerSelected = viewModel::setSelectedLayer,
-                onRecenter = { recenterSignal++ },
-                onMapTopMeasured = { mapBoxTopPx = it },
-                cursorIndex = cursorIndex,
-                onCursorChanged = { cursorIndex = it },
-                nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
-            )
-            ThreeStopJournalDetail(
-                entry = detail.entry,
-                track = detail.track,
-                daySegments = detail.daySegments,
-                bivouacPoints = journalBivouacs,
-                keyboardProbe = keyboardProbe,
-                activeCalibration = activeCalibration,
-                onCloseClick = viewModel::closeTrack,
-                onDeleteClick = viewModel::requestDelete,
-                onDuplicateClick = { viewModel.buildDuplicateForPlanification()?.let(onDuplicateToPlanification) },
-                onSheetTopMeasured = { sheetTopPx = it },
-                cursorIndex = cursorIndex,
-                onCursorDragged = { cursorIndex = it },
-                currentTags = currentTags,
-                tagsByTrackId = tagsByTrackId,
-                onSaveDetails = viewModel::saveDetails,
-                onRenameClick = { renameDialogVisible = true },
-            )
-            // En dernier enfant du Box, donc dessiné par-dessus le tiroir, qui occupe tout l'écran
-            // au cran Détails.
-            if (keyboardProbe != null) {
-                KeyboardDiagnosticsOverlay(keyboardProbe, modifier = Modifier.align(Alignment.TopCenter))
             }
+            // RIC-100 : la sonde vit ici, au-dessus du tiroir, pour que le bandeau reste visible quand
+            // le tiroir occupe tout l'écran. Retirer avec KeyboardDiagnostics.kt une fois la cause
+            // établie.
+            val keyboardProbe = remember { if (KEYBOARD_DIAGNOSTICS_ENABLED) KeyboardProbe() else null }
+            Box(modifier = modifier.fillMaxSize()) {
+                JournalMap(
+                    track = detail.track,
+                    bivouacPoints = journalBivouacs,
+                    dayBoundaryIndices = journalBivouacs.map { it.trackPointIndex },
+                    selectedLayer = selectedLayer,
+                    recenterSignal = recenterSignal,
+                    visibleMapHeightPx = visibleMapHeightPx,
+                    currentSection = currentSection,
+                    onSectionSelected = onSectionSelected,
+                    onLayerSelected = viewModel::setSelectedLayer,
+                    onRecenter = { recenterSignal++ },
+                    onMapTopMeasured = { mapBoxTopPx = it },
+                    cursorIndex = cursorIndex,
+                    onCursorChanged = { cursorIndex = it },
+                    nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
+                )
+                ThreeStopJournalDetail(
+                    entry = detail.entry,
+                    track = detail.track,
+                    daySegments = detail.daySegments,
+                    bivouacPoints = journalBivouacs,
+                    keyboardProbe = keyboardProbe,
+                    activeCalibration = activeCalibration,
+                    onCloseClick = viewModel::closeTrack,
+                    onDeleteClick = viewModel::requestDelete,
+                    onDuplicateClick = { viewModel.buildDuplicateForPlanification()?.let(onDuplicateToPlanification) },
+                    onSheetTopMeasured = { sheetTopPx = it },
+                    cursorIndex = cursorIndex,
+                    onCursorDragged = { cursorIndex = it },
+                    currentTags = currentTags,
+                    tagsByTrackId = tagsByTrackId,
+                    onSaveDetails = viewModel::saveDetails,
+                    onRenameClick = { renameDialogVisible = true },
+                )
+                // En dernier enfant du Box, donc dessiné par-dessus le tiroir, qui occupe tout l'écran
+                // au cran Détails.
+                if (keyboardProbe != null) {
+                    KeyboardDiagnosticsOverlay(keyboardProbe, modifier = Modifier.align(Alignment.TopCenter))
+                }
+            }
+        }
+        // RIC-65 : la vue « plusieurs traces sur la carte » (BIV-48) et le chargement qui y mène ou
+        // qui mène au détail restent sur le patron carte + tiroir — seul l'accueil liste (branche
+        // else ci-dessous) quitte ce patron, la carte n'a jamais quitté son rôle ici.
+        multiTrack != null || uiState is JournalUiState.Loading -> {
+            BottomSheetScaffold(
+                modifier = modifier,
+                sheetPeekHeight = PEEK_HEIGHT_EMPTY.coerceAtMost(LocalConfiguration.current.screenHeightDp.dp * 0.5f),
+                sheetContent = {
+                    // Loading est émis par openTrack() comme par showOnMap() : sans ce rendu, taper
+                    // une trace ne donnait aucun retour visuel le temps du parsing (RIC-95) — et une
+                    // trace illisible semblait juste ne rien faire (l'état Error est rendu en dialogue
+                    // plus bas, la liste restant visible derrière).
+                    if (uiState is JournalUiState.Loading) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .padding(vertical = 40.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    } else if (multiTrack != null) {
+                        JournalMultiTrackContent(
+                            entries = multiTrack.entries,
+                            coloredTracks = coloredTracks,
+                            highlightedTrackId = highlightedTrackId,
+                            onHighlightToggle = onToggleHighlight,
+                            onCloseClick = viewModel::closeMultiTrack,
+                            onSheetTopMeasured = { sheetTopPx = it },
+                        )
+                    }
+                },
+            ) {
+                JournalMap(
+                    track = null,
+                    selectedLayer = selectedLayer,
+                    recenterSignal = recenterSignal,
+                    visibleMapHeightPx = visibleMapHeightPx,
+                    currentSection = currentSection,
+                    onSectionSelected = onSectionSelected,
+                    onLayerSelected = viewModel::setSelectedLayer,
+                    onRecenter = { recenterSignal++ },
+                    onMapTopMeasured = { mapBoxTopPx = it },
+                    cursorIndex = null,
+                    onCursorChanged = {},
+                    multiTracks = coloredTracks,
+                    highlightedTrackId = highlightedTrackId,
+                    onTraceTapped = onToggleHighlight,
+                    nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
+                )
+            }
+        }
+        else -> {
+            JournalHomeScreen(
+                modifier = modifier,
+                tracks = tracks,
+                filteredTracks = filteredTracks,
+                activeCalibration = activeCalibration,
+                tagsByTrackId = tagsByTrackId,
+                dayInfoByTrackId = dayInfoByTrackId,
+                selectedFilterTags = selectedFilterTags,
+                onToggleFilterTag = viewModel::toggleFilterTag,
+                onImportClick = { pickGpxLauncher.launch(arrayOf("*/*")) },
+                onTrackClick = viewModel::openTrack,
+                selectionModeActive = selectionModeActive,
+                selectedTrackIds = selectedTrackIds,
+                onEnterSelectionMode = viewModel::enterSelectionMode,
+                onExitSelectionMode = {
+                    viewModel.exitSelectionMode()
+                    if (calibrationSelectionActive) onCalibrationSelectionDone()
+                },
+                onToggleSelection = viewModel::toggleTrackSelection,
+                onToggleYearSelection = viewModel::toggleYearSelection,
+                onShowOnMap = viewModel::showOnMap,
+                calibrationSelectionActive = calibrationSelectionActive,
+                onConfirmCalibrationSelection = {
+                    viewModel.confirmCalibrationSelection()
+                    onCalibrationSelectionDone()
+                },
+                currentSection = currentSection,
+                onSectionSelected = onSectionSelected,
+            )
         }
     }
 
@@ -651,9 +668,18 @@ private fun JournalMap(
     }
 }
 
+/**
+ * RIC-65 : accueil du Journal, écran plein natif (Scaffold + FAB) — plus de tiroir ni de carte
+ * ici, la carte reste réservée à la vue trois crans d'une rando ouverte. Deux contenus possibles
+ * selon qu'une trace a *déjà* été importée un jour ou non : [neverImported] est le seul cas qui
+ * garde un CTA plein écran, un filtre à zéro résultat retombe sur le FAB comme l'état peuplé.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun JournalListContent(
+private fun JournalHomeScreen(
+    modifier: Modifier = Modifier,
     tracks: List<LoggedTrackEntity>,
+    filteredTracks: List<LoggedTrackEntity>,
     activeCalibration: SpeedCalibration,
     tagsByTrackId: Map<String, List<String>>,
     dayInfoByTrackId: Map<String, JournalDayInfo>,
@@ -668,11 +694,174 @@ private fun JournalListContent(
     onToggleSelection: (String) -> Unit,
     onToggleYearSelection: (List<String>) -> Unit,
     onShowOnMap: () -> Unit,
-    calibrationSelectionActive: Boolean = false,
-    onConfirmCalibrationSelection: () -> Unit = {},
-    onSheetTopMeasured: (Int) -> Unit,
+    calibrationSelectionActive: Boolean,
+    onConfirmCalibrationSelection: () -> Unit,
+    currentSection: AppSection,
+    onSectionSelected: (AppSection) -> Unit,
 ) {
-    val groups = remember(tracks, activeCalibration) { groupByYear(tracks, activeCalibration) }
+    val neverImported = tracks.isEmpty()
+    Scaffold(
+        modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Journal",
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                SectionMenuButton(current = currentSection, onSelect = onSectionSelected)
+            }
+        },
+        floatingActionButton = {
+            // Le CTA plein écran de l'état vraiment vide (ci-dessous) est la seule action possible
+            // de cet écran : un FAB par-dessus ferait doublon.
+            if (!neverImported) {
+                FloatingActionButton(onClick = onImportClick) {
+                    Icon(Icons.Default.Add, contentDescription = "Ajouter une trace")
+                }
+            }
+        },
+    ) { paddingValues ->
+        if (neverImported) {
+            JournalEmptyFirstLaunch(
+                onImportClick = onImportClick,
+                modifier = Modifier.padding(paddingValues).fillMaxSize(),
+            )
+        } else {
+            JournalPopulatedList(
+                tracks = tracks,
+                filteredTracks = filteredTracks,
+                activeCalibration = activeCalibration,
+                tagsByTrackId = tagsByTrackId,
+                dayInfoByTrackId = dayInfoByTrackId,
+                selectedFilterTags = selectedFilterTags,
+                onToggleFilterTag = onToggleFilterTag,
+                onTrackClick = onTrackClick,
+                selectionModeActive = selectionModeActive,
+                selectedTrackIds = selectedTrackIds,
+                onEnterSelectionMode = onEnterSelectionMode,
+                onExitSelectionMode = onExitSelectionMode,
+                onToggleSelection = onToggleSelection,
+                onToggleYearSelection = onToggleYearSelection,
+                onShowOnMap = onShowOnMap,
+                calibrationSelectionActive = calibrationSelectionActive,
+                onConfirmCalibrationSelection = onConfirmCalibrationSelection,
+                modifier = Modifier.padding(paddingValues).fillMaxSize(),
+            )
+        }
+    }
+}
+
+/** RIC-65 écran 1 : aucune trace jamais importée, rien d'autre à faire ni à voler en visibilité. */
+@Composable
+private fun JournalEmptyFirstLaunch(onImportClick: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(88.dp)
+                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(50)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Default.Terrain,
+                contentDescription = null,
+                modifier = Modifier.size(40.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
+        Spacer(Modifier.height(18.dp))
+        Text(
+            text = "Aucune rando pour l'instant",
+            style = MaterialTheme.typography.titleLarge,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Ajoute une trace pour commencer ton carnet — tes randos réalisées vivront ici.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = onImportClick) {
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Ajouter une trace")
+        }
+    }
+}
+
+/**
+ * RIC-65 écran 2 : résumé global, non couplé aux filtres/chips actifs — les croisements par
+ * filtre relèvent de l'écran Bilan lui-même (RIC-19) une fois construit, pas de cette carte.
+ */
+@Composable
+private fun JournalBilanCard(total: Int, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(18.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .background(Color.White.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.AutoMirrored.Filled.TrendingUp,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        }
+        Text(
+            text = "$total rando${if (total > 1) "s" else ""} au total",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+    }
+}
+
+/**
+ * RIC-65 écrans 2 et 3 : la liste peuplée, avec le Bilan et les chips toujours affichés — un
+ * filtre à zéro résultat (écran 3) n'en masque que le contenu de la liste, pas ces deux-là.
+ */
+@Composable
+private fun JournalPopulatedList(
+    tracks: List<LoggedTrackEntity>,
+    filteredTracks: List<LoggedTrackEntity>,
+    activeCalibration: SpeedCalibration,
+    tagsByTrackId: Map<String, List<String>>,
+    dayInfoByTrackId: Map<String, JournalDayInfo>,
+    selectedFilterTags: Set<String>,
+    onToggleFilterTag: (String) -> Unit,
+    onTrackClick: (LoggedTrackEntity) -> Unit,
+    selectionModeActive: Boolean,
+    selectedTrackIds: Set<String>,
+    onEnterSelectionMode: (String) -> Unit,
+    onExitSelectionMode: () -> Unit,
+    onToggleSelection: (String) -> Unit,
+    onToggleYearSelection: (List<String>) -> Unit,
+    onShowOnMap: () -> Unit,
+    calibrationSelectionActive: Boolean,
+    onConfirmCalibrationSelection: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val groups = remember(filteredTracks, activeCalibration) { groupByYear(filteredTracks, activeCalibration) }
     // null (not an empty set) means "no manual choice yet" — only then does the most recent year
     // default to expanded. Keying remember on `groups` would look tempting but resets this to the
     // default on every recomposition where the list content changes (e.g. a new import), silently
@@ -687,23 +876,18 @@ private fun JournalListContent(
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .verticalScroll(rememberScrollState())
-            .statusBarsPadding()
             .navigationBarsPadding()
             .padding(horizontal = 20.dp)
-            .padding(top = 4.dp, bottom = 40.dp)
-            .onGloballyPositioned { onSheetTopMeasured(it.positionInRoot().y.toInt()) },
+            .padding(top = 4.dp, bottom = 96.dp),
     ) {
-        Button(onClick = onImportClick, modifier = Modifier.fillMaxWidth()) {
-            Text("Importer une trace")
-        }
+        JournalBilanCard(total = tracks.size)
         if (allFilterTags.isNotEmpty()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 12.dp)
+                    .padding(top = 14.dp)
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -716,16 +900,26 @@ private fun JournalListContent(
                 }
             }
         }
-        if (tracks.isEmpty()) {
-            Box(modifier = Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) {
-                Text(
-                    text = if (selectedFilterTags.isEmpty()) {
-                        "Aucune trace dans le journal pour l'instant."
-                    } else {
-                        "Aucune trace ne correspond à ce filtre."
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        if (filteredTracks.isEmpty()) {
+            // RIC-65 écran 3 : les traces existent, seul le filtre actif n'en retient aucune —
+            // registre visuel proche de l'écran 1 mais sans CTA, rien à importer ici.
+            Box(modifier = Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Default.Terrain,
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text("Aucune rando ne correspond", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Essaie un autre filtre.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             return@Column
         }

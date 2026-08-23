@@ -116,6 +116,10 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val settingsPreferences = SettingsPreferences(application)
 
     private val _tracks = MutableStateFlow<List<LoggedTrackEntity>>(emptyList())
+    // RIC-65 : liste non filtrée, pour distinguer « aucune trace jamais importée » (écran 1, CTA
+    // plein écran) d'un « filtre à zéro résultat » (écran 3, la banque n'est pas vide) — filteredTracks
+    // seul ne permet pas cette distinction une fois un filtre actif.
+    val tracks: StateFlow<List<LoggedTrackEntity>> = _tracks.asStateFlow()
 
     // trackId -> its tags, for every track that has at least one — drives both the filter chips
     // (distinct values across all tracks) and which entries a filter selection keeps.
