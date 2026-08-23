@@ -162,12 +162,23 @@ fun JournalScreen(
     // détail — c'est l'appelant (MainActivity) qui prend en charge le passage vers la
     // Planification, seul endroit où les ViewModels des deux écrans sont atteignables ensemble.
     onDuplicateToPlanification: (DuplicatePlanRequest) -> Unit = {},
+    // RIC-104 : même boîte aux lettres que onDuplicateToPlanification ci-dessus, pour les fichiers
+    // reçus de l'extérieur une fois « Journal » choisi dans le dialogue d'univers — MainActivity
+    // ne peut pas appeler ce ViewModel directement, lui non plus.
+    pendingImportUris: List<Uri>? = null,
+    onPendingImportUrisConsumed: () -> Unit = {},
     viewModel: JournalViewModel = viewModel(),
 ) {
     val calibrationSelectionActive by viewModel.calibrationSelectionActive.collectAsStateWithLifecycle()
 
     LaunchedEffect(calibrationSelectionMode) {
         if (calibrationSelectionMode) viewModel.enterCalibrationSelectionMode()
+    }
+
+    LaunchedEffect(pendingImportUris) {
+        val uris = pendingImportUris ?: return@LaunchedEffect
+        viewModel.importTracks(uris)
+        onPendingImportUrisConsumed()
     }
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
     val filteredTracks by viewModel.filteredTracks.collectAsStateWithLifecycle()

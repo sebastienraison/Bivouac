@@ -84,6 +84,10 @@ private val PEEK_HEIGHT_EMPTY = 150.dp
 fun GpxImportScreen(
     modifier: Modifier = Modifier,
     incomingGpxUri: Uri? = null,
+    // RIC-104 : un fichier reçu de l'extérieur attend encore le choix d'univers (dialogue affiché
+    // par MainActivity) — le repli « restaurer la dernière trace » doit patienter jusque-là, sans
+    // quoi il se déclenche avant que incomingGpxUri n'ait eu la chance d'être renseigné.
+    hasPendingExternalChoice: Boolean = false,
     currentSection: AppSection,
     onSectionSelected: (AppSection) -> Unit,
     // RIC-40 : posé par « Dupliquer vers la planification » côté Journal, consommé une seule fois
@@ -137,8 +141,8 @@ fun GpxImportScreen(
     // Une duplication en attente (RIC-40) court-circuite les deux : arriver ici avec une trace du
     // Journal à dupliquer est un choix explicite, il ne doit pas se faire écraser par la trace de
     // la session précédente que l'effet ci-dessus restaurerait en parallèle.
-    LaunchedEffect(incomingGpxUri) {
-        if (uiState is GpxImportUiState.Idle && pendingDuplicate == null) {
+    LaunchedEffect(incomingGpxUri, hasPendingExternalChoice) {
+        if (uiState is GpxImportUiState.Idle && pendingDuplicate == null && !hasPendingExternalChoice) {
             if (incomingGpxUri != null) {
                 viewModel.importGpx(context.contentResolver, incomingGpxUri)
             } else {

@@ -57,6 +57,14 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/gpx+xml" />
             </intent-filter>
+
+            <!-- RIC-104 : partage de plusieurs fichiers .gpx à la fois depuis un gestionnaire de
+                 fichiers — même restriction de type MIME que le partage simple ci-dessus. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/gpx+xml" />
+            </intent-filter>
         </activity>
 
         <provider

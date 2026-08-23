@@ -22,6 +22,7 @@ import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.ui.gpximport.GpxImportScreen
 import com.bivouac.app.ui.journal.JournalScreen
 import com.bivouac.app.ui.nav.AppSection
+import com.bivouac.app.ui.nav.UniverseChoiceDialog
 import com.bivouac.app.ui.settings.SettingsScreen
 import com.bivouac.app.ui.theme.BivouacTheme
 
@@ -31,17 +32,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val incomingGpxUri = intent.extractGpxUri()
+        val incomingGpxUris = intent.extractGpxUris()
         setContent {
             BivouacTheme {
-                BivouacApp(modifier = Modifier.fillMaxSize(), incomingGpxUri = incomingGpxUri)
+                BivouacApp(modifier = Modifier.fillMaxSize(), incomingGpxUris = incomingGpxUris)
             }
         }
     }
 }
 
 @Composable
-private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUri: Uri? = null) {
+private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri> = emptyList()) {
     val navController = rememberNavController()
 
     // RIC-40 : une boîte aux lettres entre les ViewModels du Journal et de la Planification, qui
@@ -50,6 +51,16 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUri: Uri? = nul
     // partagé : une duplication est un passage de relais ponctuel, pas un état que l'un des deux
     // écrans possède durablement.
     var pendingDuplicate by remember { mutableStateOf<DuplicatePlanRequest?>(null) }
+
+    // RIC-104 : tant que ce choix n'est pas tranché, ni la Planification ni le Journal ne savent
+    // quoi faire du fichier — voir UniverseChoiceDialog. Initialisé une seule fois depuis l'intent
+    // de démarrage ; une rotation le repasserait à la même valeur (incomingGpxUris est stable),
+    // sans rouvrir le dialogue après qu'il a déjà été tranché puisque ce remember n'est pas rekeyé.
+    var universeChoicePending by remember { mutableStateOf(incomingGpxUris.takeIf { it.isNotEmpty() }) }
+    // Mêmes boîtes aux lettres que pendingDuplicate ci-dessus, remplies une fois le choix
+    // d'univers tranché.
+    var incomingPlanificationUri by remember { mutableStateOf<Uri?>(null) }
+    var incomingJournalUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
     // Standard top-level-destination navigation: pop back to the graph's start so switching
     // sections never piles up a back stack, but save/restore each section's own state (scroll
@@ -67,7 +78,8 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUri: Uri? = nul
         composable(AppSection.PLANIFICATION.route) {
             GpxImportScreen(
                 modifier = Modifier.fillMaxSize(),
-                incomingGpxUri = incomingGpxUri,
+                incomingGpxUri = incomingPlanificationUri,
+                hasPendingExternalChoice = universeChoicePending != null,
                 currentSection = AppSection.PLANIFICATION,
                 onSectionSelected = ::onSectionSelected,
                 pendingDuplicate = pendingDuplicate,
@@ -83,6 +95,8 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUri: Uri? = nul
                     pendingDuplicate = request
                     onSectionSelected(AppSection.PLANIFICATION)
                 },
+                pendingImportUris = incomingJournalUris.takeIf { it.isNotEmpty() },
+                onPendingImportUrisConsumed = { incomingJournalUris = emptyList() },
             )
         }
         composable(AppSection.REGLAGES.route) {
@@ -107,19 +121,51 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUri: Uri? = nul
             )
         }
     }
+
+    // RIC-104 : seule l'entrée externe pose cette question — les FAB internes du Journal et de
+    // Planification connaissent déjà leur univers par construction, voir UniverseChoiceDialog.
+    universeChoicePending?.let { uris ->
+        UniverseChoiceDialog(
+            onJournalChosen = {
+                universeChoicePending = null
+                incomingJournalUris = uris
+                onSectionSelected(AppSection.JOURNAL)
+            },
+            onPlanificationChosen = {
+                universeChoicePending = null
+                // Planification n'a jamais su ouvrir qu'un seul fichier à la fois (voir son propre
+                // sélecteur, OpenDocument et non OpenMultipleDocuments) — un lot externe choisi
+                // pour cet univers perd donc silencieusement tout fichier au-delà du premier.
+                // Comportement non tranché par RIC-104, signalé au pilotage plutôt que deviné plus
+                // loin (agrandir Planification au multi-fichiers, ou désactiver ce choix au-delà
+                // d'un fichier).
+                incomingPlanificationUri = uris.first()
+                onSectionSelected(AppSection.PLANIFICATION)
+            },
+            onCancel = { universeChoicePending = null },
+        )
+    }
 }
 
 /**
- * Uri d'un fichier GPX reçu depuis une autre application, via ouverture directe (VIEW) ou
- * partage (SEND) — cf. les intent-filters déclarés dans le manifeste.
+ * Uri(s) d'un ou plusieurs fichiers GPX reçus depuis une autre application, via ouverture directe
+ * (VIEW, toujours un seul fichier), partage simple (SEND) ou partage groupé (SEND_MULTIPLE) — cf.
+ * les intent-filters déclarés dans le manifeste.
  */
 @Suppress("DEPRECATION")
-private fun Intent.extractGpxUri(): Uri? = when (action) {
-    Intent.ACTION_VIEW -> data
-    Intent.ACTION_SEND -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+private fun Intent.extractGpxUris(): List<Uri> = when (action) {
+    Intent.ACTION_VIEW -> listOfNotNull(data)
+    Intent.ACTION_SEND -> listOfNotNull(
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            getParcelableExtra(Intent.EXTRA_STREAM)
+        },
+    )
+    Intent.ACTION_SEND_MULTIPLE -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
     } else {
-        getParcelableExtra(Intent.EXTRA_STREAM)
-    }
-    else -> null
+        getParcelableArrayListExtra(Intent.EXTRA_STREAM)
+    }.orEmpty()
+    else -> emptyList()
 }
