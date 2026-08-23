@@ -834,9 +834,13 @@ private fun JournalEmptyFirstLaunch(onImportClick: () -> Unit, modifier: Modifie
 /**
  * RIC-65 écran 2 : résumé global, non couplé aux filtres/chips actifs — les croisements par
  * filtre relèvent de l'écran Bilan lui-même (RIC-19) une fois construit, pas de cette carte.
+ *
+ * Statistiques en sourdine (`muted`), comme les en-têtes d'année : la couleur reste réservée aux
+ * chiffres d'une sortie unique, un cumul ne s'en pare pas. Celui-ci est le cumul le plus large de
+ * l'écran, il serait le dernier à y prétendre.
  */
 @Composable
-private fun JournalBilanCard(total: Int, modifier: Modifier = Modifier) {
+private fun JournalBilanCard(total: Int, stats: TrackStats, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -857,11 +861,15 @@ private fun JournalBilanCard(total: Int, modifier: Modifier = Modifier) {
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
             )
         }
-        Text(
-            text = "$total rando${if (total > 1) "s" else ""} au total",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-        )
+        Column {
+            Text(
+                text = "$total rando${if (total > 1) "s" else ""} au total",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Spacer(Modifier.height(4.dp))
+            StatsRows(stats, muted = true)
+        }
     }
 }
 
@@ -899,6 +907,9 @@ private fun JournalPopulatedList(
 ) {
     val groups = remember(filteredTracks, activeCalibration) { groupByYear(filteredTracks, activeCalibration) }
     val resolvedExpandedYears = expandedYears ?: setOfNotNull(groups.firstOrNull()?.year)
+    // Sur `tracks` et non `filteredTracks` : le Bilan reste global, un filtre actif n'en retire
+    // rien (RIC-65 écran 3).
+    val bilanStats = remember(tracks, activeCalibration) { aggregateStats(tracks, activeCalibration) }
 
     // System tags always offered (even before ever used) so the filter is discoverable; free tags
     // only once at least one track actually has them.
@@ -913,7 +924,7 @@ private fun JournalPopulatedList(
             .padding(horizontal = 20.dp)
             .padding(top = 4.dp, bottom = 96.dp),
     ) {
-        JournalBilanCard(total = tracks.size)
+        JournalBilanCard(total = tracks.size, stats = bilanStats)
         if (allFilterTags.isNotEmpty()) {
             Row(
                 modifier = Modifier
@@ -1046,22 +1057,31 @@ private data class YearGroup(
 // was active when each hike was imported, so summing them would mix calibrations together instead
 // of reflecting the one currently active (BIV-16 feedback: the Planification list had the same
 // staleness, fixed the same way — see TrackStatsCalculator.recomputeDuration).
+//
+// Partagé entre les en-têtes d'année et la carte Bilan (RIC-65) : le total de l'écran et la somme
+// de ses sections doivent tomber juste l'un par rapport à l'autre, ce que deux calculs séparés ne
+// garantiraient plus dès qu'un seul des deux évoluerait.
+private fun aggregateStats(tracks: List<LoggedTrackEntity>, activeCalibration: SpeedCalibration): TrackStats =
+    TrackStatsCalculator.recomputeDuration(
+        TrackStats(
+            distanceMeters = tracks.sumOf { it.distanceMeters },
+            elevationGainMeters = tracks.sumOf { it.elevationGainMeters },
+            elevationLossMeters = tracks.sumOf { it.elevationLossMeters },
+            estimatedDurationMinutes = 0,
+        ),
+        activeCalibration,
+    )
+
 private fun groupByYear(tracks: List<LoggedTrackEntity>, activeCalibration: SpeedCalibration): List<YearGroup> {
     val zone = ZoneId.systemDefault()
     return tracks
         .groupBy { Instant.ofEpochMilli(it.startedAt).atZone(zone).year }
         .toSortedMap(compareByDescending { it })
         .map { (year, entries) ->
-            val aggregateStats = TrackStats(
-                distanceMeters = entries.sumOf { it.distanceMeters },
-                elevationGainMeters = entries.sumOf { it.elevationGainMeters },
-                elevationLossMeters = entries.sumOf { it.elevationLossMeters },
-                estimatedDurationMinutes = 0,
-            )
             YearGroup(
                 year = year,
                 entries = entries,
-                totalStats = TrackStatsCalculator.recomputeDuration(aggregateStats, activeCalibration),
+                totalStats = aggregateStats(entries, activeCalibration),
             )
         }
 }
