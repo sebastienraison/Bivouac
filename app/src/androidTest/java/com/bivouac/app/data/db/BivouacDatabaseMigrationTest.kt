@@ -198,13 +198,14 @@ class BivouacDatabaseMigrationTest {
 
         val migrated = helper.runMigrationsAndValidate(
             testDbName,
-            8,
+            9,
             true,
             BivouacDatabase.MIGRATION_1_2,
             BivouacDatabase.MIGRATION_2_5,
             BivouacDatabase.MIGRATION_5_6,
             BivouacDatabase.MIGRATION_6_7,
             BivouacDatabase.migration7To8(targetContext),
+            BivouacDatabase.MIGRATION_8_9,
         )
 
         migrated.query("SELECT id, trackName, gpxContent, bivouacTrackPointIndices FROM saved_track").use { cursor ->
@@ -486,6 +487,68 @@ class BivouacDatabaseMigrationTest {
         }
         migrated.query("SELECT * FROM logged_track_day LIMIT 1").use { cursor ->
             assertEquals(-1, cursor.getColumnIndex("rawGpxContent"))
+        }
+
+        migrated.close()
+    }
+
+    // Les trois colonnes dénormalisées arrivent vides et nullables, le remplissage se faisant
+    // après coup hors migration (LoggedTrackBackfill). Ce que ce test verrouille, c'est
+    // justement qu'elle ne touche à rien d'autre : ni chemin de fichier, ni ligne, ni contenu.
+    // C'est la propriété qui rend cette migration incapable de perdre une archive.
+    @Test
+    fun migrate8To9_addsEmptyDenormalizedColumnsWithoutTouchingExistingRows() {
+        helper.createDatabase(testDbName, 8).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note) VALUES " +
+                    "('track-2', 'Traversee Vanoise', 1781078400000, 'hash-track-2', " +
+                    "21500.0, 1400.0, 900.0, 5, 660, 'Deux jours')",
+            )
+            execSQL(
+                "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxFilePath) VALUES " +
+                    "(1, 'track-2', 0, 'gpx/track-2-day0.gpx')",
+            )
+            execSQL(
+                "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxFilePath) VALUES " +
+                    "(2, 'track-2', 1, 'gpx/track-2-day1.gpx')",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            9,
+            true,
+            BivouacDatabase.MIGRATION_8_9,
+        )
+
+        migrated.query(
+            "SELECT id, trackId, dayIndex, rawGpxFilePath, contentHash, startedAtMillis, " +
+                "elapsedSeconds FROM logged_track_day ORDER BY id",
+        ).use { cursor ->
+            assertEquals(2, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1L, cursor.getLong(0))
+            assertEquals("track-2", cursor.getString(1))
+            assertEquals(0, cursor.getInt(2))
+            assertEquals("gpx/track-2-day0.gpx", cursor.getString(3))
+            assertTrue("contentHash doit arriver vide", cursor.isNull(4))
+            assertTrue("startedAtMillis doit arriver vide", cursor.isNull(5))
+            assertTrue("elapsedSeconds doit arriver vide", cursor.isNull(6))
+            assertTrue(cursor.moveToNext())
+            assertEquals(1, cursor.getInt(2))
+            assertEquals("gpx/track-2-day1.gpx", cursor.getString(3))
+            assertTrue(cursor.isNull(4))
+        }
+
+        migrated.query("SELECT name, contentHash, note FROM logged_track").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Traversee Vanoise", cursor.getString(0))
+            assertEquals("hash-track-2", cursor.getString(1))
+            assertEquals("Deux jours", cursor.getString(2))
         }
 
         migrated.close()

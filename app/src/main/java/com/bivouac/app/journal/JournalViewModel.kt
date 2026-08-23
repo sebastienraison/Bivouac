@@ -1,7 +1,6 @@
 package com.bivouac.app.journal
 
 import android.app.Application
-import android.content.ContentResolver
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -12,10 +11,17 @@ import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.db.PreparedImport
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
+import com.bivouac.app.data.model.BivouacPoint
+import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
+import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,16 +37,81 @@ import kotlinx.coroutines.withContext
 sealed interface JournalUiState {
     data object Overview : JournalUiState
     data object Loading : JournalUiState
-    data class Detail(val entry: LoggedTrackEntity, val track: HikeTrack) : JournalUiState
+    // daySegments (RIC-41) : la trace redécoupée par jour importé, pour la ventilation
+    // « Total » + « Jour N » — voir LoggedTrackRepository.openDetail.
+    data class Detail(
+        val entry: LoggedTrackEntity,
+        val track: HikeTrack,
+        val daySegments: List<Segment>,
+    ) : JournalUiState
     // BIV-48: a contemplative overview of several traces at once — entries in the order they
     // should get their (rotating) legend color, each paired with its parsed track.
     data class MultiTrack(val entries: List<Pair<LoggedTrackEntity, HikeTrack>>) : JournalUiState
     data class Error(val message: String) : JournalUiState
 }
 
+// RIC-65 écran 3 : le sélecteur a renvoyé plusieurs fichiers, et rien ne permet de deviner s'il
+// s'agit d'un trek en plusieurs jours ou de plusieurs sorties indépendantes — l'utilisateur
+// tranche explicitement à chaque fois, sans heuristique de date ni de proximité.
+data class MultiFileImportChoice(val fileCount: Int)
+
+// Bilan d'un import « sorties séparées » : chaque fichier est traité indépendamment, donc l'échec
+// ou le doublon de l'un n'empêche pas les autres d'entrer — d'où ce compte rendu de fin de lot,
+// là où un import d'une seule sortie se contente d'ouvrir la trace importée.
+// probableDuplicateNames : les traces importées malgré une ressemblance avec une sortie déjà
+// présente (cf. processNextSeparateImport). Nommées, et pas seulement comptées : « 3 doublons
+// possibles » n'est pas actionnable, l'utilisateur ne saurait pas lesquelles aller vérifier.
+data class SeparateImportReport(
+    val imported: Int,
+    val duplicatesSkipped: Int,
+    val failed: Int,
+    val probableDuplicateNames: List<String> = emptyList(),
+)
+
+// Non nul du premier fichier lu jusqu'à la toute fin de l'opération, calibration comprise. Sert à
+// bloquer l'écran : pouvoir ouvrir une autre trace pendant qu'un import écrit en base est un
+// risque d'état incohérent, pas seulement un inconfort. La calibration en fait partie parce
+// qu'elle est, aujourd'hui, l'étape la plus lente des deux (voir refreshAutoCalibration).
+sealed interface ImportProgress {
+    // done vaut 0 pour un trek en plusieurs jours : prepareImport lit ses fichiers d'un bloc, il
+    // n'y a pas d'étape intermédiaire à montrer. Un lot de sorties séparées, lui, avance fichier
+    // par fichier et peut donc compter.
+    data class Reading(val done: Int, val total: Int) : ImportProgress
+
+    data object Calibrating : ImportProgress
+}
+
+/**
+ * Ce que la liste du Journal sait des jours d'une trace. [dates] peut être vide ou incomplète, un
+ * GPX pouvant n'avoir aucun horodatage, alors que [dayCount] est toujours juste.
+ *
+ * D'où [bivouacCount] tiré de [dayCount] et non du nombre de dates : sur une trace importée, une
+ * nuit dehors est exactement une coupure entre deux fichiers, connue même sans horodatage.
+ */
+data class JournalDayInfo(val dayCount: Int, val dates: List<LocalDate>) {
+    val bivouacCount: Int get() = (dayCount - 1).coerceAtLeast(0)
+}
+
+// RIC-40 : tout ce dont la Planification a besoin pour ouvrir cette trace du Journal comme un
+// nouveau plan éditable — construit ici, et pas dans GpxImportViewModel, parce que seul le côté
+// Journal connaît les frontières entre jours. La trace du Journal, elle, n'est jamais touchée :
+// elle est immuable une fois importée. bivouacPoints porte déjà un point par jonction de fichiers
+// (vide pour une trace d'un seul jour) ; l'écran d'arrivée le charge comme n'importe quelle autre
+// sélection de bivouacs.
+data class DuplicatePlanRequest(
+    val track: HikeTrack,
+    val bivouacPoints: List<BivouacPoint>,
+    val suggestedName: String,
+)
+
 class JournalViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = LoggedTrackRepository(application)
+    // Resolver de l'application, et pas celui passé par l'écran : un import peut s'étaler sur
+    // plusieurs allers-retours avec l'utilisateur (avertissement de doublon), il ne doit pas
+    // garder une référence vers un Context d'Activity pendant ce temps. Les permissions de
+    // lecture accordées par le sélecteur valent pour tout le process.
+    private val contentResolver = application.contentResolver
     private val mapLayerPreferences = MapLayerPreferences(application)
     private val settingsPreferences = SettingsPreferences(application)
 
@@ -53,6 +124,13 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     private val _selectedFilterTags = MutableStateFlow<Set<String>>(emptySet())
     val selectedFilterTags: StateFlow<Set<String>> = _selectedFilterTags.asStateFlow()
+
+    // trackId -> ce que la liste doit savoir de ses jours, pour distinguer un trek d'une sortie
+    // d'un jour : leurs dates, et leur nombre. Les dates manquent tant que le rattrapage n'a pas
+    // relevé celles d'une trace, auquel cas la liste se contente de la date de départ, comme
+    // avant ; le nombre de jours, lui, est toujours connu.
+    private val _dayInfoByTrackId = MutableStateFlow<Map<String, JournalDayInfo>>(emptyMap())
+    val dayInfoByTrackId: StateFlow<Map<String, JournalDayInfo>> = _dayInfoByTrackId.asStateFlow()
 
     // OR semantics: a track matching any one selected tag is kept — narrows what's browsable,
     // doesn't require an exact combination match.
@@ -94,9 +172,33 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _importError = MutableStateFlow<String?>(null)
     val importError: StateFlow<String?> = _importError.asStateFlow()
 
-    private val _probableDuplicate = MutableStateFlow<LoggedTrackEntity?>(null)
-    val probableDuplicate: StateFlow<LoggedTrackEntity?> = _probableDuplicate.asStateFlow()
+    // Le match entier et pas seulement la trace ressemblante : l'avertissement ne dit pas la même
+    // chose selon qu'il s'agit d'une sortie qui ressemble à une autre ou d'un jour déjà présent.
+    private val _duplicateWarning = MutableStateFlow<DuplicateMatch?>(null)
+    val duplicateWarning: StateFlow<DuplicateMatch?> = _duplicateWarning.asStateFlow()
     private var pendingImport: PreparedImport? = null
+
+    // RIC-65 écran 3 : non nul tant que l'utilisateur n'a pas tranché entre trek multi-jours et
+    // sorties séparées. Aucun fichier n'est lu avant ce choix — « Abandonner » ne peut donc pas
+    // laisser d'import partiel derrière lui.
+    private val _multiFileImportChoice = MutableStateFlow<MultiFileImportChoice?>(null)
+    val multiFileImportChoice: StateFlow<MultiFileImportChoice?> = _multiFileImportChoice.asStateFlow()
+    private var pendingChoiceUris: List<Uri> = emptyList()
+
+    private val _separateImportReport = MutableStateFlow<SeparateImportReport?>(null)
+    val separateImportReport: StateFlow<SeparateImportReport?> = _separateImportReport.asStateFlow()
+
+    private val _importProgress = MutableStateFlow<ImportProgress?>(null)
+    val importProgress: StateFlow<ImportProgress?> = _importProgress.asStateFlow()
+    private var separateTotal = 0
+
+    // File d'attente de l'import « sorties séparées » : non nulle du premier fichier au bilan de
+    // fin. Elle survit à l'avertissement de doublon, qui la suspend puis la relance.
+    private var separateQueue: ArrayDeque<Uri>? = null
+    private var separateImported = 0
+    private var separateDuplicatesSkipped = 0
+    private var separateFailed = 0
+    private val separateProbableNames = mutableListOf<String>()
 
     private val _deleteTarget = MutableStateFlow<LoggedTrackEntity?>(null)
     val deleteTarget: StateFlow<LoggedTrackEntity?> = _deleteTarget.asStateFlow()
@@ -118,6 +220,19 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         refresh()
+        // Rattrapage des colonnes dénormalisées, sans effet une fois la banque à jour. Lancé ici
+        // plutôt qu'à l'ouverture de la base : c'est le seul endroit où le travail a un scope qui
+        // s'annule (quitter le Journal l'interrompt) et où il ne retarde l'affichage de rien.
+        viewModelScope.launch {
+            val backfilled = withContext(Dispatchers.IO) {
+                runCatching { repository.backfillDenormalizedFields() }
+                    .onFailure { Log.w("JournalViewModel", "Rattrapage interrompu", it) }
+                    .isSuccess
+            }
+            // Les plages de dates de la liste viennent des colonnes que le rattrapage remplit :
+            // sans ce second passage, elles n'apparaîtraient qu'au prochain lancement.
+            if (backfilled) refresh()
+        }
     }
 
     private fun refresh() {
@@ -125,6 +240,14 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             withContext(Dispatchers.IO) {
                 _tracks.value = repository.list()
                 _tagsByTrackId.value = repository.tagsByTrackId()
+                val zone = ZoneId.systemDefault()
+                _dayInfoByTrackId.value = repository.daySummariesByTrackId()
+                    .mapValues { (_, summary) ->
+                        JournalDayInfo(
+                            dayCount = summary.dayCount,
+                            dates = summary.startMillis.map { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() },
+                        )
+                    }
             }
         }
     }
@@ -141,11 +264,11 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _uiState.value = JournalUiState.Loading
         viewModelScope.launch {
             runCatching {
-                withContext(Dispatchers.IO) { repository.open(entry.id) }
-            }.onSuccess { track ->
-                _uiState.value = if (track != null) {
+                withContext(Dispatchers.IO) { repository.openDetail(entry.id) }
+            }.onSuccess { detail ->
+                _uiState.value = if (detail != null) {
                     _currentTags.value = _tagsByTrackId.value[entry.id].orEmpty()
-                    JournalUiState.Detail(entry, track)
+                    JournalUiState.Detail(entry, detail.track, detail.daySegments)
                 } else {
                     JournalUiState.Error("Trace introuvable.")
                 }
@@ -154,6 +277,22 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.value = JournalUiState.Error("Trace incorrecte ou fichier illisible.")
             }
         }
+    }
+
+    /**
+     * RIC-40 : null quand il n'y a rien à dupliquer (on n'est pas sur la vue détail). Les points
+     * de bivouac tombent aux jonctions entre jours, voir [DayJunctions] — liste vide pour une
+     * trace d'un seul jour, que la Planification ouvre alors comme n'importe quelle trace sans
+     * bivouac. Rien n'est écrit ici : la trace du Journal reste telle qu'elle a été importée.
+     */
+    fun buildDuplicateForPlanification(): DuplicatePlanRequest? {
+        val state = _uiState.value as? JournalUiState.Detail ?: return null
+        val junctions = DayJunctions.bivouacTrackPointIndices(state.daySegments.map { it.points.size })
+        return DuplicatePlanRequest(
+            track = state.track,
+            bivouacPoints = junctions.map { BivouacPoint(id = UUID.randomUUID().toString(), trackPointIndex = it) },
+            suggestedName = "Copie de ${state.entry.name}",
+        )
     }
 
     fun closeTrack() {
@@ -242,7 +381,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             _tracks.value = _tracks.value.map { if (it.id == entry.id) it.copy(name = trimmed) else it }
             val state = _uiState.value as? JournalUiState.Detail
             if (state != null && state.entry.id == entry.id) {
-                _uiState.value = JournalUiState.Detail(state.entry.copy(name = trimmed), state.track)
+                _uiState.value = JournalUiState.Detail(state.entry.copy(name = trimmed), state.track, state.daySegments)
             }
         }
     }
@@ -277,7 +416,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _tracks.value = _tracks.value.map { if (it.id == id) it.copy(note = note) else it }
         val state = _uiState.value as? JournalUiState.Detail
         if (state != null && state.entry.id == id) {
-            _uiState.value = JournalUiState.Detail(state.entry.copy(note = note), state.track)
+            _uiState.value = JournalUiState.Detail(state.entry.copy(note = note), state.track, state.daySegments)
         }
     }
 
@@ -299,54 +438,207 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun importTrack(resolver: ContentResolver, uri: Uri) {
+    /**
+     * Point d'entrée unique de l'import depuis le sélecteur de fichiers. Un seul fichier passe
+     * directement (il n'y a rien à trancher) ; plusieurs déclenchent le choix de RIC-65 écran 3,
+     * avant toute lecture de fichier.
+     */
+    fun importTracks(uris: List<Uri>) {
+        when {
+            uris.isEmpty() -> return
+            uris.size == 1 -> importAsSingleTrack(uris)
+            else -> {
+                pendingChoiceUris = uris
+                _multiFileImportChoice.value = MultiFileImportChoice(uris.size)
+            }
+        }
+    }
+
+    /** « Un seul trek en plusieurs jours » : un fichier = un jour d'une même entrée du Journal. */
+    fun chooseMultiDayImport() {
+        val uris = consumeImportChoice() ?: return
+        importAsSingleTrack(uris)
+    }
+
+    /** « Sorties séparées » : N entrées indépendantes du Journal, traitées une par une. */
+    fun chooseSeparateImports() {
+        val uris = consumeImportChoice() ?: return
+        separateQueue = ArrayDeque(uris)
+        separateTotal = uris.size
+        separateImported = 0
+        separateDuplicatesSkipped = 0
+        separateFailed = 0
+        separateProbableNames.clear()
+        processNextSeparateImport()
+    }
+
+    /** « Abandonner » : rien n'a encore été lu ni écrit, il n'y a donc rien à défaire. */
+    fun cancelMultiFileImport() {
+        consumeImportChoice()
+    }
+
+    private fun consumeImportChoice(): List<Uri>? {
+        val uris = pendingChoiceUris.takeIf { it.isNotEmpty() }
+        pendingChoiceUris = emptyList()
+        _multiFileImportChoice.value = null
+        return uris
+    }
+
+    /**
+     * RIC-41 : plusieurs fichiers ici forment une seule sortie de plusieurs jours (un fichier =
+     * un jour) — c'est [LoggedTrackRepository.prepareImport] qui ordonne les jours et agrège les
+     * statistiques.
+     *
+     * Import tout-ou-rien : un fichier illisible fait échouer le lot entier plutôt que de laisser
+     * une sortie multi-jours amputée d'un jour, plus trompeuse qu'une absence d'import. C'est
+     * exactement l'inverse du mode « sorties séparées » ci-dessous, où l'indépendance des
+     * fichiers est justement ce qui a été demandé.
+     */
+    private fun importAsSingleTrack(uris: List<Uri>) {
+        _importProgress.value = ImportProgress.Reading(done = 0, total = uris.size)
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val prepared = repository.prepareImport(resolver, uri, activeCalibration.value)
+                    val prepared = repository.prepareImport(contentResolver, uris, activeCalibration.value)
                     prepared to repository.findDuplicate(prepared)
                 }
             }.onSuccess { (prepared, duplicate) ->
                 when (duplicate) {
                     is DuplicateMatch.Exact ->
                         _importError.value = "« ${duplicate.existing.name} » est déjà dans le journal."
-                    is DuplicateMatch.Probable -> {
+                    is DuplicateMatch.Probable, is DuplicateMatch.SharedDay -> {
                         pendingImport = prepared
-                        _probableDuplicate.value = duplicate.existing
+                        _duplicateWarning.value = duplicate
                     }
-                    null -> commit(prepared)
+                    null -> commit(prepared, openAfterCommit = true)
                 }
             }.onFailure {
                 Log.e("JournalViewModel", "Échec de l'import GPX (Journal)", it)
                 _importError.value = "Trace incorrecte ou fichier illisible."
             }
+            // Après le commit et sa calibration, donc après l'opération entière : ce qui suit
+            // (avertissement de doublon, erreur, vue détail) est de nouveau manipulable.
+            _importProgress.value = null
         }
     }
 
+    // Un fichier à la fois, mais sans jamais rendre la main : rien dans ce mode n'interrompt le lot
+    // pour poser une question. Le suivant n'est lu qu'une fois le précédent écrit, pour ne pas
+    // paralléliser des écritures en base sur un lot de plusieurs dizaines de fichiers.
+    private fun processNextSeparateImport() {
+        val queue = separateQueue ?: return
+        val uri = queue.removeFirstOrNull() ?: return finishSeparateImports()
+        _importProgress.value = ImportProgress.Reading(done = separateTotal - queue.size - 1, total = separateTotal)
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val prepared = repository.prepareImport(contentResolver, listOf(uri), activeCalibration.value)
+                    prepared to repository.findDuplicate(prepared)
+                }
+            }.onSuccess { (prepared, duplicate) ->
+                when (duplicate) {
+                    // Écarté sans dialogue, contrairement à l'import d'une sortie seule : c'est le
+                    // bilan de fin de lot qui le rapporte, sans interrompre les fichiers suivants.
+                    is DuplicateMatch.Exact -> {
+                        separateDuplicatesSkipped++
+                        processNextSeparateImport()
+                    }
+                    // Importé quand même, et signalé dans le bilan de fin plutôt que par une
+                    // question bloquante : sur un import de masse, une erreur visible et
+                    // réversible (un doublon apparaît dans la liste, se supprime en deux taps)
+                    // vaut mieux qu'un oubli silencieux, et se faire arrêter plusieurs fois au
+                    // milieu de 66 fichiers est exactement la friction que ce mode doit éviter.
+                    // La politique devient au passage cohérente entre les deux niveaux de
+                    // détection : doublon certain écarté en silence, doublon probable importé
+                    // puis signalé.
+                    is DuplicateMatch.Probable, is DuplicateMatch.SharedDay -> {
+                        commit(prepared, openAfterCommit = false, refreshCalibration = false)
+                        separateImported++
+                        separateProbableNames += prepared.entity.name
+                        processNextSeparateImport()
+                    }
+                    null -> {
+                        commit(prepared, openAfterCommit = false, refreshCalibration = false)
+                        separateImported++
+                        processNextSeparateImport()
+                    }
+                }
+            }.onFailure {
+                Log.e("JournalViewModel", "Échec de l'import GPX (Journal, sorties séparées)", it)
+                separateFailed++
+                processNextSeparateImport()
+            }
+        }
+    }
+
+    private fun finishSeparateImports() {
+        separateQueue = null
+        val imported = separateImported
+        val report = SeparateImportReport(
+            imported = imported,
+            duplicatesSkipped = separateDuplicatesSkipped,
+            failed = separateFailed,
+            probableDuplicateNames = separateProbableNames.toList(),
+        )
+        // Une seule fois pour tout le lot, et pas après chaque fichier : recalculer la calibration
+        // Auto reparse le GPX de tout le Journal, donc la faire N fois d'affilée coûte N passes
+        // complètes pour un résultat que seule la dernière détermine.
+        //
+        // Le bilan n'est posé qu'après : sur une banque un peu fournie cette passe se compte en
+        // secondes, et afficher « Import terminé » par-dessus un traitement encore en cours
+        // reviendrait à rendre l'écran manipulable au pire moment.
+        viewModelScope.launch {
+            if (imported > 0) {
+                _importProgress.value = ImportProgress.Calibrating
+                withContext(Dispatchers.IO) { refreshAutoCalibration() }
+            }
+            _importProgress.value = null
+            _separateImportReport.value = report
+        }
+    }
+
+    fun dismissSeparateImportReport() {
+        _separateImportReport.value = null
+    }
+
+    // L'avertissement de doublon probable ne concerne plus que l'import d'une sortie seule : une
+    // question pour un fichier ne coûte rien, et l'utilisateur a le contexte pour y répondre. Un
+    // lot de sorties séparées, lui, ne pose jamais la question (cf. processNextSeparateImport).
     fun confirmImportAnyway() {
         val prepared = pendingImport ?: return
-        dismissDuplicateWarning()
-        viewModelScope.launch { commit(prepared) }
+        pendingImport = null
+        _duplicateWarning.value = null
+        viewModelScope.launch {
+            commit(prepared, openAfterCommit = true)
+            _importProgress.value = null
+        }
     }
 
     fun dismissDuplicateWarning() {
         pendingImport = null
-        _probableDuplicate.value = null
+        _duplicateWarning.value = null
     }
 
     fun dismissImportError() {
         _importError.value = null
     }
 
-    private suspend fun commit(prepared: PreparedImport) {
-        withContext(Dispatchers.IO) {
-            repository.commitImport(prepared)
-            refreshAutoCalibration()
+    private suspend fun commit(
+        prepared: PreparedImport,
+        openAfterCommit: Boolean,
+        refreshCalibration: Boolean = true,
+    ) {
+        withContext(Dispatchers.IO) { repository.commitImport(prepared) }
+        if (refreshCalibration) {
+            _importProgress.value = ImportProgress.Calibrating
+            withContext(Dispatchers.IO) { refreshAutoCalibration() }
         }
         refresh()
         // Mirrors Planification's "open a track" behavior: a just-imported trace should land
-        // straight on its detail view, not merely appear in the list waiting to be tapped.
-        openTrack(prepared.entity)
+        // straight on its detail view, not merely appear in the list waiting to be tapped. Un lot
+        // de sorties séparées y échappe : en ouvrir une seule, arbitrairement, ne dirait rien du
+        // reste du lot — c'est le bilan de fin qui tient ce rôle.
+        if (openAfterCommit) openTrack(prepared.entity)
     }
 
     // BIV-16 Auto mode: recomputed on every import regardless of which mode is currently active,

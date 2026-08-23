@@ -37,6 +37,12 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Provisoire : pas de vraie signature de release configurée (chantier toolchain,
+            // dette #3, encore différé). Réutilise la signature debug pour permettre un test
+            // release sur device sans mettre en place un keystore de prod tout de suite — même
+            // signature que le build debug déjà installé, donc `adb install -r` remplace en
+            // place sans perte de données.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

@@ -18,6 +18,28 @@ interface LoggedTrackDao {
     @Query("SELECT * FROM logged_track_day WHERE trackId = :trackId ORDER BY dayIndex")
     suspend fun getDays(trackId: String): List<LoggedTrackDayEntity>
 
+    @Query("SELECT * FROM logged_track_day ORDER BY trackId, dayIndex")
+    suspend fun getAllDays(): List<LoggedTrackDayEntity>
+
+    // contentHash IS NULL identifie exactement les lignes que le rattrapage n'a pas encore
+    // traitées : un hash se calcule pour n'importe quel fichier, horodaté ou non.
+    @Query("SELECT * FROM logged_track_day WHERE contentHash IS NULL ORDER BY trackId, dayIndex LIMIT :limit")
+    suspend fun getDaysNeedingBackfill(limit: Int): List<LoggedTrackDayEntity>
+
+    @Query("SELECT COUNT(*) FROM logged_track_day WHERE contentHash IS NULL")
+    suspend fun countDaysNeedingBackfill(): Int
+
+    @Query(
+        "UPDATE logged_track_day SET contentHash = :contentHash, startedAtMillis = :startedAtMillis, " +
+            "elapsedSeconds = :elapsedSeconds WHERE id = :id",
+    )
+    suspend fun updateDayDenormalizedFields(
+        id: Long,
+        contentHash: String,
+        startedAtMillis: Long?,
+        elapsedSeconds: Long?,
+    )
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTrack(entity: LoggedTrackEntity)
 

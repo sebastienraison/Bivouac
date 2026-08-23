@@ -4,6 +4,8 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,25 +21,33 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
@@ -69,33 +79,50 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bivouac.app.R
+import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.SystemTag
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackStats
 import com.bivouac.app.data.gpx.TrackStatsCalculator
+import com.bivouac.app.data.model.BivouacPoint
+import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
+import com.bivouac.app.data.model.Segment
+import com.bivouac.app.data.model.TrackPoint
+import com.bivouac.app.data.model.TrekDatesFormatter
+import com.bivouac.app.journal.DuplicatePlanRequest
+import com.bivouac.app.journal.ImportProgress
+import com.bivouac.app.journal.JournalDayInfo
 import com.bivouac.app.journal.JournalUiState
 import com.bivouac.app.journal.JournalViewModel
+import com.bivouac.app.journal.SeparateImportReport
 import com.bivouac.app.ui.components.DrawerStop
 import com.bivouac.app.ui.components.ElevationProfile
 import com.bivouac.app.ui.components.GainIconColor
+import com.bivouac.app.ui.components.InfoText
 import com.bivouac.app.ui.components.StatsRows
 import com.bivouac.app.ui.components.ThreeStopDrawerHandle
 import com.bivouac.app.ui.components.ThreeStopDrawerStopRow
@@ -106,6 +133,7 @@ import com.bivouac.app.ui.map.MapControls
 import com.bivouac.app.ui.nav.AppSection
 import com.bivouac.app.ui.nav.SectionMenuButton
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -124,9 +152,12 @@ fun JournalScreen(
     // "afficher sur la carte" action for a confirm/cancel pair that returns to Réglages.
     calibrationSelectionMode: Boolean = false,
     onCalibrationSelectionDone: () -> Unit = {},
+    // RIC-40 : reçoit une demande prête à charger, construite depuis la trace ouverte en vue
+    // détail — c'est l'appelant (MainActivity) qui prend en charge le passage vers la
+    // Planification, seul endroit où les ViewModels des deux écrans sont atteignables ensemble.
+    onDuplicateToPlanification: (DuplicatePlanRequest) -> Unit = {},
     viewModel: JournalViewModel = viewModel(),
 ) {
-    val context = LocalContext.current
     val calibrationSelectionActive by viewModel.calibrationSelectionActive.collectAsStateWithLifecycle()
 
     LaunchedEffect(calibrationSelectionMode) {
@@ -134,6 +165,7 @@ fun JournalScreen(
     }
     val filteredTracks by viewModel.filteredTracks.collectAsStateWithLifecycle()
     val tagsByTrackId by viewModel.tagsByTrackId.collectAsStateWithLifecycle()
+    val dayInfoByTrackId by viewModel.dayInfoByTrackId.collectAsStateWithLifecycle()
     val selectedFilterTags by viewModel.selectedFilterTags.collectAsStateWithLifecycle()
     val currentTags by viewModel.currentTags.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -141,7 +173,10 @@ fun JournalScreen(
     val importError by viewModel.importError.collectAsStateWithLifecycle()
     val nonFreeFeaturesDisabled by viewModel.nonFreeFeaturesDisabled.collectAsStateWithLifecycle()
     val activeCalibration by viewModel.activeCalibration.collectAsStateWithLifecycle()
-    val probableDuplicate by viewModel.probableDuplicate.collectAsStateWithLifecycle()
+    val duplicateWarning by viewModel.duplicateWarning.collectAsStateWithLifecycle()
+    val multiFileImportChoice by viewModel.multiFileImportChoice.collectAsStateWithLifecycle()
+    val separateImportReport by viewModel.separateImportReport.collectAsStateWithLifecycle()
+    val importProgress by viewModel.importProgress.collectAsStateWithLifecycle()
     val deleteTarget by viewModel.deleteTarget.collectAsStateWithLifecycle()
     val selectionModeActive by viewModel.selectionModeActive.collectAsStateWithLifecycle()
     val selectedTrackIds by viewModel.selectedTrackIds.collectAsStateWithLifecycle()
@@ -163,8 +198,11 @@ fun JournalScreen(
     }
     var sheetTopPx by remember(sheetIdentity) { mutableIntStateOf(Int.MAX_VALUE) }
     val visibleMapHeightPx = (sheetTopPx - mapBoxTopPx).let { if (it > 0) it else Int.MAX_VALUE }
-    val pickGpxLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        uri?.let { viewModel.importTrack(context.contentResolver, it) }
+    // RIC-41 : sélection multiple autorisée. Ce qu'un lot de plusieurs fichiers signifie (un trek
+    // en plusieurs jours ou plusieurs sorties) n'est pas deviné ici, c'est le dialogue de choix
+    // plus bas qui tranche — voir JournalViewModel.importTracks.
+    val pickGpxLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+        viewModel.importTracks(uris)
     }
 
     val coloredTracks = remember(multiTrack) { multiTrack?.entries?.let { assignTrackColors(it) }.orEmpty() }
@@ -205,6 +243,7 @@ fun JournalScreen(
                         tracks = filteredTracks,
                         activeCalibration = activeCalibration,
                         tagsByTrackId = tagsByTrackId,
+                        dayInfoByTrackId = dayInfoByTrackId,
                         selectedFilterTags = selectedFilterTags,
                         onToggleFilterTag = viewModel::toggleFilterTag,
                         onImportClick = { pickGpxLauncher.launch(arrayOf("*/*")) },
@@ -248,9 +287,27 @@ fun JournalScreen(
             )
         }
     } else {
+        // Constat E : sur une sortie de plusieurs jours, chaque coupure entre deux fichiers est
+        // une nuit passée dehors. La donnée existait déjà, elle ne servait qu'à la duplication
+        // vers la Planification (RIC-40) — la carte et le profil recevaient une liste vide.
+        //
+        // Identifiants dérivés du rang et non tirés au hasard : rien ici n'est enregistré, et un
+        // identifiant stable évite de recréer les marqueurs à chaque recomposition.
+        val journalBivouacs = remember(detail.daySegments) {
+            DayJunctions.bivouacTrackPointIndices(detail.daySegments.map { it.points.size })
+                .mapIndexed { index, pointIndex ->
+                    BivouacPoint(id = "jonction-$index", trackPointIndex = pointIndex)
+                }
+        }
+        // RIC-100 : la sonde vit ici, au-dessus du tiroir, pour que le bandeau reste visible quand
+        // le tiroir occupe tout l'écran. Retirer avec KeyboardDiagnostics.kt une fois la cause
+        // établie.
+        val keyboardProbe = remember { if (KEYBOARD_DIAGNOSTICS_ENABLED) KeyboardProbe() else null }
         Box(modifier = modifier.fillMaxSize()) {
             JournalMap(
                 track = detail.track,
+                bivouacPoints = journalBivouacs,
+                dayBoundaryIndices = journalBivouacs.map { it.trackPointIndex },
                 selectedLayer = selectedLayer,
                 recenterSignal = recenterSignal,
                 visibleMapHeightPx = visibleMapHeightPx,
@@ -266,9 +323,13 @@ fun JournalScreen(
             ThreeStopJournalDetail(
                 entry = detail.entry,
                 track = detail.track,
+                daySegments = detail.daySegments,
+                bivouacPoints = journalBivouacs,
+                keyboardProbe = keyboardProbe,
                 activeCalibration = activeCalibration,
                 onCloseClick = viewModel::closeTrack,
                 onDeleteClick = viewModel::requestDelete,
+                onDuplicateClick = { viewModel.buildDuplicateForPlanification()?.let(onDuplicateToPlanification) },
                 onSheetTopMeasured = { sheetTopPx = it },
                 cursorIndex = cursorIndex,
                 onCursorDragged = { cursorIndex = it },
@@ -277,6 +338,11 @@ fun JournalScreen(
                 onSaveDetails = viewModel::saveDetails,
                 onRenameClick = { renameDialogVisible = true },
             )
+            // En dernier enfant du Box, donc dessiné par-dessus le tiroir, qui occupe tout l'écran
+            // au cran Détails.
+            if (keyboardProbe != null) {
+                KeyboardDiagnosticsOverlay(keyboardProbe, modifier = Modifier.align(Alignment.TopCenter))
+            }
         }
     }
 
@@ -329,16 +395,40 @@ fun JournalScreen(
         )
     }
 
-    probableDuplicate?.let { existing ->
+    multiFileImportChoice?.let { choice ->
+        MultiFileImportChoiceDialog(
+            fileCount = choice.fileCount,
+            onMultiDay = viewModel::chooseMultiDayImport,
+            onSeparate = viewModel::chooseSeparateImports,
+            onCancel = viewModel::cancelMultiFileImport,
+        )
+    }
+
+    importProgress?.let { progress -> ImportProgressDialog(progress) }
+
+    separateImportReport?.let { report ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissSeparateImportReport,
+            title = { Text("Import terminé") },
+            text = { Text(formatSeparateImportReport(report)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissSeparateImportReport) { Text("OK") }
+            },
+        )
+    }
+
+    duplicateWarning?.let { warning ->
         AlertDialog(
             onDismissRequest = viewModel::dismissDuplicateWarning,
-            title = { Text("Trace peut-être déjà présente") },
-            text = {
+            title = {
                 Text(
-                    "« ${existing.name} » (${formatStartedAtWithTime(existing.startedAt)}) a une date et une " +
-                        "distance très proches. Importer quand même ?",
+                    when (warning) {
+                        is DuplicateMatch.SharedDay -> "Journée déjà présente"
+                        else -> "Trace peut-être déjà présente"
+                    },
                 )
             },
+            text = { Text(formatDuplicateWarning(warning)) },
             confirmButton = {
                 TextButton(onClick = viewModel::confirmImportAnyway) { Text("Importer quand même") }
             },
@@ -365,9 +455,148 @@ fun JournalScreen(
     }
 }
 
+/**
+ * RIC-65 écran 3 : dès que le sélecteur renvoie plus d'un fichier. Les deux interprétations
+ * possibles sont proposées telles quelles, sans détection automatique — « Un seul trek » est mis
+ * en avant comme cas jugé le plus fréquent, « Abandonner » reste une porte de sortie explicite
+ * quand le lot est un mélange des deux.
+ */
+@Composable
+private fun MultiFileImportChoiceDialog(
+    fileCount: Int,
+    onMultiDay: () -> Unit,
+    onSeparate: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("$fileCount fichiers sélectionnés") },
+        // Les deux choix vivent dans le corps du dialogue plutôt que dans ses slots d'action :
+        // c'est ce qui permet de les empiler pleine largeur et de hiérarchiser visuellement le
+        // trek multi-jours. Ne reste dans les actions que la porte de sortie.
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Un seul trek en plusieurs jours, ou plusieurs sorties indépendantes ? " +
+                        "Rien n'est importé tant que tu n'as pas choisi.",
+                )
+                Button(onClick = onMultiDay, modifier = Modifier.fillMaxWidth()) {
+                    Text("Un seul trek en plusieurs jours")
+                }
+                OutlinedButton(onClick = onSeparate, modifier = Modifier.fillMaxWidth()) {
+                    Text("Sorties séparées")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onCancel) { Text("Abandonner") }
+        },
+    )
+}
+
+/**
+ * Attente d'import : volontairement sans aucune porte de sortie, ni bouton, ni retour arrière, ni
+ * clic à côté. Un import écrit en base fichier par fichier ; laisser l'écran manipulable pendant
+ * ce temps, c'est laisser ouvrir une trace dont l'import n'est pas fini, ou en relancer un second
+ * par-dessus le premier. L'annuler proprement supposerait de savoir défaire un lot à moitié
+ * écrit, ce qui n'existe pas ici.
+ */
+@Composable
+private fun ImportProgressDialog(progress: ImportProgress) {
+    AlertDialog(
+        onDismissRequest = {},
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+        title = { Text("Import en cours") },
+        text = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+                Text(
+                    when (progress) {
+                        // La calibration Auto reparse tout le journal : sur une banque fournie
+                        // c'est l'étape la plus longue, et la nommer évite de croire à un blocage.
+                        ImportProgress.Calibrating -> "Mise à jour de la vitesse personnalisée…"
+                        is ImportProgress.Reading -> when {
+                            progress.total == 1 -> "Lecture de la trace…"
+                            progress.done == 0 && progress.total > 1 -> "Lecture de ${progress.total} fichiers…"
+                            else -> "Fichier ${progress.done + 1} sur ${progress.total}…"
+                        }
+                    },
+                )
+            }
+        },
+        confirmButton = {},
+    )
+}
+
+/**
+ * Deux ressemblances de nature différente, donc deux formulations. Le doublon probable relève de
+ * l'indice (même date, distance voisine), le jour partagé relève du fait établi : le fichier est
+ * identique à l'octet près. La question posée reste la même dans les deux cas, parce que
+ * l'intention, elle, n'est certaine ni dans un cas ni dans l'autre.
+ */
+private fun formatDuplicateWarning(warning: DuplicateMatch): String {
+    val existingName = warning.existing.name
+    val existingDate = formatStartedAtWithTime(warning.existing.startedAt)
+    return when (warning) {
+        is DuplicateMatch.SharedDay -> {
+            val subject = when {
+                warning.incomingDays == 1 -> "Cette journée est déjà"
+                warning.sharedDays == 1 -> "Une des journées de ce trek est déjà"
+                else -> "${warning.sharedDays} des journées de ce trek sont déjà"
+            }
+            "$subject dans « $existingName » ($existingDate). Importer quand même ?"
+        }
+        else -> "« $existingName » ($existingDate) a une date et une distance très proches. " +
+            "Importer quand même ?"
+    }
+}
+
+private const val MaxReportedProbableDuplicates = 5
+
+private fun formatSeparateImportReport(report: SeparateImportReport): String {
+    val lines = mutableListOf<String>()
+    lines += when (report.imported) {
+        0 -> "Aucune trace importée."
+        1 -> "1 trace importée."
+        else -> "${report.imported} traces importées."
+    }
+    if (report.duplicatesSkipped > 0) {
+        lines += if (report.duplicatesSkipped == 1) {
+            "1 fichier écarté (déjà dans le journal)."
+        } else {
+            "${report.duplicatesSkipped} fichiers écartés (déjà dans le journal)."
+        }
+    }
+    if (report.failed > 0) {
+        lines += if (report.failed == 1) "1 fichier illisible." else "${report.failed} fichiers illisibles."
+    }
+    // Le signalement des doublons probables tient dans ce bilan plutôt que dans un popup par
+    // fichier : le bilan est déjà l'écran à simple acquittement de fin de lot, et multiplier les
+    // popups sur un import de masse reviendrait à réintroduire l'interruption qu'on vient
+    // justement de supprimer. En dernier, c'est la seule ligne qui appelle une vérification.
+    if (report.probableDuplicateNames.isNotEmpty()) {
+        // Plafonné : le corps d'un AlertDialog ne défile pas, une liste de 20 noms déborderait de
+        // l'écran. Le reste est compté, jamais escamoté en silence.
+        val shown = report.probableDuplicateNames.take(MaxReportedProbableDuplicates)
+        val hidden = report.probableDuplicateNames.size - shown.size
+        val names = shown.joinToString("\n") { "• $it" } +
+            if (hidden > 0) "\n• et $hidden autre${if (hidden > 1) "s" else ""}" else ""
+        lines += if (report.probableDuplicateNames.size == 1) {
+            "\nÀ vérifier : cette trace ressemble à une sortie déjà présente (même date, distance " +
+                "très proche) et a quand même été importée.\n$names"
+        } else {
+            "\nÀ vérifier : ces traces ressemblent à des sorties déjà présentes (même date, " +
+                "distance très proche) et ont quand même été importées.\n$names"
+        }
+    }
+    return lines.joinToString("\n")
+}
+
 @Composable
 private fun JournalMap(
     track: HikeTrack?,
+    bivouacPoints: List<BivouacPoint> = emptyList(),
+    dayBoundaryIndices: List<Int> = emptyList(),
     selectedLayer: com.bivouac.app.ui.map.MapLayer,
     recenterSignal: Int,
     visibleMapHeightPx: Int,
@@ -390,13 +619,15 @@ private fun JournalMap(
     ) {
         HikeMapView(
             track = track,
-            bivouacPoints = emptyList(),
+            bivouacPoints = bivouacPoints,
             selectedLayer = selectedLayer,
             recenterSignal = recenterSignal,
             visibleHeightPx = visibleMapHeightPx,
             onTrackTapped = onCursorChanged,
             onBivouacMoved = { _, _ -> },
             onBivouacDragPreview = { _, _ -> },
+            bivouacsReadOnly = true,
+            dayBoundaryIndices = dayBoundaryIndices,
             cursorIndex = cursorIndex,
             onCursorChanged = onCursorChanged,
             multiTracks = multiTracks,
@@ -425,6 +656,7 @@ private fun JournalListContent(
     tracks: List<LoggedTrackEntity>,
     activeCalibration: SpeedCalibration,
     tagsByTrackId: Map<String, List<String>>,
+    dayInfoByTrackId: Map<String, JournalDayInfo>,
     selectedFilterTags: Set<String>,
     onToggleFilterTag: (String) -> Unit,
     onImportClick: () -> Unit,
@@ -559,6 +791,7 @@ private fun JournalListContent(
                     HorizontalDivider()
                     JournalTrackRow(
                         entry = entry,
+                        dayInfo = dayInfoByTrackId[entry.id],
                         activeCalibration = activeCalibration,
                         selectionModeActive = selectionModeActive,
                         selected = entry.id in selectedTrackIds,
@@ -657,6 +890,7 @@ private fun YearHeader(
 @Composable
 private fun JournalTrackRow(
     entry: LoggedTrackEntity,
+    dayInfo: JournalDayInfo?,
     activeCalibration: SpeedCalibration,
     selectionModeActive: Boolean,
     selected: Boolean,
@@ -679,12 +913,31 @@ private fun JournalTrackRow(
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(text = entry.name, style = MaterialTheme.typography.titleSmall)
-            Text(
-                text = formatStartedAt(entry.startedAt),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 4.dp),
-            )
+            // Une sortie de plusieurs jours affiche ses dates réelles plutôt que son seul jour de
+            // départ, sans quoi rien ne la distingue d'une sortie d'un jour dans cette liste.
+            // Retombe sur la date de départ seule quand les dates des jours sont inconnues : GPX
+            // sans horodatage, ou trace pas encore rattrapée après la migration 8 vers 9.
+            //
+            // Le nombre de nuits et son badge reprennent trait pour trait la ligne de la liste de
+            // Planification (BankedTrackRow), pour que la même information se lise pareil des deux
+            // côtés — même si ici elle se déduit du nombre de jours.
+            val bivouacCount = dayInfo?.bivouacCount ?: 0
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = (TrekDatesFormatter.format(dayInfo?.dates.orEmpty()) ?: formatStartedAt(entry.startedAt)) +
+                        if (bivouacCount > 0) " · $bivouacCount" else "",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (bivouacCount > 0) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_bivouac_badge),
+                        contentDescription = "nuit${if (bivouacCount != 1) "s" else ""} de bivouac",
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
             StatsRows(TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration))
         }
     }
@@ -779,17 +1032,69 @@ private fun JournalMultiTrackContent(
     }
 }
 
+/**
+ * La nuit passée entre deux jours d'une sortie du Journal, dans la ventilation par jour. Reprend
+ * la ligne de bivouac de la Planification, badge et altitude compris, moins tout ce qui agit :
+ * ni suppression ni météo, la trace est immuable et la nuit a déjà eu lieu.
+ *
+ * [arrival] est le dernier point du jour qui s'achève, [departure] le premier du lendemain. Leurs
+ * heures encadrent la nuit ; la flèche suffit à les qualifier, sans libellé. Les deux ou aucune :
+ * une heure d'arrivée orpheline se lirait mal et n'apprendrait pas grand-chose.
+ */
+@Composable
+private fun ReadOnlyBivouacRow(arrival: TrackPoint?, departure: TrackPoint?) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_bivouac_badge),
+            contentDescription = "Nuit de bivouac",
+            modifier = Modifier.size(24.dp),
+        )
+        val elevation = arrival?.elevationMeters
+        if (elevation != null) {
+            InfoText(
+                text = "${elevation.roundToInt()} m",
+                icon = Icons.Default.Terrain,
+                iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        val arrivedAt = arrival?.time
+        val leftAt = departure?.time
+        if (arrivedAt != null && leftAt != null) {
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = "${formatTimeOfDay(arrivedAt)} → ${formatTimeOfDay(leftAt)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 // internal rather than private: exercised directly by BivouacDatabaseMigrationTest's sibling,
 // ThreeStopJournalDetailDirtyIndicatorTest (androidTest), to test the isDirty save-icon states
 // without driving the whole Journal screen through a real ViewModel.
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun ThreeStopJournalDetail(
     entry: LoggedTrackEntity,
     track: HikeTrack,
+    // RIC-41 : un élément par jour importé, dans l'ordre — la ventilation ne s'affiche qu'au-delà
+    // d'un jour, même convention que les segments de Planification.
+    daySegments: List<Segment> = emptyList(),
+    // Constat E : un point par jonction entre deux jours, en lecture seule — le profil les trace
+    // comme la Planification, mais rien ici ne se déplace ni ne se supprime.
+    bivouacPoints: List<BivouacPoint> = emptyList(),
+    // RIC-100 : relevé de diagnostic, null hors instrumentation. Voir KeyboardDiagnostics.
+    keyboardProbe: KeyboardProbe? = null,
     activeCalibration: SpeedCalibration = SpeedCalibration.DEFAULT,
     onCloseClick: () -> Unit,
     onRenameClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    onDuplicateClick: () -> Unit = {},
     onSheetTopMeasured: (Int) -> Unit,
     cursorIndex: Int?,
     onCursorDragged: (Int) -> Unit,
@@ -799,9 +1104,28 @@ internal fun ThreeStopJournalDetail(
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = LocalDensity.current
+        val zone = remember { ZoneId.systemDefault() }
+        // RIC-100 : lire l'inset ici suffit à faire recomposer à chaque changement de hauteur du
+        // clavier, donc à voir le relevé bouger en direct pendant l'ouverture.
+        if (keyboardProbe != null) {
+            keyboardProbe.imeBottomPx = WindowInsets.ime.getBottom(density)
+            keyboardProbe.windowHeightPx = with(density) { maxHeight.toPx() }.toInt()
+        }
+        // Date de début de chaque jour, tirée directement des points déjà chargés. Les jours sans
+        // horodatage sont écartés plutôt qu'inventés, comme dans la liste.
+        val dayStartDates = remember(daySegments, zone) {
+            daySegments.mapNotNull { segment ->
+                segment.points.firstOrNull()?.time?.atZone(zone)?.toLocalDate()
+            }
+        }
         var isEditing by remember(entry.id) { mutableStateOf(false) }
         var draftTags by remember(entry.id) { mutableStateOf(currentTags.toSet()) }
-        var draftNote by remember(entry.id) { mutableStateOf(entry.note) }
+        // TextFieldValue et non String : le suivi du curseur pendant la frappe (RIC-100) a
+        // besoin de sa position, que seule cette forme porte.
+        var draftNote by remember(entry.id) { mutableStateOf(TextFieldValue(entry.note)) }
+        // Déclaré ici et non dans la section notes : le focus du champ pilote aussi le repli de
+        // l'en-tête et du profil (RIC-100, décision 3.2), qui se joue bien plus haut dans l'arbre.
+        var noteFocused by remember(entry.id) { mutableStateOf(false) }
         var newTagText by remember(entry.id) { mutableStateOf("") }
         var pendingExit by remember(entry.id) { mutableStateOf<(() -> Unit)?>(null) }
         val knownFreeTags = remember(tagsByTrackId) {
@@ -809,11 +1133,15 @@ internal fun ThreeStopJournalDetail(
                 .filterNot { tag -> SystemTag.entries.any { it.value == tag } }
                 .distinct()
         }
-        val isDirty = draftTags != currentTags.toSet() || draftNote != entry.note
+        val isDirty = draftTags != currentTags.toSet() || draftNote.text != entry.note
 
         fun beginEditing() {
             draftTags = currentTags.toSet()
-            draftNote = entry.note
+            // Curseur en fin de texte : reprendre une note, c'est presque toujours la compléter.
+            draftNote = TextFieldValue(entry.note, TextRange(entry.note.length))
+            // Le champ renaît sans focus ; l'état hissé repart de même, sans quoi un focus jamais
+            // relâché à la sortie précédente replierait l'en-tête avant le premier tap.
+            noteFocused = false
             isEditing = true
         }
 
@@ -825,7 +1153,7 @@ internal fun ThreeStopJournalDetail(
         }
 
         fun saveAndStopEditing() {
-            if (isDirty) onSaveDetails(draftTags, draftNote)
+            if (isDirty) onSaveDetails(draftTags, draftNote.text)
             isEditing = false
         }
 
@@ -868,6 +1196,23 @@ internal fun ThreeStopJournalDetail(
         }
         val drawer = rememberThreeStopDrawerState(anchors, entry.id)
         val statusBarHeightPx = WindowInsets.statusBars.getTop(density).toFloat()
+        // RIC-100, décision 3.2 : clavier ouvert, la fenêtre de saisie des notes se réduit à
+        // trois lignes environ. L'en-tête et le profil occupent le haut du tiroir sans rien
+        // apporter à la frappe : ils se replient pendant qu'on tape une note, et rendent leur
+        // hauteur à la saisie. Chaque terme borne le repli à ce seul moment :
+        // - noteFocused et non isEditing : l'édition des tags garde tout son contexte, elle
+        //   n'a pas ce problème de place ;
+        // - clavier visible : le refermer au retour arrière laisse le focus au champ, et sans
+        //   clavier le repli ne rend aucune place, il ne ferait que cacher l'en-tête sans
+        //   porte de sortie évidente ;
+        // - cran Détails, le seul où l'on tape : la poignée et la rangée de crans restent
+        //   actives pendant la frappe, et un cran Profil doit montrer sa courbe, une
+        //   Synthèse son titre ;
+        // - isEditing : quitter l'édition défait toujours le repli, même si le champ
+        //   disparaît sans avoir signalé la perte de son focus.
+        val imeVisible = WindowInsets.ime.getBottom(density) > 0
+        val noteTakesAllSpace =
+            isEditing && noteFocused && imeVisible && drawer.stop == DrawerStop.DETAIL
 
         Surface(
             modifier = Modifier
@@ -899,46 +1244,130 @@ internal fun ThreeStopJournalDetail(
                         .onGloballyPositioned { measuredSummaryHeightPx = it.size.height },
                 ) {
                     ThreeStopDrawerHandle(drawer, Modifier.align(Alignment.CenterHorizontally))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Top,
-                    ) {
-                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                            Text(text = entry.name, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                text = formatStartedAt(entry.startedAt),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // La rangée entière se replie, actions comprises : renommer, dupliquer ou
+                    // fermer ne se font pas en pleine frappe, et le retour arrière couvre la
+                    // sortie. Ne replier que les textes laisserait la hauteur des boutons.
+                    AnimatedVisibility(visible = !noteTakesAllSpace) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                Text(text = entry.name, style = MaterialTheme.typography.titleMedium)
+                                // Même plage de dates que dans la liste : une sortie ouverte ne
+                                // doit pas en dire moins qu'une sortie survolée. Les dates
+                                // viennent ici des points déjà chargés, pas des colonnes
+                                // dénormalisées, la trace étant de toute façon parsée pour être
+                                // affichée.
+                                Text(
+                                    text = TrekDatesFormatter.format(dayStartDates) ?: formatStartedAt(entry.startedAt),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            JournalDetailMenu(
+                                onRenameClick = onRenameClick,
+                                onDuplicateClick = onDuplicateClick,
+                                onDeleteClick = onDeleteClick,
                             )
-                        }
-                        JournalDetailMenu(onRenameClick = onRenameClick, onDeleteClick = onDeleteClick)
-                        IconButton(onClick = { requestExit(onCloseClick) }) {
-                            Icon(Icons.Default.Close, contentDescription = "Fermer")
+                            IconButton(onClick = { requestExit(onCloseClick) }) {
+                                Icon(Icons.Default.Close, contentDescription = "Fermer")
+                            }
                         }
                     }
-                    StatsRows(TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration))
+                    // Sur une sortie de plusieurs jours, la ligne agrégée devient un « Total » en
+                    // retrait : c'est la ventilation par jour, au cran Détails, qui porte
+                    // l'information utile — même hiérarchie visuelle qu'en Planification.
+                    if (daySegments.size > 1) {
+                        Text(
+                            text = "Total",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    StatsRows(
+                        TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration),
+                        muted = daySegments.size > 1,
+                    )
                     ThreeStopDrawerStopRow(drawer)
                 }
 
-                ElevationProfile(
-                    points = track.points,
-                    bivouacPoints = emptyList(),
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                    cursorIndex = cursorIndex,
-                    onCursorDragged = onCursorDragged,
-                )
+                AnimatedVisibility(visible = !noteTakesAllSpace) {
+                    ElevationProfile(
+                        points = track.points,
+                        bivouacPoints = bivouacPoints,
+                        dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                        cursorIndex = cursorIndex,
+                        onCursorDragged = onCursorDragged,
+                    )
+                }
 
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
                         .nestedScroll(drawer.nestedScrollConnection)
+                        // Avant verticalScroll, et l'ordre est décisif : placé ici, l'inset rogne
+                        // la zone de défilement elle-même, qui s'arrête au-dessus du clavier.
+                        // Placé après, il s'appliquerait au contenu qui défile, la zone garderait
+                        // toute la hauteur du tiroir, clavier compris, et Compose jugerait le
+                        // curseur déjà visible sans jamais défiler.
+                        //
+                        // Le tiroir a une hauteur fixe et l'app est en edge-to-edge : la fenêtre
+                        // ne se redimensionne pas à l'ouverture du clavier, personne d'autre ne
+                        // fera ce travail.
+                        //
+                        // union et non deux paddings enchaînés : les insets se cumuleraient, alors
+                        // que l'inset du clavier englobe déjà la barre de navigation.
+                        .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                        // RIC-100, avant verticalScroll : c'est ici qu'on mesure la fenêtre de
+                        // défilement, celle qui doit se rogner à l'ouverture du clavier. Après
+                        // verticalScroll on mesurerait le contenu, qui lui ne bouge pas.
+                        .onGloballyPositioned { coordinates ->
+                            keyboardProbe?.viewportHeightPx = coordinates.size.height
+                        }
                         .verticalScroll(drawer.detailScrollState)
-                        .navigationBarsPadding()
+                        .onGloballyPositioned { coordinates ->
+                            keyboardProbe?.contentHeightPx = coordinates.size.height
+                        }
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    if (keyboardProbe != null) {
+                        keyboardProbe.scrollValue = drawer.detailScrollState.value
+                        keyboardProbe.scrollMax = drawer.detailScrollState.maxValue
+                    }
+                    // RIC-41 : uniquement pour un import de plusieurs jours — sur un seul jour, la
+                    // ligne « Total » ci-dessus dit déjà tout, une ventilation à une entrée ne
+                    // serait que du bruit.
+                    if (daySegments.size > 1) {
+                        Text("Jours", style = MaterialTheme.typography.titleSmall)
+                        Column {
+                            daySegments.forEachIndexed { index, segment ->
+                                HorizontalDivider()
+                                Column(modifier = Modifier.padding(vertical = 10.dp)) {
+                                    Text(text = "Jour ${index + 1}", style = MaterialTheme.typography.labelLarge)
+                                    StatsRows(TrackStatsCalculator.recomputeDuration(segment.stats, activeCalibration))
+                                }
+                                // La nuit s'intercale entre deux jours, exactement comme la
+                                // Planification l'intercale entre deux segments : c'est la même
+                                // lecture d'un même itinéraire, seulement figée. Sans action
+                                // possible ici, ni suppression ni météo — la trace est immuable et
+                                // la nuit a déjà eu lieu.
+                                val bivouac = bivouacPoints.getOrNull(index)
+                                if (bivouac != null) {
+                                    HorizontalDivider()
+                                    ReadOnlyBivouacRow(
+                                        arrival = track.points.getOrNull(bivouac.trackPointIndex),
+                                        departure = track.points.getOrNull(bivouac.trackPointIndex + 1),
+                                    )
+                                }
+                            }
+                            HorizontalDivider()
+                        }
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -996,8 +1425,20 @@ internal fun ThreeStopJournalDetail(
                                 }
                             }
                         }
+                        // Ajouter un tag insère une ligne de chips juste au-dessus de cette
+                        // ligne-ci, qui descend donc d'autant et finit sous le clavier. Le champ
+                        // garde le focus et rien ne déclencherait de défilement : c'est la mise en
+                        // page qui a bougé, pas le curseur. D'où ce rappel explicite à chaque
+                        // changement du nombre de tags.
+                        val tagFieldVisibility = remember { BringIntoViewRequester() }
+                        var tagFieldFocused by remember { mutableStateOf(false) }
+                        LaunchedEffect(draftTags.size, tagFieldFocused) {
+                            if (tagFieldFocused) tagFieldVisibility.bringIntoView()
+                        }
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .bringIntoViewRequester(tagFieldVisibility),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
@@ -1007,7 +1448,9 @@ internal fun ThreeStopJournalDetail(
                                 placeholder = { Text("Ajouter un tag") },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .onFocusChanged { tagFieldFocused = it.isFocused },
                             )
                             TextButton(
                                 onClick = {
@@ -1045,13 +1488,66 @@ internal fun ThreeStopJournalDetail(
                     }
                     Text("Notes", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
                     if (isEditing) {
+                        // RIC-100. La note n'a pas de plafond de hauteur, donc le champ peut
+                        // dépasser la fenêtre de saisie ; le défilement que Compose déclenche de
+                        // lui-même vise le champ entier, et faute de pouvoir le contenir il en
+                        // aligne le haut : le bas déborde sous le clavier, curseur compris.
+                        //
+                        // On demande donc à voir le bas du champ, là où atterrit le curseur quand
+                        // on complète une note, avec une marge pour que la ligne suivante respire.
+                        // Le TextField de Material3 n'expose pas son TextLayoutResult, donc viser
+                        // le rectangle exact du curseur supposerait de repasser par
+                        // BasicTextField et de reconstruire tout le décor : hors de proportion
+                        // tant que ce repli suffit. Conséquence assumée : une frappe insérée au
+                        // milieu d'une note longue n'est pas suivie, seule la fin de texte l'est.
+                        val noteVisibility = remember { BringIntoViewRequester() }
+                        var noteHeightPx by remember(entry.id) { mutableIntStateOf(0) }
+                        val cursorBandPx = with(density) { 56.dp.toPx() }
+                        LaunchedEffect(draftNote, noteFocused, noteHeightPx) {
+                            if (!noteFocused) {
+                                keyboardProbe?.bringSkip = "nofocus"
+                                return@LaunchedEffect
+                            }
+                            if (noteHeightPx == 0) {
+                                keyboardProbe?.bringSkip = "noheight"
+                                return@LaunchedEffect
+                            }
+                            // trimEnd et non length : une note qui se termine par un retour à la
+                            // ligne ou une espace laisse le curseur juste avant sa toute fin, et
+                            // une comparaison stricte cesserait alors de suivre la frappe sans
+                            // raison.
+                            if (draftNote.selection.end < draftNote.text.trimEnd().length) {
+                                keyboardProbe?.bringSkip = "midtext"
+                                return@LaunchedEffect
+                            }
+                            val bottom = noteHeightPx.toFloat()
+                            keyboardProbe?.bringSkip = "ask"
+                            keyboardProbe?.bringCount = (keyboardProbe?.bringCount ?: 0) + 1
+                            noteVisibility.bringIntoView(
+                                Rect(0f, (bottom - cursorBandPx).coerceAtLeast(0f), 1f, bottom),
+                            )
+                            keyboardProbe?.bringSkip = "done"
+                        }
                         TextField(
                             value = draftNote,
                             onValueChange = { draftNote = it },
                             visualTransformation = BulletVisualTransformation,
                             placeholder = { Text("Quelques mots sur cette rando…") },
                             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                            modifier = Modifier.fillMaxWidth(),
+                            // Volontairement sans hauteur maximale : c'est un journal, la note
+                            // doit se lire d'un bloc, en consultation comme en édition.
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 120.dp)
+                                .bringIntoViewRequester(noteVisibility)
+                                .onFocusChanged { noteFocused = it.isFocused }
+                                .onGloballyPositioned { coordinates ->
+                                    noteHeightPx = coordinates.size.height
+                                    // RIC-100 : bas du champ en coordonnées fenêtre, à comparer à
+                                    // la ligne de flottaison du clavier.
+                                    keyboardProbe?.noteBottomPx =
+                                        (coordinates.positionInRoot().y + coordinates.size.height).toInt()
+                                },
                         )
                     } else if (entry.note.isBlank()) {
                         NotebookEmptyHint()
@@ -1136,7 +1632,7 @@ private fun withBullets(text: String): String = text.lines().joinToString("\n") 
 }
 
 @Composable
-private fun JournalDetailMenu(onRenameClick: () -> Unit, onDeleteClick: () -> Unit) {
+private fun JournalDetailMenu(onRenameClick: () -> Unit, onDuplicateClick: () -> Unit, onDeleteClick: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
@@ -1150,8 +1646,8 @@ private fun JournalDetailMenu(onRenameClick: () -> Unit, onDeleteClick: () -> Un
             )
             DropdownMenuItem(
                 text = { Text("Dupliquer vers la planification") },
-                enabled = false,
-                onClick = { expanded = false },
+                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                onClick = { expanded = false; onDuplicateClick() },
             )
             DropdownMenuItem(
                 text = { Text("Supprimer") },
@@ -1163,6 +1659,12 @@ private fun JournalDetailMenu(onRenameClick: () -> Unit, onDeleteClick: () -> Un
         }
     }
 }
+
+// Heure locale d'un instant GPX, pour encadrer une nuit de bivouac.
+private fun formatTimeOfDay(instant: Instant): String =
+    DateTimeFormatter.ofPattern("HH:mm", Locale.FRANCE)
+        .withZone(ZoneId.systemDefault())
+        .format(instant)
 
 private fun formatStartedAt(epochMillis: Long): String =
     DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.FRANCE)

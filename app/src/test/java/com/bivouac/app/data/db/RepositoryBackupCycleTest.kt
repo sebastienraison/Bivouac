@@ -70,7 +70,14 @@ class RepositoryBackupCycleTest {
                     pointCount = 1,
                     estimatedDurationMinutes = 4,
                 ),
-                listOf(gpx),
+                listOf(
+                    PreparedDay(
+                        rawGpx = gpx,
+                        contentHash = "hash",
+                        startedAtMillis = 0L,
+                        elapsedSeconds = null,
+                    ),
+                ),
             ),
         )
         val database = BivouacDatabase.getInstance(context)

@@ -29,7 +29,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open") — a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 8
+        const val SCHEMA_VERSION = 9
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -196,6 +196,28 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // Dénormalise sur logged_track_day ce qu'on lisait jusqu'ici en reparsant le GPX de chaque
+        // jour de chaque trace (cible : schemas/9.json). Voir LoggedTrackDayEntity pour ce que
+        // portent les trois colonnes.
+        //
+        // Trois ALTER TABLE ADD COLUMN et rien d'autre, délibérément : ni recréation de table, ni
+        // copie, ni remplissage. Le rattrapage des lignes existantes a besoin de lire et de parser
+        // tous les fichiers de la banque, ce qui se compte en secondes sur une archive un peu
+        // fournie — le faire ici figerait l'app à la première ouverture d'après mise à jour, sans
+        // le moindre retour à l'écran. Il se fait donc en arrière-plan, une fois la base ouverte
+        // (voir LoggedTrackBackfill), et les lecteurs savent retomber sur l'ancien chemin tant
+        // qu'une ligne n'est pas rattrapée.
+        //
+        // Effet de bord recherché : cette migration ne peut pas perdre de données, ce qui compte
+        // pour une archive de plusieurs années qu'on ne peut pas reconstituer.
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `contentHash` TEXT")
+                db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `startedAtMillis` INTEGER")
+                db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `elapsedSeconds` INTEGER")
+            }
+        }
+
         // ~256K points de code par tranche : au pire quadruplé en UTF-8 ça reste sous la fenêtre de
         // 2 Mo, et un GPX réel (ASCII pour l'essentiel) en est très loin.
         private const val MIGRATION_CHUNK_CODE_POINTS = 256 * 1024
@@ -234,6 +256,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                         MIGRATION_5_6,
                         MIGRATION_6_7,
                         migration7To8(context),
+                        MIGRATION_8_9,
                     )
                     .build()
                     .also { instance = it }
