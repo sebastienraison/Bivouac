@@ -59,6 +59,19 @@ android {
     sourceSets {
         getByName("androidTest").assets.srcDirs("$projectDir/schemas")
     }
+    // RIC-103 : les tests JVM exercent le cycle fermeture/réouverture de la base via Robolectric,
+    // seul moyen d'avoir un vrai Context et une vraie base SQLite sans appareil (l'interdiction
+    // de connectedAndroidTest avec le téléphone branché rend la voie instrumentée impraticable).
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            all { test ->
+                // Robolectric ouvre des descripteurs de fichiers par réflexion (ParcelFileDescriptor),
+                // ce que le système de modules du JDK 17 bloque par défaut.
+                test.jvmArgs("--add-opens", "java.base/java.io=ALL-UNNAMED")
+            }
+        }
+    }
 }
 
 ksp {
@@ -110,6 +123,8 @@ dependencies {
     implementation(libs.datastore.preferences)
     implementation(libs.navigation.compose)
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16")
+    testImplementation("androidx.test:core:1.6.1")
     debugImplementation(libs.ui.tooling)
     androidTestImplementation("junit:junit:4.13.2")
     androidTestImplementation(libs.room.testing)
