@@ -10,7 +10,11 @@ import java.util.UUID
 
 class BankedTrackRepository(context: Context) {
 
-    private val dao = BivouacDatabase.getInstance(context).bankedTrackDao()
+    private val appContext = context.applicationContext
+
+    // RIC-103 : résolu à chaque accès et non figé à la construction, pour survivre au cycle
+    // fermeture/réouverture d'une sauvegarde — voir LoggedTrackRepository.
+    private val dao get() = BivouacDatabase.getInstance(appContext).bankedTrackDao()
 
     suspend fun list(): List<BankedTrackEntity> = dao.list()
 

@@ -243,6 +243,9 @@ abstract class BivouacDatabase : RoomDatabase() {
         // copied or replaced — closes the current instance and drops the singleton so the next
         // getInstance() transparently reopens it (running the migration chain above against
         // whatever schema version a just-restored file has, same as a normal app update would).
+        //
+        // Contrat induit (RIC-103) : personne ne doit capturer durablement l'instance ni un DAO —
+        // les repositories résolvent le leur à chaque accès, précisément pour survivre à ce cycle.
         fun closeAndReset() {
             synchronized(this) {
                 instance?.close()
