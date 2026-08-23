@@ -67,11 +67,14 @@ fun ChoiceOptionCard(
             modifier = Modifier
                 .size(36.dp)
                 .clip(RoundedCornerShape(10.dp))
+                // Un cran plus foncé que la surface porteuse, comme dans la maquette. Le cran
+                // juste au-dessus est celui d'un AlertDialog : s'y aligner rendait le carré
+                // indiscernable du fond, laissant l'icône flotter sans son support.
                 .background(
                     if (recommended) {
                         Color.White.copy(alpha = 0.4f)
                     } else {
-                        MaterialTheme.colorScheme.surfaceContainerHigh
+                        MaterialTheme.colorScheme.surfaceContainerHighest
                     },
                 ),
             contentAlignment = Alignment.Center,

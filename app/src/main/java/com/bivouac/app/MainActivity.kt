@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -61,10 +62,16 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
     var pendingDuplicate by remember { mutableStateOf<DuplicatePlanRequest?>(null) }
 
     // RIC-104 : tant que ce choix n'est pas tranché, ni la Planification ni le Journal ne savent
-    // quoi faire du fichier — voir UniverseChoiceDialog. Initialisé une seule fois depuis l'intent
-    // de démarrage ; une rotation le repasserait à la même valeur (incomingGpxUris est stable),
-    // sans rouvrir le dialogue après qu'il a déjà été tranché puisque ce remember n'est pas rekeyé.
-    var universeChoicePending by remember { mutableStateOf(incomingGpxUris.takeIf { it.isNotEmpty() }) }
+    // quoi faire du fichier — voir UniverseChoiceDialog.
+    //
+    // rememberSaveable, et un drapeau plutôt que la liste elle-même : une rotation ou un passage en
+    // mode sombre détruit et recrée l'Activity, onCreate relit l'intent de lancement — que le
+    // système conserve — et en retire les mêmes Uri. Un simple remember repartirait donc de zéro et
+    // rouvrirait le dialogue par-dessus l'écran, alors même que l'utilisateur vient d'y répondre.
+    // C'est le même piège que celui déjà désamorcé côté Planification pour l'import (voir le
+    // LaunchedEffect de GpxImportScreen), qui se rejoue ici un cran plus haut.
+    var universeChoiceResolved by rememberSaveable { mutableStateOf(false) }
+    val universeChoicePending = incomingGpxUris.takeIf { it.isNotEmpty() && !universeChoiceResolved }
     // Mêmes boîtes aux lettres que pendingDuplicate ci-dessus, remplies une fois le choix
     // d'univers tranché.
     var incomingPlanificationUri by remember { mutableStateOf<Uri?>(null) }
@@ -155,12 +162,12 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
     universeChoicePending?.let { uris ->
         UniverseChoiceDialog(
             onJournalChosen = {
-                universeChoicePending = null
+                universeChoiceResolved = true
                 incomingJournalUris = uris
                 onSectionSelected(AppSection.JOURNAL)
             },
             onPlanificationChosen = {
-                universeChoicePending = null
+                universeChoiceResolved = true
                 // Planification n'a jamais su ouvrir qu'un seul fichier à la fois (voir son propre
                 // sélecteur, OpenDocument et non OpenMultipleDocuments) — un lot externe choisi
                 // pour cet univers perd donc silencieusement tout fichier au-delà du premier.
@@ -170,7 +177,7 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
                 incomingPlanificationUri = uris.first()
                 onSectionSelected(AppSection.PLANIFICATION)
             },
-            onCancel = { universeChoicePending = null },
+            onCancel = { universeChoiceResolved = true },
         )
     }
 }
