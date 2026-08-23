@@ -37,7 +37,7 @@ import androidx.compose.material3.Text
  * À retirer dès la cause établie : [ENABLED] à false suffit à faire disparaître l'affichage, et le
  * fichier entier part avec le correctif définitif.
  */
-const val KEYBOARD_DIAGNOSTICS_ENABLED = true
+const val KEYBOARD_DIAGNOSTICS_ENABLED = false
 
 @Stable
 class KeyboardProbe {
