@@ -7,17 +7,24 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.bivouac.app.data.prefs.AppSectionPreferences
 import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.ui.gpximport.GpxImportScreen
 import com.bivouac.app.ui.journal.JournalScreen
@@ -25,6 +32,7 @@ import com.bivouac.app.ui.nav.AppSection
 import com.bivouac.app.ui.nav.UniverseChoiceDialog
 import com.bivouac.app.ui.settings.SettingsScreen
 import com.bivouac.app.ui.theme.BivouacTheme
+import kotlinx.coroutines.launch
 
 private const val JOURNAL_CALIBRATION_ROUTE = "journal_calibration"
 
@@ -62,6 +70,15 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
     var incomingPlanificationUri by remember { mutableStateOf<Uri?>(null) }
     var incomingJournalUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
+    // RIC-106 : dernier univers consulté, lu une seule fois au démarrage — NavHost fige son
+    // startDestination à la composition initiale, le changer ensuite n'a aucun effet. Tant que ce
+    // premier chargement DataStore n'a pas abouti, `startSection` reste null et rien ne navigue
+    // encore ; en pratique quasi instantané (lecture mémoire), pas une vraie latence perçue.
+    val context = LocalContext.current
+    val appSectionPreferences = remember { AppSectionPreferences(context) }
+    val coroutineScope = rememberCoroutineScope()
+    val startSection by appSectionPreferences.lastVisitedSection.collectAsStateWithLifecycle(initialValue = null)
+
     // Standard top-level-destination navigation: pop back to the graph's start so switching
     // sections never piles up a back stack, but save/restore each section's own state (scroll
     // position, and — via the ViewModel's own store — the trace currently open in Planification)
@@ -72,9 +89,20 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
             launchSingleTop = true
             restoreState = true
         }
+        // RIC-106 : Réglages n'est jamais un univers d'accueil, voir AppSectionPreferences —
+        // le no-op y est géré côté préférences plutôt que dupliqué ici à chaque appelant.
+        coroutineScope.launch { appSectionPreferences.setLastVisitedSection(section) }
     }
 
-    NavHost(navController = navController, startDestination = AppSection.PLANIFICATION.route, modifier = modifier) {
+    // Capturé dans un val local : `startSection` reste une propriété déléguée (State<AppSection?>),
+    // dont le compilateur ne garantit pas le smart-cast après ce contrôle de nullité.
+    val resolvedStartSection = startSection
+    if (resolvedStartSection == null) {
+        Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+        return
+    }
+
+    NavHost(navController = navController, startDestination = resolvedStartSection.route, modifier = modifier) {
         composable(AppSection.PLANIFICATION.route) {
             GpxImportScreen(
                 modifier = Modifier.fillMaxSize(),
