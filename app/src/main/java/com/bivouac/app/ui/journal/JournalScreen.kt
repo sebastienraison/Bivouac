@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -201,6 +202,12 @@ fun JournalScreen(
 
     var recenterSignal by remember { mutableIntStateOf(0) }
     var mapBoxTopPx by remember { mutableIntStateOf(0) }
+    // RIC-102 : hissés ici plutôt que dans JournalPopulatedList, qui se démonte et se remonte à
+    // chaque ouverture/fermeture d'une rando (branche « detail != null » ci-dessous) — cette
+    // racine, elle, reste composée tant qu'on ne quitte pas l'onglet Journal, donc ces deux états
+    // survivent à l'aller-retour vers une trace que RIC-102 rapportait perdu.
+    var journalListExpandedYears by remember { mutableStateOf<Set<Int>?>(null) }
+    val journalListScrollState = rememberScrollState()
     val detail = uiState as? JournalUiState.Detail
     val multiTrack = uiState as? JournalUiState.MultiTrack
     // Overview list, multi-track view and single-track detail each report their own sheet's top
@@ -370,6 +377,9 @@ fun JournalScreen(
                 },
                 currentSection = currentSection,
                 onSectionSelected = onSectionSelected,
+                expandedYears = journalListExpandedYears,
+                onExpandedYearsChanged = { journalListExpandedYears = it },
+                listScrollState = journalListScrollState,
             )
         }
     }
@@ -709,6 +719,11 @@ private fun JournalHomeScreen(
     onConfirmCalibrationSelection: () -> Unit,
     currentSection: AppSection,
     onSectionSelected: (AppSection) -> Unit,
+    // RIC-102 : hissés par l'appelant (JournalScreen), qui seul reste composé pendant l'aller-retour
+    // vers une rando ouverte — voir le commentaire là-bas.
+    expandedYears: Set<Int>?,
+    onExpandedYearsChanged: (Set<Int>?) -> Unit,
+    listScrollState: ScrollState,
 ) {
     val neverImported = tracks.isEmpty()
     Scaffold(
@@ -764,6 +779,9 @@ private fun JournalHomeScreen(
                 onShowOnMap = onShowOnMap,
                 calibrationSelectionActive = calibrationSelectionActive,
                 onConfirmCalibrationSelection = onConfirmCalibrationSelection,
+                expandedYears = expandedYears,
+                onExpandedYearsChanged = onExpandedYearsChanged,
+                scrollState = listScrollState,
                 modifier = Modifier.padding(paddingValues).fillMaxSize(),
             )
         }
@@ -870,15 +888,17 @@ private fun JournalPopulatedList(
     onShowOnMap: () -> Unit,
     calibrationSelectionActive: Boolean,
     onConfirmCalibrationSelection: () -> Unit,
+    // RIC-102 : hissés par l'appelant (JournalScreen) pour survivre à l'aller-retour vers une
+    // rando ouverte, ce composable-ci se démontant et se remontant à chaque fois — voir le
+    // commentaire sur JournalScreen. null (et non un set vide) veut dire « aucun choix manuel
+    // encore » — c'est seulement dans ce cas que l'année la plus récente s'ouvre par défaut.
+    expandedYears: Set<Int>?,
+    onExpandedYearsChanged: (Set<Int>?) -> Unit,
+    scrollState: ScrollState,
     modifier: Modifier = Modifier,
 ) {
     val groups = remember(filteredTracks, activeCalibration) { groupByYear(filteredTracks, activeCalibration) }
-    // null (not an empty set) means "no manual choice yet" — only then does the most recent year
-    // default to expanded. Keying remember on `groups` would look tempting but resets this to the
-    // default on every recomposition where the list content changes (e.g. a new import), silently
-    // discarding whatever the user had toggled.
-    var manuallyExpandedYears by remember { mutableStateOf<Set<Int>?>(null) }
-    val expandedYears = manuallyExpandedYears ?: setOfNotNull(groups.firstOrNull()?.year)
+    val resolvedExpandedYears = expandedYears ?: setOfNotNull(groups.firstOrNull()?.year)
 
     // System tags always offered (even before ever used) so the filter is discoverable; free tags
     // only once at least one track actually has them.
@@ -888,7 +908,7 @@ private fun JournalPopulatedList(
 
     Column(
         modifier = modifier
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .navigationBarsPadding()
             .padding(horizontal = 20.dp)
             .padding(top = 4.dp, bottom = 96.dp),
@@ -975,7 +995,7 @@ private fun JournalPopulatedList(
             HorizontalDivider()
             YearHeader(
                 group = group,
-                expanded = group.year in expandedYears,
+                expanded = group.year in resolvedExpandedYears,
                 selectionModeActive = selectionModeActive,
                 selectionState = when {
                     group.entries.none { it.id in selectedTrackIds } -> ToggleableState.Off
@@ -983,15 +1003,17 @@ private fun JournalPopulatedList(
                     else -> ToggleableState.Indeterminate
                 },
                 onToggle = {
-                    manuallyExpandedYears = if (group.year in expandedYears) {
-                        expandedYears - group.year
-                    } else {
-                        expandedYears + group.year
-                    }
+                    onExpandedYearsChanged(
+                        if (group.year in resolvedExpandedYears) {
+                            resolvedExpandedYears - group.year
+                        } else {
+                            resolvedExpandedYears + group.year
+                        },
+                    )
                 },
                 onToggleSelection = { onToggleYearSelection(group.entries.map { it.id }) },
             )
-            if (group.year in expandedYears) {
+            if (group.year in resolvedExpandedYears) {
                 group.entries.forEach { entry ->
                     HorizontalDivider()
                     JournalTrackRow(
