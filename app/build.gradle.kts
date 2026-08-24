@@ -24,7 +24,14 @@ val esriApiKey: String = localProperties.getProperty("esri.apiKey", "")
 
 android {
     namespace = "com.bivouac.app"
-    compileSdk = 34
+    // RIC-111 : Compose BOM 2026.08.00 (Compose 1.12) exige compileSdk >= 37 pour plusieurs
+    // artefacts (androidx.compose.ui, material3, core-ktx, lifecycle-compose...) — confirmé par
+    // les erreurs AGP au premier essai avec compileSdk=34, qui recommandaient explicitement 37.
+    // targetSdk volontairement laissé inchangé (34) : ne change que la surface de compilation
+    // (rétrocompatible par construction), pas le comportement runtime de l'app — un bump de
+    // targetSdk revient à opter dans des changements de comportement par version d'Android, ce
+    // qui mérite sa propre vérification visuelle sur device (jamais faite cette nuit, voir CR).
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.bivouac.app"
