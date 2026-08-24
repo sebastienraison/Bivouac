@@ -1,1 +1,1 @@
-Plan multi-day hikes with bivouac stops on an OpenStreetMap-based map
+Plan and log multi-day hikes with bivouac stops on OpenStreetMap

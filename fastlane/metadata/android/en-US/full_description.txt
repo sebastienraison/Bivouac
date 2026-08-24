@@ -1,6 +1,10 @@
-Bivouac helps you plan multi-day hikes with wild-camping (bivouac) stops along the way.
+Bivouac helps you plan multi-day hikes with wild-camping (bivouac) stops, and keep a log of the hikes you've already done.
 
-Import a multi-day GPX track, view it on an OpenStreetMap-based map, and place your bivouac points directly on the route. A daily segment table (distance, elevation gain/loss, estimated duration) updates automatically as you adjust your plan.
+Planning: import a multi-day GPX track, view it on an OpenStreetMap-based map, and place your bivouac points directly on the route. A daily segment table (distance, elevation gain/loss, estimated duration) updates automatically as you adjust your plan. Save several planned tracks to a bank you can reopen, rename or duplicate later.
+
+Journal: import one or more already-hiked GPX tracks (several files selected together are recognized as the days of a single multi-day hike), browse a chronological list grouped by year, and view a read-only detail with map and elevation profile. Add a free-text note and tags to each hike, and filter the list by tag. Duplicate a logged hike into Planning to reuse its route.
+
+Settings: a custom walking speed and elevation-gain penalty for duration estimates, either typed in manually, computed automatically from your Journal history, or from a selection of hikes you pick. Full backup and restore of your data, and a switch to disable the two optional non-free features below.
 
 Features:
 
@@ -11,7 +15,7 @@ Features:
 * Elevation profile with altitude/distance markers and bivouac positions
 * Daily segment table: distance, estimated duration, elevation gain/loss
 * Export a single day's segment as its own GPX file
-* Your last trace is remembered between launches
+* Your last trace and last-used section (Journal or Planning) are remembered between launches
 
 No account, no tracking, no ads. Two optional features connect to third-party network services when you use them: the Satellite map layer (Esri World Imagery) and the weather forecast link on bivouac points (Meteoblue). Everything else works without any such dependency.
 
