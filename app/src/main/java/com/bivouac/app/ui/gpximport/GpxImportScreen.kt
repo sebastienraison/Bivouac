@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,8 +41,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -166,10 +169,18 @@ fun GpxImportScreen(
     // the map in landscape, where total height is much smaller than the measured content needs.
     val maxPeekHeight = LocalConfiguration.current.screenHeightDp.dp * 0.5f
 
-    // Hissé ici (et non plus créé dans TrackSheetContent) : le FAB flottant qui recouvre
-    // maintenant le tiroir a besoin de lire cette position pour savoir s'il doit être étendu ou
-    // replié, exactement comme le ScrollState de la liste du Journal pilote son propre FAB.
+    // Hissés ici (et non plus créés dans TrackSheetContent) : le FAB flottant qui recouvre
+    // maintenant le tiroir a besoin de lire ces deux états pour savoir s'il doit être étendu ou
+    // replié. Les deux sont nécessaires : sheetScrollState seul ne suffit pas, parce que
+    // BottomSheetScaffold consomme d'abord tout le geste de défilement pour tirer le tiroir de
+    // son repli vers son plein déploiement (nested scroll) — tant que le tiroir n'a pas fini de
+    // se déployer, le Column interne reste à scrollState.value == 0, quel que soit l'ampleur du
+    // geste. C'est ce qui donnait l'impression que le FAB ne se repliait qu'« au bout du tiroir » :
+    // en pratique il attendait que le tiroir ait fini de se tirer avant même de commencer à
+    // recevoir le défilement. bottomSheetState.targetValue capte ce premier temps, réactif dès le
+    // début du geste de tirage et pas seulement une fois le tiroir au repos.
     val sheetScrollState = rememberScrollState()
+    val bottomSheetScaffoldState = rememberBottomSheetScaffoldState()
 
     val loaded = uiState as? GpxImportUiState.Loaded
     // RIC-105 (revu) : la banque vide n'a plus de carte du tout, plein écran dédié — même
@@ -177,7 +188,7 @@ fun GpxImportScreen(
     // redevient pertinente qu'à partir du moment où il y a quelque chose à y montrer ou à y
     // préparer.
     if (uiState is GpxImportUiState.Idle && bankedTraces.isEmpty()) {
-        Box(modifier = modifier.fillMaxSize()) {
+        Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             FullScreenEmptyState(
                 icon = Icons.Default.Route,
                 title = "Aucune trace en préparation",
@@ -200,6 +211,7 @@ fun GpxImportScreen(
         Box(modifier = modifier.fillMaxSize()) {
             BottomSheetScaffold(
                 modifier = Modifier.fillMaxSize(),
+                scaffoldState = bottomSheetScaffoldState,
                 sheetPeekHeight = PEEK_HEIGHT_EMPTY.coerceAtMost(maxPeekHeight),
                 sheetContent = {
                     TrackSheetContent(
@@ -256,7 +268,12 @@ fun GpxImportScreen(
             // naturellement le haut, jusqu'au premier défilement — même compromis que le Journal
             // fait déjà avec sa propre liste, pas un cas particulier à coder ici.
             if (uiState is GpxImportUiState.Idle && bankedTraces.isNotEmpty()) {
-                val expanded by remember { derivedStateOf { sheetScrollState.value == 0 } }
+                val expanded by remember {
+                    derivedStateOf {
+                        sheetScrollState.value == 0 &&
+                            bottomSheetScaffoldState.bottomSheetState.targetValue == SheetValue.PartiallyExpanded
+                    }
+                }
                 ExtendedFloatingActionButton(
                     onClick = onOpenClick,
                     expanded = expanded,
