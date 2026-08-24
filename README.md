@@ -60,6 +60,16 @@ données existantes se fait automatiquement et sans perte à la première ouvert
 après mise à jour ; les traces restent incluses dans les sauvegardes (Réglages → Sauvegarder), qui
 embarquent ces fichiers avec la base.
 
+### Mes randonnées partent-elles dans une sauvegarde cloud Google ?
+
+Non, jamais automatiquement. Bivouac exclut explicitement sa base de données (tes randos, tags,
+notes) et ses préférences de la sauvegarde automatique cloud d'Android — cohérent avec le principe
+de l'app, 100 % locale. Le transfert direct d'un téléphone à l'autre (lors d'un changement
+d'appareil, via le câble ou l'outil de transfert du fabricant) reste, lui, complet : il ne passe pas
+par le cloud, donc rien n'empêche de récupérer tout ton Journal de cette façon. La sauvegarde
+explicite (Réglages → Sauvegarder, vers l'endroit de ton choix) reste le mécanisme à utiliser
+volontairement, notamment avant une réinstallation ou un test.
+
 ## Stack technique
 
 - Kotlin + Jetpack Compose (Material3)
