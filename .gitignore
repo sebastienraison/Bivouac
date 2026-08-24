@@ -15,6 +15,20 @@ local.properties
 *.hprof
 .navigation/
 
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Other editors
+.vscode/
+
+# Signing material — no release keystore exists yet (voir dette #3 dans app/build.gradle.kts),
+# mais à exclure par avance dès qu'un vrai keystore de prod sera introduit.
+*.jks
+*.keystore
+key.properties
+
 # Internal planning docs — working base, not meant to be published
 /docs/
 
