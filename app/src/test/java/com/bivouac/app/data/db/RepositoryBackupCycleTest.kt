@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.bivouac.app.data.backup.BackupManager
 import com.bivouac.app.data.gpx.GpxWriter
 import com.bivouac.app.data.model.TrackPoint
+import java.nio.charset.StandardCharsets
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -81,22 +82,29 @@ class RepositoryBackupCycleTest {
             ),
         )
         val database = BivouacDatabase.getInstance(context)
+        // RIC-97 : gpxContent vit maintenant dans un fichier sous PlanificationGpxStore, pas dans
+        // la colonne — écrit ici directement, comme le ferait BankedTrackRepository.save()/
+        // SavedTrackRepository.save(), puisque ce test insère les lignes en passant par le DAO nu.
+        PlanificationGpxStore.dir(context).mkdirs()
+        val bankedRelativePath = PlanificationGpxStore.bankedRelativePath("ric103-banked")
+        PlanificationGpxStore.resolve(context, bankedRelativePath).writeText(gpx, StandardCharsets.UTF_8)
         database.bankedTrackDao().save(
             BankedTrackEntity(
                 id = "ric103-banked",
                 name = "Banque",
-                gpxContent = gpx,
+                gpxFilePath = bankedRelativePath,
                 bivouacTrackPointIndices = "",
                 distanceMeters = 1.0,
                 elevationGainMeters = 2.0,
                 elevationLossMeters = 3.0,
-                pointCount = 1,
                 estimatedDurationMinutes = 4,
                 savedAt = 5L,
             ),
         )
+        val savedRelativePath = PlanificationGpxStore.savedRelativePath()
+        PlanificationGpxStore.resolve(context, savedRelativePath).writeText(gpx, StandardCharsets.UTF_8)
         database.savedTrackDao().save(
-            SavedTrackEntity(trackName = "Plan en cours", gpxContent = gpx, bivouacTrackPointIndices = "0"),
+            SavedTrackEntity(trackName = "Plan en cours", gpxFilePath = savedRelativePath, bivouacTrackPointIndices = "0"),
         )
 
         val backup = BackupManager.backup(context, Uri.fromFile(File(context.cacheDir, "ric103-backup.zip")))

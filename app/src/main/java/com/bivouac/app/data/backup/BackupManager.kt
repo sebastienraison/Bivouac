@@ -5,6 +5,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
 import com.bivouac.app.data.db.BivouacDatabase
 import com.bivouac.app.data.db.LoggedTrackGpxStore
+import com.bivouac.app.data.db.PlanificationGpxStore
 import com.bivouac.app.data.prefs.MAP_LAYER_DATASTORE_NAME
 import com.bivouac.app.data.prefs.SETTINGS_DATASTORE_NAME
 import com.bivouac.app.data.prefs.SettingsPreferences
@@ -24,12 +25,12 @@ sealed interface RestoreResult {
 
 /**
  * Full-database backup/restore (BIV-66) — a raw copy of bivouac.db (plus its WAL/SHM sidecars, if
- * SQLite hasn't already checkpointed them away), the DataStore preference files and the Journal's
- * raw GPX files (filesDir/gpx, RIC-62), zipped via SAF
- * so the destination can be anywhere the system document picker reaches (Drive, Nextcloud, local
- * storage...). Deliberately not a structured export: this is a byte-for-byte safety net for
- * aggressive test sessions and real-device recette, not a portable/partial format — see BIV-21 for
- * the curated per-trace GPX export that already covers that need.
+ * SQLite hasn't already checkpointed them away), the DataStore preference files, the Journal's raw
+ * GPX files (filesDir/gpx, RIC-62) and Planification's own GPX files (filesDir/gpx-planif, RIC-97),
+ * zipped via SAF so the destination can be anywhere the system document picker reaches (Drive,
+ * Nextcloud, local storage...). Deliberately not a structured export: this is a byte-for-byte
+ * safety net for aggressive test sessions and real-device recette, not a portable/partial format —
+ * see BIV-21 for the curated per-trace GPX export that already covers that need.
  */
 object BackupManager {
 
@@ -39,6 +40,9 @@ object BackupManager {
     // RIC-62 : le GPX brut du Journal ne vit plus dans bivouac.db mais dans filesDir/gpx/ — sans
     // ces entrées, une sauvegarde v8 serait amputée de tout son contenu de traces.
     private const val GPX_ENTRY_PREFIX = LoggedTrackGpxStore.DIR_NAME + "/"
+
+    // RIC-97 : même raison côté Planification (banked_track et saved_track), dans filesDir/gpx-planif/.
+    private const val GPX_PLANIF_ENTRY_PREFIX = PlanificationGpxStore.DIR_NAME + "/"
 
     // Only ever consulted together, and always the same three suffixes — see BivouacDatabase's
     // own comment on closeAndReset() for why a clean close should normally leave -wal/-shm empty
@@ -74,6 +78,9 @@ object BackupManager {
                     }
                     for (file in LoggedTrackGpxStore.dir(context).listFiles().orEmpty()) {
                         if (file.isFile) writeEntry(zip, GPX_ENTRY_PREFIX + file.name, file)
+                    }
+                    for (file in PlanificationGpxStore.dir(context).listFiles().orEmpty()) {
+                        if (file.isFile) writeEntry(zip, GPX_PLANIF_ENTRY_PREFIX + file.name, file)
                     }
                 }
             } finally {
@@ -162,12 +169,18 @@ object BackupManager {
         val gpxDir = LoggedTrackGpxStore.dir(context)
         val extractedGpxDir = File(tempDir, LoggedTrackGpxStore.DIR_NAME)
 
+        // RIC-97 : même principe pour gpx-planif/ (banked_track/saved_track) — une archive d'avant
+        // la v10 régénérera les siens via migration9To10 à la réouverture, même raisonnement.
+        val gpxPlanifDir = PlanificationGpxStore.dir(context)
+        val extractedGpxPlanifDir = File(tempDir, PlanificationGpxStore.DIR_NAME)
+
         // destination -> son original écarté (null : la destination n'existait pas avant).
         // Seules les destinations présentes dans cette map ont été mises en sûreté — c'est elle
         // (et pas `replacements`) que le rollback parcourt, pour ne jamais supprimer un original
         // encore en place si un rename a échoué au milieu de la première boucle.
         val originals = mutableMapOf<File, File?>()
         var gpxAside: File? = null
+        var gpxPlanifAside: File? = null
         try {
             for (destination in replacements.keys) {
                 if (destination.exists()) {
@@ -189,11 +202,22 @@ object BackupManager {
                 }
                 gpxAside = aside
             }
+            if (gpxPlanifDir.exists()) {
+                val aside = File(gpxPlanifDir.path + PRE_RESTORE_SUFFIX)
+                aside.deleteRecursively()
+                if (!gpxPlanifDir.renameTo(aside)) {
+                    throw IOException("Impossible d'écarter le répertoire ${gpxPlanifDir.name} avant remplacement.")
+                }
+                gpxPlanifAside = aside
+            }
             for ((destination, extracted) in replacements) {
                 extracted?.copyTo(destination, overwrite = true)
             }
             if (extractedGpxDir.exists()) {
                 extractedGpxDir.copyRecursively(gpxDir, overwrite = true)
+            }
+            if (extractedGpxPlanifDir.exists()) {
+                extractedGpxPlanifDir.copyRecursively(gpxPlanifDir, overwrite = true)
             }
         } catch (e: Exception) {
             for ((destination, aside) in originals) {
@@ -204,10 +228,15 @@ object BackupManager {
                 gpxDir.deleteRecursively()
                 aside.renameTo(gpxDir)
             }
+            gpxPlanifAside?.let { aside ->
+                gpxPlanifDir.deleteRecursively()
+                aside.renameTo(gpxPlanifDir)
+            }
             throw e
         }
         for (aside in originals.values) aside?.delete()
         gpxAside?.deleteRecursively()
+        gpxPlanifAside?.deleteRecursively()
     }
 
     // PRAGMA integrity_check sur la base extraite, ouverte en lecture-écriture pour qu'un
@@ -224,8 +253,9 @@ object BackupManager {
 
     /** Returns an error message on failure, null on success. Flattens entries by basename — the
      * db/ and prefs/ zip prefixes exist only to make a manually-opened archive self-explanatory,
-     * every real filename involved is already unique on its own. Exception (RIC-62) : les entrées
-     * gpx/ gardent leur sous-répertoire, replaceWithRollback remplaçant ce répertoire en bloc. */
+     * every real filename involved is already unique on its own. Exceptions (RIC-62, RIC-97) : les
+     * entrées gpx/ et gpx-planif/ gardent leur sous-répertoire, replaceWithRollback remplaçant
+     * chacun de ces répertoires en bloc. */
     private fun extractZip(context: Context, source: Uri, tempDir: File): String? {
         val input = context.contentResolver.openInputStream(source)
             ?: return "Impossible de lire le fichier sélectionné."
@@ -234,10 +264,12 @@ object BackupManager {
             while (entry != null) {
                 val name = entry.name.substringAfterLast('/')
                 if (name.isNotBlank() && !entry.isDirectory) {
-                    val targetDir = if (entry.name.startsWith(GPX_ENTRY_PREFIX)) {
-                        File(tempDir, LoggedTrackGpxStore.DIR_NAME).apply { mkdirs() }
-                    } else {
-                        tempDir
+                    val targetDir = when {
+                        entry.name.startsWith(GPX_ENTRY_PREFIX) ->
+                            File(tempDir, LoggedTrackGpxStore.DIR_NAME).apply { mkdirs() }
+                        entry.name.startsWith(GPX_PLANIF_ENTRY_PREFIX) ->
+                            File(tempDir, PlanificationGpxStore.DIR_NAME).apply { mkdirs() }
+                        else -> tempDir
                     }
                     File(targetDir, name).outputStream().use { out -> zip.copyTo(out) }
                 }

@@ -16,9 +16,15 @@ class SavedTrackRepository(context: Context) {
     private val dao get() = BivouacDatabase.getInstance(appContext).savedTrackDao()
 
     suspend fun save(track: HikeTrack, bivouacPoints: List<BivouacPoint>) {
+        // Toujours le même nom de fichier (singleton) : ce writeText écrase l'ancien contenu au
+        // lieu d'en accumuler un par appel, comme le fait déjà le REPLACE au niveau de la ligne.
+        PlanificationGpxStore.dir(appContext).mkdirs()
+        val relativePath = PlanificationGpxStore.savedRelativePath()
+        PlanificationGpxStore.resolve(appContext, relativePath)
+            .writeText(GpxWriter.write(track.points, track.name ?: "Trace"), Charsets.UTF_8)
         val entity = SavedTrackEntity(
             trackName = track.name,
-            gpxContent = GpxWriter.write(track.points, track.name ?: "Trace"),
+            gpxFilePath = relativePath,
             bivouacTrackPointIndices = bivouacPoints.joinToString(",") { it.trackPointIndex.toString() },
         )
         dao.save(entity)
@@ -26,7 +32,8 @@ class SavedTrackRepository(context: Context) {
 
     suspend fun loadLast(): Pair<HikeTrack, List<BivouacPoint>>? {
         val entity = dao.get() ?: return null
-        val track = entity.gpxContent.byteInputStream().use { GpxParser.parse(it) }
+        val track = PlanificationGpxStore.resolve(appContext, entity.gpxFilePath)
+            .inputStream().use { GpxParser.parse(it) }
         val bivouacPoints = entity.bivouacTrackPointIndices
             .split(",")
             .mapNotNull { it.trim().toIntOrNull() }
@@ -35,6 +42,8 @@ class SavedTrackRepository(context: Context) {
     }
 
     suspend fun clear() {
+        val entity = dao.get()
         dao.clear()
+        entity?.let { PlanificationGpxStore.resolve(appContext, it.gpxFilePath).delete() }
     }
 }

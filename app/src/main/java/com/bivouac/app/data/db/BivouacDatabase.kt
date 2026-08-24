@@ -29,7 +29,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open") — a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 9
+        const val SCHEMA_VERSION = 10
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -218,6 +218,101 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-97 : même traitement que migration7To8 (RIC-62), pour banked_track.gpxContent et
+        // saved_track.gpxContent cette fois — pas de crash constaté à ce jour sur ces deux tables
+        // (mesure prod : ≈500 Ko max), mais aucune borne structurelle ne les protège de la limite
+        // CursorWindow (~2 Mo/ligne) : un import GPS dense (≈1 point/s) sur une seule journée, ou
+        // une trace dupliquée depuis un trek multi-jours du Journal (RIC-40, qui concatène tous les
+        // jours en un seul HikeTrack avant réécriture), l'atteint déjà en ordre de grandeur — voir
+        // CR_RIC97 pour le calcul complet.
+        //
+        // pointCount de banked_track part dans le même mouvement : colonne écrite mais jamais lue
+        // (vérifié par grep, zéro usage de `.pointCount` sur du BankedTrack*), et la table est de
+        // toute façon recréée pour sortir gpxContent — pas de migration à part rien que pour ça.
+        //
+        // Même schéma recréer-copier-basculer et lecture par tranches (substr()) que migration7To8
+        // (cible : schemas/10.json). saved_track est un singleton (au plus une ligne, id fixe) mais
+        // suit exactement le même chemin, sans cas particulier.
+        fun migration9To10(context: Context): Migration {
+            val appContext = context.applicationContext
+            return object : Migration(9, 10) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    PlanificationGpxStore.dir(appContext).mkdirs()
+
+                    val bankedIds = mutableListOf<String>()
+                    db.query("SELECT id FROM banked_track").use { cursor ->
+                        while (cursor.moveToNext()) bankedIds += cursor.getString(0)
+                    }
+                    val bankedPathById = bankedIds.associateWith { id ->
+                        val relativePath = PlanificationGpxStore.bankedRelativePath(id)
+                        writeGpxContentInChunks(
+                            db,
+                            table = "banked_track",
+                            idColumn = "id",
+                            idValue = id,
+                            target = File(appContext.filesDir, relativePath),
+                        )
+                        relativePath
+                    }
+
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `banked_track_new` (" +
+                            "`id` TEXT NOT NULL, `name` TEXT NOT NULL, `gpxFilePath` TEXT NOT NULL, " +
+                            "`bivouacTrackPointIndices` TEXT NOT NULL, `distanceMeters` REAL NOT NULL, " +
+                            "`elevationGainMeters` REAL NOT NULL, `elevationLossMeters` REAL NOT NULL, " +
+                            "`estimatedDurationMinutes` INTEGER NOT NULL, `savedAt` INTEGER NOT NULL, " +
+                            "PRIMARY KEY(`id`))",
+                    )
+                    for (id in bankedIds) {
+                        db.execSQL(
+                            "INSERT INTO `banked_track_new` (`id`, `name`, `gpxFilePath`, " +
+                                "`bivouacTrackPointIndices`, `distanceMeters`, `elevationGainMeters`, " +
+                                "`elevationLossMeters`, `estimatedDurationMinutes`, `savedAt`) " +
+                                "SELECT `id`, `name`, ?, `bivouacTrackPointIndices`, `distanceMeters`, " +
+                                "`elevationGainMeters`, `elevationLossMeters`, `estimatedDurationMinutes`, " +
+                                "`savedAt` FROM `banked_track` WHERE `id` = ?",
+                            arrayOf(bankedPathById.getValue(id), id),
+                        )
+                    }
+                    db.execSQL("DROP TABLE `banked_track`")
+                    db.execSQL("ALTER TABLE `banked_track_new` RENAME TO `banked_track`")
+
+                    val savedIds = mutableListOf<Int>()
+                    db.query("SELECT id FROM saved_track").use { cursor ->
+                        while (cursor.moveToNext()) savedIds += cursor.getInt(0)
+                    }
+                    val savedPathById = savedIds.associateWith { id ->
+                        val relativePath = PlanificationGpxStore.savedRelativePath()
+                        writeGpxContentInChunks(
+                            db,
+                            table = "saved_track",
+                            idColumn = "id",
+                            idValue = id,
+                            target = File(appContext.filesDir, relativePath),
+                        )
+                        relativePath
+                    }
+
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `saved_track_new` (" +
+                            "`id` INTEGER NOT NULL, `trackName` TEXT, `gpxFilePath` TEXT NOT NULL, " +
+                            "`bivouacTrackPointIndices` TEXT NOT NULL, PRIMARY KEY(`id`))",
+                    )
+                    for (id in savedIds) {
+                        db.execSQL(
+                            "INSERT INTO `saved_track_new` (`id`, `trackName`, `gpxFilePath`, " +
+                                "`bivouacTrackPointIndices`) " +
+                                "SELECT `id`, `trackName`, ?, `bivouacTrackPointIndices` " +
+                                "FROM `saved_track` WHERE `id` = ?",
+                            arrayOf(savedPathById.getValue(id), id),
+                        )
+                    }
+                    db.execSQL("DROP TABLE `saved_track`")
+                    db.execSQL("ALTER TABLE `saved_track_new` RENAME TO `saved_track`")
+                }
+            }
+        }
+
         // ~256K points de code par tranche : au pire quadruplé en UTF-8 ça reste sous la fenêtre de
         // 2 Mo, et un GPX réel (ASCII pour l'essentiel) en est très loin.
         private const val MIGRATION_CHUNK_CODE_POINTS = 256 * 1024
@@ -243,6 +338,35 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-97 : même lecture par tranches que writeRawGpxInChunks ci-dessus, généralisée sur la
+        // table/colonne id puisque banked_track et saved_track partagent le même nom de colonne
+        // (gpxContent) — table et idColumn sont toujours des littéraux fixes de ce fichier, jamais
+        // une entrée externe, donc l'interpolation directe dans le SQL est sans risque ici.
+        private fun writeGpxContentInChunks(
+            db: SupportSQLiteDatabase,
+            table: String,
+            idColumn: String,
+            idValue: Any,
+            target: File,
+        ) {
+            target.outputStream().bufferedWriter(Charsets.UTF_8).use { writer ->
+                var position = 1L
+                while (true) {
+                    val chunk = db.query(
+                        "SELECT substr(gpxContent, ?, ?) FROM $table WHERE $idColumn = ?",
+                        arrayOf(position, MIGRATION_CHUNK_CODE_POINTS, idValue),
+                    ).use { cursor ->
+                        if (cursor.moveToFirst()) cursor.getString(0).orEmpty() else ""
+                    }
+                    if (chunk.isEmpty()) break
+                    writer.write(chunk)
+                    val codePoints = chunk.codePointCount(0, chunk.length)
+                    if (codePoints < MIGRATION_CHUNK_CODE_POINTS) break
+                    position += codePoints
+                }
+            }
+        }
+
         fun getInstance(context: Context): BivouacDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -257,6 +381,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                         MIGRATION_6_7,
                         migration7To8(context),
                         MIGRATION_8_9,
+                        migration9To10(context),
                     )
                     .build()
                     .also { instance = it }

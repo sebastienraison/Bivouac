@@ -26,15 +26,21 @@ class BankedTrackRepository(context: Context) {
         bivouacPoints: List<BivouacPoint>,
         stats: TrackStats,
     ): String {
+        val entityId = id ?: UUID.randomUUID().toString()
+        // Nommé d'après l'id, pas un nom de fichier généré à chaque appel : un overwrite explicite
+        // (id fourni) ou un rename() retombent sur ce même fichier, jamais un nouveau à côté.
+        PlanificationGpxStore.dir(appContext).mkdirs()
+        val relativePath = PlanificationGpxStore.bankedRelativePath(entityId)
+        PlanificationGpxStore.resolve(appContext, relativePath)
+            .writeText(GpxWriter.write(track.points, name), Charsets.UTF_8)
         val entity = BankedTrackEntity(
-            id = id ?: UUID.randomUUID().toString(),
+            id = entityId,
             name = name,
-            gpxContent = GpxWriter.write(track.points, name),
+            gpxFilePath = relativePath,
             bivouacTrackPointIndices = bivouacPoints.joinToString(",") { it.trackPointIndex.toString() },
             distanceMeters = stats.distanceMeters,
             elevationGainMeters = stats.elevationGainMeters,
             elevationLossMeters = stats.elevationLossMeters,
-            pointCount = track.points.size,
             estimatedDurationMinutes = stats.estimatedDurationMinutes,
             savedAt = System.currentTimeMillis(),
         )
@@ -44,7 +50,8 @@ class BankedTrackRepository(context: Context) {
 
     suspend fun open(id: String): Pair<HikeTrack, List<BivouacPoint>>? {
         val entity = dao.get(id) ?: return null
-        val track = entity.gpxContent.byteInputStream().use { GpxParser.parse(it) }
+        val track = PlanificationGpxStore.resolve(appContext, entity.gpxFilePath)
+            .inputStream().use { GpxParser.parse(it) }
         val bivouacPoints = entity.bivouacTrackPointIndices
             .split(",")
             .mapNotNull { it.trim().toIntOrNull() }
@@ -55,17 +62,20 @@ class BankedTrackRepository(context: Context) {
     /** Renames an entry in place, keeping its track/bivouac content and id unchanged. */
     suspend fun rename(id: String, name: String) {
         val entity = dao.get(id) ?: return
-        val track = entity.gpxContent.byteInputStream().use { GpxParser.parse(it) }
-        dao.save(
-            entity.copy(
-                name = name,
-                gpxContent = GpxWriter.write(track.points, name),
-                savedAt = System.currentTimeMillis(),
-            ),
-        )
+        val file = PlanificationGpxStore.resolve(appContext, entity.gpxFilePath)
+        val track = file.inputStream().use { GpxParser.parse(it) }
+        // Réécrit le fichier existant en place (même chemin) : le <name> embarqué doit rester
+        // synchronisé avec le nom affiché, comme avant RIC-97, mais ça ne touche plus la colonne.
+        file.writeText(GpxWriter.write(track.points, name), Charsets.UTF_8)
+        dao.save(entity.copy(name = name, savedAt = System.currentTimeMillis()))
     }
 
     suspend fun delete(id: String) {
+        // Chemin relevé avant le DELETE, ligne supprimée avant son fichier, jamais l'inverse — même
+        // ordre que LoggedTrackRepository.delete(), pour ne pas perdre la référence si la
+        // suppression du fichier échoue.
+        val entity = dao.get(id) ?: return
         dao.delete(id)
+        PlanificationGpxStore.resolve(appContext, entity.gpxFilePath).delete()
     }
 }

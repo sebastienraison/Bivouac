@@ -54,6 +54,20 @@ private fun buildOversizedGpx(): String = buildString {
     append("  </trkseg></trk>\n</gpx>")
 }
 
+// RIC-97 : même principe, mais côté Planification (banked_track/saved_track) — un import GPS dense
+// (≈1 point/s) sur une seule journée, ou une trace dupliquée depuis un trek multi-jours du Journal,
+// suffit à s'en approcher en pratique (voir CR_RIC97) ; le test le pousse délibérément au-delà.
+private fun buildOversizedBankedGpx(): String = buildString {
+    append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+    append("<gpx version=\"1.1\" creator=\"bivouac-migration-test\">\n")
+    append("  <trk><name>Trace banquée géante</name><trkseg>\n")
+    repeat(30_000) { i ->
+        append("    <trkpt lat=\"45.${300000 + i}\" lon=\"6.${400000 + i}\">")
+        append("<ele>${1800 + i % 600}.0</ele><time>2026-07-01T07:00:00Z</time></trkpt>\n")
+    }
+    append("  </trkseg></trk>\n</gpx>")
+}
+
 @RunWith(AndroidJUnit4::class)
 class BivouacDatabaseMigrationTest {
 
@@ -66,11 +80,13 @@ class BivouacDatabaseMigrationTest {
         BivouacDatabase::class.java,
     )
 
-    // Les fichiers écrits par migration7To8 atterrissent dans le vrai filesDir/gpx du contexte
-    // d'instrumentation — nettoyés pour ne pas polluer les autres tests (ni les runs suivants).
+    // Les fichiers écrits par migration7To8/migration9To10 atterrissent dans le vrai filesDir du
+    // contexte d'instrumentation — nettoyés pour ne pas polluer les autres tests (ni les runs
+    // suivants).
     @After
     fun cleanUpGpxFiles() {
         LoggedTrackGpxStore.dir(targetContext).deleteRecursively()
+        PlanificationGpxStore.dir(targetContext).deleteRecursively()
     }
 
     @Test
@@ -198,7 +214,7 @@ class BivouacDatabaseMigrationTest {
 
         val migrated = helper.runMigrationsAndValidate(
             testDbName,
-            9,
+            10,
             true,
             BivouacDatabase.MIGRATION_1_2,
             BivouacDatabase.MIGRATION_2_5,
@@ -206,21 +222,33 @@ class BivouacDatabaseMigrationTest {
             BivouacDatabase.MIGRATION_6_7,
             BivouacDatabase.migration7To8(targetContext),
             BivouacDatabase.MIGRATION_8_9,
+            BivouacDatabase.migration9To10(targetContext),
         )
 
-        migrated.query("SELECT id, trackName, gpxContent, bivouacTrackPointIndices FROM saved_track").use { cursor ->
+        // RIC-97 : la ligne saved_track née en v1 avec gpxContent en colonne doit ressortir avec
+        // gpxFilePath pointant vers un fichier au contenu intact.
+        migrated.query("SELECT id, trackName, gpxFilePath, bivouacTrackPointIndices FROM saved_track").use { cursor ->
             assertEquals(1, cursor.count)
             assertTrue(cursor.moveToFirst())
             assertEquals(1, cursor.getInt(0))
             assertEquals("Trace en cours", cursor.getString(1))
-            assertEquals(TRACK_1_GPX, cursor.getString(2))
+            val file = File(targetContext.filesDir, cursor.getString(2))
+            assertTrue("Fichier saved_track manquant : ${file.path}", file.exists())
+            assertEquals(TRACK_1_GPX, file.readText(Charsets.UTF_8))
             assertEquals("[0,2]", cursor.getString(3))
+        }
+        migrated.query("SELECT * FROM saved_track LIMIT 0").use { cursor ->
+            assertEquals(-1, cursor.getColumnIndex("gpxContent"))
         }
 
         // Tables added by every intermediate jump must all exist and be usable at the final version.
         migrated.query("SELECT COUNT(*) FROM banked_track").use { cursor ->
             assertTrue(cursor.moveToFirst())
             assertEquals(0, cursor.getInt(0))
+        }
+        migrated.query("SELECT * FROM banked_track LIMIT 0").use { cursor ->
+            assertEquals(-1, cursor.getColumnIndex("gpxContent"))
+            assertEquals(-1, cursor.getColumnIndex("pointCount"))
         }
         migrated.query("SELECT COUNT(*) FROM logged_track").use { cursor ->
             assertTrue(cursor.moveToFirst())
@@ -549,6 +577,137 @@ class BivouacDatabaseMigrationTest {
             assertEquals("Traversee Vanoise", cursor.getString(0))
             assertEquals("hash-track-2", cursor.getString(1))
             assertEquals("Deux jours", cursor.getString(2))
+        }
+
+        migrated.close()
+    }
+
+    // RIC-97 : même démonstration que migrate7To8 ci-dessus, mais pour banked_track/saved_track —
+    // preuve que la lecture naïve d'une ligne dépassant la CursorWindow échoue, puis que la lecture
+    // par tranches de migration9To10 en ressort le contenu intact malgré tout, pointCount disparaît
+    // de banked_track, et le singleton saved_track suit le même chemin sans traitement particulier.
+    @Test
+    fun migrate9To10_movesGpxContentToFiles_evenPastCursorWindowLimit_andDropsBankedPointCount() {
+        val oversizedGpx = buildOversizedBankedGpx()
+        assertTrue(oversizedGpx.length > 2 * 1024 * 1024)
+
+        helper.createDatabase(testDbName, 9).apply {
+            execSQL(
+                "INSERT INTO banked_track (id, name, gpxContent, bivouacTrackPointIndices, " +
+                    "distanceMeters, elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, savedAt) VALUES ('bank-1', 'Belledonne', " +
+                    "'${TRACK_1_GPX.escapeSql()}', '[]', 8200.0, 650.0, 300.0, 3, 240, 1780300800000)",
+            )
+            execSQL(
+                "INSERT INTO banked_track (id, name, gpxContent, bivouacTrackPointIndices, " +
+                    "distanceMeters, elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, savedAt) VALUES ('bank-geant', 'Trace géante', " +
+                    "?, '[0,5]', 42000.0, 2800.0, 2800.0, 30000, 900, 1782000000000)",
+                arrayOf(oversizedGpx),
+            )
+            execSQL(
+                "INSERT INTO saved_track (id, trackName, gpxContent, bivouacTrackPointIndices) " +
+                    "VALUES (1, 'Plan en cours', '${TRACK_2_DAY_1_GPX.escapeSql()}', '[1]')",
+            )
+
+            // Prémisse RIC-97, vérifiée sur place : une migration qui relirait la colonne entière
+            // via un Cursor ordinaire hériterait telle quelle de la limite CursorWindow.
+            var naiveReadFailed = false
+            try {
+                query("SELECT gpxContent FROM banked_track WHERE id = 'bank-geant'").use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0)
+                }
+            } catch (expected: SQLiteBlobTooBigException) {
+                naiveReadFailed = true
+            }
+            assertTrue("La lecture naïve aurait dû dépasser la CursorWindow", naiveReadFailed)
+
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            10,
+            true,
+            BivouacDatabase.migration9To10(targetContext),
+        )
+
+        val expectedBankedContentById = mapOf(
+            "bank-1" to TRACK_1_GPX,
+            "bank-geant" to oversizedGpx,
+        )
+        migrated.query(
+            "SELECT id, name, gpxFilePath, bivouacTrackPointIndices, distanceMeters, savedAt " +
+                "FROM banked_track ORDER BY id",
+        ).use { cursor ->
+            assertEquals(2, cursor.count)
+            while (cursor.moveToNext()) {
+                val id = cursor.getString(0)
+                val path = cursor.getString(2)
+                val file = File(targetContext.filesDir, path)
+                assertTrue("Fichier manquant pour $id : $path", file.exists())
+                assertEquals(
+                    "Contenu altéré pour $id",
+                    expectedBankedContentById.getValue(id),
+                    file.readText(Charsets.UTF_8),
+                )
+            }
+        }
+        migrated.query("SELECT id, name FROM banked_track WHERE id = 'bank-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Belledonne", cursor.getString(1))
+        }
+        migrated.query("SELECT * FROM banked_track LIMIT 0").use { cursor ->
+            assertEquals(-1, cursor.getColumnIndex("gpxContent"))
+            assertEquals(-1, cursor.getColumnIndex("pointCount"))
+        }
+
+        migrated.query("SELECT id, trackName, gpxFilePath, bivouacTrackPointIndices FROM saved_track").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Plan en cours", cursor.getString(1))
+            val file = File(targetContext.filesDir, cursor.getString(2))
+            assertTrue("Fichier saved_track manquant : ${file.path}", file.exists())
+            assertEquals(TRACK_2_DAY_1_GPX, file.readText(Charsets.UTF_8))
+            assertEquals("[1]", cursor.getString(3))
+        }
+        migrated.query("SELECT * FROM saved_track LIMIT 0").use { cursor ->
+            assertEquals(-1, cursor.getColumnIndex("gpxContent"))
+        }
+
+        migrated.close()
+    }
+
+    // Base v9 sans aucune ligne dans banked_track/saved_track : le cas le plus courant en
+    // production (mesure pilotage : 3 lignes banked_track, 1 ligne saved_track sur l'ensemble du
+    // parc). La migration ne doit ni planter ni laisser une table dans un état incohérent.
+    @Test
+    fun migrate9To10_withNoRows_leavesEmptyTablesUsable() {
+        helper.createDatabase(testDbName, 9).close()
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            10,
+            true,
+            BivouacDatabase.migration9To10(targetContext),
+        )
+
+        migrated.query("SELECT COUNT(*) FROM banked_track").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        migrated.query("SELECT COUNT(*) FROM saved_track").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        migrated.execSQL(
+            "INSERT INTO banked_track (id, name, gpxFilePath, bivouacTrackPointIndices, " +
+                "distanceMeters, elevationGainMeters, elevationLossMeters, " +
+                "estimatedDurationMinutes, savedAt) VALUES ('bank-1', 'Belledonne', " +
+                "'gpx-planif/banked-bank-1.gpx', '[]', 8200.0, 650.0, 300.0, 240, 1780300800000)",
+        )
+        migrated.query("SELECT id FROM banked_track").use { cursor ->
+            assertEquals(1, cursor.count)
         }
 
         migrated.close()
