@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +41,7 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -68,8 +68,8 @@ import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.prefs.SpeedCalibrationMode
 import com.bivouac.app.settings.RestoreOutcome
 import com.bivouac.app.settings.SettingsViewModel
+import com.bivouac.app.ui.nav.AppScreenHeader
 import com.bivouac.app.ui.nav.AppSection
-import com.bivouac.app.ui.nav.SectionMenuButton
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -118,28 +118,19 @@ fun SettingsScreen(
         pendingRestoreUri = uri
     }
 
-    // Même en-tête que l'accueil du Journal (RIC-65) : un vrai titre, plutôt que le bouton de
-    // section flottant par-dessus le contenu avec un padding(top) codé en dur pour lui laisser la
-    // place. Ce dernier ne pouvait pas être théorisé après coup comme un choix délibéré — c'était
-    // le seul écran de l'app à ne pas encore avoir suivi le mouvement.
-    Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Réglages",
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.weight(1f),
-            )
-            SectionMenuButton(current = currentSection, onSelect = onSectionSelected)
-        }
+    // Même en-tête que l'accueil du Journal (RIC-65), via le composant partagé AppScreenHeader :
+    // une première version recopiée à la main avait laissé le titre sur la couleur de texte par
+    // défaut (noire), faute d'être posée dans un Surface/Scaffold comme celle du Journal — invisible
+    // en thème clair par coïncidence, noir sur noir en thème sombre. Scaffold fournit ce Surface.
+    Scaffold(
+        modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = { AppScreenHeader(title = "Réglages", currentSection = currentSection, onSectionSelected = onSectionSelected) },
+    ) { paddingValues ->
         Column(
             modifier = Modifier
-                .weight(1f)
+                .padding(paddingValues)
+                .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp)
