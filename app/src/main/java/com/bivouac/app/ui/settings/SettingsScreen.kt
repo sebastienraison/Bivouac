@@ -118,14 +118,32 @@ fun SettingsScreen(
         pendingRestoreUri = uri
     }
 
-    Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    // Même en-tête que l'accueil du Journal (RIC-65) : un vrai titre, plutôt que le bouton de
+    // section flottant par-dessus le contenu avec un padding(top) codé en dur pour lui laisser la
+    // place. Ce dernier ne pouvait pas être théorisé après coup comme un choix délibéré — c'était
+    // le seul écran de l'app à ne pas encore avoir suivi le mouvement.
+    Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Réglages",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.weight(1f),
+            )
+            SectionMenuButton(current = currentSection, onSelect = onSectionSelected)
+        }
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .weight(1f)
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp)
-                .padding(top = 88.dp, bottom = 40.dp),
+                .padding(bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(28.dp),
         ) {
             SpeedCalibrationSection(
@@ -155,12 +173,6 @@ fun SettingsScreen(
                 onOpenUrl = { url -> context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
             )
         }
-
-        SectionMenuButton(
-            current = currentSection,
-            onSelect = onSectionSelected,
-            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(16.dp),
-        )
     }
 
     backupError?.let { message ->
