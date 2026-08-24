@@ -1,5 +1,14 @@
 # Bivouac — Notes de version
 
+## V2.0.1
+
+**Bugfixes :**
+
+- Le calcul automatique de vitesse/pénalité D+ (Réglages, mode Auto ou Sélection) pouvait varier
+  fortement selon les randonnées présentes dans le Journal ou la sélection, surtout avec peu de
+  randonnées (une dizaine ou moins) — corrigé par un calcul plus robuste, à l'intérieur de chaque
+  randonnée plutôt qu'en comparant les randonnées entre elles.
+
 ## V2.0
 
 **Journal (nouveau) :**

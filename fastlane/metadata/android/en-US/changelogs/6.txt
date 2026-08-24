@@ -1,0 +1,4 @@
+Bugfix: the automatic speed/elevation-penalty calculation (Settings, Auto or Selection mode) could
+swing wildly depending on which hikes were in the Journal or selection, especially with a small
+number of hikes. Fixed with a more robust calculation, based on segments within each hike rather
+than comparisons across hikes.
