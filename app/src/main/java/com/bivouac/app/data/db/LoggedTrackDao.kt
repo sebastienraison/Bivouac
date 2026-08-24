@@ -21,23 +21,38 @@ interface LoggedTrackDao {
     @Query("SELECT * FROM logged_track_day ORDER BY trackId, dayIndex")
     suspend fun getAllDays(): List<LoggedTrackDayEntity>
 
-    // contentHash IS NULL identifie exactement les lignes que le rattrapage n'a pas encore
-    // traitées : un hash se calcule pour n'importe quel fichier, horodaté ou non.
-    @Query("SELECT * FROM logged_track_day WHERE contentHash IS NULL ORDER BY trackId, dayIndex LIMIT :limit")
+    // RIC-109 : flatCount IS NULL, pas contentHash IS NULL. Les colonnes de segments sont arrivées
+    // après celles de RIC-98/99 (migration 10->11) : sur une banque déjà entièrement rattrapée à
+    // l'époque, contentHash n'est plus jamais nul nulle part, alors que flatCount l'est partout —
+    // filtrer sur contentHash laisserait ce second jeu de colonnes vide pour toujours. flatCount
+    // seul suffit comme marqueur : backfillOne écrit les deux jeux de colonnes ensemble, jamais
+    // l'un sans l'autre (voir LoggedTrackBackfill), donc flatCount non nul implique déjà
+    // contentHash non nul.
+    @Query("SELECT * FROM logged_track_day WHERE flatCount IS NULL ORDER BY trackId, dayIndex LIMIT :limit")
     suspend fun getDaysNeedingBackfill(limit: Int): List<LoggedTrackDayEntity>
 
-    @Query("SELECT COUNT(*) FROM logged_track_day WHERE contentHash IS NULL")
+    @Query("SELECT COUNT(*) FROM logged_track_day WHERE flatCount IS NULL")
     suspend fun countDaysNeedingBackfill(): Int
 
     @Query(
         "UPDATE logged_track_day SET contentHash = :contentHash, startedAtMillis = :startedAtMillis, " +
-            "elapsedSeconds = :elapsedSeconds WHERE id = :id",
+            "elapsedSeconds = :elapsedSeconds, flatCount = :flatCount, " +
+            "flatDistanceMeters = :flatDistanceMeters, flatHours = :flatHours, steepCount = :steepCount, " +
+            "steepDistanceMeters = :steepDistanceMeters, steepGainMeters = :steepGainMeters, " +
+            "steepHours = :steepHours WHERE id = :id",
     )
     suspend fun updateDayDenormalizedFields(
         id: Long,
         contentHash: String,
         startedAtMillis: Long?,
         elapsedSeconds: Long?,
+        flatCount: Int,
+        flatDistanceMeters: Double,
+        flatHours: Double,
+        steepCount: Int,
+        steepDistanceMeters: Double,
+        steepGainMeters: Double,
+        steepHours: Double,
     )
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

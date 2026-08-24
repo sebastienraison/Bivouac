@@ -4,9 +4,11 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import com.bivouac.app.data.gpx.DaySegmentAggregate
 import com.bivouac.app.data.gpx.GpxParser
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
+import com.bivouac.app.data.gpx.TrackSegmenter
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
@@ -31,6 +33,11 @@ data class PreparedDay(
     val contentHash: String,
     val startedAtMillis: Long?,
     val elapsedSeconds: Long?,
+    // RIC-109 : les sept sommes de segments de ce jour, calculées ici pendant que track.points est
+    // déjà parsé — voir DaySegmentAggregate. DaySegmentAggregate.EMPTY (pas de segment exploitable,
+    // ex. GPX sans altitude ou trop court) plutôt qu'un type nullable : un jour fraîchement importé
+    // n'a jamais besoin de rattrapage, contrairement à une ligne héritée d'avant cette migration.
+    val segmentAggregate: DaySegmentAggregate,
 )
 
 // Une trace du Journal ouverte pour affichage : [track] est l'ensemble des jours concaténés (la
@@ -154,6 +161,7 @@ class LoggedTrackRepository(context: Context) {
                 contentHash = sha256(rawGpx),
                 startedAtMillis = track.points.firstOrNull()?.time?.toEpochMilli(),
                 elapsedSeconds = elapsedSeconds(track),
+                segmentAggregate = DaySegmentAggregate.of(TrackSegmenter.segment(track.points)),
             )
         }
         return PreparedImport(entity, days)
@@ -224,6 +232,13 @@ class LoggedTrackRepository(context: Context) {
                 contentHash = day.contentHash,
                 startedAtMillis = day.startedAtMillis,
                 elapsedSeconds = day.elapsedSeconds,
+                flatCount = day.segmentAggregate.flatCount,
+                flatDistanceMeters = day.segmentAggregate.flatDistanceMeters,
+                flatHours = day.segmentAggregate.flatHours,
+                steepCount = day.segmentAggregate.steepCount,
+                steepDistanceMeters = day.segmentAggregate.steepDistanceMeters,
+                steepGainMeters = day.segmentAggregate.steepGainMeters,
+                steepHours = day.segmentAggregate.steepHours,
             )
         }
         try {
@@ -295,18 +310,52 @@ class LoggedTrackRepository(context: Context) {
     }
 
     /**
-     * Calibration samples (BIV-16 Auto/Sélection) for every track in [ids], or the whole Journal
-     * when null. A track only contributes if at least one of its days has real GPX timestamps —
-     * silently skipped otherwise, same as [SpeedCalibrationCalculator] already tolerates.
+     * RIC-109 : ce que [SpeedCalibrationCalculator.compute] a besoin de voir de la banque (ou du
+     * sous-ensemble [ids]) pour calibrer par segments — voir la kdoc de `compute` pour ce que porte
+     * chaque champ et pourquoi ils viennent de deux chemins différents.
      */
-    suspend fun calibrationSamples(ids: Set<String>? = null): List<SpeedCalibrationCalculator.Sample> {
+    data class SegmentCalibrationInput(
+        val aggregate: DaySegmentAggregate,
+        val fallbackSamples: List<SpeedCalibrationCalculator.Sample>,
+    )
+
+    /**
+     * Calibration input (BIV-16 Auto/Sélection) for every track in [ids], or the whole Journal
+     * when null.
+     *
+     * [SegmentCalibrationInput.aggregate] ne somme que les traces dont **tous** les jours portent
+     * déjà les colonnes de segments (flatCount non nul) : une trace dont un seul jour n'est pas
+     * encore rattrapé (RIC-109, migration 10->11) est purement et simplement absente de cette
+     * somme plutôt que d'y contribuer une somme partielle — mélanger une somme partielle avec des
+     * jours ignorés donnerait une calibration silencieusement fausse (même risque, même traitement
+     * que le garde-fou RIC-98/99 qui protégeait déjà startedAtMillis/elapsedSeconds). Contrairement
+     * à ce garde-fou historique, il n'y a délibérément *pas* de repli qui reparserait les GPX pour
+     * calculer les segments manquants à la volée : ça réintroduirait exactement le coût que
+     * RIC-62/98/99 a supprimé. La banque encore partiellement rattrapée contribue simplement moins
+     * de segments jusqu'à ce que [LoggedTrackBackfill] la rattrape — en pratique quelques secondes.
+     *
+     * [SegmentCalibrationInput.fallbackSamples] reste construit exactement comme avant RIC-109 (une
+     * ligne par rando, distance/D+/durée), pour le repli à une seule inconnue de
+     * [SpeedCalibrationCalculator] quand l'agrégat de segments n'a pas assez de plat.
+     */
+    suspend fun calibrationSamples(ids: Set<String>? = null): SegmentCalibrationInput {
         val entries = dao.list().filter { ids == null || it.id in ids }
         // Deux requêtes pour toute la banque, contre une par trace plus un parsing complet de
         // chacun de ses fichiers auparavant. C'était la cause de la lenteur d'import : le coût ne
         // dépendait pas de ce qu'on importait mais du nombre de traces déjà en banque, donc il
         // grossissait tout seul (constat B de la recette).
         val daysByTrack = dao.getAllDays().groupBy { it.trackId }
-        return entries.mapNotNull { entry ->
+
+        val aggregate = entries.fold(DaySegmentAggregate.EMPTY) { total, entry ->
+            val days = daysByTrack[entry.id].orEmpty()
+            if (days.isNotEmpty() && days.all { it.flatCount != null }) {
+                total + days.fold(DaySegmentAggregate.EMPTY) { dayTotal, day -> dayTotal + day.toSegmentAggregate() }
+            } else {
+                total
+            }
+        }
+
+        val fallbackSamples = entries.mapNotNull { entry ->
             val days = daysByTrack[entry.id].orEmpty()
             // Une trace dont un seul jour n'est pas encore rattrapé repasse entièrement par
             // l'ancien chemin : mélanger une somme partielle avec des jours ignorés donnerait une
@@ -326,7 +375,19 @@ class LoggedTrackRepository(context: Context) {
                 calibrationSample(entry)
             }
         }
+
+        return SegmentCalibrationInput(aggregate, fallbackSamples)
     }
+
+    private fun LoggedTrackDayEntity.toSegmentAggregate(): DaySegmentAggregate = DaySegmentAggregate(
+        flatCount = flatCount ?: 0,
+        flatDistanceMeters = flatDistanceMeters ?: 0.0,
+        flatHours = flatHours ?: 0.0,
+        steepCount = steepCount ?: 0,
+        steepDistanceMeters = steepDistanceMeters ?: 0.0,
+        steepGainMeters = steepGainMeters ?: 0.0,
+        steepHours = steepHours ?: 0.0,
+    )
 
     // Elapsed time is summed per day (not first-to-last across the whole track) so an overnight
     // gap on a multi-day hike never gets counted as "elapsed walking time" — see

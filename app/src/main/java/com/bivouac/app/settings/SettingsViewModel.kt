@@ -89,8 +89,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     private suspend fun refreshAutoCalibration() {
-        val calibration = SpeedCalibrationCalculator.compute(loggedTrackRepository.calibrationSamples()) ?: return
-        settingsPreferences.setAutoCalibration(calibration)
+        val input = loggedTrackRepository.calibrationSamples()
+        val result = SpeedCalibrationCalculator.compute(input.aggregate, input.fallbackSamples) ?: return
+        settingsPreferences.setAutoCalibration(result.calibration)
     }
 
     fun setMode(mode: SpeedCalibrationMode) {

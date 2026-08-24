@@ -1,86 +1,118 @@
 package com.bivouac.app.data.gpx
 
-import kotlin.math.abs
-import kotlin.math.sqrt
-
 /**
  * Derives a [SpeedCalibration] from real hikes instead of asking the user to type numbers in —
  * the "Auto"/"Sélection" modes of BIV-16's Vitesse personnalisée.
  *
- * [TrackStats.estimatedDurationMinutes] can't be used as ground truth here (it's itself an output
- * of a [SpeedCalibration], so refitting from it would just reproduce whatever calibration produced
- * it). The real signal is each hike's *actual* elapsed time, taken from its own GPX timestamps
- * (see [Sample.elapsedHours] — callers derive it per Journal day to avoid counting overnight gaps
- * on multi-day hikes; a hike without usable timestamps simply can't contribute a sample).
+ * RIC-109 : remplace le calcul par ligne-rando (système 2x2 sur une ligne par rando, où distance et
+ * D+ sont confondus par construction — une rando longue est aussi une rando qui monte beaucoup) par
+ * un calcul par segments de 200 m qui sépare les deux effets à l'INTÉRIEUR de chaque rando. Sur le
+ * Journal réel de l'utilisateur, le facteur d'inflation de variance de l'ancien calcul valait 11 à
+ * 14 (retirer une seule rando d'un Journal de dix déplaçait la vitesse de 1 km/h) ; en segments, ce
+ * facteur tombe à 1,6. Voir docs/pilotage/CR_CALIBRATION_SEGMENTS.md pour l'investigation complète
+ * et docs/pilotage/prototype-calibration-segments/prototype_calibration.py pour l'algorithme de
+ * référence, exécutable et validé, dont ce fichier est le portage fidèle.
+ *
+ * Modèle inchangé par rapport à l'ancien calcul : heures = distanceKm / vitesse + D+_m / (pénalité
+ * * vitesse). Aucun terme de descente n'est introduit (voir CR section 12 : un modèle non linéaire
+ * en pente a été testé et écarté, aucun gain démontré).
+ *
+ *   Phase 1 — la vitesse à plat est mesurée sur les segments de pente nette < 2 %, en écartant ceux
+ *             passés à l'arrêt (< 1 km/h). Sans cette exclusion la méthode est PIRE que l'ancien
+ *             calcul (CR section 6.1) : ce n'est pas un raffinement optionnel.
+ *   Phase 2 — sur les segments de pente >= 2 % (montée comme descente), le temps qui dépasse ce que
+ *             la marche à plat expliquerait est attribué au D+ cumulé de ces segments. Les segments
+ *             de descente y participent sans apporter de D+ : leur surcoût est absorbé par la
+ *             pénalité, exactement comme le fait déjà le modèle de production faute de terme D-.
  */
 object SpeedCalibrationCalculator {
 
     data class Sample(val distanceMeters: Double, val elevationGainMeters: Double, val elapsedHours: Double)
 
+    /** Ce que l'estimateur a réellement pu faire — utile pour ce que l'IHM raconte à l'utilisateur
+     * (point ouvert pour le pilotage, voir CR_RIC109_IMPLEMENTATION.md : généraliser à tous les cas
+     * de repli le message que SettingsScreen affiche déjà pour selectedTrackCount == 1). */
+    data class Result(val calibration: SpeedCalibration, val fittedPenalty: Boolean, val note: String = "")
+
     // UI-level gate (BIV-16 recette) for Auto (whole Journal) and Sélection (confirmed subset):
     // below this, there's no meaningful calibration to compute, so the segmented control disables
-    // that mode entirely rather than silently showing SpeedCalibration.DEFAULT dressed up as a
-    // real calculation. Not enforced in compute() itself — a single sample is still handled there
-    // (fits speed, keeps the default penalty) for legacy selections confirmed before this gate
-    // existed, and because the pure calculation shouldn't know about a UI policy.
+    // that mode entirely. Volontairement conservé à sa valeur d'origine malgré des seuils de repli
+    // par segments plus fins (MIN_FLAT_SEGMENTS etc. ci-dessous) : c'est un pré-filtre IHM, pas la
+    // détection de repli elle-même, qui reste [Result.fittedPenalty].
     const val MIN_TRACKS_FOR_CALIBRATION = 2
 
+    // Seuils de repli (CR section 5.4), identiques au prototype.
+    private const val MIN_FLAT_SEGMENTS = 10
+    private const val MIN_STEEP_SEGMENTS = 10
+    private const val MIN_TOTAL_GAIN_METERS = 300.0
+
+    // Bornes de plausibilité, identiques à l'ancien calcul.
     private const val MIN_SPEED_KMH = 1.0
     private const val MAX_SPEED_KMH = 8.0
     private const val MIN_PENALTY_M_PER_KM = 20.0
     private const val MAX_PENALTY_M_PER_KM = 300.0
-
-    // Above this |correlation| between distance and gain across samples, the two-parameter fit
-    // below is too ill-conditioned to trust (a 2x2 system on near-collinear inputs amplifies noise
-    // wildly) — falls back to fitting speed alone against the default D+ penalty instead.
-    private const val COLLINEARITY_THRESHOLD = 0.999
+    private val DEFAULT_PENALTY_M_PER_KM = SpeedCalibration.DEFAULT.elevationGainPenaltyMetersPerKm
 
     /**
-     * The duration model is linear in two unknowns: elapsedHours = a * distanceKm + b * gainMeters,
-     * where a = 1 / speed and b = a / penalty (so `speed = 1/a` and `penalty = a/b`). That makes
-     * this an ordinary bivariate linear regression, solved directly via the 2x2 normal-equations
-     * system (closed form, no iteration) rather than an approximate/iterative scheme. Every fitted
-     * value is clamped to a plausible hiking range, so noisy input degrades towards
-     * [SpeedCalibration.DEFAULT]-like numbers rather than producing something absurd.
+     * Calibration à partir des sommes de segments du Journal (ou du sous-ensemble sélectionné), ou
+     * `null` si rien n'est exploitable.
      *
-     * Returns null when there's nothing usable to fit from (no sample with positive elapsed time).
+     * [fallbackSamples] porte les échantillons ligne-rando (distance/D+/durée déjà dénormalisés,
+     * voir [com.bivouac.app.data.db.LoggedTrackRepository.calibrationSamples]) utilisés uniquement
+     * quand [aggregate] n'a pas assez de plat pour mesurer une vitesse : le prototype Python
+     * (`_speed_only`) somme alors sur *tous* les segments utilisables de la sélection, mais cette
+     * somme n'est pas de la forme agrégée à 7 nombres — la reconstituer exigerait de re-parser les
+     * GPX, ce que RIC-62/98/99 a précisément supprimé. [fallbackSamples] est l'équivalent déjà
+     * dénormalisé au niveau de la rando entière (pas du segment) : distance et D+ totaux de la
+     * rando, durée réelle. Numériquement très proche de la somme "usable" du prototype (l'écart
+     * tient au seul reliquat de fin de trace, < 100 m, écarté par le découpage) et sans le moindre
+     * re-parsing. Voir CR_RIC109_IMPLEMENTATION.md pour la discussion complète de ce choix.
      */
-    fun compute(samples: List<Sample>): SpeedCalibration? {
-        val valid = samples.filter { it.elapsedHours > 0.0 && it.distanceMeters >= 0.0 && it.elevationGainMeters >= 0.0 }
-        if (valid.isEmpty()) return null
+    fun compute(aggregate: DaySegmentAggregate, fallbackSamples: List<Sample>): Result? {
+        if (aggregate.flatCount < MIN_FLAT_SEGMENTS || aggregate.flatHours <= 0.0) {
+            return speedOnly(fallbackSamples, "pas assez de terrain plat pour mesurer une vitesse à plat")
+        }
+        val speed = (aggregate.flatDistanceMeters / 1000.0) / aggregate.flatHours
 
-        val x1 = valid.map { it.distanceMeters / 1000.0 } // km
-        val x2 = valid.map { it.elevationGainMeters } // m
-        val y = valid.map { it.elapsedHours }
-
-        val sxx1 = x1.sumOf { it * it }
-        val sx1x2 = x1.indices.sumOf { x1[it] * x2[it] }
-        val sxx2 = x2.sumOf { it * it }
-
-        val correlationDenominator = sqrt(sxx1 * sxx2)
-        val collinear = correlationDenominator <= 0.0 || abs(sx1x2 / correlationDenominator) > COLLINEARITY_THRESHOLD
-
-        val (a, b) = if (!collinear) {
-            val sx1y = x1.indices.sumOf { x1[it] * y[it] }
-            val sx2y = x2.indices.sumOf { x2[it] * y[it] }
-            val determinant = sxx1 * sxx2 - sx1x2 * sx1x2
-            val fittedA = (sx1y * sxx2 - sx2y * sx1x2) / determinant
-            val fittedB = (sxx1 * sx2y - sx1x2 * sx1y) / determinant
-            fittedA to fittedB
-        } else {
-            // Not enough independent variation between distance and gain to separate the two
-            // effects (e.g. a single hike, or several near-identical ones) — fit speed alone
-            // against the default penalty rather than risk an ill-conditioned solve.
-            val defaultPenalty = SpeedCalibration.DEFAULT.elevationGainPenaltyMetersPerKm
-            val totalEquivalentKm = valid.sumOf { it.distanceMeters / 1000.0 + it.elevationGainMeters / defaultPenalty }
-            val totalHours = y.sum()
-            val fittedA = if (totalEquivalentKm > 0.0) totalHours / totalEquivalentKm else 1.0 / SpeedCalibration.DEFAULT.walkingSpeedKmh
-            fittedA to (fittedA / defaultPenalty)
+        if (aggregate.steepCount < MIN_STEEP_SEGMENTS || aggregate.steepGainMeters < MIN_TOTAL_GAIN_METERS) {
+            return Result(
+                SpeedCalibration(speed.coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH), DEFAULT_PENALTY_M_PER_KM),
+                fittedPenalty = false,
+                note = "pas assez de dénivelé pour mesurer une pénalité",
+            )
         }
 
-        val speed = if (a > 0.0) (1.0 / a).coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH) else SpeedCalibration.DEFAULT.walkingSpeedKmh
-        val penalty = if (b > 0.0) (a / b).coerceIn(MIN_PENALTY_M_PER_KM, MAX_PENALTY_M_PER_KM) else SpeedCalibration.DEFAULT.elevationGainPenaltyMetersPerKm
+        val excessHours = aggregate.steepHours - (aggregate.steepDistanceMeters / 1000.0) / speed
+        if (excessHours <= 0.0) {
+            // Le terrain pentu a été parcouru aussi vite que le plat : rien à attribuer au D+.
+            return Result(
+                SpeedCalibration(speed.coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH), MAX_PENALTY_M_PER_KM),
+                fittedPenalty = false,
+                note = "aucun surcoût de dénivelé mesurable",
+            )
+        }
 
-        return SpeedCalibration(walkingSpeedKmh = speed, elevationGainPenaltyMetersPerKm = penalty)
+        val penalty = aggregate.steepGainMeters / (speed * excessHours)
+        return Result(
+            SpeedCalibration(
+                speed.coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH),
+                penalty.coerceIn(MIN_PENALTY_M_PER_KM, MAX_PENALTY_M_PER_KM),
+            ),
+            fittedPenalty = true,
+        )
+    }
+
+    /** Repli à une seule inconnue : la vitesse, ajustée contre la pénalité par défaut. */
+    private fun speedOnly(samples: List<Sample>, note: String): Result? {
+        val valid = samples.filter { it.elapsedHours > 0.0 && it.distanceMeters >= 0.0 && it.elevationGainMeters >= 0.0 }
+        if (valid.isEmpty()) return null
+        val equivalentKm = valid.sumOf { it.distanceMeters / 1000.0 + it.elevationGainMeters / DEFAULT_PENALTY_M_PER_KM }
+        val hours = valid.sumOf { it.elapsedHours }
+        if (equivalentKm <= 0.0 || hours <= 0.0) return null
+        return Result(
+            SpeedCalibration((equivalentKm / hours).coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH), DEFAULT_PENALTY_M_PER_KM),
+            fittedPenalty = false,
+            note = note,
+        )
     }
 }

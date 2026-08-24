@@ -2,7 +2,9 @@ package com.bivouac.app.data.db
 
 import android.content.Context
 import android.util.Log
+import com.bivouac.app.data.gpx.DaySegmentAggregate
 import com.bivouac.app.data.gpx.GpxParser
+import com.bivouac.app.data.gpx.TrackSegmenter
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.nio.charset.StandardCharsets
@@ -11,7 +13,13 @@ import java.time.Duration
 
 /**
  * Remplit après coup les colonnes dénormalisées de `logged_track_day` pour les traces importées
- * avant la migration 8 vers 9. Voir [LoggedTrackDayEntity] pour ce qu'elles portent.
+ * avant la migration 8 vers 9 (contentHash/startedAtMillis/elapsedSeconds, RIC-98/99), ainsi que
+ * les sept sommes de segments introduites par la migration 10 vers 11 (RIC-109 : flatCount et
+ * consorts, voir [com.bivouac.app.data.gpx.DaySegmentAggregate]) — étendu plutôt que dupliqué en un
+ * second rattrapage séparé : le GPX est de toute façon déjà lu et parsé ici pour les trois premières
+ * colonnes, calculer les segments à ce même endroit coûte une passe de plus sur des points déjà en
+ * mémoire, alors qu'un second rattrapage indépendant relirait tous les fichiers depuis zéro. Voir
+ * [LoggedTrackDayEntity] pour ce que ces colonnes portent.
  *
  * Pourquoi ici et pas dans la migration : le rattrapage lit et parse tous les fichiers de la
  * banque, ce qui se compte en secondes sur une archive un peu fournie. Le faire pendant la
@@ -23,6 +31,11 @@ import java.time.Duration
  * lecteurs retombent sur l'ancien chemin, celui qui reparse. C'est plus lent, jamais faux, et ça
  * se résorbe tout seul. Une trace illisible est marquée traitée avec un hash calculé sur le
  * contenu brut, pour ne pas la reprendre indéfiniment à chaque lancement.
+ *
+ * RIC-109 : le marqueur "pas encore traité" est désormais flatCount IS NULL, pas contentHash IS
+ * NULL (voir [LoggedTrackDao.getDaysNeedingBackfill]) — une ligne déjà rattrapée par RIC-98/99 (donc
+ * avec un contentHash) repasse une fois de plus ici pour recevoir les sommes de segments, que
+ * backfillOne calcule et écrit désormais dans la même passe que les trois colonnes historiques.
  */
 object LoggedTrackBackfill {
 
@@ -56,28 +69,53 @@ object LoggedTrackBackfill {
         val rawGpx = runCatching { file.readText(StandardCharsets.UTF_8) }.getOrElse {
             // Fichier absent ou illisible : rien à dénormaliser, mais il faut sortir cette ligne
             // de la file d'attente. Un hash de chaîne vide n'entrera en collision avec aucun
-            // fichier réel, donc la détection de doublon n'en est pas faussée.
+            // fichier réel, donc la détection de doublon n'en est pas faussée. DaySegmentAggregate
+            // .EMPTY (des zéros, pas des nuls) marque ce jour comme traité au même titre que les
+            // trois colonnes historiques.
             Log.w(TAG, "Jour ${day.id} illisible, marqué traité sans donnée", it)
-            dao.updateDayDenormalizedFields(day.id, sha256(""), null, null)
+            dao.writeDenormalizedFields(day.id, sha256(""), null, null, DaySegmentAggregate.EMPTY)
             return
         }
         val contentHash = sha256(rawGpx)
-        val times = runCatching {
+        val points = runCatching {
             rawGpx.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }.points
         }.getOrElse {
             Log.w(TAG, "Jour ${day.id} non parsable, hash seul", it)
-            dao.updateDayDenormalizedFields(day.id, contentHash, null, null)
+            dao.writeDenormalizedFields(day.id, contentHash, null, null, DaySegmentAggregate.EMPTY)
             return
         }
-        val first = times.firstOrNull()?.time
-        val last = times.lastOrNull()?.time
+        val first = points.firstOrNull()?.time
+        val last = points.lastOrNull()?.time
         val elapsed = if (first != null && last != null) {
             Duration.between(first, last).seconds.takeIf { it > 0 }
         } else {
             null
         }
-        dao.updateDayDenormalizedFields(day.id, contentHash, first?.toEpochMilli(), elapsed)
+        val aggregate = DaySegmentAggregate.of(TrackSegmenter.segment(points))
+        dao.writeDenormalizedFields(day.id, contentHash, first?.toEpochMilli(), elapsed, aggregate)
     }
+
+    // Regroupe les sept paramètres de segments en un seul appel lisible, plutôt que de répéter
+    // aggregate.flatCount, aggregate.flatDistanceMeters, ... aux trois points d'appel ci-dessus.
+    private suspend fun LoggedTrackDao.writeDenormalizedFields(
+        id: Long,
+        contentHash: String,
+        startedAtMillis: Long?,
+        elapsedSeconds: Long?,
+        aggregate: DaySegmentAggregate,
+    ) = updateDayDenormalizedFields(
+        id = id,
+        contentHash = contentHash,
+        startedAtMillis = startedAtMillis,
+        elapsedSeconds = elapsedSeconds,
+        flatCount = aggregate.flatCount,
+        flatDistanceMeters = aggregate.flatDistanceMeters,
+        flatHours = aggregate.flatHours,
+        steepCount = aggregate.steepCount,
+        steepDistanceMeters = aggregate.steepDistanceMeters,
+        steepGainMeters = aggregate.steepGainMeters,
+        steepHours = aggregate.steepHours,
+    )
 
     private fun sha256(text: String): String =
         MessageDigest.getInstance("SHA-256").digest(text.toByteArray(StandardCharsets.UTF_8))

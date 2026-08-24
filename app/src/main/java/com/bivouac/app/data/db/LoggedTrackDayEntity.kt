@@ -48,4 +48,19 @@ data class LoggedTrackDayEntity(
     // Temps écoulé du premier au dernier point du jour. Sommé par jour et jamais de bout en bout,
     // pour qu'une nuit passée dehors ne compte pas comme du temps de marche.
     val elapsedSeconds: Long? = null,
+    // RIC-109 : les sept sommes dont la calibration vitesse/pénalité D+ par segments a besoin (voir
+    // TrackSegmenter et DaySegmentAggregate) — calculées une fois à l'import à partir des segments
+    // de 200 m de ce jour, jamais recalculées à la volée. Comme pour contentHash ci-dessus,
+    // flatCount vaut null si et seulement si ce jour n'a pas encore été rattrapé pour ces colonnes
+    // (voir LoggedTrackBackfill) ; une fois rattrapé, il vaut 0 (pas null) si la trace n'a aucun
+    // segment plat exploitable, ce qui est un cas réel distinct du "pas encore calculé". Les six
+    // autres colonnes suivent le même sort que flatCount : soit toutes nulles (pas rattrapé), soit
+    // toutes renseignées (y compris à 0.0 si le jour n'a aucun segment de la catégorie).
+    val flatCount: Int? = null,
+    val flatDistanceMeters: Double? = null,
+    val flatHours: Double? = null,
+    val steepCount: Int? = null,
+    val steepDistanceMeters: Double? = null,
+    val steepGainMeters: Double? = null,
+    val steepHours: Double? = null,
 )

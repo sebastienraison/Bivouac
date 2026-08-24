@@ -362,9 +362,9 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         exitSelectionMode()
         viewModelScope.launch {
             withContext(NonCancellable + Dispatchers.IO) {
-                val samples = repository.calibrationSamples(ids)
-                val calibration = SpeedCalibrationCalculator.compute(samples) ?: SpeedCalibration.DEFAULT
-                settingsPreferences.setSelectionCalibration(calibration, ids)
+                val input = repository.calibrationSamples(ids)
+                val result = SpeedCalibrationCalculator.compute(input.aggregate, input.fallbackSamples)
+                settingsPreferences.setSelectionCalibration(result?.calibration ?: SpeedCalibration.DEFAULT, ids)
             }
         }
     }
@@ -673,7 +673,8 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     // BIV-16 Auto mode: recomputed on every import regardless of which mode is currently active,
     // so switching to Auto later never shows a stale value from before the last import.
     private suspend fun refreshAutoCalibration() {
-        val calibration = SpeedCalibrationCalculator.compute(repository.calibrationSamples()) ?: return
-        settingsPreferences.setAutoCalibration(calibration)
+        val input = repository.calibrationSamples()
+        val result = SpeedCalibrationCalculator.compute(input.aggregate, input.fallbackSamples) ?: return
+        settingsPreferences.setAutoCalibration(result.calibration)
     }
 }

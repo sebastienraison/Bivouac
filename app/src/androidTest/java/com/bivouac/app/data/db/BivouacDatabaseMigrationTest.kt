@@ -214,7 +214,7 @@ class BivouacDatabaseMigrationTest {
 
         val migrated = helper.runMigrationsAndValidate(
             testDbName,
-            10,
+            11,
             true,
             BivouacDatabase.MIGRATION_1_2,
             BivouacDatabase.MIGRATION_2_5,
@@ -223,6 +223,7 @@ class BivouacDatabaseMigrationTest {
             BivouacDatabase.migration7To8(targetContext),
             BivouacDatabase.MIGRATION_8_9,
             BivouacDatabase.migration9To10(targetContext),
+            BivouacDatabase.MIGRATION_10_11,
         )
 
         // RIC-97 : la ligne saved_track née en v1 avec gpxContent en colonne doit ressortir avec
@@ -708,6 +709,71 @@ class BivouacDatabaseMigrationTest {
         )
         migrated.query("SELECT id FROM banked_track").use { cursor ->
             assertEquals(1, cursor.count)
+        }
+
+        migrated.close()
+    }
+
+    // RIC-109 : sept colonnes de plus sur logged_track_day pour la calibration vitesse/pénalité D+
+    // par segments (flatCount et consorts, voir DaySegmentAggregate). Même propriété que
+    // migrate8To9_addsEmptyDenormalizedColumnsWithoutTouchingExistingRows ci-dessus : elles
+    // arrivent vides et nullables, remplies après coup par LoggedTrackBackfill (étendu pour
+    // l'occasion), et cette migration ne doit toucher à rien d'autre.
+    @Test
+    fun migrate10To11_addsEmptySegmentColumnsWithoutTouchingExistingRows() {
+        helper.createDatabase(testDbName, 10).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note) VALUES " +
+                    "('track-2', 'Traversee Vanoise', 1781078400000, 'hash-track-2', " +
+                    "21500.0, 1400.0, 900.0, 5, 660, 'Deux jours')",
+            )
+            execSQL(
+                "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxFilePath, " +
+                    "contentHash, startedAtMillis, elapsedSeconds) VALUES " +
+                    "(1, 'track-2', 0, 'gpx/track-2-day0.gpx', 'day0-hash', 1781078400000, 3600)",
+            )
+            execSQL(
+                "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxFilePath) VALUES " +
+                    "(2, 'track-2', 1, 'gpx/track-2-day1.gpx')",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            11,
+            true,
+            BivouacDatabase.MIGRATION_10_11,
+        )
+
+        migrated.query(
+            "SELECT id, contentHash, startedAtMillis, elapsedSeconds, flatCount, " +
+                "flatDistanceMeters, flatHours, steepCount, steepDistanceMeters, steepGainMeters, " +
+                "steepHours FROM logged_track_day ORDER BY id",
+        ).use { cursor ->
+            assertEquals(2, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1L, cursor.getLong(0))
+            // Colonnes RIC-98/99 déjà rattrapées avant cette migration : intouchées.
+            assertEquals("day0-hash", cursor.getString(1))
+            assertEquals(1781078400000L, cursor.getLong(2))
+            assertEquals(3600L, cursor.getLong(3))
+            // Les sept nouvelles colonnes arrivent vides, même sur une ligne déjà rattrapée par
+            // RIC-98/99 : c'est justement ce que LoggedTrackBackfill doit combler après coup.
+            for (columnIndex in 4..10) {
+                assertTrue("colonne $columnIndex doit arriver vide", cursor.isNull(columnIndex))
+            }
+            assertTrue(cursor.moveToNext())
+            assertEquals(2L, cursor.getLong(0))
+            assertTrue("contentHash doit rester vide (jour jamais rattrapé)", cursor.isNull(1))
+            assertTrue(cursor.isNull(4))
+        }
+
+        migrated.query("SELECT name FROM logged_track WHERE id = 'track-2'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Traversee Vanoise", cursor.getString(0))
         }
 
         migrated.close()

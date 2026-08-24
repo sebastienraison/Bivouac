@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.bivouac.app.data.backup.BackupManager
+import com.bivouac.app.data.gpx.DaySegmentAggregate
 import com.bivouac.app.data.gpx.GpxWriter
 import com.bivouac.app.data.model.TrackPoint
 import java.nio.charset.StandardCharsets
@@ -77,6 +78,7 @@ class RepositoryBackupCycleTest {
                         contentHash = "hash",
                         startedAtMillis = 0L,
                         elapsedSeconds = null,
+                        segmentAggregate = DaySegmentAggregate.EMPTY,
                     ),
                 ),
             ),
