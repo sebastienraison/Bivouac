@@ -100,7 +100,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -130,6 +129,7 @@ import com.bivouac.app.journal.JournalViewModel
 import com.bivouac.app.journal.SeparateImportReport
 import com.bivouac.app.ui.components.ChoiceOptionCard
 import com.bivouac.app.ui.components.DrawerStop
+import com.bivouac.app.ui.components.FullScreenEmptyState
 import com.bivouac.app.ui.components.ElevationProfile
 import com.bivouac.app.ui.components.GainIconColor
 import com.bivouac.app.ui.components.InfoText
@@ -791,8 +791,12 @@ private fun JournalHomeScreen(
                 CircularProgressIndicator()
             }
         } else if (neverImported) {
-            JournalEmptyFirstLaunch(
-                onImportClick = onImportClick,
+            FullScreenEmptyState(
+                icon = Icons.Default.Terrain,
+                title = "Aucune rando pour l'instant",
+                subtitle = "Ajoute une trace pour commencer ton carnet : tes randos réalisées vivront ici.",
+                buttonText = "Ajouter une trace",
+                onButtonClick = onImportClick,
                 modifier = Modifier.padding(paddingValues).fillMaxSize(),
             )
         } else {
@@ -819,49 +823,6 @@ private fun JournalHomeScreen(
                 scrollState = listScrollState,
                 modifier = Modifier.padding(paddingValues).fillMaxSize(),
             )
-        }
-    }
-}
-
-/** RIC-65 écran 1 : aucune trace jamais importée, rien d'autre à faire ni à voler en visibilité. */
-@Composable
-private fun JournalEmptyFirstLaunch(onImportClick: () -> Unit, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier.padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(88.dp)
-                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(50)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Default.Terrain,
-                contentDescription = null,
-                modifier = Modifier.size(40.dp),
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
-        Spacer(Modifier.height(18.dp))
-        Text(
-            text = "Aucune rando pour l'instant",
-            style = MaterialTheme.typography.titleLarge,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "Ajoute une trace pour commencer ton carnet : tes randos réalisées vivront ici.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = onImportClick) {
-            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Ajouter une trace")
         }
     }
 }

@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,7 +19,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Route
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
@@ -70,6 +71,7 @@ import com.bivouac.app.gpximport.CloseConfirmationReason
 import com.bivouac.app.gpximport.GpxImportUiState
 import com.bivouac.app.gpximport.GpxImportViewModel
 import com.bivouac.app.journal.DuplicatePlanRequest
+import com.bivouac.app.ui.components.FullScreenEmptyState
 import com.bivouac.app.ui.components.StatsRows
 import com.bivouac.app.ui.map.HikeMapView
 import com.bivouac.app.ui.map.MapControls
@@ -158,61 +160,118 @@ fun GpxImportScreen(
     val pickGpxLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { viewModel.importGpx(context.contentResolver, it) }
     }
+    val onOpenClick = { pickGpxLauncher.launch(arrayOf("*/*")) }
 
     // Cap the peek height to a share of the available screen height so the sheet can't swallow
     // the map in landscape, where total height is much smaller than the measured content needs.
     val maxPeekHeight = LocalConfiguration.current.screenHeightDp.dp * 0.5f
 
+    // Hissé ici (et non plus créé dans TrackSheetContent) : le FAB flottant qui recouvre
+    // maintenant le tiroir a besoin de lire cette position pour savoir s'il doit être étendu ou
+    // replié, exactement comme le ScrollState de la liste du Journal pilote son propre FAB.
+    val sheetScrollState = rememberScrollState()
+
     val loaded = uiState as? GpxImportUiState.Loaded
-    if (loaded == null) {
-        BottomSheetScaffold(
-            modifier = modifier,
-            sheetPeekHeight = PEEK_HEIGHT_EMPTY.coerceAtMost(maxPeekHeight),
-            sheetContent = {
-                TrackSheetContent(
-                    uiState = uiState,
-                    bankedTraces = bankedTraces,
-                    activeCalibration = activeCalibration,
-                    onOpenClick = { pickGpxLauncher.launch(arrayOf("*/*")) },
-                    onOpenBankedClick = viewModel::openFromBank,
-                    onRenameBankedClick = viewModel::requestRenameFromList,
-                    onDeleteBankedClick = viewModel::requestDeleteFromList,
-                    onSheetTopMeasured = { sheetTopPx = it },
-                )
-            },
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .onGloballyPositioned { mapBoxTopPx = it.positionInRoot().y },
-            ) {
-                HikeMapView(
-                    track = null,
-                    bivouacPoints = emptyList(),
-                    selectedLayer = selectedLayer,
-                    recenterSignal = recenterSignal,
-                    visibleHeightPx = visibleMapHeightPx,
-                    onTrackTapped = viewModel::addBivouacPoint,
-                    onBivouacMoved = viewModel::moveBivouacPoint,
-                    onBivouacDragPreview = viewModel::previewBivouacDrag,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .statusBarsPadding()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    SectionMenuButton(current = currentSection, onSelect = onSectionSelected)
-                    MapControls(
-                        selectedLayer = selectedLayer,
-                        onLayerSelected = viewModel::setSelectedLayer,
-                        recenterEnabled = false,
-                        onRecenterClick = { recenterSignal++ },
-                        nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
+    // RIC-105 (revu) : la banque vide n'a plus de carte du tout, plein écran dédié — même
+    // traitement que le tout premier lancement du Journal, confirmé en revue. La carte ne
+    // redevient pertinente qu'à partir du moment où il y a quelque chose à y montrer ou à y
+    // préparer.
+    if (uiState is GpxImportUiState.Idle && bankedTraces.isEmpty()) {
+        Box(modifier = modifier.fillMaxSize()) {
+            FullScreenEmptyState(
+                icon = Icons.Default.Route,
+                title = "Aucune trace en préparation",
+                subtitle = "Ouvre une trace pour commencer à placer tes points de bivouac.",
+                buttonText = "Ouvrir une trace",
+                onButtonClick = onOpenClick,
+                modifier = Modifier.fillMaxSize(),
+            )
+            // La carte est le seul endroit où ce bouton flottait jusqu'ici (voir les deux autres
+            // branches ci-dessous) — sans elle, il lui fallait un nouveau point d'ancrage. Reste
+            // en haut à droite, comme partout ailleurs dans Planification : pas de barre de titre
+            // introduite pour ce seul état, ça n'aurait fait diverger que lui du reste de l'écran.
+            SectionMenuButton(
+                current = currentSection,
+                onSelect = onSectionSelected,
+                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(16.dp),
+            )
+        }
+    } else if (loaded == null) {
+        Box(modifier = modifier.fillMaxSize()) {
+            BottomSheetScaffold(
+                modifier = Modifier.fillMaxSize(),
+                sheetPeekHeight = PEEK_HEIGHT_EMPTY.coerceAtMost(maxPeekHeight),
+                sheetContent = {
+                    TrackSheetContent(
+                        uiState = uiState,
+                        bankedTraces = bankedTraces,
+                        activeCalibration = activeCalibration,
+                        scrollState = sheetScrollState,
+                        onOpenClick = onOpenClick,
+                        onOpenBankedClick = viewModel::openFromBank,
+                        onRenameBankedClick = viewModel::requestRenameFromList,
+                        onDeleteBankedClick = viewModel::requestDeleteFromList,
+                        onSheetTopMeasured = { sheetTopPx = it },
                     )
+                },
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onGloballyPositioned { mapBoxTopPx = it.positionInRoot().y },
+                ) {
+                    HikeMapView(
+                        track = null,
+                        bivouacPoints = emptyList(),
+                        selectedLayer = selectedLayer,
+                        recenterSignal = recenterSignal,
+                        visibleHeightPx = visibleMapHeightPx,
+                        onTrackTapped = viewModel::addBivouacPoint,
+                        onBivouacMoved = viewModel::moveBivouacPoint,
+                        onBivouacDragPreview = viewModel::previewBivouacDrag,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .statusBarsPadding()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        SectionMenuButton(current = currentSection, onSelect = onSectionSelected)
+                        MapControls(
+                            selectedLayer = selectedLayer,
+                            onLayerSelected = viewModel::setSelectedLayer,
+                            recenterEnabled = false,
+                            onRecenterClick = { recenterSignal++ },
+                            nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
+                        )
+                    }
                 }
+            }
+            // Ancre fixe, identique à celle du Journal — posé sur le tiroir plutôt que suspendu
+            // au-dessus (composé après le BottomSheetScaffold, donc dessiné par-dessus lui, y
+            // compris par-dessus son contenu). Une seule trace bankée : le padding bas du tiroir
+            // absorbe le FAB sans toucher la ligne. À partir de deux, le FAB en recouvre
+            // naturellement le haut, jusqu'au premier défilement — même compromis que le Journal
+            // fait déjà avec sa propre liste, pas un cas particulier à coder ici.
+            if (uiState is GpxImportUiState.Idle && bankedTraces.isNotEmpty()) {
+                val expanded by remember { derivedStateOf { sheetScrollState.value == 0 } }
+                ExtendedFloatingActionButton(
+                    onClick = onOpenClick,
+                    expanded = expanded,
+                    icon = {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = if (expanded) null else "Ouvrir une trace",
+                        )
+                    },
+                    text = { Text("Ouvrir une trace") },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .navigationBarsPadding()
+                        .padding(16.dp),
+                )
             }
         }
     } else {
@@ -353,13 +412,13 @@ private fun TrackSheetContent(
     uiState: GpxImportUiState,
     bankedTraces: List<BankedTrackEntity>,
     activeCalibration: SpeedCalibration,
+    scrollState: ScrollState,
     onOpenClick: () -> Unit,
     onOpenBankedClick: (String) -> Unit,
     onRenameBankedClick: (id: String, name: String) -> Unit,
     onDeleteBankedClick: (id: String, name: String) -> Unit,
     onSheetTopMeasured: (Float) -> Unit,
 ) {
-    val scrollState = rememberScrollState()
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -370,34 +429,11 @@ private fun TrackSheetContent(
             .onGloballyPositioned { onSheetTopMeasured(it.positionInRoot().y) },
     ) {
         when (uiState) {
+            // La banque vide est traitée en amont (GpxImportScreen), plein écran sans carte : ce
+            // tiroir n'est jamais composé dans ce cas, bankedTraces est donc garanti non vide
+            // ici. Le bouton d'ouverture, lui, a quitté ce flux : il flotte maintenant par-dessus
+            // le tiroir (voir GpxImportScreen), ancré au même endroit que celui du Journal.
             is GpxImportUiState.Idle -> {
-                // RIC-105 : même prestance que le CTA du tout premier lancement du Journal tant
-                // que la banque est vide (seule action possible ici) ; une fois qu'elle ne l'est
-                // plus, le bouton rétrécit vers un extended FAB en flux — pas flottant, ce tiroir
-                // a déjà sa liste juste en dessous, un vrai FAB ferait doublon.
-                if (bankedTraces.isEmpty()) {
-                    Button(onClick = onOpenClick, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(17.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Ouvrir une trace")
-                    }
-                } else {
-                    // Même mécanique que le FAB du Journal (Lot 3) : étendu tant qu'on est en haut
-                    // de la banque, replié en carré arrondi dès qu'on défile dedans.
-                    val expanded by remember { derivedStateOf { scrollState.value == 0 } }
-                    ExtendedFloatingActionButton(
-                        onClick = onOpenClick,
-                        expanded = expanded,
-                        icon = {
-                            Icon(
-                                Icons.Default.Add,
-                                contentDescription = if (expanded) null else "Ouvrir une trace",
-                            )
-                        },
-                        text = { Text("Ouvrir une trace") },
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
                 bankedTraces.forEach { entry ->
                     HorizontalDivider()
                     BankedTrackRow(
