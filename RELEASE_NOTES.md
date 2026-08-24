@@ -1,25 +1,65 @@
 # Bivouac — Notes de version
 
-## À paraître
+## V2.0
+
+**Journal (nouveau) :**
+
+- Importer une ou plusieurs traces GPX déjà réalisées ; plusieurs fichiers sélectionnés ensemble
+  sont reconnus comme les jours d'une même sortie plutôt que des randonnées séparées
+- Liste chronologique groupée par année, avec distance, durée et dénivelé cumulés
+- Détail en lecture seule d'une trace : carte, profil altimétrique, bivouacs relevés automatiquement
+  aux coupures entre les jours d'une sortie de plusieurs jours
+- Note libre et tags sur chaque trace ; filtrage de la liste par tag
+- Sélection multiple de traces pour les superposer sur la même carte
+- Suppression d'une trace
+- Dupliquer une trace du Journal vers Planification pour reprendre un itinéraire déjà parcouru
+
+**Planification :**
+
+- Même tiroir à trois crans (Synthèse / Profil / Détails) que le Journal, pour une interface
+  cohérente entre les deux univers
+- L'app se relance sur le dernier univers consulté (Journal ou Planification) ; un fichier GPX reçu
+  d'une autre application demande explicitement dans lequel l'ouvrir quand ce n'est pas évident
+
+**Cartographie :**
+
+- Fond de carte satellite (Esri World Imagery), désactivable comme le lien météo depuis les
+  nouveaux Réglages
+- Flèches de direction sur le tracé, y compris pour les boucles
 
 **Réglages (nouveau) :**
 
 - Écran de réglages, accessible depuis le menu de section
 - Vitesse personnalisée pour l'estimation de durée : manuelle (vitesse à plat et pénalité D+
   éditables), automatique (calculée à partir de tout le Journal, recalculée à chaque import) ou par
-  sélection de traces (réutilise la sélection multiple du Journal)
+  sélection de traces représentatives
 - Interrupteur pour désactiver les fonctionnalités non libres (fond satellite Esri, lien météo
-  Meteoblue), coupées aux deux points d'usage existants
-- Sauvegarde et restauration complètes de la base et des réglages (zip via le sélecteur système) —
-  pensées comme un filet de sécurité avant une session de test agressive, pas comme un remplacement
-  du backup cloud Android ; restaurer une sauvegarde plus récente que l'app installée est bloqué
-  avec un message clair plutôt que de planter ou d'écraser silencieusement
-- Crédits : fonds de carte, météo, bibliothèques, développement, lien vers le dépôt GitHub
+  Meteoblue)
+- Sauvegarde et restauration complètes de la base et des réglages (format ouvert), gestion des
+  versions des backups et de l'app
 
-**Fiabilité :**
-
+**Divers :**
 - La mise à jour depuis n'importe quelle version précédemment publiée de l'app préserve
   intégralement les traces, bivouacs et randonnées déjà enregistrés
+
+**Bugfixes :**
+
+- À l'ouverture d'une trace en Planification, le bas du tracé pouvait rester masqué par le tiroir
+  tant qu'on n'appuyait pas sur recentrage
+- Le contenu GPX des traces (banque de Planification et session en cours) est désormais stocké
+  dans des fichiers plutôt qu'en base, ce qui élimine un risque de plantage à l'ouverture d'une
+  trace très volumineuse ou très riche en points
+- Ouvrir une trace pouvait échouer systématiquement juste après une sauvegarde, sans qu'un
+  redémarrage de l'app ne soit nécessaire pour que ça reparte
+- Le filtre par tag du Journal pouvait continuer de retenir un tag qui n'existait plus
+- Le dialogue de choix d'univers (Journal ou Planification) pouvait se rouvrir après une rotation
+  d'écran
+- Fermer une trace reçue depuis une autre application sans jamais l'avoir enregistrée ne prévenait
+  pas de la perte, contrairement à une trace déjà enregistrée puis modifiée
+- Correction d'un crash possible sur la courbe de dénivelé dans un cas de mesure transitoire de
+  hauteur nulle
+- Suppression de bulles d'info parasites : au tap manqué près d'une trace, et au clic court sur un
+  point de bivouac
 
 ## V1.3
 
@@ -29,11 +69,11 @@
 - Indicateur de modifications non enregistrées, confirmation avant de fermer une trace modifiée
   sans l'enregistrer
 
-**Autres :**
+**Cartographie :**
 
 - Zoom de départ de la carte adapté à la France quand l'appareil y est configuré
 
-**Corrections :**
+**Bugfixes :**
 
 - L'import d'une trace GPX contenant des données de capteur (fréquence cardiaque, cadence...),
   fréquentes sur les exports de montres/GPS de randonnée, faisait échouer l'import
@@ -48,7 +88,7 @@
   prioritaire)
 - Le fond de carte sélectionné (Standard, Randonnée, Satellite) est mémorisé entre les sessions
 
-**Corrections :**
+**Bugfixes :**
 
 - Le bouton de recentrage bougeait légèrement à l'ouverture et à la fermeture du menu des fonds de
   carte
@@ -80,7 +120,7 @@
 
 - Hauteur repliée du tiroir ajustée automatiquement à son contenu (au lieu d'une valeur fixe)
 
-**Corrections :**
+**Bugfixes :**
 
 - La trace et les points de bivouac étaient perdus lors d'un changement d'orientation de l'écran
 - En mode paysage, le tiroir pouvait masquer l'essentiel de la carte

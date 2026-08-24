@@ -1,19 +1,22 @@
 # Bivouac
 
-Application Android open source pour la préparation de randonnées itinérantes avec bivouac.
+Application Android open source pour la préparation et le journal de randonnées itinérantes avec bivouac.
 
-Importe une trace GPX multi-jours, affiche-la sur une carte OSM, positionne tes points de
-bivouac directement sur le tracé, et récupère un tableau des segments journaliers (distance,
-dénivelé, durée estimée) qui se met à jour automatiquement.
+Prépare tes randonnées itinérantes (Planification) et garde la trace de celles déjà réalisées
+(Journal), avec tes points de bivouac positionnés sur une carte OSM et un tableau des segments
+journaliers (distance, dénivelé, durée estimée) qui se met à jour automatiquement.
 
-![Trace chargée, fond de carte Standard](screenshots/01_trace_standard.png)
-![Trace chargée avec bivouac, fond de carte Randonnée](screenshots/02_trace_rando.png)
-![Courbe de dénivelé et tableau des segments journaliers](screenshots/03_segments_table.png)
+![Planification : trace ouverte sur fond de carte Randonnée, profil altimétrique](screenshots/01_planification_carte.jpg)
+![Planification : tiroir de détail, segments par jour](screenshots/02_planification_details.jpg)
+![Journal : liste chronologique par année](screenshots/03_journal_liste.jpg)
+![Journal : détail d'une trace, tags et note](screenshots/04_journal_detail.jpg)
 
-## Fonctionnalités (V1.1)
+## Fonctionnalités (V2.0)
+
+**Planification :**
 
 - Import d'une trace GPX via le sélecteur de fichiers système, ou directement depuis une autre
-  application
+  application ; banque de traces (enregistrer, renommer, dupliquer, supprimer, lister)
 - Affichage sur fond de carte OSM (osmdroid) avec sélecteur (standard, randonnée, satellite),
   pictos de départ/arrivée/boucle, recentrage sur la trace
 - Ajout, déplacement (aimanté à la trace) et suppression des points de bivouac ; altitude et lien
@@ -22,7 +25,19 @@ dénivelé, durée estimée) qui se met à jour automatiquement.
 - Tableau des segments journaliers : distance, durée estimée, D+, D-
 - Export d'un segment au format GPX vers une autre application
 
-Détail complet des fonctionnalités et limitations connues : [RELEASE_NOTES.md](RELEASE_NOTES.md).
+**Journal :**
+
+- Importer une ou plusieurs traces GPX déjà réalisées (fichiers multiples reconnus comme les jours
+  d'une même sortie), liste chronologique par année, détail en lecture seule avec carte et profil
+- Note libre et tags par trace, filtrage par tag ; dupliquer une trace du Journal vers Planification
+
+**Réglages :**
+
+- Vitesse personnalisée pour l'estimation de durée (manuelle, automatique, ou par sélection de
+  traces), sauvegarde et restauration complètes des données, activation/désactivation des
+  fonctionnalités non libres
+
+Détail complet des fonctionnalités par version, et limitations connues : [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 ## FAQ
 
@@ -62,13 +77,16 @@ embarquent ces fichiers avec la base.
 
 ### Mes randonnées partent-elles dans une sauvegarde cloud Google ?
 
-Non, jamais automatiquement. Bivouac exclut explicitement sa base de données (tes randos, tags,
-notes) et ses préférences de la sauvegarde automatique cloud d'Android — cohérent avec le principe
-de l'app, 100 % locale. Le transfert direct d'un téléphone à l'autre (lors d'un changement
-d'appareil, via le câble ou l'outil de transfert du fabricant) reste, lui, complet : il ne passe pas
-par le cloud, donc rien n'empêche de récupérer tout ton Journal de cette façon. La sauvegarde
-explicite (Réglages → Sauvegarder, vers l'endroit de ton choix) reste le mécanisme à utiliser
-volontairement, notamment avant une réinstallation ou un test.
+Bivouac est 100 % local, modulo les sauvegardes du système : l'app elle-même n'envoie rien nulle
+part de son propre chef, mais elle ne s'exclut pas non plus de la sauvegarde automatique standard
+d'Android (base de données et préférences incluses), comme la quasi-totalité des apps qui ne
+s'en excluent pas explicitement. Concrètement, si la sauvegarde automatique est activée sur ton
+compte Google, tes randos, tags et notes en font partie ; sur un appareil sans compte/services
+Google (dont beaucoup de configurations F-Droid), ce mécanisme est simplement inactif et ne fait
+rien. Le transfert direct d'un téléphone à l'autre (câble ou outil de transfert du fabricant) reste
+complet dans tous les cas. La sauvegarde explicite (Réglages → Sauvegarder, vers l'endroit de ton
+choix) reste le mécanisme à utiliser volontairement si tu veux un filet en dehors de ces deux
+canaux, notamment avant une réinstallation ou un test.
 
 ## Stack technique
 
@@ -97,7 +115,7 @@ et si ça peut servir à quelqu'un d'autre, tant mieux. Indulgence et retours bi
 
 ## Statut
 
-V1.1 fonctionnelle. Développement actif.
+V2.0 fonctionnelle. Développement actif.
 
 ## Développement
 

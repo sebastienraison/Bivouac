@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Pendant de data_extraction_rules.xml pour les API <= 30 (auto-backup historique) :
-     mêmes exclusions, voir les explications là-bas. -->
-<full-backup-content>
-    <exclude domain="database" path="bivouac.db" />
-    <exclude domain="database" path="bivouac.db-wal" />
-    <exclude domain="database" path="bivouac.db-shm" />
-    <exclude domain="file" path="datastore/" />
-</full-backup-content>

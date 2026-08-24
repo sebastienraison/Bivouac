@@ -1,0 +1,17 @@
+Journal (new): log GPX tracks you've already hiked, single or multi-day. Chronological list by
+year, read-only detail view with map and elevation profile, notes and tags with filtering,
+multi-track overview on the map, duplicate a logged track into Planning to reuse it.
+
+Planning: same three-stop detail drawer as the Journal, for a consistent interface across both.
+The app reopens on whichever you last used; an incoming GPX file from another app asks which one
+to open it in when that's not obvious.
+
+Settings (new): custom speed for duration estimates (manual, automatic from your Journal, or from
+a selection of tracks), a switch to disable non-free features (Esri satellite layer, Meteoblue
+weather link), full backup/restore of your data.
+
+Map: optional Esri satellite layer, direction arrows on the track (including loops).
+
+Reliability: GPX content now lives in files instead of the database, removing a crash risk on
+very dense or long tracks; fixed a bug where opening a track could fail right after a backup
+until the app was restarted; updating from any previous release preserves all your data.
