@@ -9,6 +9,7 @@ import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.db.PreparedImport
+import com.bivouac.app.data.db.SystemTag
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.model.BivouacPoint
@@ -121,13 +122,35 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     // seul ne permet pas cette distinction une fois un filtre actif.
     val tracks: StateFlow<List<LoggedTrackEntity>> = _tracks.asStateFlow()
 
+    // La toute première lecture de la base n'est pas instantanée : tant qu'elle n'a pas abouti,
+    // _tracks vaut encore emptyList() par construction, indiscernable d'un journal vraiment vide.
+    // Sans ce drapeau, un démarrage à froid sur le Journal (RIC-106) avec une base déjà bien
+    // remplie affichait une bouffée de l'écran « aucune rando pour l'instant » avant de basculer
+    // sur la liste réelle. Passe à true une fois pour de bon dès la première lecture aboutie ;
+    // les rafraîchissements suivants (refresh() est rappelé après le rattrapage ci-dessous, et à
+    // chaque import) n'ont plus besoin d'y retoucher.
+    private val _tracksLoaded = MutableStateFlow(false)
+    val tracksLoaded: StateFlow<Boolean> = _tracksLoaded.asStateFlow()
+
     // trackId -> its tags, for every track that has at least one — drives both the filter chips
     // (distinct values across all tracks) and which entries a filter selection keeps.
     private val _tagsByTrackId = MutableStateFlow<Map<String, List<String>>>(emptyMap())
     val tagsByTrackId: StateFlow<Map<String, List<String>>> = _tagsByTrackId.asStateFlow()
 
+    // Le brut, jamais exposé : une sélection peut porter sur un tag libre qui disparaît ensuite
+    // (dernière trace qui le portait démarquée) sans que rien ici ne le sache spontanément — voir
+    // selectedFilterTags plus bas, qui recale contre les tags encore réellement présents.
     private val _selectedFilterTags = MutableStateFlow<Set<String>>(emptySet())
-    val selectedFilterTags: StateFlow<Set<String>> = _selectedFilterTags.asStateFlow()
+
+    // Recalée contre les tags qui existent encore quelque part (système, toujours offerts, ou
+    // portés par au moins une trace) — sans ça, démarquer la dernière trace d'un tag libre filtré
+    // faisait disparaître ce tag de la rangée de chips tout en laissant la liste filtrée dessus,
+    // donc vide sans aucun chip actif ne l'expliquant. Seul un aller-retour sur l'écran (qui
+    // recrée le ViewModel) remettait les pendules à l'heure.
+    val selectedFilterTags: StateFlow<Set<String>> = combine(_selectedFilterTags, _tagsByTrackId) { selected, tagsByTrackId ->
+        val stillValid = SystemTag.entries.map { it.value }.toSet() + tagsByTrackId.values.flatten()
+        selected intersect stillValid
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     // trackId -> ce que la liste doit savoir de ses jours, pour distinguer un trek d'une sortie
     // d'un jour : leurs dates, et leur nombre. Les dates manquent tant que le rattrapage n'a pas
@@ -137,9 +160,10 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     val dayInfoByTrackId: StateFlow<Map<String, JournalDayInfo>> = _dayInfoByTrackId.asStateFlow()
 
     // OR semantics: a track matching any one selected tag is kept — narrows what's browsable,
-    // doesn't require an exact combination match.
+    // doesn't require an exact combination match. Sur selectedFilterTags (déjà recalée) et non sur
+    // le brut, pour que ce que la liste montre et ce que les chips montrent racontent la même chose.
     val filteredTracks: StateFlow<List<LoggedTrackEntity>> =
-        combine(_tracks, _tagsByTrackId, _selectedFilterTags) { tracks, tagsByTrackId, selected ->
+        combine(_tracks, _tagsByTrackId, selectedFilterTags) { tracks, tagsByTrackId, selected ->
             if (selected.isEmpty()) {
                 tracks
             } else {
@@ -253,6 +277,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                         )
                     }
             }
+            _tracksLoaded.value = true
         }
     }
 
