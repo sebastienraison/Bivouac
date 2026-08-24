@@ -129,7 +129,22 @@ fun GpxImportScreen(
     // manually afterwards (see fitToTrack). Float.MAX_VALUE sentinel = not measured yet / no sheet
     // overlap known, meaning "behave as before".
     var mapBoxTopPx by remember { mutableFloatStateOf(0f) }
-    var sheetTopPx by remember { mutableFloatStateOf(Float.MAX_VALUE) }
+    // RIC-96 : ce screen bascule entre deux tiroirs de nature différente selon l'état — le tiroir
+    // "liste" (TrackSheetContent, Idle/Loading/Error, peek height fixe et petit) et le tiroir de
+    // détail (ThreeStopPlanificationDetail, Loaded, nettement plus haut) — sans jamais démonter
+    // l'un pour l'autre au même endroit : ce sont deux branches if/else distinctes de ce composable,
+    // donc deux instances de HikeMapView différentes, chacune avec son propre mécanisme de
+    // correction de fit (pendingHeightCorrection). Tant que sheetTopPx reste un seul remember
+    // partagé entre les deux, la valeur mesurée par l'ancien tiroir survit à la bascule : au premier
+    // fit du nouveau tiroir, visibleMapHeightPx n'est pas la sentinelle Int.MAX_VALUE — c'est une
+    // valeur obsolète, plus grande que la vraie hauteur visible une fois le tiroir de détail
+    // effectivement mesuré. Le mécanisme correctif de HikeMapView ne s'arme donc jamais, et le fit
+    // initial cadre la trace en sous-estimant l'occultation réelle du tiroir. Clé de remember sur
+    // "un tiroir Loaded est-il affiché" : elle change exactement quand l'affichage bascule de
+    // branche, ce qui réinitialise sheetTopPx à la sentinelle au bon moment et laisse
+    // pendingHeightCorrection s'armer normalement pour le fit correctif une fois la vraie hauteur
+    // connue.
+    var sheetTopPx by remember(uiState is GpxImportUiState.Loaded) { mutableFloatStateOf(Float.MAX_VALUE) }
     val visibleMapHeightPx = (sheetTopPx - mapBoxTopPx).let { if (it.isFinite() && it > 0) it.toInt() else Int.MAX_VALUE }
 
     // RIC-40 : se déclenche une fois par demande entrante (identité de la requête en clé, remise à
