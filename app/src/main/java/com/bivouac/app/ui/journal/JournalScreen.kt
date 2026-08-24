@@ -69,6 +69,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -139,6 +140,7 @@ import com.bivouac.app.ui.components.rememberThreeStopDrawerState
 import com.bivouac.app.ui.map.ColoredTrack
 import com.bivouac.app.ui.map.HikeMapView
 import com.bivouac.app.ui.map.MapControls
+import com.bivouac.app.ui.nav.AppScreenHeader
 import com.bivouac.app.ui.nav.AppSection
 import com.bivouac.app.ui.nav.SectionMenuButton
 import java.time.Instant
@@ -184,6 +186,7 @@ fun JournalScreen(
         onPendingImportUrisConsumed()
     }
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
+    val tracksLoaded by viewModel.tracksLoaded.collectAsStateWithLifecycle()
     val filteredTracks by viewModel.filteredTracks.collectAsStateWithLifecycle()
     val tagsByTrackId by viewModel.tagsByTrackId.collectAsStateWithLifecycle()
     val dayInfoByTrackId by viewModel.dayInfoByTrackId.collectAsStateWithLifecycle()
@@ -354,6 +357,7 @@ fun JournalScreen(
             JournalHomeScreen(
                 modifier = modifier,
                 tracks = tracks,
+                tracksLoaded = tracksLoaded,
                 filteredTracks = filteredTracks,
                 activeCalibration = activeCalibration,
                 tagsByTrackId = tagsByTrackId,
@@ -712,6 +716,11 @@ private fun JournalMap(
 private fun JournalHomeScreen(
     modifier: Modifier = Modifier,
     tracks: List<LoggedTrackEntity>,
+    // Distinct de tracks.isEmpty() : tant que la toute première lecture de la base n'a pas abouti,
+    // tracks vaut emptyList() par construction — sans ce drapeau, un démarrage à froid sur le
+    // Journal avec une base bien remplie affichait une bouffée de l'écran vide avant la liste
+    // réelle. Voir JournalViewModel.tracksLoaded.
+    tracksLoaded: Boolean,
     filteredTracks: List<LoggedTrackEntity>,
     activeCalibration: SpeedCalibration,
     tagsByTrackId: Map<String, List<String>>,
@@ -741,26 +750,12 @@ private fun JournalHomeScreen(
     Scaffold(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "Journal",
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.weight(1f),
-                )
-                SectionMenuButton(current = currentSection, onSelect = onSectionSelected)
-            }
-        },
+        topBar = { AppScreenHeader(title = "Journal", currentSection = currentSection, onSectionSelected = onSectionSelected) },
         floatingActionButton = {
             // Le CTA plein écran de l'état vraiment vide (ci-dessous) est la seule action possible
-            // de cet écran : un FAB par-dessus ferait doublon.
-            if (!neverImported) {
+            // de cet écran : un FAB par-dessus ferait doublon. Masqué aussi tant que le chargement
+            // n'a pas abouti — pas d'action tant qu'on ne sait pas encore laquelle est de mise.
+            if (tracksLoaded && !neverImported) {
                 // Patron Material : le FAB étendu se replie en carré arrondi quand le contenu
                 // prend le dessus. Déclenché par la position de défilement et non par la longueur
                 // de la liste — c'est ce que documente M3, et ça garde le libellé tant qu'il y a
@@ -785,7 +780,17 @@ private fun JournalHomeScreen(
             }
         },
     ) { paddingValues ->
-        if (neverImported) {
+        if (!tracksLoaded) {
+            // Fenêtre habituellement très courte (lecture Room locale) mais bien réelle sur une
+            // base conséquente ou un appareil lent — un indicateur plutôt qu'un écran blanc, sans
+            // se prononcer sur vide ou peuplé avant de le savoir vraiment.
+            Box(
+                modifier = Modifier.padding(paddingValues).fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+        } else if (neverImported) {
             JournalEmptyFirstLaunch(
                 onImportClick = onImportClick,
                 modifier = Modifier.padding(paddingValues).fillMaxSize(),
@@ -847,7 +852,7 @@ private fun JournalEmptyFirstLaunch(onImportClick: () -> Unit, modifier: Modifie
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Ajoute une trace pour commencer ton carnet — tes randos réalisées vivront ici.",
+            text = "Ajoute une trace pour commencer ton carnet : tes randos réalisées vivront ici.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -898,7 +903,15 @@ private fun JournalBilanCard(total: Int, stats: TrackStats, modifier: Modifier =
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
             Spacer(Modifier.height(4.dp))
-            StatsRows(stats, muted = true)
+            // La carte est plus étroite que les autres endroits où StatsRows s'affiche (en-têtes
+            // d'année, lignes de trace, pleine largeur de liste) — sans réduction, "D+ 4500 m" et
+            // "D- 4500 m" côte à côte débordaient sur deux lignes une fois les totaux vraiment
+            // cumulés (Lot 2). ProvideTextStyle plutôt qu'un paramètre sur StatsRows : c'est un
+            // ajustement de mise en page propre à ce conteneur précis, pas un nouveau réglage que
+            // les autres appelants auraient à connaître.
+            ProvideTextStyle(MaterialTheme.typography.bodySmall) {
+                StatsRows(stats, muted = true)
+            }
         }
     }
 }
