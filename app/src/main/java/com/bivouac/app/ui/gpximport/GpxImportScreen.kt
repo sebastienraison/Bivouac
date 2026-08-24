@@ -43,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -358,10 +359,11 @@ private fun TrackSheetContent(
     onDeleteBankedClick: (id: String, name: String) -> Unit,
     onSheetTopMeasured: (Float) -> Unit,
 ) {
+    val scrollState = rememberScrollState()
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .navigationBarsPadding()
             .padding(horizontal = 20.dp)
             .padding(top = 4.dp, bottom = 40.dp)
@@ -380,9 +382,18 @@ private fun TrackSheetContent(
                         Text("Ouvrir une trace")
                     }
                 } else {
+                    // Même mécanique que le FAB du Journal (Lot 3) : étendu tant qu'on est en haut
+                    // de la banque, replié en carré arrondi dès qu'on défile dedans.
+                    val expanded by remember { derivedStateOf { scrollState.value == 0 } }
                     ExtendedFloatingActionButton(
                         onClick = onOpenClick,
-                        icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                        expanded = expanded,
+                        icon = {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = if (expanded) null else "Ouvrir une trace",
+                            )
+                        },
                         text = { Text("Ouvrir une trace") },
                     )
                     Spacer(modifier = Modifier.height(16.dp))
