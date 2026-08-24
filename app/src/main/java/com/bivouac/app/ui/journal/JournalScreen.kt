@@ -254,10 +254,6 @@ fun JournalScreen(
                         BivouacPoint(id = "jonction-$index", trackPointIndex = pointIndex)
                     }
             }
-            // RIC-100 : la sonde vit ici, au-dessus du tiroir, pour que le bandeau reste visible quand
-            // le tiroir occupe tout l'écran. Retirer avec KeyboardDiagnostics.kt une fois la cause
-            // établie.
-            val keyboardProbe = remember { if (KEYBOARD_DIAGNOSTICS_ENABLED) KeyboardProbe() else null }
             Box(modifier = modifier.fillMaxSize()) {
                 JournalMap(
                     track = detail.track,
@@ -280,7 +276,6 @@ fun JournalScreen(
                     track = detail.track,
                     daySegments = detail.daySegments,
                     bivouacPoints = journalBivouacs,
-                    keyboardProbe = keyboardProbe,
                     activeCalibration = activeCalibration,
                     onCloseClick = viewModel::closeTrack,
                     onDeleteClick = viewModel::requestDelete,
@@ -293,11 +288,6 @@ fun JournalScreen(
                     onSaveDetails = viewModel::saveDetails,
                     onRenameClick = { renameDialogVisible = true },
                 )
-                // En dernier enfant du Box, donc dessiné par-dessus le tiroir, qui occupe tout l'écran
-                // au cran Détails.
-                if (keyboardProbe != null) {
-                    KeyboardDiagnosticsOverlay(keyboardProbe, modifier = Modifier.align(Alignment.TopCenter))
-                }
             }
         }
         // RIC-65 : la vue « plusieurs traces sur la carte » (BIV-48) et le chargement qui y mène ou
@@ -1339,8 +1329,6 @@ internal fun ThreeStopJournalDetail(
     // Constat E : un point par jonction entre deux jours, en lecture seule — le profil les trace
     // comme la Planification, mais rien ici ne se déplace ni ne se supprime.
     bivouacPoints: List<BivouacPoint> = emptyList(),
-    // RIC-100 : relevé de diagnostic, null hors instrumentation. Voir KeyboardDiagnostics.
-    keyboardProbe: KeyboardProbe? = null,
     activeCalibration: SpeedCalibration = SpeedCalibration.DEFAULT,
     onCloseClick: () -> Unit,
     onRenameClick: () -> Unit,
@@ -1356,12 +1344,6 @@ internal fun ThreeStopJournalDetail(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = LocalDensity.current
         val zone = remember { ZoneId.systemDefault() }
-        // RIC-100 : lire l'inset ici suffit à faire recomposer à chaque changement de hauteur du
-        // clavier, donc à voir le relevé bouger en direct pendant l'ouverture.
-        if (keyboardProbe != null) {
-            keyboardProbe.imeBottomPx = WindowInsets.ime.getBottom(density)
-            keyboardProbe.windowHeightPx = with(density) { maxHeight.toPx() }.toInt()
-        }
         // Date de début de chaque jour, tirée directement des points déjà chargés. Les jours sans
         // horodatage sont écartés plutôt qu'inventés, comme dans la liste.
         val dayStartDates = remember(daySegments, zone) {
@@ -1573,23 +1555,10 @@ internal fun ThreeStopJournalDetail(
                         // union et non deux paddings enchaînés : les insets se cumuleraient, alors
                         // que l'inset du clavier englobe déjà la barre de navigation.
                         .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
-                        // RIC-100, avant verticalScroll : c'est ici qu'on mesure la fenêtre de
-                        // défilement, celle qui doit se rogner à l'ouverture du clavier. Après
-                        // verticalScroll on mesurerait le contenu, qui lui ne bouge pas.
-                        .onGloballyPositioned { coordinates ->
-                            keyboardProbe?.viewportHeightPx = coordinates.size.height
-                        }
                         .verticalScroll(drawer.detailScrollState)
-                        .onGloballyPositioned { coordinates ->
-                            keyboardProbe?.contentHeightPx = coordinates.size.height
-                        }
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (keyboardProbe != null) {
-                        keyboardProbe.scrollValue = drawer.detailScrollState.value
-                        keyboardProbe.scrollMax = drawer.detailScrollState.maxValue
-                    }
                     // RIC-41 : uniquement pour un import de plusieurs jours — sur un seul jour, la
                     // ligne « Total » ci-dessus dit déjà tout, une ventilation à une entrée ne
                     // serait que du bruit.
@@ -1755,29 +1724,17 @@ internal fun ThreeStopJournalDetail(
                         var noteHeightPx by remember(entry.id) { mutableIntStateOf(0) }
                         val cursorBandPx = with(density) { 56.dp.toPx() }
                         LaunchedEffect(draftNote, noteFocused, noteHeightPx) {
-                            if (!noteFocused) {
-                                keyboardProbe?.bringSkip = "nofocus"
-                                return@LaunchedEffect
-                            }
-                            if (noteHeightPx == 0) {
-                                keyboardProbe?.bringSkip = "noheight"
-                                return@LaunchedEffect
-                            }
+                            if (!noteFocused) return@LaunchedEffect
+                            if (noteHeightPx == 0) return@LaunchedEffect
                             // trimEnd et non length : une note qui se termine par un retour à la
                             // ligne ou une espace laisse le curseur juste avant sa toute fin, et
                             // une comparaison stricte cesserait alors de suivre la frappe sans
                             // raison.
-                            if (draftNote.selection.end < draftNote.text.trimEnd().length) {
-                                keyboardProbe?.bringSkip = "midtext"
-                                return@LaunchedEffect
-                            }
+                            if (draftNote.selection.end < draftNote.text.trimEnd().length) return@LaunchedEffect
                             val bottom = noteHeightPx.toFloat()
-                            keyboardProbe?.bringSkip = "ask"
-                            keyboardProbe?.bringCount = (keyboardProbe?.bringCount ?: 0) + 1
                             noteVisibility.bringIntoView(
                                 Rect(0f, (bottom - cursorBandPx).coerceAtLeast(0f), 1f, bottom),
                             )
-                            keyboardProbe?.bringSkip = "done"
                         }
                         TextField(
                             value = draftNote,
@@ -1792,13 +1749,7 @@ internal fun ThreeStopJournalDetail(
                                 .heightIn(min = 120.dp)
                                 .bringIntoViewRequester(noteVisibility)
                                 .onFocusChanged { noteFocused = it.isFocused }
-                                .onGloballyPositioned { coordinates ->
-                                    noteHeightPx = coordinates.size.height
-                                    // RIC-100 : bas du champ en coordonnées fenêtre, à comparer à
-                                    // la ligne de flottaison du clavier.
-                                    keyboardProbe?.noteBottomPx =
-                                        (coordinates.positionInRoot().y + coordinates.size.height).toInt()
-                                },
+                                .onGloballyPositioned { coordinates -> noteHeightPx = coordinates.size.height },
                         )
                     } else if (entry.note.isBlank()) {
                         NotebookEmptyHint()
