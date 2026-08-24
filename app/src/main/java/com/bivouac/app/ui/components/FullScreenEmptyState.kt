@@ -57,9 +57,16 @@ fun FullScreenEmptyState(
             )
         }
         Spacer(Modifier.height(18.dp))
+        // Couleur explicite et non ambiante : ce composant est hébergé tantôt dans un Scaffold
+        // (Journal, dont le Surface interne résout LocalContentColor correctement), tantôt dans
+        // une simple Box (Planification, sans ce Surface) — un Text sans couleur y retombe sur le
+        // noir par défaut de Compose, invisible en thème sombre. Même défaut que le titre de
+        // Réglages plus tôt dans cette recette, cette fois corrigé à la source plutôt que par le
+        // conteneur qui l'héberge, pour qu'il ne puisse pas se reproduire dans un troisième hôte.
         Text(
             text = title,
             style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onBackground,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(8.dp))
