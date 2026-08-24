@@ -183,7 +183,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                         db.execSQL(
                             "INSERT INTO `logged_track_day_new` (`id`, `trackId`, `dayIndex`, `rawGpxFilePath`) " +
                                 "VALUES (?, ?, ?, ?)",
-                            arrayOf(row.id, row.trackId, row.dayIndex, pathByRowId.getValue(row.id)),
+                            arrayOf<Any>(row.id, row.trackId, row.dayIndex, pathByRowId.getValue(row.id)),
                         )
                     }
                     db.execSQL("DROP TABLE `logged_track_day`")
@@ -304,7 +304,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                                 "`bivouacTrackPointIndices`) " +
                                 "SELECT `id`, `trackName`, ?, `bivouacTrackPointIndices` " +
                                 "FROM `saved_track` WHERE `id` = ?",
-                            arrayOf(savedPathById.getValue(id), id),
+                            arrayOf<Any>(savedPathById.getValue(id), id),
                         )
                     }
                     db.execSQL("DROP TABLE `saved_track`")
@@ -343,7 +343,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                 while (true) {
                     val chunk = db.query(
                         "SELECT substr(rawGpxContent, ?, ?) FROM logged_track_day WHERE id = ?",
-                        arrayOf(position, MIGRATION_CHUNK_CODE_POINTS, rowId),
+                        arrayOf<Any>(position, MIGRATION_CHUNK_CODE_POINTS, rowId),
                     ).use { cursor ->
                         if (cursor.moveToFirst()) cursor.getString(0).orEmpty() else ""
                     }

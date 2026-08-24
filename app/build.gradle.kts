@@ -2,7 +2,10 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+    // RIC-111 : plus de plugin kotlin-android — Kotlin intégré à AGP 9.x (built-in Kotlin),
+    // activé par défaut. android.kotlinOptions {} est supprimé (plus supporté avec le Kotlin
+    // intégré) ; jvmTarget hérite désormais de compileOptions.targetCompatibility ci-dessous,
+    // toujours 17, donc pas besoin d'un bloc kotlin { compilerOptions { ... } } explicite.
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
@@ -48,9 +51,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
     }
     buildFeatures {
         compose = true
