@@ -88,7 +88,7 @@ fun ElevationBackfillGate(
             AlertDialog(
                 onDismissRequest = {},
                 properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-                title = { Text("Mise à jour du carnet") },
+                title = { Text("Mise à jour de la base de données") },
                 text = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -99,7 +99,7 @@ fun ElevationBackfillGate(
                             when (current) {
                                 ElevationBackfillViewModel.State.Checking -> "Préparation…"
                                 is ElevationBackfillViewModel.State.Running ->
-                                    "Lecture des altitudes : ${current.done}/${current.total}…"
+                                    "Mise à jour en cours : ${current.done}/${current.total}…"
                                 ElevationBackfillViewModel.State.Ready -> ""
                             },
                         )
