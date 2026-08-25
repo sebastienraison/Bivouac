@@ -249,6 +249,10 @@ internal fun ThreeStopPlanificationDetail(
                 ElevationProfile(
                     points = track.points,
                     bivouacPoints = elevationMarkerPoints,
+                    // RIC-126 : même raisonnement que HikeMapView côté GpxImportScreen — sans ça,
+                    // le profil d'un trek dupliqué depuis le Journal annonce plus de kilomètres que
+                    // les statistiques affichées juste au-dessus.
+                    dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
                     modifier = Modifier
                         .padding(horizontal = 20.dp)
                         .padding(top = 10.dp, bottom = 2.dp),
