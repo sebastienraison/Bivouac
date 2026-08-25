@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
@@ -129,6 +130,7 @@ import com.bivouac.app.journal.JournalViewModel
 import com.bivouac.app.journal.SeparateImportReport
 import com.bivouac.app.ui.components.ChoiceOptionCard
 import com.bivouac.app.ui.components.DrawerStop
+import com.bivouac.app.ui.components.DurationIconColor
 import com.bivouac.app.ui.components.FullScreenEmptyState
 import com.bivouac.app.ui.components.ElevationProfile
 import com.bivouac.app.ui.components.GainIconColor
@@ -1300,7 +1302,7 @@ private fun ReadOnlyBivouacRow(arrival: TrackPoint?, departure: TrackPoint?) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Image(
             painter = painterResource(R.drawable.ic_bivouac_badge),
@@ -1318,11 +1320,10 @@ private fun ReadOnlyBivouacRow(arrival: TrackPoint?, departure: TrackPoint?) {
         val arrivedAt = arrival?.time
         val leftAt = departure?.time
         if (arrivedAt != null && leftAt != null) {
-            Spacer(Modifier.weight(1f))
-            Text(
+            InfoText(
                 text = "${formatTimeOfDay(arrivedAt)} → ${formatTimeOfDay(leftAt)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                icon = Icons.Default.Snooze,
+                iconTint = DurationIconColor,
             )
         }
     }
