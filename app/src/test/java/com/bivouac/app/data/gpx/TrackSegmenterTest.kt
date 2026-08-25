@@ -158,6 +158,20 @@ class TrackSegmenterTest {
     }
 
     @Test
+    fun daySegmentAggregateExcludesStoppedSegmentsFromSteepToo() {
+        // RIC-129 : un arrêt pris en pleine montée ne doit pas gonfler steepHours/steepGainMeters.
+        val steepMoving = TrackSegment(distanceMeters = 200.0, elevationGainMeters = 20.0, netElevationMeters = 20.0, hours = 0.08) // 2.5 km/h
+        val steepStopped = TrackSegment(distanceMeters = 200.0, elevationGainMeters = 1.0, netElevationMeters = 20.0, hours = 0.5) // 0.4 km/h : à l'arrêt
+
+        val aggregate = DaySegmentAggregate.of(listOf(steepMoving, steepStopped))
+
+        assertEquals(1, aggregate.steepCount)
+        assertEquals(200.0, aggregate.steepDistanceMeters, 1e-9)
+        assertEquals(20.0, aggregate.steepGainMeters, 1e-9)
+        assertEquals(0.08, aggregate.steepHours, 1e-9)
+    }
+
+    @Test
     fun daySegmentAggregatePlusIsAdditive() {
         val a = DaySegmentAggregate(flatCount = 2, flatDistanceMeters = 400.0, flatHours = 0.1, steepCount = 1, steepDistanceMeters = 200.0, steepGainMeters = 15.0, steepHours = 0.06)
         val b = DaySegmentAggregate(flatCount = 3, flatDistanceMeters = 600.0, flatHours = 0.15, steepCount = 2, steepDistanceMeters = 400.0, steepGainMeters = 30.0, steepHours = 0.1)
