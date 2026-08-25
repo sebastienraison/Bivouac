@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +37,7 @@ import com.bivouac.app.ui.nav.UniverseChoiceDialog
 import com.bivouac.app.ui.settings.SettingsScreen
 import com.bivouac.app.ui.startup.ElevationBackfillGate
 import com.bivouac.app.ui.theme.BivouacTheme
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private const val JOURNAL_CALIBRATION_ROUTE = "journal_calibration"
@@ -90,14 +92,22 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
     var incomingPlanificationUri by remember { mutableStateOf<Uri?>(null) }
     var incomingJournalUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
-    // RIC-106 : dernier univers consulté, lu une seule fois au démarrage — NavHost fige son
-    // startDestination à la composition initiale, le changer ensuite n'a aucun effet. Tant que ce
-    // premier chargement DataStore n'a pas abouti, `startSection` reste null et rien ne navigue
-    // encore ; en pratique quasi instantané (lecture mémoire), pas une vraie latence perçue.
+    // RIC-106 : dernier univers consulté, lu une seule fois au démarrage via .first() plutôt que
+    // collectAsStateWithLifecycle — un onSectionSelected réécrit cette préférence à chaque
+    // changement d'onglet (voir plus bas), et une collecte continue ferait retomber
+    // resolvedStartSection sur la nouvelle valeur quelques dizaines de ms après coup. RIC-19 a mis
+    // ça en évidence : NavHost, lui, ne « fige » pas silencieusement son startDestination face à
+    // ça comme le commentaire précédent le supposait — un resolvedStartSection qui change en cours
+    // de route reconstruit le graphe, ce qui recrée une NavBackStackEntry (donc un ViewModel) tout
+    // neuf pour la destination qu'on vient d'atteindre, coupant au passage toute coroutine encore
+    // en vol dessus (un openTrackById déclenché par pendingOpenRequest, notamment). Tant que cette
+    // lecture unique n'a pas abouti, resolvedStartSection reste null et rien ne navigue encore ; en
+    // pratique quasi instantané (lecture mémoire), pas une vraie latence perçue.
     val context = LocalContext.current
     val appSectionPreferences = remember { AppSectionPreferences(context) }
     val coroutineScope = rememberCoroutineScope()
-    val startSection by appSectionPreferences.lastVisitedSection.collectAsStateWithLifecycle(initialValue = null)
+    var resolvedStartSection by remember { mutableStateOf<AppSection?>(null) }
+    LaunchedEffect(Unit) { resolvedStartSection = appSectionPreferences.lastVisitedSection.first() }
 
     // Standard top-level-destination navigation: pop back to the graph's start so switching
     // sections never piles up a back stack, but save/restore each section's own state (scroll
@@ -114,15 +124,16 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
         coroutineScope.launch { appSectionPreferences.setLastVisitedSection(section) }
     }
 
-    // Capturé dans un val local : `startSection` reste une propriété déléguée (State<AppSection?>),
-    // dont le compilateur ne garantit pas le smart-cast après ce contrôle de nullité.
-    val resolvedStartSection = startSection
-    if (resolvedStartSection == null) {
+    // Capturé dans un val local : `resolvedStartSection` reste une propriété déléguée
+    // (State<AppSection?>), dont le compilateur ne garantit pas le smart-cast après ce contrôle de
+    // nullité.
+    val currentStartSection = resolvedStartSection
+    if (currentStartSection == null) {
         Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
         return
     }
 
-    NavHost(navController = navController, startDestination = resolvedStartSection.route, modifier = modifier) {
+    NavHost(navController = navController, startDestination = currentStartSection.route, modifier = modifier) {
         composable(AppSection.PLANIFICATION.route) {
             GpxImportScreen(
                 modifier = Modifier.fillMaxSize(),
