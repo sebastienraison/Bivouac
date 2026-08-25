@@ -343,7 +343,7 @@ private fun SpeedCalibrationSection(
             when (mode) {
                 SpeedCalibrationMode.MANUAL -> {
                     Text(
-                        "Saisie directement, jamais recalculée automatiquement.",
+                        "Saisies directement, jamais recalculées automatiquement.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -352,7 +352,7 @@ private fun SpeedCalibrationSection(
                 }
                 SpeedCalibrationMode.AUTO -> {
                     Text(
-                        "Calculée à partir de toutes les randonnées du Journal, recalculée à chaque nouvel import.",
+                        "Calculées à partir de toutes les randonnées du Journal, recalculées à chaque nouvel import.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -373,7 +373,7 @@ private fun SpeedCalibrationSection(
                                 "pénalité D+ ne peut pas être isolée avec un seul point de mesure — " +
                                 "elle reste à sa valeur par défaut. Choisis au moins 2 randonnées de " +
                                 "profils différents (plate et pentue) pour l'affiner aussi."
-                            else -> "Calculée à partir de $selectedTrackCount traces choisies dans le Journal."
+                            else -> "Calculées à partir de $selectedTrackCount traces choisies dans le Journal."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
