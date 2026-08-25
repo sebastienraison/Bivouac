@@ -62,6 +62,23 @@ moins deux randonnées différentes pour que le calcul ait un sens — c'est pou
 Sélection restent grisés tant que ton Journal (ou ta sélection de traces) n'en contient pas au moins
 deux.
 
+### Comment le calcul automatique de vitesse fonctionne-t-il, et pourquoi peut-il être optimiste ?
+
+Plutôt que de faire une moyenne globale par rando, Bivouac découpe chacune de tes randonnées en
+petits tronçons pour séparer ce qui relève de l'allure à plat de ce qui relève du dénivelé — plus
+précis qu'une simple moyenne, surtout si tes randos varient beaucoup en profil. Les moments passés
+à l'arrêt (pause, photo, casse-croûte) sont automatiquement écartés de ce calcul, pour qu'une longue
+pause ne fasse pas croire que tu marches lentement.
+
+Ce même souci de précision explique deux choix qui peuvent surprendre. D'abord, la pénalité de
+dénivelé ne distingue pas montée et descente : sur des boucles (l'immense majorité des randos), les
+deux sont si étroitement corrélées qu'un facteur séparé n'apporterait aucune précision réelle, juste
+du bruit statistique sur un chiffre supplémentaire — mieux vaut un seul facteur robuste que deux
+approximatifs. Ensuite, la durée estimée ne provisionne pas encore de temps de pause pour la rando à
+venir : le calcul mesure ta vitesse de marche pure, mais ne rajoute rien pour anticiper les arrêts
+du jour J. Résultat, les estimations ont tendance à être optimistes, l'écart grandissant avec le
+nombre de pauses prévisibles. Une marge de pause réglable est prévue dans une prochaine version.
+
 ### Une trace très volumineuse peut-elle poser problème ?
 
 Non, plus maintenant. Les versions précédentes stockaient le contenu GPX d'une trace du Journal
