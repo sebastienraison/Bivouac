@@ -1,5 +1,31 @@
 # Bivouac — Notes de version
 
+## V2.0.2
+
+**Réglages (nouveau) :**
+
+- Provision de pause réglable dans l'estimation de durée (Vitesse personnalisée) : ajoute une marge
+  de temps aux estimations pour tenir compte des pauses (photo, casse-croûte, arrêts...), réglable
+  manuellement ou mesurée automatiquement sur le Journal/la sélection selon le mode choisi
+
+**Bugfixes :**
+
+- Le calcul automatique de pénalité D+ (Auto/Sélection) pouvait être surestimé quand un arrêt était
+  pris en pleine montée — désormais exclu du calcul, comme c'était déjà le cas sur terrain plat
+- Duplication d'une trace du Journal vers Planification : le dialogue de renommage pouvait se
+  refermer tout seul avant d'avoir pu taper un nom
+- Planification : un trek multi-jours dupliqué depuis le Journal, dont l'enregistrement s'était
+  arrêté loin du bivouac un soir, pouvait afficher un trajet fictif sur la carte et gonfler la
+  distance totale affichée — même correctif que celui déjà appliqué au Journal
+- Une trace mono-jour sans aucun point de bivouac posé n'avait aucun moyen d'export GPX depuis
+  Planification — ajouté au menu de la trace
+- Ouvrir une trace de la banque devenue illisible affichait un écran d'erreur qui faisait
+  disparaître le reste de la liste ; affiche désormais un message ponctuel, sans perturber le reste
+- Journal : mise en page de la ligne de bivouac (police des heures, icône) alignée sur le reste de
+  l'interface
+- Renforce la protection contre un risque théorique de sauvegarde incomplète en cas d'accès
+  concurrent à la base pendant l'opération
+
 ## V2.0.1
 
 **Bugfixes :**
