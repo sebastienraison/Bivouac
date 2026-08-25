@@ -58,36 +58,49 @@ object BackupManager {
             // restore time.
             SettingsPreferences(context).setLastBackupAtMillis(System.currentTimeMillis())
 
-            // Closing Room forces a WAL checkpoint and flushes any pending writes into bivouac.db
-            // itself, so the plain file copy below is consistent even without a filesystem-level
-            // transaction wrapping it.
-            BivouacDatabase.closeAndReset()
-            try {
-                val dbFile = context.getDatabasePath(BivouacDatabase.DATABASE_NAME)
-                val datastoreDir = File(context.filesDir, "datastore")
-                val output = context.contentResolver.openOutputStream(destination)
-                    ?: throw IOException("Impossible d'ouvrir la destination sélectionnée.")
-                ZipOutputStream(output).use { zip ->
-                    for (suffix in DB_SIDECAR_SUFFIXES) {
-                        val file = File(dbFile.parentFile, dbFile.name + suffix)
-                        if (file.exists()) writeEntry(zip, DB_ENTRY_PREFIX + file.name, file)
+            // RIC-128 : synchronized(BivouacDatabase) partage le même moniteur que getInstance()/
+            // closeAndReset() (synchronized(this) dans leur companion object — Kotlin résout le
+            // nom de classe nu vers l'instance du companion). Sans ce verrou, un accès DB tiers
+            // pendant la boucle de copie ci-dessous rouvrait silencieusement la base via
+            // getInstance() : une écriture concurrente était alors commise en base mais pouvait
+            // être absente de l'archive déjà en cours de zip, sans que la sauvegarde le signale
+            // comme échouée. Verrou bloquant (pas de Mutex coroutine) volontairement : ce bloc ne
+            // contient aucun point de suspension réel (aucun des appels ci-dessous n'est un
+            // `suspend fun`), donc pas de risque de tenir le moniteur au travers d'un changement
+            // de thread — cohérent avec synchronized(this) déjà utilisé par ailleurs dans
+            // BivouacDatabase, appelé depuis ces mêmes contextes suspendus sans souci.
+            synchronized(BivouacDatabase) {
+                // Closing Room forces a WAL checkpoint and flushes any pending writes into
+                // bivouac.db itself, so the plain file copy below is consistent even without a
+                // filesystem-level transaction wrapping it.
+                BivouacDatabase.closeAndReset()
+                try {
+                    val dbFile = context.getDatabasePath(BivouacDatabase.DATABASE_NAME)
+                    val datastoreDir = File(context.filesDir, "datastore")
+                    val output = context.contentResolver.openOutputStream(destination)
+                        ?: throw IOException("Impossible d'ouvrir la destination sélectionnée.")
+                    ZipOutputStream(output).use { zip ->
+                        for (suffix in DB_SIDECAR_SUFFIXES) {
+                            val file = File(dbFile.parentFile, dbFile.name + suffix)
+                            if (file.exists()) writeEntry(zip, DB_ENTRY_PREFIX + file.name, file)
+                        }
+                        for (name in PREFS_FILE_NAMES) {
+                            val file = File(datastoreDir, name)
+                            if (file.exists()) writeEntry(zip, PREFS_ENTRY_PREFIX + file.name, file)
+                        }
+                        for (file in LoggedTrackGpxStore.dir(context).listFiles().orEmpty()) {
+                            if (file.isFile) writeEntry(zip, GPX_ENTRY_PREFIX + file.name, file)
+                        }
+                        for (file in PlanificationGpxStore.dir(context).listFiles().orEmpty()) {
+                            if (file.isFile) writeEntry(zip, GPX_PLANIF_ENTRY_PREFIX + file.name, file)
+                        }
                     }
-                    for (name in PREFS_FILE_NAMES) {
-                        val file = File(datastoreDir, name)
-                        if (file.exists()) writeEntry(zip, PREFS_ENTRY_PREFIX + file.name, file)
-                    }
-                    for (file in LoggedTrackGpxStore.dir(context).listFiles().orEmpty()) {
-                        if (file.isFile) writeEntry(zip, GPX_ENTRY_PREFIX + file.name, file)
-                    }
-                    for (file in PlanificationGpxStore.dir(context).listFiles().orEmpty()) {
-                        if (file.isFile) writeEntry(zip, GPX_PLANIF_ENTRY_PREFIX + file.name, file)
-                    }
+                } finally {
+                    // Re-primes the singleton right away rather than leaving it null until
+                    // whatever screen happens to touch the DB next — a backup shouldn't leave the
+                    // app in a half-initialized state if the user keeps using it right after.
+                    BivouacDatabase.getInstance(context)
                 }
-            } finally {
-                // Re-primes the singleton right away rather than leaving it null until whatever
-                // screen happens to touch the DB next — a backup shouldn't leave the app in a
-                // half-initialized state if the user keeps using it right after.
-                BivouacDatabase.getInstance(context)
             }
         }
     }
