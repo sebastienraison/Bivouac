@@ -70,10 +70,13 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
 
 /**
  * [content] (le reste de l'appli, NavHost compris) n'est composé qu'une fois le rattrapage terminé
- * ou constaté inutile. Tant que ce n'est pas le cas, seuls un fond neutre et un popup non
- * dismissable (retour et tap extérieur désarmés, comme [com.bivouac.app.ui.journal.JournalScreen]
- * le fait déjà pour son propre popup d'import en cours) sont affichés — la navigation est bloquée
- * par construction, puisque le NavHost lui-même n'est pas encore monté.
+ * ou constaté inutile. Tant que ce n'est pas le cas, la navigation est bloquée par construction
+ * (le NavHost lui-même n'est pas encore monté) — mais le dialogue ne s'affiche, lui, que pendant
+ * [ElevationBackfillViewModel.State.Running], jamais pendant [ElevationBackfillViewModel.State.
+ * Checking] : ce dernier n'est qu'une requête COUNT (quasi instantanée, y compris sur une grosse
+ * banque), et l'immense majorité des lancements n'ont rien à rattraper — un dialogue qui
+ * apparaîtrait puis disparaîtrait aussitôt à CHAQUE lancement de l'app serait plus gênant qu'utile.
+ * Checking se contente donc du même fond neutre que Running, sans le popup par-dessus.
  */
 @Composable
 fun ElevationBackfillGate(
@@ -83,7 +86,10 @@ fun ElevationBackfillGate(
 ) {
     when (val current = viewModel.state.collectAsStateWithLifecycle().value) {
         ElevationBackfillViewModel.State.Ready -> content()
-        else -> {
+        ElevationBackfillViewModel.State.Checking -> {
+            Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+        }
+        is ElevationBackfillViewModel.State.Running -> {
             Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
             AlertDialog(
                 onDismissRequest = {},
@@ -95,14 +101,7 @@ fun ElevationBackfillGate(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
-                        Text(
-                            when (current) {
-                                ElevationBackfillViewModel.State.Checking -> "Préparation…"
-                                is ElevationBackfillViewModel.State.Running ->
-                                    "Mise à jour en cours : ${current.done}/${current.total}…"
-                                ElevationBackfillViewModel.State.Ready -> ""
-                            },
-                        )
+                        Text("Mise à jour en cours : ${current.done}/${current.total}…")
                     }
                 },
                 confirmButton = {},
