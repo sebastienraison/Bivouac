@@ -105,7 +105,7 @@ object BilanStatsCalculator {
             bivouacCount = totalBivouacs,
             progression = buildProgression(tracks, daysByTrackId, zone, now),
             mostActiveMonthInsight = buildInsight(tracks, zone),
-            kmEffortRecord = kmEffortRecord(tracks, calibration),
+            kmEffortRecord = kmEffortRecord(tracks, daysByTrackId, calibration),
             vamRecord = vamRecord(tracks, daysByTrackId),
             maxAltitudeRecord = maxAltitudeRecord(tracks, daysByTrackId),
             highestBivouacRecord = highestBivouacRecord(tracks, daysByTrackId),
@@ -184,19 +184,38 @@ object BilanStatsCalculator {
 
     // --- Records vedettes (RIC-19 §3) --------------------------------------------------------
 
-    private fun kmEffortRecord(tracks: List<LoggedTrackEntity>, calibration: SpeedCalibration): BilanRecord? =
-        tracks.maxByOrNull { equivalentKm(it, calibration) }?.let { entry ->
-            BilanRecord(
-                kind = BilanRecordKind.KM_EFFORT,
-                value = equivalentKm(entry, calibration),
-                placeName = entry.name,
-                whenMillis = entry.startedAt,
-                trackId = entry.id,
-            )
+    // Par jour et non par trace entière (contrairement à la première version de ce calcul) : la
+    // distance/D+ cumulés d'un trek de plusieurs jours dépassent presque toujours ceux d'une seule
+    // journée, aussi sportive soit-elle — un trek gagnait donc systématiquement, quelle que soit
+    // l'intensité réelle de chaque jour qui le compose. Mêmes colonnes que maxDistanceDayRecord/
+    // maxGainDayRecord ci-dessous (flatDistanceMeters+steepDistanceMeters, steepGainMeters).
+    private fun kmEffortRecord(
+        tracks: List<LoggedTrackEntity>,
+        daysByTrackId: Map<String, List<LoggedTrackDayEntity>>,
+        calibration: SpeedCalibration,
+    ): BilanRecord? {
+        val byTrack = tracks.associateBy { it.id }
+        var best: BilanRecord? = null
+        for ((trackId, days) in daysByTrackId) {
+            val entry = byTrack[trackId] ?: continue
+            for (day in days) {
+                val flat = day.flatDistanceMeters ?: continue
+                val steep = day.steepDistanceMeters ?: continue
+                val gain = day.steepGainMeters ?: continue
+                val equivalentKm = (flat + steep) / 1000.0 + gain / calibration.elevationGainPenaltyMetersPerKm
+                if (best == null || equivalentKm > best.value) {
+                    best = BilanRecord(
+                        kind = BilanRecordKind.KM_EFFORT,
+                        value = equivalentKm,
+                        placeName = entry.name,
+                        whenMillis = day.startedAtMillis ?: entry.startedAt,
+                        trackId = trackId,
+                    )
+                }
+            }
         }
-
-    private fun equivalentKm(entry: LoggedTrackEntity, calibration: SpeedCalibration): Double =
-        entry.distanceMeters / 1000.0 + entry.elevationGainMeters / calibration.elevationGainPenaltyMetersPerKm
+        return best
+    }
 
     // Même garde-fou que la calibration par segments (SpeedCalibrationCalculator) : une sortie trop
     // courte ou trop plate pour mesurer une pénalité D+ fiable n'a pas plus de sens comme record VAM

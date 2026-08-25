@@ -114,16 +114,45 @@ class BilanStatsCalculatorTest {
     @Test
     fun kmEffortRecordPicksHighestEquivalentDistance() {
         val tracks = listOf(
-            // 10 km + 500 m / 100 m/km = 15 km-eff.
-            track("small", 2025, 5, distanceMeters = 10_000.0, elevationGainMeters = 500.0),
-            // 8 km + 2000 m / 100 m/km = 28 km-eff. -> gagne malgré une distance plus courte
-            track("steep", 2025, 6, distanceMeters = 8_000.0, elevationGainMeters = 2_000.0),
+            track("small", 2025, 5),
+            track("steep", 2025, 6),
         )
-        val stats = BilanStatsCalculator.compute(tracks, emptyMap(), SpeedCalibration.DEFAULT, zone)
+        val daysByTrackId = mapOf(
+            // 10 km + 500 m / 100 m/km = 15 km-eff.
+            "small" to listOf(day("small", 0, flatDistanceMeters = 6_000.0, steepDistanceMeters = 4_000.0, steepGainMeters = 500.0)),
+            // 8 km + 2000 m / 100 m/km = 28 km-eff. -> gagne malgré une distance plus courte
+            "steep" to listOf(day("steep", 0, flatDistanceMeters = 3_000.0, steepDistanceMeters = 5_000.0, steepGainMeters = 2_000.0)),
+        )
+        val stats = BilanStatsCalculator.compute(tracks, daysByTrackId, SpeedCalibration.DEFAULT, zone)
 
         assertEquals("steep", stats.kmEffortRecord?.trackId)
         assertEquals(28.0, stats.kmEffortRecord!!.value, 1e-9)
-        assertNull("record mono-jour, pas de positionnement day-level", stats.kmEffortRecord?.dayIndex)
+    }
+
+    @Test
+    fun kmEffortRecordComparesSingleDaysNotWholeTreks() {
+        val tracks = listOf(
+            // Trek de 3 jours modérés : gros total cumulé, mais aucune journée individuelle très
+            // engagée. Avant ce correctif, kmEffortRecord comparait le total du trek (30 km-eff.
+            // sur l'ensemble) à la sortie ci-dessous et gagnait à tort.
+            track("trek", 2025, 7, distanceMeters = 30_000.0, elevationGainMeters = 1_500.0),
+            // Une seule sortie très engagée, mais plus courte que le trek cumulé.
+            track("single", 2025, 8, distanceMeters = 8_000.0, elevationGainMeters = 2_000.0),
+        )
+        val daysByTrackId = mapOf(
+            "trek" to listOf(
+                // 10 km + 500 m / 100 m/km = 15 km-eff. par jour, jamais plus.
+                day("trek", 0, flatDistanceMeters = 6_000.0, steepDistanceMeters = 4_000.0, steepGainMeters = 500.0),
+                day("trek", 1, flatDistanceMeters = 6_000.0, steepDistanceMeters = 4_000.0, steepGainMeters = 500.0),
+                day("trek", 2, flatDistanceMeters = 6_000.0, steepDistanceMeters = 4_000.0, steepGainMeters = 500.0),
+            ),
+            // 8 km + 2000 m / 100 m/km = 28 km-eff., largement au-dessus de chaque jour du trek.
+            "single" to listOf(day("single", 0, flatDistanceMeters = 3_000.0, steepDistanceMeters = 5_000.0, steepGainMeters = 2_000.0)),
+        )
+        val stats = BilanStatsCalculator.compute(tracks, daysByTrackId, SpeedCalibration.DEFAULT, zone)
+
+        assertEquals("single", stats.kmEffortRecord?.trackId)
+        assertEquals(28.0, stats.kmEffortRecord!!.value, 1e-9)
     }
 
     @Test
