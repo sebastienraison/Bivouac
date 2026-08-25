@@ -1568,7 +1568,14 @@ internal fun ThreeStopJournalDetail(
                             daySegments.forEachIndexed { index, segment ->
                                 HorizontalDivider()
                                 Column(modifier = Modifier.padding(vertical = 10.dp)) {
-                                    Text(text = "Jour ${index + 1}", style = MaterialTheme.typography.labelLarge)
+                                    // RIC-112 : jour de semaine + quantième réels plutôt qu'un ordinal,
+                                    // tirés du même horodatage GPX que dayStartDates ci-dessus. Repli sur
+                                    // "Jour N" si ce jour précis n'a pas d'horodatage exploitable — un
+                                    // trou isolé ne doit pas casser la ventilation des autres jours.
+                                    val dayLabel = segment.points.firstOrNull()?.time
+                                        ?.let { formatDayLabel(it) }
+                                        ?: "Jour ${index + 1}"
+                                    Text(text = dayLabel, style = MaterialTheme.typography.labelLarge)
                                     StatsRows(TrackStatsCalculator.recomputeDuration(segment.stats, activeCalibration))
                                 }
                                 // La nuit s'intercale entre deux jours, exactement comme la
@@ -1867,6 +1874,13 @@ private fun formatTimeOfDay(instant: Instant): String =
     DateTimeFormatter.ofPattern("HH:mm", Locale.FRANCE)
         .withZone(ZoneId.systemDefault())
         .format(instant)
+
+// RIC-112 : jour de semaine + quantième d'un jour de trek, ex. "Lundi 12".
+private fun formatDayLabel(instant: Instant): String =
+    DateTimeFormatter.ofPattern("EEEE d", Locale.FRANCE)
+        .withZone(ZoneId.systemDefault())
+        .format(instant)
+        .replaceFirstChar { it.titlecase(Locale.FRANCE) }
 
 private fun formatStartedAt(epochMillis: Long): String =
     DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.FRANCE)
