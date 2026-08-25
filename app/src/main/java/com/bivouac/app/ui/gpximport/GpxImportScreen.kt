@@ -362,6 +362,9 @@ fun GpxImportScreen(
                     val dayName = "$baseName - Jour ${index + 1}"
                     context.startActivity(GpxExporter.openIntent(context, segment.points, dayName))
                 },
+                onExportTrack = {
+                    context.startActivity(GpxExporter.openIntent(context, loaded.track.points, loaded.track.name ?: "Trace"))
+                },
                 onWeatherClick = { point ->
                     val url = MeteoblueLink.forCoordinates(point.latitude, point.longitude)
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
