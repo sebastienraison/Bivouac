@@ -60,8 +60,10 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.R
@@ -85,6 +87,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.flow.first
 
 private val PEEK_HEIGHT_EMPTY = 150.dp
 
@@ -106,6 +109,7 @@ fun GpxImportScreen(
     viewModel: GpxImportViewModel = viewModel(),
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val bivouacPoints by viewModel.bivouacPoints.collectAsStateWithLifecycle()
     val effectiveBivouacPoints by viewModel.effectiveBivouacPoints.collectAsStateWithLifecycle()
@@ -150,8 +154,15 @@ fun GpxImportScreen(
     // RIC-40 : se déclenche une fois par demande entrante (identité de la requête en clé, remise à
     // null par l'appelant juste après) — c'est openDuplicateFromLoggedTrack qui décide s'il peut
     // charger tout de suite ou s'il doit d'abord passer par la confirmation de fermeture.
+    //
+    // RIC-131 : la requête arrive dans le même geste que la navigation NavHost qui affiche cet
+    // écran (voir MainActivity.onDuplicateToPlanification) — poser le dialogue de nom pendant que
+    // la transition de destination est encore en cours lui fait recevoir un onDismissRequest
+    // spontané, il disparaît sans que l'utilisateur ait cliqué. Attendre RESUMED avant d'appeler
+    // openDuplicateFromLoggedTrack (qui pose ce dialogue) évite la course.
     LaunchedEffect(pendingDuplicate) {
         val request = pendingDuplicate ?: return@LaunchedEffect
+        lifecycleOwner.lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
         viewModel.openDuplicateFromLoggedTrack(request.track, request.bivouacPoints, request.suggestedName)
         onPendingDuplicateConsumed()
     }
