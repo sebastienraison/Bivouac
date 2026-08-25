@@ -25,6 +25,8 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.bivouac.app.bilan.BilanScreen
+import com.bivouac.app.bilan.JournalOpenRequest
 import com.bivouac.app.data.prefs.AppSectionPreferences
 import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.ui.gpximport.GpxImportScreen
@@ -66,6 +68,11 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
     // partagé : une duplication est un passage de relais ponctuel, pas un état que l'un des deux
     // écrans possède durablement.
     var pendingDuplicate by remember { mutableStateOf<DuplicatePlanRequest?>(null) }
+
+    // RIC-19 : même patron que pendingDuplicate ci-dessus — un clic sur un record du Bilan doit
+    // ouvrir une trace précise du Journal, et ces deux écrans ne se voient jamais autrement que par
+    // MainActivity (chacun son ViewModel).
+    var pendingJournalOpenRequest by remember { mutableStateOf<JournalOpenRequest?>(null) }
 
     // RIC-104 : tant que ce choix n'est pas tranché, ni la Planification ni le Journal ne savent
     // quoi faire du fichier — voir UniverseChoiceDialog.
@@ -138,6 +145,19 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
                 },
                 pendingImportUris = incomingJournalUris.takeIf { it.isNotEmpty() },
                 onPendingImportUrisConsumed = { incomingJournalUris = emptyList() },
+                pendingOpenRequest = pendingJournalOpenRequest,
+                onPendingOpenRequestConsumed = { pendingJournalOpenRequest = null },
+            )
+        }
+        composable(AppSection.BILAN.route) {
+            BilanScreen(
+                modifier = Modifier.fillMaxSize(),
+                currentSection = AppSection.BILAN,
+                onSectionSelected = ::onSectionSelected,
+                onOpenJournalEntry = { request ->
+                    pendingJournalOpenRequest = request
+                    onSectionSelected(AppSection.JOURNAL)
+                },
             )
         }
         composable(AppSection.REGLAGES.route) {

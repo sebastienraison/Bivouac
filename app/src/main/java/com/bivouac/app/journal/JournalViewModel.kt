@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.bivouac.app.bilan.JournalOpenRequest
 import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.LoggedTrackRepository
@@ -40,10 +41,16 @@ sealed interface JournalUiState {
     data object Loading : JournalUiState
     // daySegments (RIC-41) : la trace redécoupée par jour importé, pour la ventilation
     // « Total » + « Jour N » — voir LoggedTrackRepository.openDetail.
+    //
+    // initialCursorIndex (RIC-19) : non nul quand l'ouverture vient d'un record du Bilan portant
+    // sur un jour précis d'un trek multi-jours (trek le plus long, bivouac le plus haut) — voir
+    // openTrackById. Réutilise le curseur déjà affiché sur l'ElevationProfile (BIV-52) plutôt que
+    // de construire une nouvelle navigation day-level, comme demandé par le ticket.
     data class Detail(
         val entry: LoggedTrackEntity,
         val track: HikeTrack,
         val daySegments: List<Segment>,
+        val initialCursorIndex: Int? = null,
     ) : JournalUiState
     // BIV-48: a contemplative overview of several traces at once — entries in the order they
     // should get their (rotating) legend color, each paired with its parsed track.
@@ -289,7 +296,25 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _selectedFilterTags.value = _selectedFilterTags.value.let { if (tag in it) it - tag else it + tag }
     }
 
-    fun openTrack(entry: LoggedTrackEntity) {
+    fun openTrack(entry: LoggedTrackEntity) = openTrackInternal(entry, dayIndex = null)
+
+    /**
+     * RIC-19 §6 : point d'entrée depuis un record du Bilan (autre écran, autre ViewModel — même
+     * boîte aux lettres que [onDuplicateToPlanification][com.bivouac.app.journal.DuplicatePlanRequest]
+     * portée par MainActivity, voir BilanScreen/MainActivity). [dayIndex] non nul positionne le
+     * curseur au premier point du jour correspondant une fois la trace chargée ; laissé nul pour
+     * les records mono-jour, qui ouvrent la trace sans marquage particulier (RIC-19 §6).
+     */
+    fun openTrackById(id: String, dayIndex: Int? = null) {
+        val entry = _tracks.value.find { it.id == id } ?: run {
+            Log.w("JournalViewModel", "openTrackById: trace $id introuvable (supprimée depuis ?)")
+            _uiState.value = JournalUiState.Error("Trace introuvable.")
+            return
+        }
+        openTrackInternal(entry, dayIndex)
+    }
+
+    private fun openTrackInternal(entry: LoggedTrackEntity, dayIndex: Int?) {
         _uiState.value = JournalUiState.Loading
         viewModelScope.launch {
             runCatching {
@@ -297,7 +322,15 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             }.onSuccess { detail ->
                 _uiState.value = if (detail != null) {
                     _currentTags.value = _tagsByTrackId.value[entry.id].orEmpty()
-                    JournalUiState.Detail(entry, detail.track, detail.daySegments)
+                    // Point du premier point du jour demandé : somme des tailles des jours qui le
+                    // précèdent, la trace concaténée listant les jours dans cet ordre (voir
+                    // LoggedTrackRepository.openDetail). coerceIn par prudence si le jour demandé
+                    // n'existe plus (trace modifiée entre le calcul du record et le clic).
+                    val cursor = dayIndex?.let { idx ->
+                        detail.daySegments.take(idx).sumOf { it.points.size }
+                            .coerceIn(0, (detail.track.points.size - 1).coerceAtLeast(0))
+                    }
+                    JournalUiState.Detail(entry, detail.track, detail.daySegments, cursor)
                 } else {
                     JournalUiState.Error("Trace introuvable.")
                 }

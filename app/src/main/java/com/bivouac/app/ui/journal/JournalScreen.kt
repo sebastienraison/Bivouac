@@ -108,6 +108,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.R
+import com.bivouac.app.bilan.JournalOpenRequest
 import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.SystemTag
@@ -173,6 +174,10 @@ fun JournalScreen(
     // ne peut pas appeler ce ViewModel directement, lui non plus.
     pendingImportUris: List<Uri>? = null,
     onPendingImportUrisConsumed: () -> Unit = {},
+    // RIC-19 : même boîte aux lettres que pendingImportUris ci-dessus, pour un clic sur un record
+    // du Bilan (autre écran, autre ViewModel) — voir JournalOpenRequest et MainActivity.
+    pendingOpenRequest: JournalOpenRequest? = null,
+    onPendingOpenRequestConsumed: () -> Unit = {},
     viewModel: JournalViewModel = viewModel(),
 ) {
     val calibrationSelectionActive by viewModel.calibrationSelectionActive.collectAsStateWithLifecycle()
@@ -185,6 +190,12 @@ fun JournalScreen(
         val uris = pendingImportUris ?: return@LaunchedEffect
         viewModel.importTracks(uris)
         onPendingImportUrisConsumed()
+    }
+
+    LaunchedEffect(pendingOpenRequest) {
+        val request = pendingOpenRequest ?: return@LaunchedEffect
+        viewModel.openTrackById(request.trackId, request.dayIndex)
+        onPendingOpenRequestConsumed()
     }
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
     val tracksLoaded by viewModel.tracksLoaded.collectAsStateWithLifecycle()
@@ -240,7 +251,9 @@ fun JournalScreen(
     var highlightedTrackId by remember(multiTrack) { mutableStateOf<String?>(null) }
     val onToggleHighlight = { id: String -> highlightedTrackId = if (highlightedTrackId == id) null else id }
     var renameDialogVisible by remember { mutableStateOf(false) }
-    var cursorIndex by remember(detail?.entry?.id) { mutableStateOf<Int?>(null) }
+    // RIC-19 : seedé depuis detail.initialCursorIndex plutôt que toujours null — une ouverture
+    // venue d'un record du Bilan sur un jour précis arrive avec son curseur déjà positionné.
+    var cursorIndex by remember(detail?.entry?.id) { mutableStateOf(detail?.initialCursorIndex) }
     when {
         detail != null -> {
             // Constat E : sur une sortie de plusieurs jours, chaque coupure entre deux fichiers est
