@@ -122,6 +122,7 @@ fun GpxImportScreen(
     val nameDialogRequest by viewModel.nameDialogRequest.collectAsStateWithLifecycle()
     val closeConfirmationReason by viewModel.closeConfirmationReason.collectAsStateWithLifecycle()
     val deleteTarget by viewModel.deleteTarget.collectAsStateWithLifecycle()
+    val bankOpenError by viewModel.bankOpenError.collectAsStateWithLifecycle()
 
     val selectedLayer by viewModel.selectedLayer.collectAsStateWithLifecycle()
     val nonFreeFeaturesDisabled by viewModel.nonFreeFeaturesDisabled.collectAsStateWithLifecycle()
@@ -454,6 +455,16 @@ fun GpxImportScreen(
             dismissButton = {
                 TextButton(onClick = viewModel::dismissDeleteConfirmation) { Text("Annuler") }
             },
+        )
+    }
+
+    // RIC-127 (suite) : popup plutôt qu'écran plein — voir la kdoc de bankOpenError.
+    bankOpenError?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissBankOpenError,
+            title = { Text("Ouverture impossible") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = viewModel::dismissBankOpenError) { Text("OK") } },
         )
     }
 }

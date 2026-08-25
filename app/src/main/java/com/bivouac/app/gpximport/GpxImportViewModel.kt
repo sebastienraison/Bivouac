@@ -131,6 +131,18 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     private val _deleteTarget = MutableStateFlow<DeleteTarget?>(null)
     val deleteTarget: StateFlow<DeleteTarget?> = _deleteTarget.asStateFlow()
 
+    // RIC-127 (suite) : un GPX illisible dans la banque échoue en restant sur la liste (Idle),
+    // avec ce message en popup par-dessus — même patron que RestoreOutcome.Error côté Réglages.
+    // GpxImportUiState.Error écrase tout l'écran, ce qui convient à restoreLastTrack (rien à
+    // perdre au démarrage) mais pas ici : la liste contient d'autres traces valides, un
+    // remplacement complet les ferait disparaître pour rien.
+    private val _bankOpenError = MutableStateFlow<String?>(null)
+    val bankOpenError: StateFlow<String?> = _bankOpenError.asStateFlow()
+
+    fun dismissBankOpenError() {
+        _bankOpenError.value = null
+    }
+
     init {
         refreshBankedTraces()
     }
@@ -246,12 +258,14 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             // RIC-127 : un GPX illisible en banque ne doit pas crasher l'app, voir openTrack
             // (JournalViewModel) pour le même filet côté Journal. Distinct de "introuvable en
-            // banque" (opened == null sans exception, cas légitime -> Idle) : une exception ici
-            // veut dire trouvé mais illisible -> Error, pas le même repli.
+            // banque" (opened == null sans exception, cas légitime -> Idle).
             val result = runCatching { withContext(Dispatchers.IO) { bankRepository.open(id) } }
             if (result.isFailure) {
                 Log.e("GpxImportViewModel", "Échec de l'ouverture d'une trace de la banque", result.exceptionOrNull())
-                _uiState.value = GpxImportUiState.Error("Trace incorrecte ou fichier illisible.")
+                // Reste sur la liste (Idle) plutôt que GpxImportUiState.Error : les autres
+                // traces de la banque restent valides, pas de raison de les faire disparaître.
+                _uiState.value = GpxImportUiState.Idle
+                _bankOpenError.value = "Trace incorrecte ou fichier illisible."
                 return@launch
             }
             val opened = result.getOrNull()
