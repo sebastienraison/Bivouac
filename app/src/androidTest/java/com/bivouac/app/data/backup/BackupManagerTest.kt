@@ -80,7 +80,7 @@ class BackupManagerTest {
         mapPrefs.setSelectedLayer(MapLayer.SATELLITE)
         val settingsPrefs = SettingsPreferences(context)
         settingsPrefs.setSpeedCalibrationMode(SpeedCalibrationMode.MANUAL)
-        settingsPrefs.setManualCalibration(5.0, 120.0)
+        settingsPrefs.setManualCalibration(5.0, 120.0, 20.0)
 
         val backupResult = BackupManager.backup(context, Uri.fromFile(backupFile))
         assertTrue(backupResult.isSuccess)
@@ -107,7 +107,7 @@ class BackupManagerTest {
         context.deleteDatabase(BivouacDatabase.DATABASE_NAME)
         LoggedTrackGpxStore.dir(context).deleteRecursively()
         mapPrefs.setSelectedLayer(MapLayer.HIKING)
-        settingsPrefs.setManualCalibration(3.5, 100.0)
+        settingsPrefs.setManualCalibration(3.5, 100.0, 0.0)
         assertEquals(0, BivouacDatabase.getInstance(context).loggedTrackDao().list().size)
 
         val restoreResult = BackupManager.restore(context, Uri.fromFile(backupFile))

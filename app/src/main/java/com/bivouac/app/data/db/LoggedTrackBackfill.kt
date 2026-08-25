@@ -13,10 +13,11 @@ import java.time.Duration
 
 /**
  * Remplit après coup les colonnes dénormalisées de `logged_track_day` pour les traces importées
- * avant la migration 8 vers 9 (contentHash/startedAtMillis/elapsedSeconds, RIC-98/99), ainsi que
- * les sept sommes de segments introduites par la migration 10 vers 11 (RIC-109 : flatCount et
- * consorts, voir [com.bivouac.app.data.gpx.DaySegmentAggregate]) — étendu plutôt que dupliqué en un
- * second rattrapage séparé : le GPX est de toute façon déjà lu et parsé ici pour les trois premières
+ * avant la migration 8 vers 9 (contentHash/startedAtMillis/elapsedSeconds, RIC-98/99), les sept
+ * sommes de segments introduites par la migration 10 vers 11 (RIC-109 : flatCount et consorts) et
+ * la huitième introduite par la migration 11 vers 12 (RIC-115 : stoppedHours, voir
+ * [com.bivouac.app.data.gpx.DaySegmentAggregate]) — étendu plutôt que dupliqué en un second
+ * rattrapage séparé : le GPX est de toute façon déjà lu et parsé ici pour les trois premières
  * colonnes, calculer les segments à ce même endroit coûte une passe de plus sur des points déjà en
  * mémoire, alors qu'un second rattrapage indépendant relirait tous les fichiers depuis zéro. Voir
  * [LoggedTrackDayEntity] pour ce que ces colonnes portent.
@@ -32,10 +33,12 @@ import java.time.Duration
  * se résorbe tout seul. Une trace illisible est marquée traitée avec un hash calculé sur le
  * contenu brut, pour ne pas la reprendre indéfiniment à chaque lancement.
  *
- * RIC-109 : le marqueur "pas encore traité" est désormais flatCount IS NULL, pas contentHash IS
- * NULL (voir [LoggedTrackDao.getDaysNeedingBackfill]) — une ligne déjà rattrapée par RIC-98/99 (donc
- * avec un contentHash) repasse une fois de plus ici pour recevoir les sommes de segments, que
- * backfillOne calcule et écrit désormais dans la même passe que les trois colonnes historiques.
+ * RIC-109 : le marqueur "pas encore traité" était devenu flatCount IS NULL, pas contentHash IS
+ * NULL — une ligne déjà rattrapée par RIC-98/99 (donc avec un contentHash) repassait une fois de
+ * plus ici pour recevoir les sommes de segments. RIC-115 relaie ce même marqueur une fois de plus,
+ * à stoppedHours IS NULL (voir [LoggedTrackDao.getDaysNeedingBackfill]) : une ligne déjà rattrapée
+ * jusqu'à RIC-109 (donc avec un flatCount) repasse à son tour ici pour recevoir stoppedHours, que
+ * backfillOne calcule et écrit désormais dans la même passe que toutes les colonnes historiques.
  */
 object LoggedTrackBackfill {
 
@@ -115,6 +118,7 @@ object LoggedTrackBackfill {
         steepDistanceMeters = aggregate.steepDistanceMeters,
         steepGainMeters = aggregate.steepGainMeters,
         steepHours = aggregate.steepHours,
+        stoppedHours = aggregate.stoppedHours,
     )
 
     private fun sha256(text: String): String =

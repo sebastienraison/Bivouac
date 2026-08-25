@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 12,
-    "identityHash": "cf352288c5bd1ebeffbaf63ded24660c",
+    "identityHash": "4a940ac57fe605c5c71cdb5324d52100",
     "entities": [
       {
         "tableName": "saved_track",
@@ -179,7 +179,7 @@
       },
       {
         "tableName": "logged_track_day",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `trackId` TEXT NOT NULL, `dayIndex` INTEGER NOT NULL, `rawGpxFilePath` TEXT NOT NULL, `contentHash` TEXT, `startedAtMillis` INTEGER, `elapsedSeconds` INTEGER, `flatCount` INTEGER, `flatDistanceMeters` REAL, `flatHours` REAL, `steepCount` INTEGER, `steepDistanceMeters` REAL, `steepGainMeters` REAL, `steepHours` REAL, `maxElevationMeters` REAL, `lastPointElevationMeters` REAL, `elevationBackfilled` INTEGER NOT NULL, FOREIGN KEY(`trackId`) REFERENCES `logged_track`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `trackId` TEXT NOT NULL, `dayIndex` INTEGER NOT NULL, `rawGpxFilePath` TEXT NOT NULL, `contentHash` TEXT, `startedAtMillis` INTEGER, `elapsedSeconds` INTEGER, `flatCount` INTEGER, `flatDistanceMeters` REAL, `flatHours` REAL, `steepCount` INTEGER, `steepDistanceMeters` REAL, `steepGainMeters` REAL, `steepHours` REAL, `stoppedHours` REAL, FOREIGN KEY(`trackId`) REFERENCES `logged_track`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -256,20 +256,9 @@
             "affinity": "REAL"
           },
           {
-            "fieldPath": "maxElevationMeters",
-            "columnName": "maxElevationMeters",
+            "fieldPath": "stoppedHours",
+            "columnName": "stoppedHours",
             "affinity": "REAL"
-          },
-          {
-            "fieldPath": "lastPointElevationMeters",
-            "columnName": "lastPointElevationMeters",
-            "affinity": "REAL"
-          },
-          {
-            "fieldPath": "elevationBackfilled",
-            "columnName": "elevationBackfilled",
-            "affinity": "INTEGER",
-            "notNull": true
           }
         ],
         "primaryKey": {
@@ -361,7 +350,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'cf352288c5bd1ebeffbaf63ded24660c')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4a940ac57fe605c5c71cdb5324d52100')"
     ]
   }
 }

@@ -137,6 +137,61 @@ class SpeedCalibrationCalculatorTest {
         assertTrue("vitesse à plat préservée (obtenu ${result!!.calibration.walkingSpeedKmh})", abs(result.calibration.walkingSpeedKmh - 4.0) < 0.1)
     }
 
+    // 5. RIC-130 : le plafond de pénalité est adaptatif au D+ cumulé des segments pentus (300 au
+    // seuil MIN_TOTAL_GAIN_METERS, 450 à partir de 20 000 m, interpolation linéaire clampée entre
+    // les deux — voir la kdoc de maxPenaltyFor). Le plafond est observé au travers de compute() :
+    // des segments pentus parcourus PLUS VITE que le plat n'ont aucun surcoût attribuable au D+, la
+    // branche "aucun surcoût de dénivelé mesurable" renvoie alors exactement le plafond.
+
+    /** Segment pentu parcouru un peu plus vite (4,4 km/h) que la vitesse à plat de référence
+     * (4,0 km/h) : surcoût strictement négatif, garanti même en arithmétique flottante. */
+    private fun steepFasterThanFlat(gainM: Double) = TrackSegment(
+        distanceMeters = 200.0, elevationGainMeters = gainM, netElevationMeters = gainM, hours = 0.2 / 4.4,
+    )
+
+    private fun ceilingObservedFor(steep: List<TrackSegment>): Double {
+        val segments = List(30) { synth(200.0, 0.0, 4.0, 80.0) } + steep
+        val result = SpeedCalibrationCalculator.compute(DaySegmentAggregate.of(segments), emptyList())!!
+        assertFalse("branche 'aucun surcoût' attendue", result.fittedPenalty)
+        return result.calibration.elevationGainPenaltyMetersPerKm
+    }
+
+    @Test
+    fun adaptiveCeilingStaysAt300AtTheMinTotalGainAnchor() {
+        // 10 segments x 30 m = 300 m pile, le seuil MIN_TOTAL_GAIN_METERS : comportement inchangé
+        // au point le plus fragile.
+        assertEquals(300.0, ceilingObservedFor(List(10) { steepFasterThanFlat(gainM = 30.0) }), 1e-9)
+    }
+
+    @Test
+    fun adaptiveCeilingReaches450AtAndBeyondTwentyThousandMeters() {
+        // 400 segments x 50 m = 20 000 m pile...
+        assertEquals(450.0, ceilingObservedFor(List(400) { steepFasterThanFlat(gainM = 50.0) }), 1e-9)
+        // ... et le plafond reste clampé au-delà (500 x 50 m = 25 000 m).
+        assertEquals(450.0, ceilingObservedFor(List(500) { steepFasterThanFlat(gainM = 50.0) }), 1e-9)
+    }
+
+    @Test
+    fun adaptiveCeilingInterpolatesLinearlyBetweenAnchors() {
+        // 203 segments x 50 m = 10 150 m, le milieu exact de [300, 20 000] : le plafond doit être
+        // au milieu exact de [300, 450].
+        assertEquals(375.0, ceilingObservedFor(List(203) { steepFasterThanFlat(gainM = 50.0) }), 1e-9)
+    }
+
+    @Test
+    fun fittedPenaltyIsCappedByTheAdaptiveCeilingToo() {
+        // Surcoût minuscule (3,6 s par segment) mais non nul : la pénalité brute est énorme et le
+        // fit est réel. Son écrêtage doit utiliser le même plafond adaptatif (ici 375, à 10 150 m
+        // de D+ cumulé), pas l'ancien 300 fixe.
+        val steep = List(203) {
+            TrackSegment(distanceMeters = 200.0, elevationGainMeters = 50.0, netElevationMeters = 50.0, hours = 0.2 / 4.0 + 1e-3)
+        }
+        val segments = List(30) { synth(200.0, 0.0, 4.0, 80.0) } + steep
+        val result = SpeedCalibrationCalculator.compute(DaySegmentAggregate.of(segments), emptyList())!!
+        assertTrue("pénalité effectivement ajustée", result.fittedPenalty)
+        assertEquals(375.0, result.calibration.elevationGainPenaltyMetersPerKm, 1e-9)
+    }
+
     // Repli par échantillons seuls (aggregate vide) : le pont vers Sample utilisé quand une
     // sélection n'a pas encore de sommes de segments (banque pas rattrapée, voir
     // LoggedTrackRepository.calibrationSamples). Comportement hérité de l'ancien
@@ -184,5 +239,56 @@ class SpeedCalibrationCalculatorTest {
     fun defaultCalibrationMatchesPreviousHardcodedConstants() {
         assertEquals(3.5, SpeedCalibration.DEFAULT.walkingSpeedKmh, 0.0)
         assertEquals(100.0, SpeedCalibration.DEFAULT.elevationGainPenaltyMetersPerKm, 0.0)
+        assertEquals(0.0, SpeedCalibration.DEFAULT.pauseFractionPercent, 0.0)
+    }
+
+    // 6. RIC-115 : pauseFractionPercent = 100 * stoppedHours / (flatHours + steepHours +
+    // stoppedHours), mesurée sur TOUT le pool (voir DaySegmentAggregate.stoppedHours), et attachée
+    // à la calibration renvoyée quelle que soit la branche empruntée par compute() (fit complet,
+    // repli vitesse-seule, repli par échantillons).
+
+    @Test
+    fun pauseFractionPercentIsMeasuredFromStoppedHoursShareOfTotal() {
+        // flatHours 3h (12 km à 4 km/h) + steepHours 1h (2 km, excédent 0,5h -> fit réel) +
+        // stoppedHours 1h = 5h au total -> 20 % à l'arrêt.
+        val aggregate = DaySegmentAggregate(
+            flatCount = 40, flatDistanceMeters = 12_000.0, flatHours = 3.0,
+            steepCount = 20, steepDistanceMeters = 2_000.0, steepGainMeters = 500.0, steepHours = 1.0,
+            stoppedHours = 1.0,
+        )
+
+        val result = SpeedCalibrationCalculator.compute(aggregate, emptyList())
+
+        assertTrue(result != null)
+        assertTrue("pénalité effectivement ajustée (fit réel attendu)", result!!.fittedPenalty)
+        assertEquals(20.0, result.calibration.pauseFractionPercent, 1e-9)
+    }
+
+    @Test
+    fun pauseFractionPercentIsAttachedOnTheSpeedOnlyFallbackToo() {
+        // flatCount = 2 < MIN_FLAT_SEGMENTS(10) -> repli vitesse-seule (samples), mais la part de
+        // pause reste mesurée sur l'agrégat : flatHours 0,1h + steepHours 0h + stoppedHours 0,3h =
+        // 0,4h au total -> 75 % à l'arrêt.
+        val aggregate = DaySegmentAggregate(
+            flatCount = 2, flatDistanceMeters = 400.0, flatHours = 0.1,
+            steepCount = 0, steepDistanceMeters = 0.0, steepGainMeters = 0.0, steepHours = 0.0,
+            stoppedHours = 0.3,
+        )
+        val sample = Sample(distanceMeters = 5000.0, elevationGainMeters = 200.0, elapsedHours = 1.5)
+
+        val result = SpeedCalibrationCalculator.compute(aggregate, listOf(sample))
+
+        assertTrue(result != null && !result.fittedPenalty)
+        assertEquals(75.0, result!!.calibration.pauseFractionPercent, 1e-9)
+    }
+
+    @Test
+    fun pauseFractionPercentIsZeroWhenAggregateHasNoUsableHours() {
+        val sample = Sample(distanceMeters = 5000.0, elevationGainMeters = 200.0, elapsedHours = 1.2)
+
+        val result = SpeedCalibrationCalculator.compute(DaySegmentAggregate.EMPTY, listOf(sample))
+
+        assertTrue(result != null)
+        assertEquals(0.0, result!!.calibration.pauseFractionPercent, 1e-9)
     }
 }

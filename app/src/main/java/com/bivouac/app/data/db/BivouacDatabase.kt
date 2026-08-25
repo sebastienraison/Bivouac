@@ -29,7 +29,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open") — a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 12
+        const val SCHEMA_VERSION = 13
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -333,9 +333,24 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-115 : huitième somme par segment de 200 m (voir DaySegmentAggregate.stoppedHours),
+        // qui mesure automatiquement la provision de pause en mode Auto/Sélection à partir des
+        // heures que le calcul par segments (RIC-109) écartait jusqu'ici sans les compter nulle
+        // part. Même schéma que MIGRATION_10_11 : un seul ALTER TABLE ADD COLUMN, colonne
+        // nullable, aucune recréation de table. Même relais de marqueur que RIC-109 avait déjà
+        // appliqué (contentHash -> flatCount) : le rattrapage repasse une fois de plus sur les
+        // lignes déjà rattrapées jusqu'à RIC-109 (flatCount non nul, stoppedHours encore nul après
+        // ce simple ADD COLUMN) — voir LoggedTrackDao, dont la requête de sélection change de
+        // flatCount IS NULL à stoppedHours IS NULL pour cette raison précise.
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `stoppedHours` REAL")
+            }
+        }
+
         // RIC-19 : même patron que MIGRATION_8_9 et MIGRATION_10_11 — trois ALTER TABLE ADD COLUMN,
         // colonnes nullables (ou par défaut pour le marqueur), aucune recréation de table, aucun
-        // rattrapage ici. Cible : schemas/12.json.
+        // rattrapage ici. Cible : schemas/13.json.
         //
         // Différence avec les rattrapages précédents : celui-ci (LoggedTrackBackfill.runElevation)
         // n'est PAS lancé en tâche de fond silencieuse depuis JournalViewModel comme les autres —
@@ -343,7 +358,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // annulable si l'utilisateur quitte l'écran Journal, jugé inadapté ici). Voir
         // ElevationBackfillGate côté UI : popup bloquant + spinner au premier lancement post-
         // migration, avant que la moindre navigation ne soit possible.
-        val MIGRATION_11_12 = object : Migration(11, 12) {
+        val MIGRATION_12_13 = object : Migration(12, 13) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `maxElevationMeters` REAL")
                 db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `lastPointElevationMeters` REAL")
@@ -424,6 +439,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                         migration9To10(context),
                         MIGRATION_10_11,
                         MIGRATION_11_12,
+                        MIGRATION_12_13,
                     )
                     .build()
                     .also { instance = it }
@@ -436,6 +452,12 @@ abstract class BivouacDatabase : RoomDatabase() {
         //
         // Contrat induit (RIC-103) : personne ne doit capturer durablement l'instance ni un DAO —
         // les repositories résolvent le leur à chaque accès, précisément pour survivre à ce cycle.
+        //
+        // Contrat induit (RIC-128) : ce synchronized(this) et celui de getInstance() ci-dessus
+        // partagent le même moniteur que BackupManager.backup() tient (synchronized(BivouacDatabase),
+        // qui résout vers cette même instance de companion object) pendant toute sa fenêtre de
+        // copie — sans quoi un appel concurrent ici rouvrirait silencieusement la base pendant que
+        // backup() la copie, avec le risque de perdre une écriture de l'archive sans le signaler.
         fun closeAndReset() {
             synchronized(this) {
                 instance?.close()

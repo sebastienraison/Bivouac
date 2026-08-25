@@ -131,6 +131,18 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     private val _deleteTarget = MutableStateFlow<DeleteTarget?>(null)
     val deleteTarget: StateFlow<DeleteTarget?> = _deleteTarget.asStateFlow()
 
+    // RIC-127 (suite) : un GPX illisible dans la banque échoue en restant sur la liste (Idle),
+    // avec ce message en popup par-dessus — même patron que RestoreOutcome.Error côté Réglages.
+    // GpxImportUiState.Error écrase tout l'écran, ce qui convient à restoreLastTrack (rien à
+    // perdre au démarrage) mais pas ici : la liste contient d'autres traces valides, un
+    // remplacement complet les ferait disparaître pour rien.
+    private val _bankOpenError = MutableStateFlow<String?>(null)
+    val bankOpenError: StateFlow<String?> = _bankOpenError.asStateFlow()
+
+    fun dismissBankOpenError() {
+        _bankOpenError.value = null
+    }
+
     init {
         refreshBankedTraces()
     }
@@ -191,7 +203,15 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun renameInBank(id: String, name: String) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { bankRepository.rename(id, name) }
+            // RIC-127 : rename() reparse le GPX (pour resynchroniser le <name> embarqué) et peut
+            // donc échouer sur un fichier devenu illisible. Pas de _uiState.Error ici à dessein :
+            // cette fonction peut s'exécuter pendant qu'une AUTRE trace est ouverte à l'écran
+            // (rename depuis la liste de la banque), écraser tout l'écran pour un échec sur une
+            // entrée différente serait pire que l'absence de retour visuel. Juste empêcher le
+            // crash pour l'instant — un vrai retour utilisateur (snackbar ?) reste à définir, voir
+            // RIC-127 pour la discussion.
+            runCatching { withContext(Dispatchers.IO) { bankRepository.rename(id, name) } }
+                .onFailure { Log.e("GpxImportViewModel", "Échec du renommage d'une trace de la banque", it) }
             refreshBankedTraces()
         }
     }
@@ -236,7 +256,19 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     fun openFromBank(id: String) {
         _uiState.value = GpxImportUiState.Loading
         viewModelScope.launch {
-            val opened = withContext(Dispatchers.IO) { bankRepository.open(id) }
+            // RIC-127 : un GPX illisible en banque ne doit pas crasher l'app, voir openTrack
+            // (JournalViewModel) pour le même filet côté Journal. Distinct de "introuvable en
+            // banque" (opened == null sans exception, cas légitime -> Idle).
+            val result = runCatching { withContext(Dispatchers.IO) { bankRepository.open(id) } }
+            if (result.isFailure) {
+                Log.e("GpxImportViewModel", "Échec de l'ouverture d'une trace de la banque", result.exceptionOrNull())
+                // Reste sur la liste (Idle) plutôt que GpxImportUiState.Error : les autres
+                // traces de la banque restent valides, pas de raison de les faire disparaître.
+                _uiState.value = GpxImportUiState.Idle
+                _bankOpenError.value = "Trace incorrecte ou fichier illisible."
+                return@launch
+            }
+            val opened = result.getOrNull()
             if (opened == null) {
                 _uiState.value = GpxImportUiState.Idle
                 return@launch
@@ -411,7 +443,16 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     fun restoreLastTrack() {
         _uiState.value = GpxImportUiState.Loading
         viewModelScope.launch {
-            val restored = withContext(Dispatchers.IO) { repository.loadLast() }
+            // RIC-127 : exécuté à chaque démarrage à froid — sans ce filet, une session
+            // auto-sauvegardée devenue illisible bloquerait le lancement de l'app. Distinct de
+            // "rien à restaurer" (restored == null sans exception, cas normal -> Idle).
+            val result = runCatching { withContext(Dispatchers.IO) { repository.loadLast() } }
+            if (result.isFailure) {
+                Log.e("GpxImportViewModel", "Échec de la restauration de la session précédente", result.exceptionOrNull())
+                _uiState.value = GpxImportUiState.Error("Trace incorrecte ou fichier illisible.")
+                return@launch
+            }
+            val restored = result.getOrNull()
             if (restored == null) {
                 _uiState.value = GpxImportUiState.Idle
                 return@launch

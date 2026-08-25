@@ -115,6 +115,10 @@ data class DaySegmentAggregate(
     val steepDistanceMeters: Double,
     val steepGainMeters: Double,
     val steepHours: Double,
+    // RIC-115 : heures cumulées de TOUS les segments écartés par PAUSE_SPEED_KMH, plat comme
+    // pentu — jusqu'ici ce temps était simplement jeté (voir la kdoc de `of` ci-dessous) ; il sert
+    // désormais à mesurer automatiquement la provision de pause (SpeedCalibrationCalculator).
+    val stoppedHours: Double,
 ) {
     operator fun plus(other: DaySegmentAggregate) = DaySegmentAggregate(
         flatCount = flatCount + other.flatCount,
@@ -124,22 +128,33 @@ data class DaySegmentAggregate(
         steepDistanceMeters = steepDistanceMeters + other.steepDistanceMeters,
         steepGainMeters = steepGainMeters + other.steepGainMeters,
         steepHours = steepHours + other.steepHours,
+        stoppedHours = stoppedHours + other.stoppedHours,
     )
 
     companion object {
-        val EMPTY = DaySegmentAggregate(0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+        val EMPTY = DaySegmentAggregate(0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, 0.0)
 
         /**
          * Classe [segments] en plat/pentu selon [TrackSegmenter.FLAT_SLOPE_PERCENT], en écartant
-         * du plat les segments à l'arrêt ([TrackSegmenter.PAUSE_SPEED_KMH]) — voir la kdoc de ces
-         * constantes pour pourquoi. La classification a lieu une seule fois, ici, à l'import ou au
-         * rattrapage ; [SpeedCalibrationCalculator] ne voit plus jamais un [TrackSegment] individuel.
+         * des deux catégories les segments à l'arrêt ([TrackSegmenter.PAUSE_SPEED_KMH]) — voir la
+         * kdoc de ces constantes pour pourquoi. RIC-129 : l'exclusion portait initialement sur le
+         * plat seul ; un arrêt pris en pleine montée gonflait `steepHours` sans y ajouter de D+,
+         * ce qui biaisait la pénalité calibrée à la hausse (mesuré sur le Journal réel : jusqu'à
+         * 18 % du temps « pentu » cumulé était en fait du temps à l'arrêt). La classification a
+         * lieu une seule fois, ici, à l'import ou au rattrapage ; [SpeedCalibrationCalculator] ne
+         * voit plus jamais un [TrackSegment] individuel.
+         *
+         * RIC-115 : les segments écartés (plat ET pentu, peu importe la pente, seul le critère de
+         * vitesse compte) ne sont plus perdus — leurs heures sont sommées dans [stoppedHours].
          */
         fun of(segments: List<TrackSegment>): DaySegmentAggregate {
             val flat = segments.filter {
                 abs(it.netSlopePercent) < TrackSegmenter.FLAT_SLOPE_PERCENT && it.speedKmh >= TrackSegmenter.PAUSE_SPEED_KMH
             }
-            val steep = segments.filter { abs(it.netSlopePercent) >= TrackSegmenter.FLAT_SLOPE_PERCENT }
+            val steep = segments.filter {
+                abs(it.netSlopePercent) >= TrackSegmenter.FLAT_SLOPE_PERCENT && it.speedKmh >= TrackSegmenter.PAUSE_SPEED_KMH
+            }
+            val stopped = segments.filter { it.speedKmh < TrackSegmenter.PAUSE_SPEED_KMH }
             return DaySegmentAggregate(
                 flatCount = flat.size,
                 flatDistanceMeters = flat.sumOf { it.distanceMeters },
@@ -148,6 +163,7 @@ data class DaySegmentAggregate(
                 steepDistanceMeters = steep.sumOf { it.distanceMeters },
                 steepGainMeters = steep.sumOf { it.elevationGainMeters },
                 steepHours = steep.sumOf { it.hours },
+                stoppedHours = stopped.sumOf { it.hours },
             )
         }
     }

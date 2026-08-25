@@ -158,9 +158,23 @@ class TrackSegmenterTest {
     }
 
     @Test
+    fun daySegmentAggregateExcludesStoppedSegmentsFromSteepToo() {
+        // RIC-129 : un arrêt pris en pleine montée ne doit pas gonfler steepHours/steepGainMeters.
+        val steepMoving = TrackSegment(distanceMeters = 200.0, elevationGainMeters = 20.0, netElevationMeters = 20.0, hours = 0.08) // 2.5 km/h
+        val steepStopped = TrackSegment(distanceMeters = 200.0, elevationGainMeters = 1.0, netElevationMeters = 20.0, hours = 0.5) // 0.4 km/h : à l'arrêt
+
+        val aggregate = DaySegmentAggregate.of(listOf(steepMoving, steepStopped))
+
+        assertEquals(1, aggregate.steepCount)
+        assertEquals(200.0, aggregate.steepDistanceMeters, 1e-9)
+        assertEquals(20.0, aggregate.steepGainMeters, 1e-9)
+        assertEquals(0.08, aggregate.steepHours, 1e-9)
+    }
+
+    @Test
     fun daySegmentAggregatePlusIsAdditive() {
-        val a = DaySegmentAggregate(flatCount = 2, flatDistanceMeters = 400.0, flatHours = 0.1, steepCount = 1, steepDistanceMeters = 200.0, steepGainMeters = 15.0, steepHours = 0.06)
-        val b = DaySegmentAggregate(flatCount = 3, flatDistanceMeters = 600.0, flatHours = 0.15, steepCount = 2, steepDistanceMeters = 400.0, steepGainMeters = 30.0, steepHours = 0.1)
+        val a = DaySegmentAggregate(flatCount = 2, flatDistanceMeters = 400.0, flatHours = 0.1, steepCount = 1, steepDistanceMeters = 200.0, steepGainMeters = 15.0, steepHours = 0.06, stoppedHours = 0.02)
+        val b = DaySegmentAggregate(flatCount = 3, flatDistanceMeters = 600.0, flatHours = 0.15, steepCount = 2, steepDistanceMeters = 400.0, steepGainMeters = 30.0, steepHours = 0.1, stoppedHours = 0.03)
 
         val sum = a + b
 
@@ -171,7 +185,24 @@ class TrackSegmenterTest {
         assertEquals(600.0, sum.steepDistanceMeters, 1e-9)
         assertEquals(45.0, sum.steepGainMeters, 1e-9)
         assertEquals(0.16, sum.steepHours, 1e-9)
+        assertEquals(0.05, sum.stoppedHours, 1e-9)
         assertEquals(sum, DaySegmentAggregate.EMPTY + a + b)
+    }
+
+    // RIC-115 : les segments écartés du plat ET du pentu (peu importe leur pente) doivent finir
+    // dans stoppedHours, pas être simplement jetés.
+    @Test
+    fun daySegmentAggregateSumsStoppedHoursAcrossFlatAndSteep() {
+        val flatMoving = TrackSegment(distanceMeters = 200.0, elevationGainMeters = 1.0, netElevationMeters = 0.5, hours = 0.05) // 4 km/h, plat
+        val flatStopped = TrackSegment(distanceMeters = 200.0, elevationGainMeters = 0.0, netElevationMeters = 0.0, hours = 0.4) // 0.5 km/h, plat mais à l'arrêt
+        val steepMoving = TrackSegment(distanceMeters = 200.0, elevationGainMeters = 20.0, netElevationMeters = 20.0, hours = 0.08) // 2.5 km/h, pentu
+        val steepStopped = TrackSegment(distanceMeters = 200.0, elevationGainMeters = 1.0, netElevationMeters = 20.0, hours = 0.5) // 0.4 km/h, pentu mais à l'arrêt
+
+        val aggregate = DaySegmentAggregate.of(listOf(flatMoving, flatStopped, steepMoving, steepStopped))
+
+        assertEquals(1, aggregate.flatCount)
+        assertEquals(1, aggregate.steepCount)
+        assertEquals(0.9, aggregate.stoppedHours, 1e-9)
     }
 
     private companion object {

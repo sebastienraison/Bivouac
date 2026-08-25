@@ -62,18 +62,24 @@ moins deux randonnées différentes pour que le calcul ait un sens — c'est pou
 Sélection restent grisés tant que ton Journal (ou ta sélection de traces) n'en contient pas au moins
 deux.
 
-### Une trace très volumineuse peut-elle poser problème ?
+### Comment le calcul automatique de vitesse fonctionne-t-il, et pourquoi peut-il être optimiste ?
 
-Non, plus maintenant. Les versions précédentes stockaient le contenu GPX d'une trace du Journal
-directement en base de données, où une limite technique d'Android (environ 2 Mo par ligne au moment
-de la lecture) pouvait faire planter l'ouverture d'une trace très volumineuse (une rando de
-plusieurs heures avec un relevé GPS très dense), surtout sur les versions d'Android plus anciennes.
-Le contenu GPX est désormais conservé dans des fichiers du stockage interne de l'application, en
-dehors de la base : cette limite ne s'applique structurellement plus, quelle que soit la taille de
-la trace (dans la limite générale de 50 Mo par fichier GPX appliquée à l'import). La conversion des
-données existantes se fait automatiquement et sans perte à la première ouverture de l'application
-après mise à jour ; les traces restent incluses dans les sauvegardes (Réglages → Sauvegarder), qui
-embarquent ces fichiers avec la base.
+Plutôt que de faire une moyenne globale par rando, Bivouac découpe chacune de tes randonnées en
+petits tronçons pour séparer ce qui relève de l'allure à plat de ce qui relève du dénivelé — plus
+précis qu'une simple moyenne, surtout si tes randos varient beaucoup en profil. Les moments passés
+à l'arrêt (pause, photo, casse-croûte) sont automatiquement écartés de ce calcul, pour qu'une longue
+pause ne fasse pas croire que tu marches lentement.
+
+Ce même souci de précision explique un choix qui peut surprendre : la pénalité de dénivelé ne
+distingue pas montée et descente. Sur des boucles (l'immense majorité des randos), les deux sont si
+étroitement corrélées qu'un facteur séparé n'apporterait aucune précision réelle, juste du bruit
+statistique sur un chiffre supplémentaire — mieux vaut un seul facteur robuste que deux
+approximatifs.
+
+Pour la marge de pause justement : les Réglages (Vitesse personnalisée) proposent un curseur dédié
+qui ajoute une provision de temps aux estimations, réglable manuellement ou mesurée automatiquement
+sur le Journal/la sélection selon le mode choisi — sans lui, les estimations tendent à être
+optimistes, l'écart grandissant avec le nombre de pauses prévisibles.
 
 ### Mes randonnées partent-elles dans une sauvegarde cloud Google ?
 

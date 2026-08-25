@@ -54,8 +54,44 @@ object SpeedCalibrationCalculator {
     private const val MIN_SPEED_KMH = 1.0
     private const val MAX_SPEED_KMH = 8.0
     private const val MIN_PENALTY_M_PER_KM = 20.0
-    private const val MAX_PENALTY_M_PER_KM = 300.0
+
+    /**
+     * RIC-130 : le plafond de pénalité n'est plus fixe. L'ancien `MAX_PENALTY_M_PER_KM = 300`
+     * (hérité tel quel de l'ancien calcul) n'a jamais été une borne physique : c'est un garde-fou
+     * numérique. La pénalité vaut D+ / (vitesse * temps excédentaire), où le temps excédentaire est
+     * une DIFFÉRENCE ENTRE DEUX GRANDS NOMBRES PROCHES (le temps passé sur le pentu, moins ce que la
+     * vitesse à plat expliquerait). Ce genre de soustraction amplifie énormément le bruit : sur le
+     * Journal réel, une erreur de 0,2 km/h sur la vitesse à plat déplace la pénalité déduite de
+     * plusieurs centaines de m/km (CR_CALIBRATION_SEGMENTS.md, section 6.1). Une pénalité qui sort
+     * haute est donc le plus souvent un symptôme de bruit, pas un signal.
+     *
+     * Mais ce bruit s'atténue avec le volume de données : sur 300 pools aléatoires tirés du Journal
+     * réel (script 20_plafond_adaptatif.py), le p90 de la pénalité brute tombe de ~1780 m/km quand
+     * le pool cumule 1000 m de D+ pentu à ~470 quand il en cumule 35 000, pendant que la médiane
+     * reste stable autour de 370-380 : au-dessus de 300. Le plafond fixe coupait donc un signal
+     * probablement réel dès que les données suffisaient, tout en restant indispensable sur les
+     * petits pools (mode Sélection à 2-3 randos, où le p90 brut dépasse 1500).
+     *
+     * D'où un plafond fonction du D+ cumulé observé sur les segments pentus ([maxPenaltyFor]) :
+     * 300 (comportement actuel conservé au point le plus fragile, le seuil de repli
+     * [MIN_TOTAL_GAIN_METERS]) montant linéairement jusqu'à 450 à 20 000 m de D+, clampé aux deux
+     * bouts.
+     */
+    private const val MAX_PENALTY_M_PER_KM_FLOOR = 300.0
+    private const val MAX_PENALTY_M_PER_KM_CEILING = 450.0
+    private const val ADAPTIVE_CEILING_GAIN_METERS = 20_000.0
     private val DEFAULT_PENALTY_M_PER_KM = SpeedCalibration.DEFAULT.elevationGainPenaltyMetersPerKm
+
+    /** Plafond de plausibilité de la pénalité pour un pool cumulant [steepGainMeters] de D+ sur ses
+     * segments pentus : interpolation linéaire clampée entre [MAX_PENALTY_M_PER_KM_FLOOR] (à
+     * [MIN_TOTAL_GAIN_METERS]) et [MAX_PENALTY_M_PER_KM_CEILING] (à partir de
+     * [ADAPTIVE_CEILING_GAIN_METERS]). Voir la kdoc des constantes pour la justification. */
+    private fun maxPenaltyFor(steepGainMeters: Double): Double {
+        val t = (steepGainMeters - MIN_TOTAL_GAIN_METERS) /
+            (ADAPTIVE_CEILING_GAIN_METERS - MIN_TOTAL_GAIN_METERS)
+        return MAX_PENALTY_M_PER_KM_FLOOR +
+            t.coerceIn(0.0, 1.0) * (MAX_PENALTY_M_PER_KM_CEILING - MAX_PENALTY_M_PER_KM_FLOOR)
+    }
 
     /**
      * Calibration à partir des sommes de segments du Journal (ou du sous-ensemble sélectionné), ou
@@ -73,14 +109,16 @@ object SpeedCalibrationCalculator {
      * re-parsing. Voir CR_RIC109_IMPLEMENTATION.md pour la discussion complète de ce choix.
      */
     fun compute(aggregate: DaySegmentAggregate, fallbackSamples: List<Sample>): Result? {
+        val pauseFraction = pauseFractionPercent(aggregate)
+
         if (aggregate.flatCount < MIN_FLAT_SEGMENTS || aggregate.flatHours <= 0.0) {
-            return speedOnly(fallbackSamples, "pas assez de terrain plat pour mesurer une vitesse à plat")
+            return speedOnly(fallbackSamples, "pas assez de terrain plat pour mesurer une vitesse à plat", pauseFraction)
         }
         val speed = (aggregate.flatDistanceMeters / 1000.0) / aggregate.flatHours
 
         if (aggregate.steepCount < MIN_STEEP_SEGMENTS || aggregate.steepGainMeters < MIN_TOTAL_GAIN_METERS) {
             return Result(
-                SpeedCalibration(speed.coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH), DEFAULT_PENALTY_M_PER_KM),
+                SpeedCalibration(speed.coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH), DEFAULT_PENALTY_M_PER_KM, pauseFraction),
                 fittedPenalty = false,
                 note = "pas assez de dénivelé pour mesurer une pénalité",
             )
@@ -90,7 +128,7 @@ object SpeedCalibrationCalculator {
         if (excessHours <= 0.0) {
             // Le terrain pentu a été parcouru aussi vite que le plat : rien à attribuer au D+.
             return Result(
-                SpeedCalibration(speed.coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH), MAX_PENALTY_M_PER_KM),
+                SpeedCalibration(speed.coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH), maxPenaltyFor(aggregate.steepGainMeters), pauseFraction),
                 fittedPenalty = false,
                 note = "aucun surcoût de dénivelé mesurable",
             )
@@ -100,21 +138,33 @@ object SpeedCalibrationCalculator {
         return Result(
             SpeedCalibration(
                 speed.coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH),
-                penalty.coerceIn(MIN_PENALTY_M_PER_KM, MAX_PENALTY_M_PER_KM),
+                penalty.coerceIn(MIN_PENALTY_M_PER_KM, maxPenaltyFor(aggregate.steepGainMeters)),
+                pauseFraction,
             ),
             fittedPenalty = true,
         )
     }
 
+    /**
+     * RIC-115 : part du temps passée à l'arrêt, mesurée sur TOUS les segments du pool (flat +
+     * steep + stopped, indépendamment du fait que la vitesse et/ou la pénalité aient pu être
+     * fittées) — voir la kdoc de [DaySegmentAggregate.stoppedHours]. 0.0 si le pool n'a aucune
+     * heure exploitable (pas de division par zéro).
+     */
+    private fun pauseFractionPercent(aggregate: DaySegmentAggregate): Double {
+        val totalHours = aggregate.flatHours + aggregate.steepHours + aggregate.stoppedHours
+        return if (totalHours > 0.0) 100.0 * aggregate.stoppedHours / totalHours else 0.0
+    }
+
     /** Repli à une seule inconnue : la vitesse, ajustée contre la pénalité par défaut. */
-    private fun speedOnly(samples: List<Sample>, note: String): Result? {
+    private fun speedOnly(samples: List<Sample>, note: String, pauseFraction: Double): Result? {
         val valid = samples.filter { it.elapsedHours > 0.0 && it.distanceMeters >= 0.0 && it.elevationGainMeters >= 0.0 }
         if (valid.isEmpty()) return null
         val equivalentKm = valid.sumOf { it.distanceMeters / 1000.0 + it.elevationGainMeters / DEFAULT_PENALTY_M_PER_KM }
         val hours = valid.sumOf { it.elapsedHours }
         if (equivalentKm <= 0.0 || hours <= 0.0) return null
         return Result(
-            SpeedCalibration((equivalentKm / hours).coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH), DEFAULT_PENALTY_M_PER_KM),
+            SpeedCalibration((equivalentKm / hours).coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH), DEFAULT_PENALTY_M_PER_KM, pauseFraction),
             fittedPenalty = false,
             note = note,
         )

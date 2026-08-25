@@ -63,6 +63,11 @@ data class LoggedTrackDayEntity(
     val steepDistanceMeters: Double? = null,
     val steepGainMeters: Double? = null,
     val steepHours: Double? = null,
+    // RIC-115 : heures cumulées des segments à l'arrêt de ce jour (voir DaySegmentAggregate.
+    // stoppedHours), rattrapées dans la même passe que les sept colonnes ci-dessus — même
+    // convention que flatCount : null tant que ce jour n'est pas rattrapé, 0.0 (pas null) si le
+    // jour n'a aucun segment à l'arrêt une fois rattrapé.
+    val stoppedHours: Double? = null,
     // RIC-19 : altitude du jour, reparsée depuis rawGpxFilePath au même titre que les colonnes
     // ci-dessus. Contrairement à flatCount, ni l'une ni l'autre ne peut servir de marqueur "pas
     // encore rattrapé" : une altitude de 0 m est une valeur réelle possible (rando en bord de mer),

@@ -100,13 +100,33 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setManualSpeed(walkingSpeedKmh: Double) {
         viewModelScope.launch {
-            settingsPreferences.setManualCalibration(walkingSpeedKmh, manualCalibration.value.elevationGainPenaltyMetersPerKm)
+            settingsPreferences.setManualCalibration(
+                walkingSpeedKmh,
+                manualCalibration.value.elevationGainPenaltyMetersPerKm,
+                manualCalibration.value.pauseFractionPercent,
+            )
         }
     }
 
     fun setManualPenalty(elevationGainPenaltyMetersPerKm: Double) {
         viewModelScope.launch {
-            settingsPreferences.setManualCalibration(manualCalibration.value.walkingSpeedKmh, elevationGainPenaltyMetersPerKm)
+            settingsPreferences.setManualCalibration(
+                manualCalibration.value.walkingSpeedKmh,
+                elevationGainPenaltyMetersPerKm,
+                manualCalibration.value.pauseFractionPercent,
+            )
+        }
+    }
+
+    // RIC-115 : curseur "Pauses pendant la marche", actif en mode Manuel seulement (grisé en
+    // Auto/Sélection, voir SettingsScreen) — même politique que setManualSpeed/setManualPenalty.
+    fun setManualPause(pauseFractionPercent: Double) {
+        viewModelScope.launch {
+            settingsPreferences.setManualCalibration(
+                manualCalibration.value.walkingSpeedKmh,
+                manualCalibration.value.elevationGainPenaltyMetersPerKm,
+                pauseFractionPercent,
+            )
         }
     }
 

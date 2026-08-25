@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,8 +28,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
@@ -45,6 +48,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,9 +69,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
+import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.prefs.SpeedCalibrationMode
 import com.bivouac.app.settings.RestoreOutcome
 import com.bivouac.app.settings.SettingsViewModel
+import com.bivouac.app.ui.components.formatDuration
 import com.bivouac.app.ui.nav.AppScreenHeader
 import com.bivouac.app.ui.nav.AppSection
 import java.time.Instant
@@ -147,6 +153,7 @@ fun SettingsScreen(
                 onModeSelected = viewModel::setMode,
                 onManualSpeedChanged = viewModel::setManualSpeed,
                 onManualPenaltyChanged = viewModel::setManualPenalty,
+                onManualPauseChanged = viewModel::setManualPause,
                 onChooseTracksClick = onOpenJournalSelection,
             )
             NonFreeFeaturesSection(
@@ -294,6 +301,7 @@ private fun SpeedCalibrationSection(
     onModeSelected: (SpeedCalibrationMode) -> Unit,
     onManualSpeedChanged: (Double) -> Unit,
     onManualPenaltyChanged: (Double) -> Unit,
+    onManualPauseChanged: (Double) -> Unit,
     onChooseTracksClick: () -> Unit,
 ) {
     // Auto (whole Journal) and Sélection (a subset of it) both need at least
@@ -336,7 +344,7 @@ private fun SpeedCalibrationSection(
             when (mode) {
                 SpeedCalibrationMode.MANUAL -> {
                     Text(
-                        "Saisie directement, jamais recalculée automatiquement.",
+                        "Saisies directement, jamais recalculées automatiquement.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -345,7 +353,7 @@ private fun SpeedCalibrationSection(
                 }
                 SpeedCalibrationMode.AUTO -> {
                     Text(
-                        "Calculée à partir de toutes les randonnées du Journal, recalculée à chaque nouvel import.",
+                        "Calculées à partir de toutes les randonnées du Journal, recalculées à chaque nouvel import.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -366,7 +374,7 @@ private fun SpeedCalibrationSection(
                                 "pénalité D+ ne peut pas être isolée avec un seul point de mesure — " +
                                 "elle reste à sa valeur par défaut. Choisis au moins 2 randonnées de " +
                                 "profils différents (plate et pentue) pour l'affiner aussi."
-                            else -> "Calculée à partir de $selectedTrackCount traces choisies dans le Journal."
+                            else -> "Calculées à partir de $selectedTrackCount traces choisies dans le Journal."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -378,6 +386,151 @@ private fun SpeedCalibrationSection(
                     }
                 }
             }
+
+            // RIC-115 : provision de pause — aucune séparation visuelle avec le bloc
+            // vitesse/pénalité ci-dessus, même carte, même niveau hiérarchique. Visible dans les
+            // 3 modes (contrairement aux champs de saisie/capsules ci-dessus, qui divergent selon
+            // le mode), à partir de la calibration effectivement active pour le mode courant.
+            val activeCalibration = when (mode) {
+                SpeedCalibrationMode.MANUAL -> manual
+                SpeedCalibrationMode.AUTO -> auto
+                SpeedCalibrationMode.SELECTION -> selection
+            }
+            Spacer(Modifier.size(8.dp))
+            DPlusPreviewRow(activeCalibration)
+            Spacer(Modifier.size(14.dp))
+            PauseStatCard(
+                pauseFractionPercent = activeCalibration.pauseFractionPercent,
+                enabled = mode == SpeedCalibrationMode.MANUAL,
+                onValueChange = onManualPauseChanged,
+            )
+            Spacer(Modifier.size(8.dp))
+            PausePreviewRow(activeCalibration.pauseFractionPercent)
+        }
+    }
+}
+
+// Rando type purement illustrative (RIC-115) — codée en dur, ne dépend d'aucune trace réelle. Sert
+// à rendre lisible la pénalité D+ (m/km), un chiffre autrement abstrait, dans les 3 modes.
+private const val TYPICAL_HIKE_DISTANCE_METERS = 15_000.0
+private const val TYPICAL_HIKE_GAIN_METERS = 600.0
+
+// Base de l'aperçu de provision de pause (RIC-115) — 6h de marche pure, également codées en dur.
+private const val PAUSE_PREVIEW_WALKING_MINUTES = 360.0
+
+@Composable
+private fun DPlusPreviewRow(calibration: SpeedCalibration) {
+    val totalMinutes = TrackStatsCalculator.walkingMinutes(TYPICAL_HIKE_DISTANCE_METERS, TYPICAL_HIKE_GAIN_METERS, calibration)
+    val dPlusOnlyMinutes = TrackStatsCalculator.walkingMinutes(0.0, TYPICAL_HIKE_GAIN_METERS, calibration)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.AutoMirrored.Filled.TrendingUp,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "Rando type de 15 km, 600 m de D+ → ${formatDuration(totalMinutes.roundToInt())} " +
+                "(dont ${formatDuration(dPlusOnlyMinutes.roundToInt())} dus au D+)",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun PausePreviewRow(pauseFractionPercent: Double) {
+    val totalMinutes = TrackStatsCalculator.applyPauseProvision(PAUSE_PREVIEW_WALKING_MINUTES, pauseFractionPercent)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.Schedule,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "Rando estimée à 6 h de marche → ${formatDuration(totalMinutes.roundToInt())} avec cette provision",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+// RIC-115 : bornes du curseur — 0 à 35 %, trois libellés qualitatifs répartis sur la plage, pas de
+// graduation numérique visible à côté des libellés (voir la maquette biv16-reglages-mockup.html).
+// 35 % et non 15-20 % : la médiane réelle mesurée est 12,9 %, le p90 à 26,6 % (CR_RIC115...).
+private const val PAUSE_SLIDER_MAX_PERCENT = 35f
+
+@Composable
+private fun PauseStatCard(
+    pauseFractionPercent: Double,
+    enabled: Boolean,
+    onValueChange: (Double) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            // Le remplissage gris plein (surfaceVariant) est ce qui fait lire cette capsule comme
+            // désactivée, quel que soit l'état du texte/slider dedans — c'est le même traitement
+            // que les capsules vitesse/D+ en lecture seule (StatBox). En Manuel, elles n'utilisent
+            // plus StatBox du tout mais un OutlinedTextField (contour, pas de fond) ; un simple
+            // contour ici plutôt qu'un remplissage retrouve ce même signal "éditable".
+            .then(
+                if (enabled) {
+                    Modifier.border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
+                } else {
+                    Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(14.dp))
+                },
+            )
+            .padding(12.dp),
+    ) {
+        Text("Pauses pendant la marche", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            "${pauseFractionPercent.roundToInt()} %",
+            style = MaterialTheme.typography.titleMedium,
+            // RIC-115 : cette capsule reste la même en Manuel qu'en Auto/Sélection (seul le
+            // slider ci-dessous bascule enabled/disabled) — contrairement à vitesse/D+, qui
+            // passent d'une capsule grise en lecture seule à un OutlinedTextField noir en édition.
+            // Sans ce contraste, la capsule pause a l'air désactivée même quand elle est éditable.
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        Slider(
+            value = pauseFractionPercent.toFloat().coerceIn(0f, PAUSE_SLIDER_MAX_PERCENT),
+            onValueChange = { onValueChange(it.toDouble()) },
+            valueRange = 0f..PAUSE_SLIDER_MAX_PERCENT,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "Je ne m'arrête pas ou presque",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "Je fais quelques pauses",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "Je fais beaucoup de pauses",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
