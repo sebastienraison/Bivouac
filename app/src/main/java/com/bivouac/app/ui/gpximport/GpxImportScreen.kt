@@ -326,6 +326,13 @@ fun GpxImportScreen(
             HikeMapView(
                 track = loaded.track,
                 bivouacPoints = bivouacPoints,
+                // RIC-126 : une trace multi-jours dupliquée depuis le Journal (RIC-40) place un
+                // bivouac à chaque jonction de jour d'origine — sans ça, un jour dont
+                // l'enregistrement s'est arrêté loin du camp fait mentir le tracé (trait continu
+                // plutôt que pointillé) comme RIC-120 l'a déjà corrigé côté Journal. Le seuil de
+                // 50 m dans DayJunctions.recordingGaps filtre naturellement les bivouacs posés à la
+                // main au milieu d'un tracé continu.
+                dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
                 selectedLayer = selectedLayer,
                 recenterSignal = recenterSignal,
                 visibleHeightPx = visibleMapHeightPx,
@@ -372,6 +379,9 @@ fun GpxImportScreen(
                     val baseName = loaded.track.name ?: "Trace"
                     val dayName = "$baseName - Jour ${index + 1}"
                     context.startActivity(GpxExporter.openIntent(context, segment.points, dayName))
+                },
+                onExportTrack = {
+                    context.startActivity(GpxExporter.openIntent(context, loaded.track.points, loaded.track.name ?: "Trace"))
                 },
                 onWeatherClick = { point ->
                     val url = MeteoblueLink.forCoordinates(point.latitude, point.longitude)

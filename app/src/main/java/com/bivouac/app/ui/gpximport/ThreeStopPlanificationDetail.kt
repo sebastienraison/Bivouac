@@ -107,6 +107,10 @@ internal fun ThreeStopPlanificationDetail(
     onDeleteClick: () -> Unit,
     onRemovePoint: (String) -> Unit,
     onExportSegment: (index: Int, segment: Segment) -> Unit,
+    // RIC-125 : export de la trace entière, indépendant des segments/bivouacs — seul moyen de
+    // sortir une trace mono-jour sans aucun point de bivouac posé (SegmentsList ne s'affiche pas
+    // dans ce cas, voir bivouacPoints.isNotEmpty() plus bas).
+    onExportTrack: () -> Unit,
     onWeatherClick: (TrackPoint) -> Unit,
     nonFreeFeaturesDisabled: Boolean = false,
     onSheetTopMeasured: (Int) -> Unit,
@@ -227,6 +231,7 @@ internal fun ThreeStopPlanificationDetail(
                             onRenameClick = onRenameClick,
                             onDuplicateClick = onDuplicateClick,
                             onDeleteClick = onDeleteClick,
+                            onExportClick = onExportTrack,
                             onCloseClick = onCloseClick,
                         )
                     }
@@ -244,6 +249,10 @@ internal fun ThreeStopPlanificationDetail(
                 ElevationProfile(
                     points = track.points,
                     bivouacPoints = elevationMarkerPoints,
+                    // RIC-126 : même raisonnement que HikeMapView côté GpxImportScreen — sans ça,
+                    // le profil d'un trek dupliqué depuis le Journal annonce plus de kilomètres que
+                    // les statistiques affichées juste au-dessus.
+                    dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
                     modifier = Modifier
                         .padding(horizontal = 20.dp)
                         .padding(top = 10.dp, bottom = 2.dp),
@@ -297,6 +306,7 @@ private fun TrackActionsRow(
     onRenameClick: () -> Unit,
     onDuplicateClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    onExportClick: () -> Unit,
     onCloseClick: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -326,6 +336,11 @@ private fun TrackActionsRow(
                     text = { Text("Dupliquer") },
                     leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
                     onClick = { menuExpanded = false; onDuplicateClick() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Exporter") },
+                    leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) },
+                    onClick = { menuExpanded = false; onExportClick() },
                 )
                 DropdownMenuItem(
                     text = { Text("Supprimer") },
