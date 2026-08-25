@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -228,9 +229,13 @@ private fun HeroRecordsSection(stats: BilanStats, onOpenJournalEntry: (JournalOp
         SectionLabel("Records")
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             records.chunked(2).forEach { rowRecords ->
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // IntrinsicSize.Max + fillMaxHeight sur chaque carte : sans ça, une carte dont le
+                // texte de meta tient sur une ligne de plus/moins que sa voisine (longueur du nom
+                // de la sortie) se retrouvait plus courte qu'elle, chaque ligne prenant sa propre
+                // hauteur intrinsèque au lieu de s'aligner sur la plus haute des deux.
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.height(IntrinsicSize.Max)) {
                     rowRecords.forEach { record ->
-                        HeroRecordCard(record, onOpenJournalEntry, modifier = Modifier.weight(1f))
+                        HeroRecordCard(record, onOpenJournalEntry, modifier = Modifier.weight(1f).fillMaxHeight())
                     }
                     if (rowRecords.size == 1) Spacer(Modifier.weight(1f))
                 }
