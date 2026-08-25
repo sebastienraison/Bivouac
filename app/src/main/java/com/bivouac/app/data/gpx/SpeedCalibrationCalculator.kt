@@ -105,14 +105,16 @@ object SpeedCalibrationCalculator {
      * re-parsing. Voir CR_RIC109_IMPLEMENTATION.md pour la discussion complète de ce choix.
      */
     fun compute(aggregate: DaySegmentAggregate, fallbackSamples: List<Sample>): Result? {
+        val pauseFraction = pauseFractionPercent(aggregate)
+
         if (aggregate.flatCount < MIN_FLAT_SEGMENTS || aggregate.flatHours <= 0.0) {
-            return speedOnly(fallbackSamples, "pas assez de terrain plat pour mesurer une vitesse à plat")
+            return speedOnly(fallbackSamples, "pas assez de terrain plat pour mesurer une vitesse à plat", pauseFraction)
         }
         val speed = (aggregate.flatDistanceMeters / 1000.0) / aggregate.flatHours
 
         if (aggregate.steepCount < MIN_STEEP_SEGMENTS || aggregate.steepGainMeters < MIN_TOTAL_GAIN_METERS) {
             return Result(
-                SpeedCalibration(speed.coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH), DEFAULT_PENALTY_M_PER_KM),
+                SpeedCalibration(speed.coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH), DEFAULT_PENALTY_M_PER_KM, pauseFraction),
                 fittedPenalty = false,
                 note = "pas assez de dénivelé pour mesurer une pénalité",
             )
@@ -122,7 +124,7 @@ object SpeedCalibrationCalculator {
         if (excessHours <= 0.0) {
             // Le terrain pentu a été parcouru aussi vite que le plat : rien à attribuer au D+.
             return Result(
-                SpeedCalibration(speed.coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH), maxPenaltyFor(aggregate.steepGainMeters)),
+                SpeedCalibration(speed.coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH), maxPenaltyFor(aggregate.steepGainMeters), pauseFraction),
                 fittedPenalty = false,
                 note = "aucun surcoût de dénivelé mesurable",
             )
@@ -133,20 +135,32 @@ object SpeedCalibrationCalculator {
             SpeedCalibration(
                 speed.coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH),
                 penalty.coerceIn(MIN_PENALTY_M_PER_KM, maxPenaltyFor(aggregate.steepGainMeters)),
+                pauseFraction,
             ),
             fittedPenalty = true,
         )
     }
 
+    /**
+     * RIC-115 : part du temps passée à l'arrêt, mesurée sur TOUS les segments du pool (flat +
+     * steep + stopped, indépendamment du fait que la vitesse et/ou la pénalité aient pu être
+     * fittées) — voir la kdoc de [DaySegmentAggregate.stoppedHours]. 0.0 si le pool n'a aucune
+     * heure exploitable (pas de division par zéro).
+     */
+    private fun pauseFractionPercent(aggregate: DaySegmentAggregate): Double {
+        val totalHours = aggregate.flatHours + aggregate.steepHours + aggregate.stoppedHours
+        return if (totalHours > 0.0) 100.0 * aggregate.stoppedHours / totalHours else 0.0
+    }
+
     /** Repli à une seule inconnue : la vitesse, ajustée contre la pénalité par défaut. */
-    private fun speedOnly(samples: List<Sample>, note: String): Result? {
+    private fun speedOnly(samples: List<Sample>, note: String, pauseFraction: Double): Result? {
         val valid = samples.filter { it.elapsedHours > 0.0 && it.distanceMeters >= 0.0 && it.elevationGainMeters >= 0.0 }
         if (valid.isEmpty()) return null
         val equivalentKm = valid.sumOf { it.distanceMeters / 1000.0 + it.elevationGainMeters / DEFAULT_PENALTY_M_PER_KM }
         val hours = valid.sumOf { it.elapsedHours }
         if (equivalentKm <= 0.0 || hours <= 0.0) return null
         return Result(
-            SpeedCalibration((equivalentKm / hours).coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH), DEFAULT_PENALTY_M_PER_KM),
+            SpeedCalibration((equivalentKm / hours).coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH), DEFAULT_PENALTY_M_PER_KM, pauseFraction),
             fittedPenalty = false,
             note = note,
         )

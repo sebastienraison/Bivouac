@@ -239,6 +239,7 @@ class LoggedTrackRepository(context: Context) {
                 steepDistanceMeters = day.segmentAggregate.steepDistanceMeters,
                 steepGainMeters = day.segmentAggregate.steepGainMeters,
                 steepHours = day.segmentAggregate.steepHours,
+                stoppedHours = day.segmentAggregate.stoppedHours,
             )
         }
         try {
@@ -324,8 +325,9 @@ class LoggedTrackRepository(context: Context) {
      * when null.
      *
      * [SegmentCalibrationInput.aggregate] ne somme que les traces dont **tous** les jours portent
-     * déjà les colonnes de segments (flatCount non nul) : une trace dont un seul jour n'est pas
-     * encore rattrapé (RIC-109, migration 10->11) est purement et simplement absente de cette
+     * déjà les colonnes de segments (stoppedHours non nul, RIC-115 : implique déjà flatCount non
+     * nul, voir LoggedTrackDao) : une trace dont un seul jour n'est pas encore rattrapé (RIC-109,
+     * migration 10->11 ; RIC-115, migration 11->12) est purement et simplement absente de cette
      * somme plutôt que d'y contribuer une somme partielle — mélanger une somme partielle avec des
      * jours ignorés donnerait une calibration silencieusement fausse (même risque, même traitement
      * que le garde-fou RIC-98/99 qui protégeait déjà startedAtMillis/elapsedSeconds). Contrairement
@@ -348,7 +350,7 @@ class LoggedTrackRepository(context: Context) {
 
         val aggregate = entries.fold(DaySegmentAggregate.EMPTY) { total, entry ->
             val days = daysByTrack[entry.id].orEmpty()
-            if (days.isNotEmpty() && days.all { it.flatCount != null }) {
+            if (days.isNotEmpty() && days.all { it.stoppedHours != null }) {
                 total + days.fold(DaySegmentAggregate.EMPTY) { dayTotal, day -> dayTotal + day.toSegmentAggregate() }
             } else {
                 total
@@ -387,6 +389,7 @@ class LoggedTrackRepository(context: Context) {
         steepDistanceMeters = steepDistanceMeters ?: 0.0,
         steepGainMeters = steepGainMeters ?: 0.0,
         steepHours = steepHours ?: 0.0,
+        stoppedHours = stoppedHours ?: 0.0,
     )
 
     // Elapsed time is summed per day (not first-to-last across the whole track) so an overnight

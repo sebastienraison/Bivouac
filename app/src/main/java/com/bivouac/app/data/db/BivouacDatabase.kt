@@ -29,7 +29,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open") — a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 11
+        const val SCHEMA_VERSION = 12
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -333,6 +333,21 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-115 : huitième somme par segment de 200 m (voir DaySegmentAggregate.stoppedHours),
+        // qui mesure automatiquement la provision de pause en mode Auto/Sélection à partir des
+        // heures que le calcul par segments (RIC-109) écartait jusqu'ici sans les compter nulle
+        // part. Même schéma que MIGRATION_10_11 : un seul ALTER TABLE ADD COLUMN, colonne
+        // nullable, aucune recréation de table. Même relais de marqueur que RIC-109 avait déjà
+        // appliqué (contentHash -> flatCount) : le rattrapage repasse une fois de plus sur les
+        // lignes déjà rattrapées jusqu'à RIC-109 (flatCount non nul, stoppedHours encore nul après
+        // ce simple ADD COLUMN) — voir LoggedTrackDao, dont la requête de sélection change de
+        // flatCount IS NULL à stoppedHours IS NULL pour cette raison précise.
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `stoppedHours` REAL")
+            }
+        }
+
         // ~256K points de code par tranche : au pire quadruplé en UTF-8 ça reste sous la fenêtre de
         // 2 Mo, et un GPX réel (ASCII pour l'essentiel) en est très loin.
         private const val MIGRATION_CHUNK_CODE_POINTS = 256 * 1024
@@ -403,6 +418,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                         MIGRATION_8_9,
                         migration9To10(context),
                         MIGRATION_10_11,
+                        MIGRATION_11_12,
                     )
                     .build()
                     .also { instance = it }

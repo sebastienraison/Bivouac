@@ -21,17 +21,18 @@ interface LoggedTrackDao {
     @Query("SELECT * FROM logged_track_day ORDER BY trackId, dayIndex")
     suspend fun getAllDays(): List<LoggedTrackDayEntity>
 
-    // RIC-109 : flatCount IS NULL, pas contentHash IS NULL. Les colonnes de segments sont arrivées
-    // après celles de RIC-98/99 (migration 10->11) : sur une banque déjà entièrement rattrapée à
-    // l'époque, contentHash n'est plus jamais nul nulle part, alors que flatCount l'est partout —
-    // filtrer sur contentHash laisserait ce second jeu de colonnes vide pour toujours. flatCount
-    // seul suffit comme marqueur : backfillOne écrit les deux jeux de colonnes ensemble, jamais
-    // l'un sans l'autre (voir LoggedTrackBackfill), donc flatCount non nul implique déjà
-    // contentHash non nul.
-    @Query("SELECT * FROM logged_track_day WHERE flatCount IS NULL ORDER BY trackId, dayIndex LIMIT :limit")
+    // RIC-115 : stoppedHours IS NULL, pas flatCount IS NULL — même relais qu'avait fait RIC-109 en
+    // passant de contentHash IS NULL à flatCount IS NULL (voir l'historique de ce commentaire).
+    // stoppedHours est arrivé après flatCount et consorts (migration 11->12) : sur une banque déjà
+    // entièrement rattrapée à RIC-109, flatCount n'est plus jamais nul nulle part, alors que
+    // stoppedHours l'est partout — filtrer sur flatCount laisserait cette colonne vide pour
+    // toujours. stoppedHours seul suffit comme marqueur : backfillOne écrit toutes les colonnes
+    // dénormalisées ensemble, jamais les unes sans les autres (voir LoggedTrackBackfill), donc
+    // stoppedHours non nul implique déjà flatCount et contentHash non nuls.
+    @Query("SELECT * FROM logged_track_day WHERE stoppedHours IS NULL ORDER BY trackId, dayIndex LIMIT :limit")
     suspend fun getDaysNeedingBackfill(limit: Int): List<LoggedTrackDayEntity>
 
-    @Query("SELECT COUNT(*) FROM logged_track_day WHERE flatCount IS NULL")
+    @Query("SELECT COUNT(*) FROM logged_track_day WHERE stoppedHours IS NULL")
     suspend fun countDaysNeedingBackfill(): Int
 
     @Query(
@@ -39,7 +40,7 @@ interface LoggedTrackDao {
             "elapsedSeconds = :elapsedSeconds, flatCount = :flatCount, " +
             "flatDistanceMeters = :flatDistanceMeters, flatHours = :flatHours, steepCount = :steepCount, " +
             "steepDistanceMeters = :steepDistanceMeters, steepGainMeters = :steepGainMeters, " +
-            "steepHours = :steepHours WHERE id = :id",
+            "steepHours = :steepHours, stoppedHours = :stoppedHours WHERE id = :id",
     )
     suspend fun updateDayDenormalizedFields(
         id: Long,
@@ -53,6 +54,7 @@ interface LoggedTrackDao {
         steepDistanceMeters: Double,
         steepGainMeters: Double,
         steepHours: Double,
+        stoppedHours: Double,
     )
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

@@ -27,8 +27,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
@@ -45,6 +47,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,9 +68,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
+import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.prefs.SpeedCalibrationMode
 import com.bivouac.app.settings.RestoreOutcome
 import com.bivouac.app.settings.SettingsViewModel
+import com.bivouac.app.ui.components.formatDuration
 import com.bivouac.app.ui.nav.AppScreenHeader
 import com.bivouac.app.ui.nav.AppSection
 import java.time.Instant
@@ -147,6 +152,7 @@ fun SettingsScreen(
                 onModeSelected = viewModel::setMode,
                 onManualSpeedChanged = viewModel::setManualSpeed,
                 onManualPenaltyChanged = viewModel::setManualPenalty,
+                onManualPauseChanged = viewModel::setManualPause,
                 onChooseTracksClick = onOpenJournalSelection,
             )
             NonFreeFeaturesSection(
@@ -294,6 +300,7 @@ private fun SpeedCalibrationSection(
     onModeSelected: (SpeedCalibrationMode) -> Unit,
     onManualSpeedChanged: (Double) -> Unit,
     onManualPenaltyChanged: (Double) -> Unit,
+    onManualPauseChanged: (Double) -> Unit,
     onChooseTracksClick: () -> Unit,
 ) {
     // Auto (whole Journal) and Sélection (a subset of it) both need at least
@@ -378,6 +385,135 @@ private fun SpeedCalibrationSection(
                     }
                 }
             }
+
+            // RIC-115 : provision de pause — aucune séparation visuelle avec le bloc
+            // vitesse/pénalité ci-dessus, même carte, même niveau hiérarchique. Visible dans les
+            // 3 modes (contrairement aux champs de saisie/capsules ci-dessus, qui divergent selon
+            // le mode), à partir de la calibration effectivement active pour le mode courant.
+            val activeCalibration = when (mode) {
+                SpeedCalibrationMode.MANUAL -> manual
+                SpeedCalibrationMode.AUTO -> auto
+                SpeedCalibrationMode.SELECTION -> selection
+            }
+            Spacer(Modifier.size(8.dp))
+            DPlusPreviewRow(activeCalibration)
+            Spacer(Modifier.size(14.dp))
+            PauseStatCard(
+                pauseFractionPercent = activeCalibration.pauseFractionPercent,
+                enabled = mode == SpeedCalibrationMode.MANUAL,
+                onValueChange = onManualPauseChanged,
+            )
+            Spacer(Modifier.size(8.dp))
+            PausePreviewRow(activeCalibration.pauseFractionPercent)
+        }
+    }
+}
+
+// Rando type purement illustrative (RIC-115) — codée en dur, ne dépend d'aucune trace réelle. Sert
+// à rendre lisible la pénalité D+ (m/km), un chiffre autrement abstrait, dans les 3 modes.
+private const val TYPICAL_HIKE_DISTANCE_METERS = 15_000.0
+private const val TYPICAL_HIKE_GAIN_METERS = 600.0
+
+// Base de l'aperçu de provision de pause (RIC-115) — 6h de marche pure, également codées en dur.
+private const val PAUSE_PREVIEW_WALKING_MINUTES = 360.0
+
+@Composable
+private fun DPlusPreviewRow(calibration: SpeedCalibration) {
+    val totalMinutes = TrackStatsCalculator.walkingMinutes(TYPICAL_HIKE_DISTANCE_METERS, TYPICAL_HIKE_GAIN_METERS, calibration)
+    val dPlusOnlyMinutes = TrackStatsCalculator.walkingMinutes(0.0, TYPICAL_HIKE_GAIN_METERS, calibration)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.AutoMirrored.Filled.TrendingUp,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "Rando type de 15 km, 600 m de D+ → ${formatDuration(totalMinutes.roundToInt())} " +
+                "(dont ${formatDuration(dPlusOnlyMinutes.roundToInt())} dus au D+)",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun PausePreviewRow(pauseFractionPercent: Double) {
+    val totalMinutes = TrackStatsCalculator.applyPauseProvision(PAUSE_PREVIEW_WALKING_MINUTES, pauseFractionPercent)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.Schedule,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "Rando estimée à 6 h de marche → ${formatDuration(totalMinutes.roundToInt())} avec cette provision",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+// RIC-115 : bornes du curseur — 0 à 35 %, trois libellés qualitatifs répartis sur la plage, pas de
+// graduation numérique visible à côté des libellés (voir la maquette biv16-reglages-mockup.html).
+// 35 % et non 15-20 % : la médiane réelle mesurée est 12,9 %, le p90 à 26,6 % (CR_RIC115...).
+private const val PAUSE_SLIDER_MAX_PERCENT = 35f
+
+@Composable
+private fun PauseStatCard(
+    pauseFractionPercent: Double,
+    enabled: Boolean,
+    onValueChange: (Double) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(14.dp))
+            .padding(12.dp),
+    ) {
+        Text("Pauses pendant la marche", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            "${pauseFractionPercent.roundToInt()} %",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        Slider(
+            value = pauseFractionPercent.toFloat().coerceIn(0f, PAUSE_SLIDER_MAX_PERCENT),
+            onValueChange = { onValueChange(it.toDouble()) },
+            valueRange = 0f..PAUSE_SLIDER_MAX_PERCENT,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "Je ne m'arrête pas ou presque",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "Je fais quelques pauses",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "Je fais beaucoup de pauses",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }

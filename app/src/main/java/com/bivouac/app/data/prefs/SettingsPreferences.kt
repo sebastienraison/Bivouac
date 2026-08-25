@@ -30,14 +30,28 @@ class SettingsPreferences(private val context: Context) {
         val MODE = stringPreferencesKey("speed_calibration_mode")
         val MANUAL_SPEED = doublePreferencesKey("manual_walking_speed_kmh")
         val MANUAL_PENALTY = doublePreferencesKey("manual_elevation_gain_penalty")
+        val MANUAL_PAUSE = doublePreferencesKey("manual_pause_fraction_percent")
         val AUTO_SPEED = doublePreferencesKey("auto_walking_speed_kmh")
         val AUTO_PENALTY = doublePreferencesKey("auto_elevation_gain_penalty")
+        val AUTO_PAUSE = doublePreferencesKey("auto_pause_fraction_percent")
         val SELECTION_SPEED = doublePreferencesKey("selection_walking_speed_kmh")
         val SELECTION_PENALTY = doublePreferencesKey("selection_elevation_gain_penalty")
+        val SELECTION_PAUSE = doublePreferencesKey("selection_pause_fraction_percent")
         val SELECTED_TRACK_IDS = stringPreferencesKey("selection_track_ids")
         val NON_FREE_DISABLED = booleanPreferencesKey("non_free_features_disabled")
         val LAST_BACKUP_AT = longPreferencesKey("last_backup_at_millis")
     }
+
+    // RIC-115 : contrairement à AUTO_PAUSE/SELECTION_PAUSE (repli sur SpeedCalibration.DEFAULT.
+    // pauseFractionPercent = 0.0, valeur neutre "jamais réglé, aucune provision"), la toute
+    // première fois que le mode Manuel est actif sans que l'utilisateur ait touché le curseur, la
+    // provision doit valoir 15 % — légèrement au-dessus de la médiane réelle mesurée (12,9 %),
+    // choix délibérément prudent tranché par le pilotage (mieux vaut surestimer un peu la pause
+    // par défaut que sous-estimer une durée de rando avec bivouac à la clé). Rien n'est écrit
+    // proactivement : ce repli suffit à produire l'effet voulu dès la première lecture, exactement
+    // comme MANUAL_SPEED/MANUAL_PENALTY se replient déjà sur SpeedCalibration.DEFAULT sans jamais
+    // écrire cette valeur par défaut en avance de phase.
+    private val MANUAL_PAUSE_INITIAL_PERCENT = 15.0
 
     val speedCalibrationMode: Flow<SpeedCalibrationMode> = context.settingsDataStore.data.map { prefs ->
         prefs[Keys.MODE]?.let { name -> runCatching { SpeedCalibrationMode.valueOf(name) }.getOrNull() }
@@ -49,6 +63,7 @@ class SettingsPreferences(private val context: Context) {
             walkingSpeedKmh = prefs[Keys.MANUAL_SPEED] ?: SpeedCalibration.DEFAULT.walkingSpeedKmh,
             elevationGainPenaltyMetersPerKm = prefs[Keys.MANUAL_PENALTY]
                 ?: SpeedCalibration.DEFAULT.elevationGainPenaltyMetersPerKm,
+            pauseFractionPercent = prefs[Keys.MANUAL_PAUSE] ?: MANUAL_PAUSE_INITIAL_PERCENT,
         )
     }
 
@@ -57,6 +72,7 @@ class SettingsPreferences(private val context: Context) {
             walkingSpeedKmh = prefs[Keys.AUTO_SPEED] ?: SpeedCalibration.DEFAULT.walkingSpeedKmh,
             elevationGainPenaltyMetersPerKm = prefs[Keys.AUTO_PENALTY]
                 ?: SpeedCalibration.DEFAULT.elevationGainPenaltyMetersPerKm,
+            pauseFractionPercent = prefs[Keys.AUTO_PAUSE] ?: SpeedCalibration.DEFAULT.pauseFractionPercent,
         )
     }
 
@@ -65,6 +81,7 @@ class SettingsPreferences(private val context: Context) {
             walkingSpeedKmh = prefs[Keys.SELECTION_SPEED] ?: SpeedCalibration.DEFAULT.walkingSpeedKmh,
             elevationGainPenaltyMetersPerKm = prefs[Keys.SELECTION_PENALTY]
                 ?: SpeedCalibration.DEFAULT.elevationGainPenaltyMetersPerKm,
+            pauseFractionPercent = prefs[Keys.SELECTION_PAUSE] ?: SpeedCalibration.DEFAULT.pauseFractionPercent,
         )
     }
 
@@ -92,10 +109,17 @@ class SettingsPreferences(private val context: Context) {
         context.settingsDataStore.edit { it[Keys.MODE] = mode.name }
     }
 
-    suspend fun setManualCalibration(walkingSpeedKmh: Double, elevationGainPenaltyMetersPerKm: Double) {
+    // RIC-115 : pauseFractionPercent est un paramètre à part entière, pas un défaut — un défaut
+    // écraserait silencieusement la provision de pause persistée à chaque appel de
+    // setManualSpeed/setManualPenalty (SettingsViewModel), qui n'ont eux-mêmes que speed/penalty à
+    // faire varier. Les trois appelants (setManualSpeed, setManualPenalty, setManualPause) passent
+    // donc chacun les trois valeurs, en ne faisant varier que celle qui les concerne — même
+    // discipline que manualCalibration.value déjà utilisé pour recomposer les deux champs existants.
+    suspend fun setManualCalibration(walkingSpeedKmh: Double, elevationGainPenaltyMetersPerKm: Double, pauseFractionPercent: Double) {
         context.settingsDataStore.edit {
             it[Keys.MANUAL_SPEED] = walkingSpeedKmh
             it[Keys.MANUAL_PENALTY] = elevationGainPenaltyMetersPerKm
+            it[Keys.MANUAL_PAUSE] = pauseFractionPercent
         }
     }
 
@@ -103,6 +127,7 @@ class SettingsPreferences(private val context: Context) {
         context.settingsDataStore.edit {
             it[Keys.AUTO_SPEED] = calibration.walkingSpeedKmh
             it[Keys.AUTO_PENALTY] = calibration.elevationGainPenaltyMetersPerKm
+            it[Keys.AUTO_PAUSE] = calibration.pauseFractionPercent
         }
     }
 
@@ -113,6 +138,7 @@ class SettingsPreferences(private val context: Context) {
         context.settingsDataStore.edit {
             it[Keys.SELECTION_SPEED] = calibration.walkingSpeedKmh
             it[Keys.SELECTION_PENALTY] = calibration.elevationGainPenaltyMetersPerKm
+            it[Keys.SELECTION_PAUSE] = calibration.pauseFractionPercent
             it[Keys.SELECTED_TRACK_IDS] = trackIds.joinToString(",")
         }
     }

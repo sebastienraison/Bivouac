@@ -11,18 +11,25 @@ data class TrackStats(
 )
 
 /**
- * The two knobs behind the duration estimate (BIV-16 "Vitesse personnalisée") — flat walking pace
- * and the Naismith-style D+ correction, both user-editable in Manuel mode or computed from Journal
- * history in Auto/Sélection mode (see [com.bivouac.app.data.gpx.SpeedCalibrationCalculator]).
+ * Les trois leviers derrière l'estimation de durée (BIV-16 "Vitesse personnalisée") — vitesse à
+ * plat, correction D+ façon Naismith, et provision de pause (RIC-115) — tous réglables à la main en
+ * mode Manuel ou calculés depuis l'historique du Journal en mode Auto/Sélection (voir
+ * [com.bivouac.app.data.gpx.SpeedCalibrationCalculator]).
  */
 data class SpeedCalibration(
     val walkingSpeedKmh: Double,
     val elevationGainPenaltyMetersPerKm: Double,
+    // RIC-115 : part du temps passée à l'arrêt (0-100), convertie en majoration du temps de marche
+    // via P / (1 - P) — voir TrackStatsCalculator.applyPauseProvision. 0.0 par défaut : valeur
+    // neutre obligatoire, pour qu'un utilisateur qui n'a jamais touché ce réglage voie un
+    // comportement strictement inchangé par rapport à avant ce ticket.
+    val pauseFractionPercent: Double = 0.0,
 ) {
     companion object {
         val DEFAULT = SpeedCalibration(
             walkingSpeedKmh = 3.5,
             elevationGainPenaltyMetersPerKm = 100.0,
+            pauseFractionPercent = 0.0,
         )
     }
 }
@@ -32,6 +39,11 @@ object TrackStatsCalculator {
     // Raw GPS/barometric elevation is noisy; smoothing it before summing deltas avoids
     // wildly overestimating D+/D- from point-to-point jitter.
     private const val ELEVATION_SMOOTHING_WINDOW = 5
+
+    // RIC-115 : défense en profondeur — l'IHM borne le curseur à 35 %, mais une valeur DataStore
+    // corrompue ou une migration future ne doivent jamais pouvoir amener le dénominateur de
+    // applyPauseProvision à <= 0.
+    private const val MAX_SAFE_PAUSE_FRACTION_PERCENT = 90.0
 
     fun compute(points: List<TrackPoint>, calibration: SpeedCalibration = SpeedCalibration.DEFAULT): TrackStats {
         val distance = points.zipWithNext { a, b ->
@@ -46,8 +58,7 @@ object TrackStatsCalculator {
             if (delta > 0) gain += delta else loss += -delta
         }
 
-        val equivalentDistanceKm = distance / 1000.0 + gain / calibration.elevationGainPenaltyMetersPerKm
-        val durationMinutes = (equivalentDistanceKm / calibration.walkingSpeedKmh * 60).roundToInt()
+        val durationMinutes = applyPauseProvision(walkingMinutes(distance, gain, calibration), calibration.pauseFractionPercent).roundToInt()
 
         return TrackStats(
             distanceMeters = distance,
@@ -65,9 +76,35 @@ object TrackStatsCalculator {
      * Réglages calibration without re-parsing every trace's GPX just to redraw a list.
      */
     fun recomputeDuration(stats: TrackStats, calibration: SpeedCalibration): TrackStats {
-        val equivalentDistanceKm = stats.distanceMeters / 1000.0 + stats.elevationGainMeters / calibration.elevationGainPenaltyMetersPerKm
-        val durationMinutes = (equivalentDistanceKm / calibration.walkingSpeedKmh * 60).roundToInt()
+        val durationMinutes = applyPauseProvision(
+            walkingMinutes(stats.distanceMeters, stats.elevationGainMeters, calibration),
+            calibration.pauseFractionPercent,
+        ).roundToInt()
         return stats.copy(estimatedDurationMinutes = durationMinutes)
+    }
+
+    /**
+     * Minutes de marche pure (hors provision de pause) pour une distance et un D+ donnés, sous
+     * [calibration]. Exposé (pas seulement interne à [compute]/[recomputeDuration]) pour les
+     * aperçus IHM qui n'ont pas de [TrackPoint] réels — Réglages, aperçu illustratif de l'effet du
+     * D+ sur une rando type (RIC-115).
+     */
+    fun walkingMinutes(distanceMeters: Double, elevationGainMeters: Double, calibration: SpeedCalibration): Double {
+        val equivalentDistanceKm = distanceMeters / 1000.0 + elevationGainMeters / calibration.elevationGainPenaltyMetersPerKm
+        return equivalentDistanceKm / calibration.walkingSpeedKmh * 60
+    }
+
+    /**
+     * RIC-115 : convertit des minutes de marche pure en minutes totales (marche + pause), à partir
+     * d'un pourcentage "temps passé à l'arrêt" (voir [SpeedCalibration.pauseFractionPercent]). La
+     * conversion P -> majoration est P / (1 - P) : si P % du temps total est passé à l'arrêt, le
+     * temps de marche restant (1 - P) doit être multiplié par 1 / (1 - P) pour reconstituer le
+     * temps total. Coercée à [MAX_SAFE_PAUSE_FRACTION_PERCENT] avant division, même si l'IHM borne
+     * déjà le curseur à 35 % — défense en profondeur contre une valeur DataStore corrompue.
+     */
+    fun applyPauseProvision(walkingMinutes: Double, pauseFractionPercent: Double): Double {
+        val fraction = pauseFractionPercent.coerceIn(0.0, MAX_SAFE_PAUSE_FRACTION_PERCENT) / 100.0
+        return walkingMinutes / (1.0 - fraction)
     }
 
     /**
