@@ -122,6 +122,14 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     private val _bankedTraces = MutableStateFlow<List<BankedTrackEntity>>(emptyList())
     val bankedTraces: StateFlow<List<BankedTrackEntity>> = _bankedTraces.asStateFlow()
 
+    // Même motif que JournalViewModel.tracksLoaded : tant que la toute première lecture Room n'a
+    // pas abouti, bankedTraces vaut encore emptyList() par construction, indiscernable d'une
+    // banque vraiment vide. Sans ce drapeau, l'écran "Aucune trace en préparation" flashait au
+    // tout premier lancement — le temps de cette lecture ET de restoreLastTrack, alors qu'une
+    // session précédente était bel et bien sur le point d'être restaurée.
+    private val _bankedTracesLoaded = MutableStateFlow(false)
+    val bankedTracesLoaded: StateFlow<Boolean> = _bankedTracesLoaded.asStateFlow()
+
     private val _nameDialogRequest = MutableStateFlow<NameDialogRequest?>(null)
     val nameDialogRequest: StateFlow<NameDialogRequest?> = _nameDialogRequest.asStateFlow()
 
@@ -150,6 +158,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     private fun refreshBankedTraces() {
         viewModelScope.launch {
             _bankedTraces.value = withContext(Dispatchers.IO) { bankRepository.list() }
+            _bankedTracesLoaded.value = true
         }
     }
 
@@ -232,6 +241,10 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
             _currentBankedId.value = id
             _uiState.value = state.copy(track = renamedTrack)
             _dirty.value = false
+            // RIC-135 : synchronise l'auto-save avec ce lien tout de suite, sans attendre une
+            // prochaine modif — sinon un kill de l'app juste après cette sauvegarde restaure une
+            // session encore "détachée" au prochain lancement.
+            persistCurrentState()
             refreshBankedTraces()
             if (thenClose) performClose()
         }
@@ -249,6 +262,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
             _currentBankedId.value = id
             _uiState.value = state.copy(track = renamedTrack)
             _dirty.value = false
+            persistCurrentState()
             refreshBankedTraces()
         }
     }
@@ -278,6 +292,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
             _bivouacPoints.value = points
             _currentBankedId.value = id
             _dirty.value = false
+            persistCurrentState()
         }
     }
 
@@ -437,9 +452,10 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Restores the trace saved from the previous session, if any — called once on a fresh start
     // (not after an incoming-GPX import already handled it), so a restart doesn't lose the plan.
-    // Not linked back to a bank entry even if it originally came from one: the auto-save singleton
-    // doesn't track that link, so a restored session is treated as detached — a fresh save creates
-    // a new bank entry rather than silently overwriting the one it may have started from.
+    // RIC-135 : restored.bankedId (persisted alongside the auto-save since the same commit that
+    // added this note) tells us whether that session is already linked to a bank entry — without
+    // it, every restored session used to look "never saved" (currentBankedId forced to null),
+    // wrongly triggering the close confirmation and, worse, duplicating the entry on save.
     fun restoreLastTrack() {
         _uiState.value = GpxImportUiState.Loading
         viewModelScope.launch {
@@ -457,10 +473,10 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
                 _uiState.value = GpxImportUiState.Idle
                 return@launch
             }
-            val (track, points) = restored
+            val (track, points, bankedId) = restored
             _uiState.value = GpxImportUiState.Loaded(track, TrackStatsCalculator.compute(track.points, activeCalibration.value))
             _bivouacPoints.value = points
-            _currentBankedId.value = null
+            _currentBankedId.value = bankedId
             _dirty.value = false
         }
     }
@@ -496,7 +512,8 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     private fun persistCurrentState() {
         val track = (_uiState.value as? GpxImportUiState.Loaded)?.track ?: return
         val points = _bivouacPoints.value
-        viewModelScope.launch { withContext(Dispatchers.IO) { repository.save(track, points) } }
+        val bankedId = _currentBankedId.value
+        viewModelScope.launch { withContext(Dispatchers.IO) { repository.save(track, points, bankedId) } }
     }
 
     fun previewBivouacDrag(id: String, trackPointIndex: Int) {

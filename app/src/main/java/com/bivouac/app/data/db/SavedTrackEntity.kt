@@ -18,6 +18,13 @@ data class SavedTrackEntity(
     val trackName: String?,
     val gpxFilePath: String,
     val bivouacTrackPointIndices: String,
+    // RIC-135 : id de la banque (banked_track) auquel cette session est liée, s'il y en a un —
+    // null pour une session jamais sauvegardée en banque. Sans cette colonne, restoreLastTrack ne
+    // pouvait jamais savoir si la session qu'il restaure correspond à une entrée déjà en banque ou
+    // pas ; elle la traitait toujours comme "jamais sauvegardée", ce qui déclenchait à tort la
+    // confirmation de fermeture et, pire, dupliquait l'entrée si l'utilisateur sauvegardait quand
+    // même à cette invite.
+    val bankedId: String? = null,
 ) {
     companion object {
         const val SINGLETON_ID = 1

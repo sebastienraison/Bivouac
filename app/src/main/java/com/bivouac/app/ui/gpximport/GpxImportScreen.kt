@@ -119,6 +119,7 @@ fun GpxImportScreen(
     val dirty by viewModel.dirty.collectAsStateWithLifecycle()
     val currentBankedId by viewModel.currentBankedId.collectAsStateWithLifecycle()
     val bankedTraces by viewModel.bankedTraces.collectAsStateWithLifecycle()
+    val bankedTracesLoaded by viewModel.bankedTracesLoaded.collectAsStateWithLifecycle()
     val nameDialogRequest by viewModel.nameDialogRequest.collectAsStateWithLifecycle()
     val closeConfirmationReason by viewModel.closeConfirmationReason.collectAsStateWithLifecycle()
     val deleteTarget by viewModel.deleteTarget.collectAsStateWithLifecycle()
@@ -215,7 +216,12 @@ fun GpxImportScreen(
     // traitement que le tout premier lancement du Journal, confirmé en revue. La carte ne
     // redevient pertinente qu'à partir du moment où il y a quelque chose à y montrer ou à y
     // préparer.
-    if (uiState is GpxImportUiState.Idle && bankedTraces.isEmpty()) {
+    //
+    // bankedTracesLoaded : sans lui, ce plein écran flashait au tout premier lancement — le temps
+    // que la lecture Room de la banque ET restoreLastTrack aboutissent, uiState valait encore Idle
+    // et bankedTraces encore emptyList() par construction, alors qu'une session précédente était
+    // bel et bien sur le point d'être restaurée (voir GpxImportViewModel.bankedTracesLoaded).
+    if (uiState is GpxImportUiState.Idle && bankedTraces.isEmpty() && bankedTracesLoaded) {
         Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             FullScreenEmptyState(
                 icon = Icons.Default.Route,

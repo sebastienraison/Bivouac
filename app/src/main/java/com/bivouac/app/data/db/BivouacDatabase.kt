@@ -29,7 +29,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open") — a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 13
+        const val SCHEMA_VERSION = 14
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -368,6 +368,19 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-135 : saved_track (l'unique ligne d'auto-save de Planification) ne retenait pas à
+        // quelle entrée de la banque, le cas échéant, la session appartenait — restoreLastTrack la
+        // traitait donc toujours comme "jamais sauvegardée" après un redémarrage, avec un risque de
+        // duplication si l'utilisateur sauvegardait à cette invite. Un seul ALTER TABLE, colonne
+        // nullable, aucun rattrapage : les lignes existantes (au plus une, ce singleton n'en a
+        // jamais eu qu'une) valent simplement null, ce qui reproduit exactement le comportement
+        // actuel pour une session déjà en cours au moment de la mise à jour.
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `saved_track` ADD COLUMN `bankedId` TEXT")
+            }
+        }
+
         // ~256K points de code par tranche : au pire quadruplé en UTF-8 ça reste sous la fenêtre de
         // 2 Mo, et un GPX réel (ASCII pour l'essentiel) en est très loin.
         private const val MIGRATION_CHUNK_CODE_POINTS = 256 * 1024
@@ -440,6 +453,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                         MIGRATION_10_11,
                         MIGRATION_11_12,
                         MIGRATION_12_13,
+                        MIGRATION_13_14,
                     )
                     .build()
                     .also { instance = it }
