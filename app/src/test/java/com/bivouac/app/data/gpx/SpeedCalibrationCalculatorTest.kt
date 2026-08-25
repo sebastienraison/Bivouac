@@ -137,6 +137,61 @@ class SpeedCalibrationCalculatorTest {
         assertTrue("vitesse à plat préservée (obtenu ${result!!.calibration.walkingSpeedKmh})", abs(result.calibration.walkingSpeedKmh - 4.0) < 0.1)
     }
 
+    // 5. RIC-130 : le plafond de pénalité est adaptatif au D+ cumulé des segments pentus (300 au
+    // seuil MIN_TOTAL_GAIN_METERS, 450 à partir de 20 000 m, interpolation linéaire clampée entre
+    // les deux — voir la kdoc de maxPenaltyFor). Le plafond est observé au travers de compute() :
+    // des segments pentus parcourus PLUS VITE que le plat n'ont aucun surcoût attribuable au D+, la
+    // branche "aucun surcoût de dénivelé mesurable" renvoie alors exactement le plafond.
+
+    /** Segment pentu parcouru un peu plus vite (4,4 km/h) que la vitesse à plat de référence
+     * (4,0 km/h) : surcoût strictement négatif, garanti même en arithmétique flottante. */
+    private fun steepFasterThanFlat(gainM: Double) = TrackSegment(
+        distanceMeters = 200.0, elevationGainMeters = gainM, netElevationMeters = gainM, hours = 0.2 / 4.4,
+    )
+
+    private fun ceilingObservedFor(steep: List<TrackSegment>): Double {
+        val segments = List(30) { synth(200.0, 0.0, 4.0, 80.0) } + steep
+        val result = SpeedCalibrationCalculator.compute(DaySegmentAggregate.of(segments), emptyList())!!
+        assertFalse("branche 'aucun surcoût' attendue", result.fittedPenalty)
+        return result.calibration.elevationGainPenaltyMetersPerKm
+    }
+
+    @Test
+    fun adaptiveCeilingStaysAt300AtTheMinTotalGainAnchor() {
+        // 10 segments x 30 m = 300 m pile, le seuil MIN_TOTAL_GAIN_METERS : comportement inchangé
+        // au point le plus fragile.
+        assertEquals(300.0, ceilingObservedFor(List(10) { steepFasterThanFlat(gainM = 30.0) }), 1e-9)
+    }
+
+    @Test
+    fun adaptiveCeilingReaches450AtAndBeyondTwentyThousandMeters() {
+        // 400 segments x 50 m = 20 000 m pile...
+        assertEquals(450.0, ceilingObservedFor(List(400) { steepFasterThanFlat(gainM = 50.0) }), 1e-9)
+        // ... et le plafond reste clampé au-delà (500 x 50 m = 25 000 m).
+        assertEquals(450.0, ceilingObservedFor(List(500) { steepFasterThanFlat(gainM = 50.0) }), 1e-9)
+    }
+
+    @Test
+    fun adaptiveCeilingInterpolatesLinearlyBetweenAnchors() {
+        // 203 segments x 50 m = 10 150 m, le milieu exact de [300, 20 000] : le plafond doit être
+        // au milieu exact de [300, 450].
+        assertEquals(375.0, ceilingObservedFor(List(203) { steepFasterThanFlat(gainM = 50.0) }), 1e-9)
+    }
+
+    @Test
+    fun fittedPenaltyIsCappedByTheAdaptiveCeilingToo() {
+        // Surcoût minuscule (3,6 s par segment) mais non nul : la pénalité brute est énorme et le
+        // fit est réel. Son écrêtage doit utiliser le même plafond adaptatif (ici 375, à 10 150 m
+        // de D+ cumulé), pas l'ancien 300 fixe.
+        val steep = List(203) {
+            TrackSegment(distanceMeters = 200.0, elevationGainMeters = 50.0, netElevationMeters = 50.0, hours = 0.2 / 4.0 + 1e-3)
+        }
+        val segments = List(30) { synth(200.0, 0.0, 4.0, 80.0) } + steep
+        val result = SpeedCalibrationCalculator.compute(DaySegmentAggregate.of(segments), emptyList())!!
+        assertTrue("pénalité effectivement ajustée", result.fittedPenalty)
+        assertEquals(375.0, result.calibration.elevationGainPenaltyMetersPerKm, 1e-9)
+    }
+
     // Repli par échantillons seuls (aggregate vide) : le pont vers Sample utilisé quand une
     // sélection n'a pas encore de sommes de segments (banque pas rattrapée, voir
     // LoggedTrackRepository.calibrationSamples). Comportement hérité de l'ancien
