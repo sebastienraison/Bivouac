@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -30,9 +31,12 @@ private val CHART_HEIGHT = 80.dp
  * voir [ProgressionMetric.isLine]). Défilement horizontal sur tout l'historique réel, ouvert sur les
  * mois les plus récents (comme la maquette) plutôt que sur le tout premier mois du Journal.
  *
- * Deux Row en horizontalScroll partageant le même [rememberScrollState] : seule celle du haut
- * (barres/ligne) accepte le geste, celle du bas (labels mois/année) se contente de suivre le même
- * décalage — évite deux gestes concurrents sur une seule zone de défilement visuelle.
+ * Trois Row en horizontalScroll partageant le même [rememberScrollState] : seule celle du haut
+ * (barres/ligne) accepte le geste, les deux du bas (labels mois, labels année) se contentent de
+ * suivre le même décalage — évite deux gestes concurrents sur une seule zone de défilement
+ * visuelle. Mois et année sur deux lignes séparées plutôt qu'une bascule mois/année dans la même
+ * colonne : un millésime à 4 chiffres ne tient pas sur une largeur de colonne (20dp) pensée pour
+ * une seule lettre de mois, il y retombait sur deux lignes.
  */
 @Composable
 internal fun ProgressionChart(series: ProgressionSeries, color: Color, modifier: Modifier = Modifier) {
@@ -49,14 +53,36 @@ internal fun ProgressionChart(series: ProgressionSeries, color: Color, modifier:
             }
         }
         Row(modifier = Modifier.horizontalScroll(scrollState, enabled = false)) {
-            series.points.forEachIndexed { index, point ->
-                val isYearBoundary = index == 0 || point.yearMonth.year != series.points[index - 1].yearMonth.year
+            series.points.forEach { point ->
                 Box(modifier = Modifier.width(COLUMN_WIDTH), contentAlignment = Alignment.Center) {
                     Text(
-                        text = if (isYearBoundary) "${point.yearMonth.year}" else monthInitial(point.yearMonth.month),
+                        text = monthInitial(point.yearMonth.month),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+        }
+        Row(modifier = Modifier.horizontalScroll(scrollState, enabled = false)) {
+            series.points.forEachIndexed { index, point ->
+                val isYearBoundary = index == 0 || point.yearMonth.year != series.points[index - 1].yearMonth.year
+                Box(modifier = Modifier.width(COLUMN_WIDTH), contentAlignment = Alignment.Center) {
+                    if (isYearBoundary) {
+                        // wrapContentWidth(unbounded = true) : "2023" (4 chiffres) dépasse
+                        // légèrement les 20dp d'une colonne mois — pensée pour une seule lettre —
+                        // le label déborde donc visuellement de part et d'autre plutôt que de
+                        // retomber sur deux lignes, sans élargir la colonne elle-même (les trois
+                        // Row doivent garder exactement la même largeur totale pour rester
+                        // synchronisées au défilement).
+                        Text(
+                            text = "${point.yearMonth.year}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.wrapContentWidth(unbounded = true),
+                        )
+                    }
                 }
             }
         }
