@@ -28,7 +28,7 @@ data class MonthPoint(val yearMonth: YearMonth, val value: Double?)
 
 data class ProgressionSeries(val metric: ProgressionMetric, val points: List<MonthPoint>)
 
-enum class BilanRecordKind { KM_EFFORT, VAM, MAX_ALTITUDE, HIGHEST_BIVOUAC, MAX_DISTANCE_DAY, MAX_GAIN_DAY, LONGEST_TREK }
+enum class BilanRecordKind { KM_EFFORT, VAM, MAX_ALTITUDE, HIGHEST_BIVOUAC, MAX_DISTANCE_DAY, MAX_GAIN_DAY, BIGGEST_TREK }
 
 /**
  * Un record du Bilan, prêt à être mis en forme par l'écran (RIC-19 §3/§4) et à ramener vers la
@@ -36,9 +36,9 @@ enum class BilanRecordKind { KM_EFFORT, VAM, MAX_ALTITUDE, HIGHEST_BIVOUAC, MAX_
  * sorties réelles du Journal derrière lui").
  *
  * [dayIndex] : non nul seulement pour [BilanRecordKind.HIGHEST_BIVOUAC] et
- * [BilanRecordKind.LONGEST_TREK] — les deux seuls records dont la spec demande explicitement un
+ * [BilanRecordKind.BIGGEST_TREK] — les deux seuls records dont la spec demande explicitement un
  * positionnement sur le bon jour à l'ouverture ; les autres ouvrent directement la trace entière
- * (RIC-19 §6). [extraDistanceKm]/[extraGainMeters] ne portent que pour LONGEST_TREK (métadonnée
+ * (RIC-19 §6). [extraDistanceKm]/[extraGainMeters] ne portent que pour BIGGEST_TREK (métadonnée
  * descriptive du trek, RIC-19 §4) — ailleurs toujours null.
  */
 data class BilanRecord(
@@ -67,7 +67,7 @@ data class BilanStats(
     val highestBivouacRecord: BilanRecord?,
     val maxDistanceDayRecord: BilanRecord?,
     val maxGainDayRecord: BilanRecord?,
-    val longestTrekRecord: BilanRecord?,
+    val biggestTrekRecord: BilanRecord?,
 )
 
 data class MostActiveMonthInsight(val monthOfYear: Int, val cumulativeCount: Int, val sinceYear: Int)
@@ -111,7 +111,7 @@ object BilanStatsCalculator {
             highestBivouacRecord = highestBivouacRecord(tracks, daysByTrackId),
             maxDistanceDayRecord = maxDistanceDayRecord(tracks, daysByTrackId),
             maxGainDayRecord = maxGainDayRecord(tracks, daysByTrackId),
-            longestTrekRecord = longestTrekRecord(tracks, daysByTrackId),
+            biggestTrekRecord = biggestTrekRecord(tracks, daysByTrackId),
         )
     }
 
@@ -308,20 +308,29 @@ object BilanStatsCalculator {
         daysByTrackId: Map<String, List<LoggedTrackDayEntity>>,
     ): BilanRecord? = bestDayRecord(tracks, daysByTrackId, BilanRecordKind.MAX_GAIN_DAY) { it.steepGainMeters }
 
-    private fun longestTrekRecord(
+    // Nombre de jours d'abord (ce que "trek" veut dire ici) ; à égalité, la distance cumulée
+    // départage ; à égalité sur les deux, le D+ cumulé. compareBy en cascade : ne regarde la clé
+    // suivante que si la précédente ne tranche pas.
+    private fun biggestTrekRecord(
         tracks: List<LoggedTrackEntity>,
         daysByTrackId: Map<String, List<LoggedTrackDayEntity>>,
     ): BilanRecord? =
         tracks.filter { (daysByTrackId[it.id]?.size ?: 0) > 1 }
-            .maxByOrNull { daysByTrackId.getValue(it.id).size }
+            .maxWithOrNull(
+                compareBy(
+                    { daysByTrackId.getValue(it.id).size },
+                    { it.distanceMeters },
+                    { it.elevationGainMeters },
+                ),
+            )
             ?.let { entry ->
                 BilanRecord(
-                    kind = BilanRecordKind.LONGEST_TREK,
+                    kind = BilanRecordKind.BIGGEST_TREK,
                     value = daysByTrackId.getValue(entry.id).size.toDouble(),
                     placeName = entry.name,
                     whenMillis = entry.startedAt,
                     trackId = entry.id,
-                    // Premier jour du trek : point d'entrée naturel pour "le trek le plus long"
+                    // Premier jour du trek : point d'entrée naturel pour "le plus gros trek"
                     // (RIC-19 §6 demande explicitement un positionnement day-level ici).
                     dayIndex = 0,
                     extraDistanceKm = entry.distanceMeters / 1000.0,

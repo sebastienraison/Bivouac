@@ -50,7 +50,7 @@ internal fun recordLabel(kind: BilanRecordKind): String = when (kind) {
     BilanRecordKind.HIGHEST_BIVOUAC -> "bivouac le plus haut"
     BilanRecordKind.MAX_DISTANCE_DAY -> "Distance max, une journée"
     BilanRecordKind.MAX_GAIN_DAY -> "D+ max, une journée"
-    BilanRecordKind.LONGEST_TREK -> "Trek le plus long"
+    BilanRecordKind.BIGGEST_TREK -> "Plus gros trek"
 }
 
 internal fun recordValueText(record: BilanRecord): String = when (record.kind) {
@@ -60,7 +60,7 @@ internal fun recordValueText(record: BilanRecord): String = when (record.kind) {
     BilanRecordKind.HIGHEST_BIVOUAC -> "${formatGroupedInt(record.value)} m"
     BilanRecordKind.MAX_DISTANCE_DAY -> "${formatKm1(record.value)} km"
     BilanRecordKind.MAX_GAIN_DAY -> "${formatGroupedInt(record.value)} m"
-    BilanRecordKind.LONGEST_TREK -> {
+    BilanRecordKind.BIGGEST_TREK -> {
         val days = record.value.toInt()
         "$days jour${if (days > 1) "s" else ""}"
     }
@@ -84,7 +84,7 @@ internal fun recordColor(kind: BilanRecordKind): Color = when (kind) {
     BilanRecordKind.HIGHEST_BIVOUAC -> BivouacIconColor
     BilanRecordKind.MAX_DISTANCE_DAY -> DistanceIconColor
     BilanRecordKind.MAX_GAIN_DAY -> GainIconColor
-    BilanRecordKind.LONGEST_TREK -> DurationIconColor
+    BilanRecordKind.BIGGEST_TREK -> DurationIconColor
 }
 
 // RIC-19 §2 : "Tu sors surtout en juillet (12 sorties cumulées depuis 2021)" — formulation exacte

@@ -9,7 +9,7 @@ package com.bivouac.app.bilan
  *
  * [dayIndex] reste nul pour les records mono-jour (RIC-19 §6) : la trace s'ouvre alors sans
  * curseur particulier, exactement comme un clic normal dans la liste du Journal. Non nul
- * seulement pour les deux records multi-jours (trek le plus long, bivouac le plus haut), qui
+ * seulement pour les deux records multi-jours (plus gros trek, bivouac le plus haut), qui
  * réutilisent le curseur déjà affiché sur l'ElevationProfile (BIV-52) pour se positionner sur le
  * bon jour plutôt que de construire une nouvelle navigation day-level.
  */

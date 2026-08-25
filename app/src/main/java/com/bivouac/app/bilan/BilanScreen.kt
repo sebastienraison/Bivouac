@@ -280,7 +280,7 @@ private fun HeroRecordCard(record: BilanRecord, onOpenJournalEntry: (JournalOpen
 
 @Composable
 private fun SecondaryRecordsSection(stats: BilanStats, onOpenJournalEntry: (JournalOpenRequest) -> Unit) {
-    val records = listOfNotNull(stats.maxDistanceDayRecord, stats.maxGainDayRecord, stats.longestTrekRecord)
+    val records = listOfNotNull(stats.maxDistanceDayRecord, stats.maxGainDayRecord, stats.biggestTrekRecord)
     if (records.isEmpty()) return
     Column(
         modifier = Modifier

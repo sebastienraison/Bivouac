@@ -86,7 +86,7 @@ class BilanStatsCalculatorTest {
         assertNull(stats.highestBivouacRecord)
         assertNull(stats.maxDistanceDayRecord)
         assertNull(stats.maxGainDayRecord)
-        assertNull(stats.longestTrekRecord)
+        assertNull(stats.biggestTrekRecord)
     }
 
     @Test
@@ -232,7 +232,7 @@ class BilanStatsCalculatorTest {
     }
 
     @Test
-    fun longestTrekRecordRequiresMoreThanOneDayAndCarriesTrekTotals() {
+    fun biggestTrekRecordRequiresMoreThanOneDayAndCarriesTrekTotals() {
         val tracks = listOf(
             track("solo", 2025, 5, distanceMeters = 20_000.0),
             track("trek", 2025, 6, distanceMeters = 142_000.0, elevationGainMeters = 6_240.0),
@@ -243,11 +243,56 @@ class BilanStatsCalculatorTest {
         )
         val stats = BilanStatsCalculator.compute(tracks, daysByTrackId, SpeedCalibration.DEFAULT, zone)
 
-        assertEquals("trek", stats.longestTrekRecord?.trackId)
-        assertEquals(9.0, stats.longestTrekRecord!!.value, 1e-9)
-        assertEquals(0, stats.longestTrekRecord?.dayIndex) // ouvre au premier jour du trek
-        assertEquals(142.0, stats.longestTrekRecord!!.extraDistanceKm!!, 1e-9)
-        assertEquals(6_240.0, stats.longestTrekRecord!!.extraGainMeters!!, 1e-9)
+        assertEquals("trek", stats.biggestTrekRecord?.trackId)
+        assertEquals(9.0, stats.biggestTrekRecord!!.value, 1e-9)
+        assertEquals(0, stats.biggestTrekRecord?.dayIndex) // ouvre au premier jour du trek
+        assertEquals(142.0, stats.biggestTrekRecord!!.extraDistanceKm!!, 1e-9)
+        assertEquals(6_240.0, stats.biggestTrekRecord!!.extraGainMeters!!, 1e-9)
+    }
+
+    @Test
+    fun biggestTrekRecordPicksMostDaysFirst() {
+        val tracks = listOf(
+            track("short", 2025, 5, distanceMeters = 5_000.0, elevationGainMeters = 100.0),
+            track("long", 2025, 6, distanceMeters = 3_000.0, elevationGainMeters = 50.0),
+        )
+        val daysByTrackId = mapOf(
+            "short" to listOf(day("short", 0), day("short", 1)), // 2 jours
+            "long" to (0..2).map { day("long", it) }, // 3 jours : moins de km/D+, mais gagne quand même
+        )
+        val stats = BilanStatsCalculator.compute(tracks, daysByTrackId, SpeedCalibration.DEFAULT, zone)
+
+        assertEquals("long", stats.biggestTrekRecord?.trackId)
+    }
+
+    @Test
+    fun biggestTrekRecordBreaksDayTieByDistance() {
+        val tracks = listOf(
+            track("moreKm", 2025, 5, distanceMeters = 60_000.0, elevationGainMeters = 1_000.0),
+            track("lessKm", 2025, 6, distanceMeters = 40_000.0, elevationGainMeters = 3_000.0),
+        )
+        val daysByTrackId = mapOf(
+            "moreKm" to listOf(day("moreKm", 0), day("moreKm", 1)),
+            "lessKm" to listOf(day("lessKm", 0), day("lessKm", 1)),
+        )
+        val stats = BilanStatsCalculator.compute(tracks, daysByTrackId, SpeedCalibration.DEFAULT, zone)
+
+        assertEquals("moreKm", stats.biggestTrekRecord?.trackId)
+    }
+
+    @Test
+    fun biggestTrekRecordBreaksDistanceTieByGain() {
+        val tracks = listOf(
+            track("moreGain", 2025, 5, distanceMeters = 40_000.0, elevationGainMeters = 2_000.0),
+            track("lessGain", 2025, 6, distanceMeters = 40_000.0, elevationGainMeters = 1_000.0),
+        )
+        val daysByTrackId = mapOf(
+            "moreGain" to listOf(day("moreGain", 0), day("moreGain", 1)),
+            "lessGain" to listOf(day("lessGain", 0), day("lessGain", 1)),
+        )
+        val stats = BilanStatsCalculator.compute(tracks, daysByTrackId, SpeedCalibration.DEFAULT, zone)
+
+        assertEquals("moreGain", stats.biggestTrekRecord?.trackId)
     }
 
     @Test
