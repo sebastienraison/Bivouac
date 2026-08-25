@@ -959,31 +959,44 @@ private fun JournalPopulatedList(
             }
             return@Column
         }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedButton(
-                onClick = if (calibrationSelectionActive) onConfirmCalibrationSelection else onShowOnMap,
-                // A calibration fit needs at least 2 traces (see MIN_TRACKS_FOR_CALIBRATION) — the
-                // ordinary "show on map" action has no such floor, 0 or 1 is a perfectly normal
-                // selection there.
-                enabled = !calibrationSelectionActive ||
-                    selectedTrackIds.size >= SpeedCalibrationCalculator.MIN_TRACKS_FOR_CALIBRATION,
-                modifier = Modifier.weight(1f),
+        // RIC-113 : plus de "tout afficher" sans rien choisir — sur un grand Journal (des
+        // dizaines de traces) ça revenait à reparser et superposer tout le Journal d'un coup,
+        // lent et illisible. La ligne n'existe donc plus dans ce cas, pas juste désactivée
+        // ("libérer l'espace"). Elle reste pour une sélection manuelle d'au moins 2 traces
+        // (0 ou 1 se consulte déjà en tapant dessus, pas besoin d'un bouton dédié), et pour le cas
+        // filtre-actif-sans-sélection : un tag filtré donne en pratique un petit sous-ensemble
+        // (2 à 8 traces sur un vrai Journal de 103), le problème de départ ne s'y pose pas.
+        val filterActive = selectedFilterTags.isNotEmpty()
+        val showMapRow = calibrationSelectionActive ||
+            selectedTrackIds.size >= 2 ||
+            (selectedTrackIds.isEmpty() && filterActive)
+        if (showMapRow) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    when {
-                        calibrationSelectionActive -> "Confirmer la sélection (${selectedTrackIds.size})"
-                        selectedTrackIds.isEmpty() -> "Tout afficher sur la carte"
-                        else -> "Afficher la sélection (${selectedTrackIds.size})"
-                    },
-                )
-            }
-            if (selectionModeActive) {
-                IconButton(onClick = onExitSelectionMode) {
-                    Icon(Icons.Default.Close, contentDescription = "Annuler la sélection")
+                OutlinedButton(
+                    onClick = if (calibrationSelectionActive) onConfirmCalibrationSelection else onShowOnMap,
+                    // A calibration fit needs at least 2 traces (see MIN_TRACKS_FOR_CALIBRATION) — the
+                    // ordinary "show on map" action has no such floor, 0 or 1 is a perfectly normal
+                    // selection there.
+                    enabled = !calibrationSelectionActive ||
+                        selectedTrackIds.size >= SpeedCalibrationCalculator.MIN_TRACKS_FOR_CALIBRATION,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        when {
+                            calibrationSelectionActive -> "Confirmer la sélection (${selectedTrackIds.size})"
+                            selectedTrackIds.isEmpty() -> "Afficher les ${filteredTracks.size} résultats sur la carte"
+                            else -> "Afficher la sélection (${selectedTrackIds.size})"
+                        },
+                    )
+                }
+                if (selectionModeActive) {
+                    IconButton(onClick = onExitSelectionMode) {
+                        Icon(Icons.Default.Close, contentDescription = "Annuler la sélection")
+                    }
                 }
             }
         }
