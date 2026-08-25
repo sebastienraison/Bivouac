@@ -213,4 +213,87 @@ class LoggedTrackBackfillTest {
         // Le repli par échantillons, lui, reste disponible (reparsing complet, comme avant RIC-109).
         assertTrue(input.fallbackSamples.isNotEmpty())
     }
+
+    // GPX à deux points d'altitude croissante, sans rapport avec flatGpx() ci-dessus : le seul
+    // point que ces tests RIC-19 vérifient est max/dernier point, pas la segmentation.
+    private fun elevationGpx(maxEle: Double, lastEle: Double): String =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\"><trk><name>t</name><trkseg>" +
+            "<trkpt lat=\"45.0\" lon=\"6.0\"><ele>1000.0</ele><time>2026-06-01T08:00:00Z</time></trkpt>" +
+            "<trkpt lat=\"45.001\" lon=\"6.0\"><ele>$maxEle</ele><time>2026-06-01T09:00:00Z</time></trkpt>" +
+            "<trkpt lat=\"45.002\" lon=\"6.0\"><ele>$lastEle</ele><time>2026-06-01T10:00:00Z</time></trkpt>" +
+            "</trkseg></trk></gpx>"
+
+    // GPX bien formé mais sans la moindre balise <ele> : cas réel (certains traceurs n'enregistrent
+    // pas l'altitude), distinct d'un fichier illisible.
+    private fun noElevationGpx(): String =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\"><trk><name>t</name><trkseg>" +
+            "<trkpt lat=\"45.0\" lon=\"6.0\"><time>2026-06-01T08:00:00Z</time></trkpt>" +
+            "<trkpt lat=\"45.001\" lon=\"6.0\"><time>2026-06-01T09:00:00Z</time></trkpt>" +
+            "</trkseg></trk></gpx>"
+
+    @Test
+    fun runElevationPopulatesMaxAndLastPointElevation() = runBlocking {
+        insertLegacyDay("track-ele", elevationGpx(maxEle = 2500.0, lastEle = 2100.0), alreadyRic98 = true)
+
+        LoggedTrackBackfill.runElevation(context, dao)
+
+        val day = dao.getDays("track-ele").single()
+        assertTrue(day.elevationBackfilled)
+        assertEquals(2500.0, day.maxElevationMeters!!, 1e-9)
+        assertEquals(2100.0, day.lastPointElevationMeters!!, 1e-9)
+    }
+
+    @Test
+    fun runElevationLeavesValuesNullButMarksBackfilledWhenNoElevationData() = runBlocking {
+        insertLegacyDay("track-no-ele", noElevationGpx(), alreadyRic98 = false)
+
+        LoggedTrackBackfill.runElevation(context, dao)
+
+        val day = dao.getDays("track-no-ele").single()
+        assertTrue("un jour sans donnée d'altitude doit quand même sortir de la file d'attente", day.elevationBackfilled)
+        assertEquals(null, day.maxElevationMeters)
+        assertEquals(null, day.lastPointElevationMeters)
+    }
+
+    @Test
+    fun runElevationMarksProcessedWithoutDataWhenFileIsMissing() = runBlocking {
+        val relativePath = insertLegacyDay("track-ele-missing", elevationGpx(2500.0, 2100.0), alreadyRic98 = false)
+        LoggedTrackGpxStore.resolve(context, relativePath).delete()
+
+        LoggedTrackBackfill.runElevation(context, dao)
+
+        val day = dao.getDays("track-ele-missing").single()
+        assertTrue(day.elevationBackfilled)
+        assertEquals(null, day.maxElevationMeters)
+    }
+
+    @Test
+    fun runElevationSecondRunIsANoOp() = runBlocking {
+        insertLegacyDay("track-ele-idem", elevationGpx(2500.0, 2100.0), alreadyRic98 = false)
+        LoggedTrackBackfill.runElevation(context, dao)
+        val firstPass = dao.getDays("track-ele-idem").single()
+
+        LoggedTrackBackfill.runElevation(context, dao)
+
+        val secondPass = dao.getDays("track-ele-idem").single()
+        assertEquals(firstPass, secondPass)
+    }
+
+    // RIC-19 : ce rattrapage ne partage pas son marqueur avec celui de RIC-109 (flatCount) — une
+    // ligne déjà entièrement traitée par l'ancien rattrapage doit quand même être reprise ici.
+    @Test
+    fun runElevationRevisitsARowAlreadyBackfilledUnderRic109() = runBlocking {
+        insertLegacyDay("track-ele-ric109", elevationGpx(2500.0, 2100.0), alreadyRic98 = false)
+        LoggedTrackBackfill.run(context, dao) // rattrapage RIC-109 seul, elevationBackfilled reste false
+
+        val beforeElevation = dao.getDays("track-ele-ric109").single()
+        assertNotNull(beforeElevation.flatCount)
+        assertTrue(!beforeElevation.elevationBackfilled)
+
+        LoggedTrackBackfill.runElevation(context, dao)
+
+        val after = dao.getDays("track-ele-ric109").single()
+        assertTrue(after.elevationBackfilled)
+        assertEquals(2500.0, after.maxElevationMeters!!, 1e-9)
+    }
 }

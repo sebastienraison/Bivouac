@@ -121,5 +121,67 @@ object LoggedTrackBackfill {
         MessageDigest.getInstance("SHA-256").digest(text.toByteArray(StandardCharsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
 
+    /**
+     * RIC-19 : rattrapage de maxElevationMeters/lastPointElevationMeters, séparé de [run] ci-dessus
+     * plutôt que fusionné dans la même passe — deux raisons :
+     *
+     * 1. Déclenchement différent : [run] est fire-and-forget depuis JournalViewModel.init,
+     *    annulable si l'utilisateur quitte l'écran Journal (RIC-132). Celui-ci est appelé depuis
+     *    une porte bloquante au niveau de l'appli (voir ElevationBackfillGate), avant toute
+     *    navigation — les fusionner forcerait l'un des deux appelants à connaître les contraintes
+     *    de l'autre.
+     * 2. Sur une banque déjà à jour pour RIC-109 (l'immense majorité des installations réelles,
+     *    l'app étant sortie depuis un moment), [run] est un no-op immédiat et ce rattrapage-ci est
+     *    le seul à lire quoi que ce soit — les fusionner n'aurait fait gagner qu'un util marginal
+     *    (une seule lecture de fichier au lieu de deux) pour le cas, de plus en plus rare, d'une
+     *    mise à jour directe depuis une version antérieure à RIC-98/99.
+     *
+     * [onProgress] est appelé après chaque jour traité (et une fois immédiatement avec le total),
+     * pour piloter le spinner + compteur de la porte bloquante.
+     */
+    suspend fun runElevation(
+        context: Context,
+        dao: LoggedTrackDao,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ) {
+        val appContext = context.applicationContext
+        val total = dao.countDaysNeedingElevationBackfill()
+        if (total == 0) return
+        Log.i(TAG, "Rattrapage altitude (RIC-19) : $total jour(s) à traiter")
+        onProgress(0, total)
+
+        var processed = 0
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val batch = dao.getDaysNeedingElevationBackfill(BATCH_SIZE)
+            if (batch.isEmpty()) break
+            for (day in batch) {
+                currentCoroutineContext().ensureActive()
+                backfillElevationOne(appContext, dao, day)
+                processed++
+                onProgress(processed, total)
+            }
+        }
+        Log.i(TAG, "Rattrapage altitude terminé : $processed jour(s)")
+    }
+
+    private suspend fun backfillElevationOne(context: Context, dao: LoggedTrackDao, day: LoggedTrackDayEntity) {
+        val file = LoggedTrackGpxStore.resolve(context, day.rawGpxFilePath)
+        val points = runCatching {
+            file.readText(StandardCharsets.UTF_8).byteInputStream(StandardCharsets.UTF_8)
+                .use { GpxParser.parse(it) }.points
+        }.getOrElse {
+            // Fichier absent ou illisible : rien à mesurer, mais la ligne doit sortir de la file
+            // d'attente au même titre que dans [run] — un rattrapage silencieux mais sans fin
+            // n'apporterait rien de plus qu'un blocage éternel de la porte d'accueil.
+            Log.w(TAG, "Jour ${day.id} illisible pour l'altitude, marqué traité sans donnée", it)
+            dao.updateDayElevationFields(day.id, maxElevationMeters = null, lastPointElevationMeters = null)
+            return
+        }
+        val maxElevation = points.mapNotNull { it.elevationMeters }.maxOrNull()
+        val lastPointElevation = points.lastOrNull()?.elevationMeters
+        dao.updateDayElevationFields(day.id, maxElevation, lastPointElevation)
+    }
+
     private const val TAG = "LoggedTrackBackfill"
 }

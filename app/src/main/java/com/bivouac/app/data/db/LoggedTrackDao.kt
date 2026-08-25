@@ -55,6 +55,27 @@ interface LoggedTrackDao {
         steepHours: Double,
     )
 
+    // RIC-19 : marqueur dédié (elevationBackfilled), pas flatCount IS NULL — ce rattrapage porte des
+    // colonnes différentes de celui de RIC-109 et une ligne peut avoir l'un sans l'autre dans les
+    // deux sens (voir LoggedTrackDayEntity.elevationBackfilled).
+    @Query(
+        "SELECT * FROM logged_track_day WHERE elevationBackfilled = 0 ORDER BY trackId, dayIndex LIMIT :limit",
+    )
+    suspend fun getDaysNeedingElevationBackfill(limit: Int): List<LoggedTrackDayEntity>
+
+    @Query("SELECT COUNT(*) FROM logged_track_day WHERE elevationBackfilled = 0")
+    suspend fun countDaysNeedingElevationBackfill(): Int
+
+    @Query(
+        "UPDATE logged_track_day SET maxElevationMeters = :maxElevationMeters, " +
+            "lastPointElevationMeters = :lastPointElevationMeters, elevationBackfilled = 1 WHERE id = :id",
+    )
+    suspend fun updateDayElevationFields(
+        id: Long,
+        maxElevationMeters: Double?,
+        lastPointElevationMeters: Double?,
+    )
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTrack(entity: LoggedTrackEntity)
 

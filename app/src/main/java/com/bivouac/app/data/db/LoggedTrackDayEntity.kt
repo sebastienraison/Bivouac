@@ -63,4 +63,23 @@ data class LoggedTrackDayEntity(
     val steepDistanceMeters: Double? = null,
     val steepGainMeters: Double? = null,
     val steepHours: Double? = null,
+    // RIC-19 : altitude du jour, reparsée depuis rawGpxFilePath au même titre que les colonnes
+    // ci-dessus. Contrairement à flatCount, ni l'une ni l'autre ne peut servir de marqueur "pas
+    // encore rattrapé" : une altitude de 0 m est une valeur réelle possible (rando en bord de mer),
+    // et l'absence d'altitude exploitable dans le GPX est elle aussi un cas réel et définitif — les
+    // deux collisionneraient avec "pas encore traité" si l'une d'elles servait de marqueur. D'où
+    // elevationBackfilled, un marqueur dédié qui ne porte aucune autre information.
+    //
+    // maxElevationMeters : altitude max atteinte ce jour-là (record "altitude max atteinte").
+    val maxElevationMeters: Double? = null,
+    // lastPointElevationMeters : altitude du DERNIER point du jour — convention retenue pour le
+    // record "bivouac le plus haut" (RIC-19 §3). Ce n'est un bivouac que si ce jour n'est pas le
+    // dernier de sa trace (bivouacCount = dayCount - 1, voir JournalDayInfo) : c'est à l'appelant
+    // de l'exclure pour le dernier jour de chaque trace, cette colonne ne fait aucune distinction.
+    val lastPointElevationMeters: Double? = null,
+    // Marqueur "rattrapage RIC-19 effectué" pour ce jour, indépendant de flatCount ci-dessus (arrivé
+    // par une migration antérieure, RIC-109) : une ligne déjà entièrement rattrapée avant RIC-19 a
+    // flatCount non nul mais elevationBackfilled à false, et doit repasser une fois par ce nouveau
+    // rattrapage. Voir LoggedTrackBackfill.runElevation.
+    val elevationBackfilled: Boolean = false,
 )

@@ -32,6 +32,7 @@ import com.bivouac.app.ui.journal.JournalScreen
 import com.bivouac.app.ui.nav.AppSection
 import com.bivouac.app.ui.nav.UniverseChoiceDialog
 import com.bivouac.app.ui.settings.SettingsScreen
+import com.bivouac.app.ui.startup.ElevationBackfillGate
 import com.bivouac.app.ui.theme.BivouacTheme
 import kotlinx.coroutines.launch
 
@@ -44,7 +45,12 @@ class MainActivity : ComponentActivity() {
         val incomingGpxUris = intent.extractGpxUris()
         setContent {
             BivouacTheme {
-                BivouacApp(modifier = Modifier.fillMaxSize(), incomingGpxUris = incomingGpxUris)
+                // RIC-19 §5 : rattrapage bloquant des colonnes d'altitude, avant toute navigation —
+                // englobe BivouacApp entier (NavHost compris) plutôt que d'être posé à l'intérieur,
+                // pour qu'aucune section ne soit ne serait-ce que composée pendant le rattrapage.
+                ElevationBackfillGate(modifier = Modifier.fillMaxSize()) {
+                    BivouacApp(modifier = Modifier.fillMaxSize(), incomingGpxUris = incomingGpxUris)
+                }
             }
         }
     }

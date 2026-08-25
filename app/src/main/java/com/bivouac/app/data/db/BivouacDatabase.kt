@@ -29,7 +29,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open") — a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 11
+        const val SCHEMA_VERSION = 12
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -333,6 +333,26 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-19 : même patron que MIGRATION_8_9 et MIGRATION_10_11 — trois ALTER TABLE ADD COLUMN,
+        // colonnes nullables (ou par défaut pour le marqueur), aucune recréation de table, aucun
+        // rattrapage ici. Cible : schemas/12.json.
+        //
+        // Différence avec les rattrapages précédents : celui-ci (LoggedTrackBackfill.runElevation)
+        // n'est PAS lancé en tâche de fond silencieuse depuis JournalViewModel comme les autres —
+        // préférence utilisateur documentée (RIC-132 : le rattrapage fire-and-forget existant est
+        // annulable si l'utilisateur quitte l'écran Journal, jugé inadapté ici). Voir
+        // ElevationBackfillGate côté UI : popup bloquant + spinner au premier lancement post-
+        // migration, avant que la moindre navigation ne soit possible.
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `maxElevationMeters` REAL")
+                db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `lastPointElevationMeters` REAL")
+                db.execSQL(
+                    "ALTER TABLE `logged_track_day` ADD COLUMN `elevationBackfilled` INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
         // ~256K points de code par tranche : au pire quadruplé en UTF-8 ça reste sous la fenêtre de
         // 2 Mo, et un GPX réel (ASCII pour l'essentiel) en est très loin.
         private const val MIGRATION_CHUNK_CODE_POINTS = 256 * 1024
@@ -403,6 +423,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                         MIGRATION_8_9,
                         migration9To10(context),
                         MIGRATION_10_11,
+                        MIGRATION_11_12,
                     )
                     .build()
                     .also { instance = it }

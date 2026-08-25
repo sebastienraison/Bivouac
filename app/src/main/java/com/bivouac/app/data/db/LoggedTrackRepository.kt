@@ -38,6 +38,14 @@ data class PreparedDay(
     // ex. GPX sans altitude ou trop court) plutôt qu'un type nullable : un jour fraîchement importé
     // n'a jamais besoin de rattrapage, contrairement à une ligne héritée d'avant cette migration.
     val segmentAggregate: DaySegmentAggregate,
+    // RIC-19 : calculées ici pendant que track.points est déjà parsé, même raisonnement que
+    // segmentAggregate ci-dessus — un jour fraîchement importé n'a jamais besoin du rattrapage
+    // d'altitude, voir LoggedTrackDayEntity.elevationBackfilled. Défaut à null (et pas de valeur
+    // obligatoire comme segmentAggregate) : un appelant qui les omet obtient un jour "sans altitude
+    // connue", un état déjà légitime par ailleurs, plutôt qu'une erreur de compilation pour des
+    // fixtures de test qui n'ont rien à voir avec RIC-19 (voir RepositoryBackupCycleTest).
+    val maxElevationMeters: Double? = null,
+    val lastPointElevationMeters: Double? = null,
 )
 
 // Une trace du Journal ouverte pour affichage : [track] est l'ensemble des jours concaténés (la
@@ -93,21 +101,39 @@ class LoggedTrackRepository(context: Context) {
     suspend fun backfillDenormalizedFields() = LoggedTrackBackfill.run(appContext, dao)
 
     /**
+     * RIC-19 : rattrapage de maxElevationMeters/lastPointElevationMeters, bloquant côté appelant
+     * (voir ElevationBackfillGate) — contrairement à [backfillDenormalizedFields] ci-dessus,
+     * délibérément pas fire-and-forget. Sans effet une fois la banque à jour.
+     */
+    suspend fun backfillElevationFields(onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }) =
+        LoggedTrackBackfill.runElevation(appContext, dao, onProgress)
+
+    /** Ce que la porte d'accueil (RIC-19) doit savoir avant de décider d'afficher le popup bloquant. */
+    suspend fun countDaysNeedingElevationBackfill(): Int = dao.countDaysNeedingElevationBackfill()
+
+    /**
      * Ce que la liste doit savoir des jours d'une trace sans ouvrir le moindre fichier : combien
      * elle en compte, et quand chacun a commencé. Une requête pour toute la banque.
      */
     suspend fun daySummariesByTrackId(): Map<String, DaySummary> =
-        dao.getAllDays()
-            .groupBy { it.trackId }
+        allDaysByTrackId()
             .mapValues { (_, days) ->
                 DaySummary(
                     dayCount = days.size,
                     // Les jours sans horodatage exploitable, et ceux que le rattrapage n'a pas
                     // encore traités, sont absents : afficher les dates connues vaut mieux
                     // qu'inventer les autres. dayCount, lui, est toujours juste.
-                    startMillis = days.sortedBy { it.dayIndex }.mapNotNull { it.startedAtMillis },
+                    startMillis = days.mapNotNull { it.startedAtMillis },
                 )
             }
+
+    /**
+     * RIC-19 : ce dont [com.bivouac.app.bilan.BilanStatsCalculator] a besoin pour les records de
+     * granularité "jour" (VAM, altitude, bivouac le plus haut, distance/D+ max journée) — les jours
+     * de chaque trace, triés, sans ouvrir le moindre fichier (colonnes dénormalisées uniquement).
+     */
+    suspend fun allDaysByTrackId(): Map<String, List<LoggedTrackDayEntity>> =
+        dao.getAllDays().groupBy { it.trackId }.mapValues { (_, days) -> days.sortedBy { it.dayIndex } }
 
     /**
      * Reads, parses and hashes one or more raw GPX files into a single logged track (RIC-41 : un
@@ -162,6 +188,8 @@ class LoggedTrackRepository(context: Context) {
                 startedAtMillis = track.points.firstOrNull()?.time?.toEpochMilli(),
                 elapsedSeconds = elapsedSeconds(track),
                 segmentAggregate = DaySegmentAggregate.of(TrackSegmenter.segment(track.points)),
+                maxElevationMeters = track.points.mapNotNull { it.elevationMeters }.maxOrNull(),
+                lastPointElevationMeters = track.points.lastOrNull()?.elevationMeters,
             )
         }
         return PreparedImport(entity, days)
@@ -239,6 +267,9 @@ class LoggedTrackRepository(context: Context) {
                 steepDistanceMeters = day.segmentAggregate.steepDistanceMeters,
                 steepGainMeters = day.segmentAggregate.steepGainMeters,
                 steepHours = day.segmentAggregate.steepHours,
+                maxElevationMeters = day.maxElevationMeters,
+                lastPointElevationMeters = day.lastPointElevationMeters,
+                elevationBackfilled = true,
             )
         }
         try {
