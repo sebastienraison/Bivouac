@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -477,7 +478,18 @@ private fun PauseStatCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(14.dp))
+            // Le remplissage gris plein (surfaceVariant) est ce qui fait lire cette capsule comme
+            // désactivée, quel que soit l'état du texte/slider dedans — c'est le même traitement
+            // que les capsules vitesse/D+ en lecture seule (StatBox). En Manuel, elles n'utilisent
+            // plus StatBox du tout mais un OutlinedTextField (contour, pas de fond) ; un simple
+            // contour ici plutôt qu'un remplissage retrouve ce même signal "éditable".
+            .then(
+                if (enabled) {
+                    Modifier.border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
+                } else {
+                    Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(14.dp))
+                },
+            )
             .padding(12.dp),
     ) {
         Text("Pauses pendant la marche", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
