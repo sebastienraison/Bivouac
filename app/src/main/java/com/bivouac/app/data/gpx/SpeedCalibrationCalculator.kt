@@ -43,8 +43,12 @@ object SpeedCalibrationCalculator {
 
     // Seuils de repli (CR section 5.4), identiques au prototype.
     private const val MIN_FLAT_SEGMENTS = 10
-    private const val MIN_STEEP_SEGMENTS = 10
-    private const val MIN_TOTAL_GAIN_METERS = 300.0
+
+    // internal (pas private) : RIC-19 réutilise ces deux seuils tels quels pour le garde-fou du
+    // record "meilleure VAM" (BilanStatsCalculator) — une sortie trop courte ou trop plate pour
+    // calibrer une pénalité D+ n'a pas plus de sens comme record VAM que comme calibration.
+    internal const val MIN_STEEP_SEGMENTS = 10
+    internal const val MIN_TOTAL_GAIN_METERS = 300.0
 
     // Bornes de plausibilité, identiques à l'ancien calcul.
     private const val MIN_SPEED_KMH = 1.0
