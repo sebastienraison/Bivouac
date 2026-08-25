@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -506,7 +507,11 @@ private fun TrackSheetContent(
             is GpxImportUiState.Error -> {
                 Text(text = uiState.message, color = MaterialTheme.colorScheme.error)
                 Spacer(modifier = Modifier.height(8.dp))
+                // Même libellé que la FAB "Ouvrir une trace" de l'état Idle (au-dessus de ce
+                // tiroir côté GpxImportScreen) — un Button nu, sans icône, tranchait avec elle.
                 Button(onClick = onOpenClick, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text("Ouvrir une trace")
                 }
             }
