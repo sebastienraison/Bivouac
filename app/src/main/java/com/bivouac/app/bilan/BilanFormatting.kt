@@ -66,15 +66,18 @@ internal fun recordValueText(record: BilanRecord): String = when (record.kind) {
     }
 }
 
-internal fun recordMetaText(record: BilanRecord): String {
-    val base = "${record.placeName} · ${formatMonthYear(record.whenMillis)}"
+// RIC-19 (revu) : nom et date chacun sur leur ligne (plutôt que "nom · date" concaténé), et pour
+// BIGGEST_TREK (seul kind à porter extraDistanceKm/extraGainMeters) une troisième ligne à part
+// pour le km/D+ du trek — un nom de sortie déjà long ne les repoussait plus qu'à la coupure,
+// tantôt sur une ligne, tantôt sur deux, sans mise en page prévisible.
+internal fun recordMetaLines(record: BilanRecord): List<String> {
     val distance = record.extraDistanceKm
     val gain = record.extraGainMeters
-    return if (distance != null && gain != null) {
-        "$base · ${formatKm1(distance)} km · ${formatGroupedInt(gain)} m D+"
-    } else {
-        base
+    val lines = mutableListOf(record.placeName, formatMonthYear(record.whenMillis))
+    if (distance != null && gain != null) {
+        lines += "${formatKm1(distance)} km · ${formatGroupedInt(gain)} m D+"
     }
+    return lines
 }
 
 internal fun recordColor(kind: BilanRecordKind): Color = when (kind) {

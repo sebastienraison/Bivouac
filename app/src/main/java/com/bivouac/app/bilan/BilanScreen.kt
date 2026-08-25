@@ -269,11 +269,13 @@ private fun HeroRecordCard(record: BilanRecord, onOpenJournalEntry: (JournalOpen
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(3.dp))
-            Text(
-                text = recordMetaText(record),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-            )
+            recordMetaLines(record).forEach { line ->
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                )
+            }
         }
     }
 }
@@ -314,11 +316,13 @@ private fun SecondaryRecordRow(record: BilanRecord, onOpenJournalEntry: (Journal
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(text = recordLabel(record.kind), style = MaterialTheme.typography.bodyMedium)
-            Text(
-                text = recordMetaText(record),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            recordMetaLines(record).forEach { line ->
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         Text(text = recordValueText(record), style = MaterialTheme.typography.titleSmall)
         Icon(
