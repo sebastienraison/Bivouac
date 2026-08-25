@@ -484,6 +484,11 @@ private fun PauseStatCard(
         Text(
             "${pauseFractionPercent.roundToInt()} %",
             style = MaterialTheme.typography.titleMedium,
+            // RIC-115 : cette capsule reste la même en Manuel qu'en Auto/Sélection (seul le
+            // slider ci-dessous bascule enabled/disabled) — contrairement à vitesse/D+, qui
+            // passent d'une capsule grise en lecture seule à un OutlinedTextField noir en édition.
+            // Sans ce contraste, la capsule pause a l'air désactivée même quand elle est éditable.
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
         )
         Slider(
