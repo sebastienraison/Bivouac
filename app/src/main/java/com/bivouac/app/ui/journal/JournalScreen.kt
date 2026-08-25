@@ -134,6 +134,7 @@ import com.bivouac.app.ui.components.ElevationProfile
 import com.bivouac.app.ui.components.GainIconColor
 import com.bivouac.app.ui.components.InfoText
 import com.bivouac.app.ui.components.StatsRows
+import com.bivouac.app.ui.components.TotalsCapsule
 import com.bivouac.app.ui.components.ThreeStopDrawerHandle
 import com.bivouac.app.ui.components.ThreeStopDrawerStopRow
 import com.bivouac.app.ui.components.rememberThreeStopDrawerState
@@ -819,52 +820,20 @@ private fun JournalHomeScreen(
 
 /**
  * RIC-65 écran 2 : résumé global, non couplé aux filtres/chips actifs — les croisements par
- * filtre relèvent de l'écran Bilan lui-même (RIC-19) une fois construit, pas de cette carte.
+ * filtre relèvent de l'écran Bilan lui-même (RIC-19), pas de cette carte.
  *
- * Statistiques en sourdine (`muted`), comme les en-têtes d'année : la couleur reste réservée aux
- * chiffres d'une sortie unique, un cumul ne s'en pare pas. Celui-ci est le cumul le plus large de
- * l'écran, il serait le dernier à y prétendre.
+ * RIC-19 : fine enveloppe autour de [TotalsCapsule], désormais partagé avec l'écran Bilan — voir sa
+ * kdoc pour le design (fond neutre, grille d'icônes colorées) qui remplace l'ancien fond
+ * `secondaryContainer` plein propre à cette carte.
  */
 @Composable
-private fun JournalBilanCard(total: Int, stats: TrackStats, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(18.dp))
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .background(Color.White.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.AutoMirrored.Filled.TrendingUp,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
-        }
-        Column {
-            Text(
-                text = "$total rando${if (total > 1) "s" else ""} au total",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
-            Spacer(Modifier.height(4.dp))
-            // La carte est plus étroite que les autres endroits où StatsRows s'affiche (en-têtes
-            // d'année, lignes de trace, pleine largeur de liste) — sans réduction, "D+ 4500 m" et
-            // "D- 4500 m" côte à côte débordaient sur deux lignes une fois les totaux vraiment
-            // cumulés (Lot 2). ProvideTextStyle plutôt qu'un paramètre sur StatsRows : c'est un
-            // ajustement de mise en page propre à ce conteneur précis, pas un nouveau réglage que
-            // les autres appelants auraient à connaître.
-            ProvideTextStyle(MaterialTheme.typography.bodySmall) {
-                StatsRows(stats, muted = true)
-            }
-        }
-    }
+private fun JournalBilanCard(total: Int, stats: TrackStats, bivouacCount: Int, modifier: Modifier = Modifier) {
+    TotalsCapsule(
+        totalLabel = "$total rando${if (total > 1) "s" else ""} au total",
+        stats = stats,
+        bivouacCount = bivouacCount,
+        modifier = modifier,
+    )
 }
 
 /**
@@ -904,6 +873,11 @@ private fun JournalPopulatedList(
     // Sur `tracks` et non `filteredTracks` : le Bilan reste global, un filtre actif n'en retire
     // rien (RIC-65 écran 3).
     val bilanStats = remember(tracks, activeCalibration) { aggregateStats(tracks, activeCalibration) }
+    // RIC-19 : bivouacCount découle de dayCount, toujours connu (contrairement aux dates, qui
+    // dépendent d'un horodatage GPX exploitable) — voir JournalDayInfo.bivouacCount.
+    val bilanBivouacCount = remember(tracks, dayInfoByTrackId) {
+        tracks.sumOf { dayInfoByTrackId[it.id]?.bivouacCount ?: 0 }
+    }
 
     // System tags always offered (even before ever used) so the filter is discoverable; free tags
     // only once at least one track actually has them.
@@ -918,7 +892,7 @@ private fun JournalPopulatedList(
             .padding(horizontal = 20.dp)
             .padding(top = 4.dp, bottom = 96.dp),
     ) {
-        JournalBilanCard(total = tracks.size, stats = bilanStats)
+        JournalBilanCard(total = tracks.size, stats = bilanStats, bivouacCount = bilanBivouacCount)
         if (allFilterTags.isNotEmpty()) {
             Row(
                 modifier = Modifier

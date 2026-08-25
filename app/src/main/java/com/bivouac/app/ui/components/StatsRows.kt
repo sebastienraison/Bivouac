@@ -27,6 +27,12 @@ val DurationIconColor = Color(0xFF6FA8CC)
 val GainIconColor = Color(0xFFD98E48)
 val LossIconColor = Color(0xFFD4B94E)
 
+// RIC-19 : reprend exactement marker_bivouac (res/values/colors.xml) — délibérément pas la couleur
+// secondary du thème Material, utilisée par erreur pour ce thème dans les explorations de maquette
+// qui ont précédé le ticket. Un Color hardcodé plutôt qu'un colorResource() ici, par cohérence avec
+// les quatre constantes ci-dessus (déjà des valeurs fixes, pas des lookups de thème).
+val BivouacIconColor = Color(0xFFF57C00)
+
 @Composable
 fun StatsRows(stats: TrackStats, muted: Boolean = false) {
     val neutral = MaterialTheme.colorScheme.onSurfaceVariant
