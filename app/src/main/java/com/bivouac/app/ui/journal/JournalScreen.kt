@@ -824,6 +824,7 @@ private fun JournalHomeScreen(
                 onShowOnMap = onShowOnMap,
                 calibrationSelectionActive = calibrationSelectionActive,
                 onConfirmCalibrationSelection = onConfirmCalibrationSelection,
+                onOpenBilan = { onSectionSelected(AppSection.BILAN) },
                 expandedYears = expandedYears,
                 onExpandedYearsChanged = onExpandedYearsChanged,
                 scrollState = listScrollState,
@@ -839,15 +840,22 @@ private fun JournalHomeScreen(
  *
  * RIC-19 : fine enveloppe autour de [TotalsCapsule], désormais partagé avec l'écran Bilan — voir sa
  * kdoc pour le design (fond neutre, grille d'icônes colorées) qui remplace l'ancien fond
- * `secondaryContainer` plein propre à cette carte.
+ * `secondaryContainer` plein propre à cette carte. [onClick] ouvre l'écran Bilan complet.
  */
 @Composable
-private fun JournalBilanCard(total: Int, stats: TrackStats, bivouacCount: Int, modifier: Modifier = Modifier) {
+private fun JournalBilanCard(
+    total: Int,
+    stats: TrackStats,
+    bivouacCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     TotalsCapsule(
         totalLabel = "$total rando${if (total > 1) "s" else ""} au total",
         stats = stats,
         bivouacCount = bivouacCount,
         modifier = modifier,
+        onClick = onClick,
     )
 }
 
@@ -874,6 +882,7 @@ private fun JournalPopulatedList(
     onShowOnMap: () -> Unit,
     calibrationSelectionActive: Boolean,
     onConfirmCalibrationSelection: () -> Unit,
+    onOpenBilan: () -> Unit,
     // RIC-102 : hissés par l'appelant (JournalScreen) pour survivre à l'aller-retour vers une
     // rando ouverte, ce composable-ci se démontant et se remontant à chaque fois — voir le
     // commentaire sur JournalScreen. null (et non un set vide) veut dire « aucun choix manuel
@@ -907,7 +916,7 @@ private fun JournalPopulatedList(
             .padding(horizontal = 20.dp)
             .padding(top = 4.dp, bottom = 96.dp),
     ) {
-        JournalBilanCard(total = tracks.size, stats = bilanStats, bivouacCount = bilanBivouacCount)
+        JournalBilanCard(total = tracks.size, stats = bilanStats, bivouacCount = bilanBivouacCount, onClick = onOpenBilan)
         if (allFilterTags.isNotEmpty()) {
             Row(
                 modifier = Modifier

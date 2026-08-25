@@ -1,6 +1,7 @@
 package com.bivouac.app.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,13 +43,23 @@ import java.util.Locale
  * seule couleur de fond plein. Les 4 couleurs sont celles de [StatsRows] (distance/D+/durée) et
  * [BivouacIconColor] (`marker_bivouac`, pas `secondary` du thème Material comme utilisé par erreur
  * dans les premières explorations de cette maquette).
+ *
+ * [onClick] optionnel : la capsule du Journal (`JournalBilanCard`) l'utilise pour ouvrir l'écran
+ * Bilan ; l'écran Bilan lui-même passe `null`, sa propre capsule n'a nulle part où renvoyer.
  */
 @Composable
-fun TotalsCapsule(totalLabel: String, stats: TrackStats, bivouacCount: Int, modifier: Modifier = Modifier) {
+fun TotalsCapsule(
+    totalLabel: String,
+    stats: TrackStats,
+    bivouacCount: Int,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+) {
     Column(
         modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(18.dp))
+            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         Text(
