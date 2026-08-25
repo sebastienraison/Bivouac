@@ -1,3 +1,5 @@
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Properties
 
 plugins {
@@ -22,6 +24,12 @@ val localProperties = Properties().apply {
 }
 val esriApiKey: String = localProperties.getProperty("esri.apiKey", "")
 
+// RIC-133 : horodatage figé à la compilation (pas au runtime), affiché en bas de Réglages pour
+// savoir exactement quelle build tourne sur un appareil donné. Format non localisé (jj/MM/aaaa) :
+// une build reste identique quel que soit l'appareil qui l'exécute, sa date ne devrait pas varier
+// avec la locale du téléphone.
+val buildDate: String = SimpleDateFormat("dd/MM/yyyy").format(Date())
+
 android {
     namespace = "com.bivouac.app"
     // RIC-111 : Compose BOM 2026.08.00 (Compose 1.12) exige compileSdk >= 37 pour plusieurs
@@ -41,6 +49,7 @@ android {
         versionName = "2.0.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "ESRI_API_KEY", "\"$esriApiKey\"")
+        buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
     }
 
     buildTypes {

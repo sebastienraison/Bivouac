@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bivouac.app.BuildConfig
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackStatsCalculator
@@ -169,6 +170,15 @@ fun SettingsScreen(
             )
             CreditsSection(
                 onOpenUrl = { url -> context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
+            )
+            // RIC-133 : identifie la build exacte qui tourne (utile support/debug), et rassure que
+            // la mise à jour a bien pris. Texte simple, pas une SettingsSection : rien à toucher ici.
+            Text(
+                text = "Version ${BuildConfig.VERSION_NAME} · build du ${BuildConfig.BUILD_DATE}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
