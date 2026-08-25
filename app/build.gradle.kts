@@ -45,8 +45,8 @@ android {
         applicationId = "com.bivouac.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "2.0.2"
+        versionCode = 8
+        versionName = "2.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "ESRI_API_KEY", "\"$esriApiKey\"")
         buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
