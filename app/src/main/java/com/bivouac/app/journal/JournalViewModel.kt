@@ -391,10 +391,19 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         exitSelectionMode()
         _uiState.value = JournalUiState.Loading
         viewModelScope.launch {
-            val loaded = withContext(Dispatchers.IO) {
-                entriesToShow.mapNotNull { entry -> repository.open(entry.id)?.let { entry to it } }
+            // RIC-127 : même filet que openTrack — un GPX illisible parmi la sélection ne doit
+            // pas crasher l'app. Tout-ou-rien pour l'instant (comme openTrack), pas un skip
+            // silencieux des traces en échec : à revoir si ça s'avère trop strict à l'usage.
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    entriesToShow.mapNotNull { entry -> repository.open(entry.id)?.let { entry to it } }
+                }
+            }.onSuccess { loaded ->
+                _uiState.value = JournalUiState.MultiTrack(loaded)
+            }.onFailure {
+                Log.e("JournalViewModel", "Échec de l'affichage multi-traces sur la carte", it)
+                _uiState.value = JournalUiState.Error("Trace incorrecte ou fichier illisible.")
             }
-            _uiState.value = JournalUiState.MultiTrack(loaded)
         }
     }
 
