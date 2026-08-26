@@ -27,6 +27,16 @@ journaliers (distance, dénivelé, durée estimée) qui se met à jour automatiq
       <sub>Journal — détail d'une trace, tags et note</sub>
     </td>
   </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="screenshots/05_bilan.jpg" width="100%" alt="Bilan : totaux, graphique de progression et records"><br>
+      <sub>Bilan — totaux, progression et records</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="screenshots/06_reglages.jpg" width="100%" alt="Réglages : vitesse personnalisée et sauvegarde"><br>
+      <sub>Réglages — vitesse personnalisée et sauvegarde</sub>
+    </td>
+  </tr>
 </table>
 
 ## Fonctionnalités (V2.1.0)
