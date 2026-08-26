@@ -4,6 +4,8 @@ Planning: import a multi-day GPX track, view it on an OpenStreetMap-based map, a
 
 Journal: import one or more already-hiked GPX tracks (several files selected together are recognized as the days of a single multi-day hike), browse a chronological list grouped by year, and view a read-only detail with map and elevation profile. Add a free-text note and tags to each hike, and filter the list by tag. Duplicate a logged hike into Planning to reuse its route.
 
+Bilan: an overview of your Journal — cumulative totals, a monthly progression chart (outings, distance, elevation gain, speed, bivouacs) across your whole history, and personal records (km-effort, climbing speed, highest point reached, highest bivouac, biggest trek...). Each record links straight back to the hike behind it.
+
 Settings: a custom walking speed and elevation-gain penalty for duration estimates, either typed in manually, computed automatically from your Journal history, or from a selection of hikes you pick. Full backup and restore of your data, and a switch to disable the two optional non-free features below.
 
 Features:

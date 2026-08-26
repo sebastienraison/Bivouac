@@ -56,11 +56,13 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Provisoire : pas de vraie signature de release configurée (chantier toolchain,
-            // dette #3, encore différé). Réutilise la signature debug pour permettre un test
-            // release sur device sans mettre en place un keystore de prod tout de suite — même
-            // signature que le build debug déjà installé, donc `adb install -r` remplace en
-            // place sans perte de données.
+            // Choix assumé, pas un oubli : F-Droid compile et signe lui-même le binaire depuis
+            // les sources (sa propre clé, jamais la nôtre) — la signature de ce buildType n'a
+            // donc aucune incidence sur ce qui est réellement distribué. Elle ne sert qu'au
+            // mainteneur, pour pouvoir tester un build "release-shaped" en local sans se
+            // fabriquer un keystore de prod pour un usage qui ne le nécessite pas. Réutilise la
+            // signature debug : même signature que le build debug déjà installé, donc
+            // `adb install -r` remplace en place sans perte de données.
             signingConfig = signingConfigs.getByName("debug")
         }
     }

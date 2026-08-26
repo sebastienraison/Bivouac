@@ -6,10 +6,28 @@ Prépare tes randonnées itinérantes (Planification) et garde la trace de celle
 (Journal), avec tes points de bivouac positionnés sur une carte OSM et un tableau des segments
 journaliers (distance, dénivelé, durée estimée) qui se met à jour automatiquement.
 
-![Planification : trace ouverte sur fond de carte Randonnée, profil altimétrique](screenshots/01_planification_carte.jpg)
-![Planification : tiroir de détail, segments par jour](screenshots/02_planification_details.jpg)
-![Journal : liste chronologique par année](screenshots/03_journal_liste.jpg)
-![Journal : détail d'une trace, tags et note](screenshots/04_journal_detail.jpg)
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="screenshots/01_planification_carte.jpg" width="100%" alt="Planification : trace ouverte sur fond de carte Randonnée, profil altimétrique"><br>
+      <sub>Planification — trace sur fond de carte, profil altimétrique</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="screenshots/02_planification_details.jpg" width="100%" alt="Planification : tiroir de détail, segments par jour"><br>
+      <sub>Planification — détail des segments par jour</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="screenshots/03_journal_liste.jpg" width="100%" alt="Journal : liste chronologique par année"><br>
+      <sub>Journal — liste chronologique par année</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="screenshots/04_journal_detail.jpg" width="100%" alt="Journal : détail d'une trace, tags et note"><br>
+      <sub>Journal — détail d'une trace, tags et note</sub>
+    </td>
+  </tr>
+</table>
 
 ## Fonctionnalités (V2.1.0)
 
@@ -127,7 +145,7 @@ et si ça peut servir à quelqu'un d'autre, tant mieux. Indulgence et retours bi
 
 ## Statut
 
-V2.0 fonctionnelle. Développement actif.
+V2.1.0 fonctionnelle. Développement actif.
 
 ## Développement
 
