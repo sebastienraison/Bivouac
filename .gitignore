@@ -23,8 +23,9 @@ Desktop.ini
 # Other editors
 .vscode/
 
-# Signing material — no release keystore exists yet (voir dette #3 dans app/build.gradle.kts),
-# mais à exclure par avance dès qu'un vrai keystore de prod sera introduit.
+# Signing material — no release keystore exists yet (F-Droid builds and signs from source,
+# see the signingConfig comment in app/build.gradle.kts), excluded ahead of time in case a real
+# prod keystore is introduced later.
 *.jks
 *.keystore
 key.properties

@@ -38,7 +38,7 @@ android {
     // targetSdk volontairement laissé inchangé (34) : ne change que la surface de compilation
     // (rétrocompatible par construction), pas le comportement runtime de l'app — un bump de
     // targetSdk revient à opter dans des changements de comportement par version d'Android, ce
-    // qui mérite sa propre vérification visuelle sur device (jamais faite cette nuit, voir CR).
+    // qui mérite sa propre vérification visuelle sur device, jamais faite depuis (RIC-116).
     compileSdk = 37
 
     defaultConfig {
