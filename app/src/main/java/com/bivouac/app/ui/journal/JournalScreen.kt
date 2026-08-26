@@ -136,6 +136,7 @@ import com.bivouac.app.ui.components.FullScreenEmptyState
 import com.bivouac.app.ui.components.ElevationProfile
 import com.bivouac.app.ui.components.GainIconColor
 import com.bivouac.app.ui.components.InfoText
+import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.StatsRows
 import com.bivouac.app.ui.components.TotalsCapsule
 import com.bivouac.app.ui.components.ThreeStopDrawerHandle
@@ -1308,7 +1309,7 @@ private fun ReadOnlyBivouacRow(arrival: TrackPoint?, departure: TrackPoint?) {
         val elevation = arrival?.elevationMeters
         if (elevation != null) {
             InfoText(
-                text = "${elevation.roundToInt()} m",
+                text = "${formatGroupedInt(elevation.roundToInt())} m",
                 icon = Icons.Default.Terrain,
                 iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -22,6 +22,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
+import com.bivouac.app.ui.components.formatGroupedInt
+import com.bivouac.app.ui.components.formatKm1
 
 private val COLUMN_WIDTH = 20.dp
 private val BAR_WIDTH = 14.dp

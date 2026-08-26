@@ -5,7 +5,8 @@ import com.bivouac.app.ui.components.BivouacIconColor
 import com.bivouac.app.ui.components.DistanceIconColor
 import com.bivouac.app.ui.components.DurationIconColor
 import com.bivouac.app.ui.components.GainIconColor
-import java.text.NumberFormat
+import com.bivouac.app.ui.components.formatGroupedInt
+import com.bivouac.app.ui.components.formatKm1
 import java.time.Instant
 import java.time.Month
 import java.time.ZoneId
@@ -15,18 +16,14 @@ import java.util.Locale
 // RIC-19 : mise en forme d'affichage, volontairement séparée de BilanStatsCalculator (qui ne
 // manipule que des nombres et des millis) — même partition que le reste de l'app entre calculateurs
 // purs (TrackStatsCalculator...) et formatage propre à l'écran (StatsRows.formatDuration...).
+//
+// formatKm1/formatGroupedInt : RIC-136 les a fait migrer vers ui.components.NumberFormatting,
+// partagées avec StatsRows et le reste de l'app plutôt que dupliquées ici.
 
 internal fun formatMonthYear(millis: Long, zone: ZoneId = ZoneId.systemDefault()): String {
     val date = Instant.ofEpochMilli(millis).atZone(zone)
     return "${date.month.getDisplayName(TextStyle.FULL, Locale.FRENCH)} ${date.year}"
 }
-
-private val KM_FORMAT: NumberFormat
-    get() = NumberFormat.getNumberInstance(Locale.FRANCE).apply { minimumFractionDigits = 1; maximumFractionDigits = 1 }
-
-internal fun formatKm1(km: Double): String = KM_FORMAT.format(km)
-
-internal fun formatGroupedInt(value: Double): String = NumberFormat.getIntegerInstance(Locale.FRANCE).format(value.toLong())
 
 internal fun monthInitial(month: Month): String = when (month) {
     Month.JANUARY -> "J"

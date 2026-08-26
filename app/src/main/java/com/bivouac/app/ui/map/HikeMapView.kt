@@ -48,6 +48,8 @@ import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.TrackPoint
+import com.bivouac.app.ui.components.formatGroupedInt
+import com.bivouac.app.ui.components.formatKm1
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -670,8 +672,8 @@ private fun cursorMarker(
 private fun cursorBubbleText(points: List<TrackPoint>, index: Int): String {
     val distanceKm = TrackGeometry.cumulativeDistancesMeters(points)[index] / 1000.0
     val altitude = points[index].elevationMeters?.roundToInt()
-    val distanceText = String.format(Locale.FRANCE, "%.1f km", distanceKm)
-    return if (altitude != null) "$distanceText · $altitude m" else distanceText
+    val distanceText = "${formatKm1(distanceKm)} km"
+    return if (altitude != null) "$distanceText · ${formatGroupedInt(altitude)} m" else distanceText
 }
 
 // Negative: lifts the bubble's anchor above the marker's own geo point by roughly the pin's

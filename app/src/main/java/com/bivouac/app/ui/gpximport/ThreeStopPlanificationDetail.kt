@@ -65,6 +65,7 @@ import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.ui.components.DrawerStop
 import com.bivouac.app.ui.components.ElevationProfile
 import com.bivouac.app.ui.components.GainIconColor
+import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.InfoText
 import com.bivouac.app.ui.components.StatsRows
 import com.bivouac.app.ui.components.ThreeStopDrawerHandle
@@ -421,7 +422,7 @@ private fun BivouacRow(trackPoint: TrackPoint, onWeatherClick: () -> Unit, onRem
         val elevation = trackPoint.elevationMeters
         if (elevation != null) {
             InfoText(
-                text = "${elevation.roundToInt()} m",
+                text = "${formatGroupedInt(elevation.roundToInt())} m",
                 icon = Icons.Default.Terrain,
                 iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
             )

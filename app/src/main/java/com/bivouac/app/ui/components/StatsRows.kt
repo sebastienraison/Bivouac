@@ -18,7 +18,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.bivouac.app.data.gpx.TrackStats
-import java.util.Locale
 
 // Shared between the open-trace toolbar (Planification), the banked-trace list rows, and the
 // Journal — same color roles wherever a distance/duration/D+/D- readout appears.
@@ -42,12 +41,12 @@ fun StatsRows(stats: TrackStats, muted: Boolean = false) {
     val lossColor = if (muted) neutral else LossIconColor
 
     Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-        InfoText(String.format(Locale.FRANCE, "%.1f km", stats.distanceMeters / 1000), Icons.Filled.Route, distanceColor)
+        InfoText("${formatKm1(stats.distanceMeters / 1000)} km", Icons.Filled.Route, distanceColor)
         InfoText(formatDuration(stats.estimatedDurationMinutes), Icons.Filled.Schedule, durationColor)
     }
     Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-        InfoText("D+ ${stats.elevationGainMeters.toInt()} m", Icons.AutoMirrored.Filled.TrendingUp, gainColor)
-        InfoText("D- ${stats.elevationLossMeters.toInt()} m", Icons.AutoMirrored.Filled.TrendingDown, lossColor)
+        InfoText("D+ ${formatGroupedInt(stats.elevationGainMeters)} m", Icons.AutoMirrored.Filled.TrendingUp, gainColor)
+        InfoText("D- ${formatGroupedInt(stats.elevationLossMeters)} m", Icons.AutoMirrored.Filled.TrendingDown, lossColor)
     }
 }
 

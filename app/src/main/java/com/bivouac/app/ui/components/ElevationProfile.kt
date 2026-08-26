@@ -34,7 +34,10 @@ import kotlin.math.floor
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
-private val LEFT_LABEL_WIDTH = 26.dp
+// RIC-136 : élargi de 26 à 32dp — "999" tenait tout juste, mais une altitude groupée à 4 chiffres
+// ("1 234", espace fine insécable comprise) déborderait sinon en montagne (>1000 m, terrain courant
+// pour cette app).
+private val LEFT_LABEL_WIDTH = 32.dp
 private val BOTTOM_AXIS_HEIGHT = 14.dp
 
 // Round "nice" values a gridline is snapped to, largest-first so the picked unit is the coarsest
@@ -226,7 +229,7 @@ fun ElevationProfile(
             )
             drawText(
                 textMeasurer = textMeasurer,
-                text = "${elevation.roundToInt()}",
+                text = formatGroupedInt(elevation.roundToInt()),
                 topLeft = Offset(0f, (y - 6.dp.toPx()).coerceIn(0f, plotHeight - 10.dp.toPx())),
                 style = labelStyle,
             )
