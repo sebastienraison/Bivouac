@@ -1,13 +1,9 @@
-New: adjustable pause allowance in duration estimates (Settings → Custom speed) — adds a time
-margin for breaks (photos, snacks, rest stops), either set manually or measured automatically from
-the Journal/selection depending on the active mode.
+New: adjustable pause allowance in duration estimates (Settings → Custom speed).
 
 Bugfixes:
-- The automatic D+ (elevation gain) penalty could be overestimated when a stop was taken mid-climb
-- Duplicating a Journal hike into Planning: the rename dialog could close itself before typing a name
-- Planning: a multi-day trek duplicated from the Journal whose recording had stopped away from camp
-  could show a fake path on the map and inflate the total distance shown
-- A single-day track with no bivouac point had no way to export its GPX from Planning
-- Opening a corrupted bank track showed a full error screen that hid the rest of the list; now
-  shows a dismissible message instead
-- Journal: bivouac row layout (time font, icon) aligned with the rest of the interface
+- Automatic D+ penalty could be overestimated on a mid-climb stop
+- Duplicate-to-Planning rename dialog could close before typing a name
+- Planning: a duplicated multi-day trek could show a fake path/inflated distance
+- Single-day tracks with no bivouac point had no GPX export
+- A corrupted bank track no longer hides the rest of the list
+- Journal: bivouac row layout aligned with the UI

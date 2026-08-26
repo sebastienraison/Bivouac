@@ -1,13 +1,9 @@
-New: Bilan tab — an overview of your Journal: cumulative totals, a monthly progression chart
-(outings, km, elevation gain, speed, bivouacs) across your whole history, and personal records
-(km-effort, climbing speed, highest point reached, highest bivouac, biggest trek...). Each record
-links straight back to the hike behind it.
+New: Bilan tab — Journal overview: cumulative totals, a monthly progression chart, and personal
+records (km-effort, climbing speed, highest point reached, highest bivouac, biggest trek...).
+Each record links back to the hike.
 
-Settings: app version and build date now shown at the bottom of the screen.
+Settings: app version and build date shown at the bottom.
 
 Bugfixes:
-- Planning: the "No track in progress" empty screen could flash briefly on cold start even when a
-  previous session was about to be restored
-- Planning: after killing and relaunching the app on a track already saved to the bank, closing the
-  screen wrongly asked to confirm unsaved changes — and saving at that prompt duplicated the track
-  instead of simply closing
+- Planning: the empty screen could flash briefly on cold start
+- Planning: closing a restored track wrongly asked to save, and saving duplicated it
