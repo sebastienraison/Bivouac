@@ -1,5 +1,27 @@
 # Bivouac — Notes de version
 
+## V2.1.0
+
+**Bilan (nouveau) :**
+
+- Nouvel onglet Bilan : vue d'ensemble du Journal — totaux cumulés, graphique de progression
+  mensuelle (sorties, km, D+, vitesse, bivouacs) sur tout l'historique, et tes records personnels
+  (km-effort, vitesse ascensionnelle, altitude max atteinte, bivouac le plus haut, plus gros trek...).
+  Chaque record renvoie directement à la sortie concernée dans le Journal.
+
+**Réglages :**
+
+- Numéro de version et date de build affichés en bas de l'écran, pour identifier précisément quelle
+  version tourne sur l'appareil
+
+**Bugfixes :**
+
+- Planification : au tout premier lancement de l'app, l'écran "Aucune trace en préparation" pouvait
+  s'afficher brièvement même quand une session précédente était sur le point d'être restaurée
+- Planification : après avoir tué puis relancé l'app sur une trace déjà enregistrée en banque, fermer
+  l'écran redemandait à tort une confirmation de sauvegarde — et sauvegarder à cette invite dupliquait
+  la trace au lieu de simplement fermer
+
 ## V2.0.2
 
 **Réglages (nouveau) :**

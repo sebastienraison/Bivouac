@@ -11,7 +11,7 @@ journaliers (distance, dénivelé, durée estimée) qui se met à jour automatiq
 ![Journal : liste chronologique par année](screenshots/03_journal_liste.jpg)
 ![Journal : détail d'une trace, tags et note](screenshots/04_journal_detail.jpg)
 
-## Fonctionnalités (V2.0)
+## Fonctionnalités (V2.1.0)
 
 **Planification :**
 
@@ -30,6 +30,12 @@ journaliers (distance, dénivelé, durée estimée) qui se met à jour automatiq
 - Importer une ou plusieurs traces GPX déjà réalisées (fichiers multiples reconnus comme les jours
   d'une même sortie), liste chronologique par année, détail en lecture seule avec carte et profil
 - Note libre et tags par trace, filtrage par tag ; dupliquer une trace du Journal vers Planification
+
+**Bilan :**
+
+- Totaux cumulés, graphique de progression mensuelle (sorties, km, D+, vitesse, bivouacs) sur tout
+  l'historique, et records personnels (km-effort, vitesse ascensionnelle, altitude atteinte, bivouac
+  le plus haut, plus gros trek...) renvoyant chacun vers la sortie du Journal concernée
 
 **Réglages :**
 
