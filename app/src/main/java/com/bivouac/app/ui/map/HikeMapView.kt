@@ -249,6 +249,9 @@ fun HikeMapView(
     }
     val cursorInfoWindow = remember(mapView) { CursorInfoWindow(mapView) }
     val cursorDragState = remember(mapView) { CursorDragState() }
+    // RIC-43 (perf) : deux caches à la durée de vie du MapView, voir leurs classes respectives.
+    val distanceCache = remember(mapView) { TrackDistanceCache() }
+    val photoIconCache = remember(mapView) { PhotoMarkerIconCache() }
     // Esri's free tile access requires on-screen attribution (BIV-56). WrappingCopyrightOverlay
     // reads the active tile source's copyright notice on every draw, so it tracks layer switches
     // (Standard, Randonnée, Satellite) automatically without any extra plumbing here, and wraps
@@ -354,6 +357,7 @@ fun HikeMapView(
                     view, track, bivouacPoints, bivouacsReadOnly, dayBoundaryIndices, shouldFit, visibleHeightPx,
                     onTrackTapped, onBivouacMoved, onBivouacDragPreview,
                     cursorIndex, onCursorChanged, cursorInfoWindow, cursorDragState,
+                    distanceCache, photoIconCache,
                     photos, missingPhotoIds, repositioningPhotoId, onPhotoRepositioned, onPhotoBubbleClick,
                     multiTracks, highlightedTrackId, onTraceTapped, copyrightOverlay,
                 )
@@ -426,6 +430,8 @@ private fun renderTrack(
     onCursorChanged: (Int) -> Unit,
     cursorInfoWindow: CursorInfoWindow,
     cursorDragState: CursorDragState,
+    distanceCache: TrackDistanceCache,
+    iconCache: PhotoMarkerIconCache,
     photos: List<LoggedTrackPhotoEntity>,
     missingPhotoIds: Set<Long>,
     repositioningPhotoId: Long?,
@@ -557,10 +563,12 @@ private fun renderTrack(
     // rien de précis à saisir. Le reste du lot se regroupe normalement.
     clusterPhotos(mapView, geoPoints, placeablePhotos, repositioningPhotoId, density).forEach { cluster ->
         if (cluster.photos.size == 1) {
-            photoMarker(mapView, points, geoPoints, cluster.photos.first(), isRepositioning = false, onCursorChanged, onPhotoRepositioned)
-                ?.let { mapView.overlays.add(it) }
+            photoMarker(
+                mapView, points, geoPoints, cluster.photos.first(), isRepositioning = false,
+                onCursorChanged, onPhotoRepositioned, iconCache,
+            )?.let { mapView.overlays.add(it) }
         } else {
-            mapView.overlays.add(photoClusterMarker(mapView, cluster, onCursorChanged))
+            mapView.overlays.add(photoClusterMarker(mapView, cluster, onCursorChanged, iconCache))
         }
     }
 
@@ -574,10 +582,11 @@ private fun renderTrack(
         mapView.overlays.add(
             cursorMarker(
                 mapView, points, geoPoints, cursorIndex, density, onCursorChanged,
-                cursorInfoWindow, cursorDragState, photos, missingPhotoIds,
+                cursorInfoWindow, cursorDragState, distanceCache, photos, missingPhotoIds,
             ),
         )
-        val bubbleContent = cursorBubbleContent(context, points, cursorIndex, photos, missingPhotoIds)
+        val bubbleContent =
+            cursorBubbleContent(context, points, cursorIndex, distanceCache, photos, missingPhotoIds)
         val bubblePosition = geoPoints[cursorIndex]
         // A tap can be dispatched to an overlay that existed before this recomposition and open
         // its default InfoWindow after renderTrack returns. Re-open ours on the next UI frame so
@@ -597,8 +606,10 @@ private fun renderTrack(
     // d'un « Placer sur la trace » : le repère était visible mais impossible à saisir.
     repositioningPhotoId?.let { id ->
         placeablePhotos.find { it.id == id }?.let { photo ->
-            photoMarker(mapView, points, geoPoints, photo, isRepositioning = true, onCursorChanged, onPhotoRepositioned)
-                ?.let { mapView.overlays.add(it) }
+            photoMarker(
+                mapView, points, geoPoints, photo, isRepositioning = true,
+                onCursorChanged, onPhotoRepositioned, iconCache,
+            )?.let { mapView.overlays.add(it) }
         }
     }
 
@@ -787,11 +798,16 @@ private fun clusterPhotos(
 // choix individuel depuis la carte pour l'instant : le bandeau et la galerie du Journal donnent
 // déjà accès à chaque photo une à une, ce marqueur groupé n'a besoin que de situer le cluster sur
 // la trace.
-private fun photoClusterMarker(mapView: MapView, cluster: PhotoCluster, onCursorChanged: (Int) -> Unit): Marker {
+private fun photoClusterMarker(
+    mapView: MapView,
+    cluster: PhotoCluster,
+    onCursorChanged: (Int) -> Unit,
+    iconCache: PhotoMarkerIconCache,
+): Marker {
     val marker = Marker(mapView)
     marker.position = cluster.position
     marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-    marker.icon = photoMarkerIcon(mapView.context, badgeText = clusterBadgeText(cluster.photos.size))
+    marker.icon = iconCache.get(mapView.context, clusterBadgeText(cluster.photos.size))
     marker.setInfoWindow(null)
     val targetIndex = cluster.photos.first().positionPointIndex!!
     marker.setOnMarkerClickListener { _, _ -> onCursorChanged(targetIndex); true }
@@ -810,17 +826,41 @@ private fun clusterBadgeText(count: Int): String = if (count > 9) "9+" else coun
 private const val PHOTO_APPROXIMATE_BADGE_TEXT = "?"
 
 /**
+ * RIC-43 : les icônes de marqueur photo déjà fabriquées, réutilisées d'un rendu à l'autre.
+ *
+ * photoMarkerIcon rasterise un Bitmap neuf à chaque appel, alors que le rendu ne dépend que du
+ * badge — au plus une douzaine de combinaisons (1 à 9, « 9+ », « ? », et le marqueur nu). Or
+ * renderTrack les refabriquait toutes à chaque recomposition et après chaque pincement de zoom
+ * débouncé, c'est-à-dire plusieurs fois par seconde de manipulation de la carte.
+ *
+ * Mémorisé pour la durée de vie du MapView (voir HikeMapView) : un changement de densité passe par
+ * une recréation d'Activity, donc par un cache neuf. Jamais touché hors du thread principal.
+ */
+private class PhotoMarkerIconCache {
+    private val icons = mutableMapOf<String?, Drawable>()
+
+    fun get(context: Context, badgeText: String?): Drawable =
+        icons.getOrPut(badgeText) { photoMarkerIcon(context, badgeText) }
+}
+
+/**
  * Le marqueur photo de base, éventuellement redessiné avec un badge dans le coin — comptage pour un
  * cluster, point d'interrogation pour une position approximative.
  *
- * Un cluster est toujours à pleine opacité et ne porte jamais le badge d'approximation : à
- * l'échelle d'un groupe, la distinction approximatif/certain n'a plus de sens (le groupe peut
- * mélanger les deux) et le comptage prime — simplification assumée.
+ * Un cluster ne porte jamais le badge d'approximation : à l'échelle d'un groupe, la distinction
+ * approximatif/certain n'a plus de sens (le groupe peut mélanger les deux) et le comptage prime —
+ * simplification assumée.
+ *
+ * L'opacité n'est délibérément PAS appliquée ici : osmdroid réécrit `icon.alpha` à chaque frame
+ * depuis `Marker.alpha` (vérifié dans le bytecode de Marker.drawAt), ce qui écrasait purement et
+ * simplement l'atténuation que le premier jet posait sur le drawable — l'opacité réduite des
+ * positions approximatives n'a donc jamais rien fait à l'écran. Elle passe maintenant par
+ * `Marker.setAlpha`, la seule voie que la lib respecte, ce qui a aussi le bon goût de laisser cette
+ * icône partageable entre marqueurs.
  */
-private fun photoMarkerIcon(context: Context, badgeText: String?, alpha: Int = 255): Drawable {
+private fun photoMarkerIcon(context: Context, badgeText: String?): Drawable {
     val density = context.resources.displayMetrics.density
-    val base = ContextCompat.getDrawable(context, R.drawable.ic_marker_photo)!!.mutate()
-    base.alpha = alpha
+    val base = ContextCompat.getDrawable(context, R.drawable.ic_marker_photo)!!
     val bitmap = base.toBitmap(base.intrinsicWidth, base.intrinsicHeight).copy(Bitmap.Config.ARGB_8888, true)
     if (badgeText == null) return BitmapDrawable(context.resources, bitmap)
     val canvas = Canvas(bitmap)
@@ -870,6 +910,7 @@ private fun photoMarker(
     isRepositioning: Boolean,
     onCursorChanged: (Int) -> Unit,
     onRepositioned: (Long, Int) -> Unit,
+    iconCache: PhotoMarkerIconCache,
 ): Marker? {
     val index = photo.positionPointIndex ?: return null
     if (index !in geoPoints.indices) return null
@@ -883,11 +924,10 @@ private fun photoMarker(
     // pendant le repositionnement : le marqueur sert alors de repère pour retrouver celui qu'on
     // est en train de déplacer, et sa position est sur le point de devenir certaine.
     val approximate = photo.positionApproximate && !isRepositioning
-    marker.icon = photoMarkerIcon(
-        mapView.context,
-        badgeText = if (approximate) PHOTO_APPROXIMATE_BADGE_TEXT else null,
-        alpha = if (approximate) PHOTO_MARKER_APPROXIMATE_ALPHA else 255,
-    )
+    marker.icon = iconCache.get(mapView.context, if (approximate) PHOTO_APPROXIMATE_BADGE_TEXT else null)
+    // Via Marker.alpha et non l'alpha du drawable : osmdroid réécrit ce dernier à chaque frame,
+    // voir photoMarkerIcon.
+    marker.alpha = if (approximate) PHOTO_MARKER_APPROXIMATE_ALPHA else 1f
     marker.setInfoWindow(null)
     marker.isDraggable = isRepositioning
     if (!isRepositioning) {
@@ -917,7 +957,9 @@ private fun photoMarker(
     return marker
 }
 
-private const val PHOTO_MARKER_APPROXIMATE_ALPHA = 140
+// Fraction et non valeur 0-255 : c'est ce que Marker.alpha attend, la seule voie d'atténuation
+// qu'osmdroid respecte (voir photoMarkerIcon).
+private const val PHOTO_MARKER_APPROXIMATE_ALPHA = 0.55f
 
 // Same drag-and-snap gabarit as a bivouac marker, but nothing here is ever persisted — every
 // snapped position during a drag is immediately reported as final via onCursorChanged (no
@@ -932,6 +974,7 @@ private fun cursorMarker(
     onCursorChanged: (Int) -> Unit,
     cursorInfoWindow: CursorInfoWindow,
     cursorDragState: CursorDragState,
+    distanceCache: TrackDistanceCache,
     photos: List<LoggedTrackPhotoEntity>,
     missingPhotoIds: Set<Long>,
 ): Marker {
@@ -959,7 +1002,9 @@ private fun cursorMarker(
             if (nearestIndex != lastIndex) {
                 lastIndex = nearestIndex
                 cursorInfoWindow.open(
-                    cursorBubbleContent(mapView.context, points, nearestIndex, photos, missingPhotoIds),
+                    cursorBubbleContent(
+                        mapView.context, points, nearestIndex, distanceCache, photos, missingPhotoIds,
+                    ),
                     geoPoints[nearestIndex], 0, cursorBubbleOffsetY(density),
                 )
                 onCursorChanged(nearestIndex)
@@ -982,8 +1027,32 @@ private fun cursorMarker(
     return marker
 }
 
-private fun cursorBubbleText(points: List<TrackPoint>, index: Int): String {
-    val distanceKm = TrackGeometry.cumulativeDistancesMeters(points)[index] / 1000.0
+/**
+ * RIC-43 (perf) : les distances cumulées de la trace affichée, calculées une fois puis réutilisées.
+ *
+ * cursorBubbleContent en a besoin à chaque changement d'index pendant un glissement de curseur,
+ * c'est-à-dire une passe haversine complète par frame utile, sur des traces qui comptent des
+ * dizaines de milliers de points. La trace affichée ne change pas en cours de glissement, et une
+ * autre trace est une autre liste : l'identité de la liste suffit donc comme clé d'invalidation.
+ *
+ * Mémorisé pour la durée de vie du MapView (voir HikeMapView), jamais touché hors du thread
+ * principal.
+ */
+private class TrackDistanceCache {
+    private var cachedPoints: List<TrackPoint>? = null
+    private var cachedDistances: DoubleArray = DoubleArray(0)
+
+    fun distancesFor(points: List<TrackPoint>): DoubleArray {
+        if (cachedPoints !== points) {
+            cachedPoints = points
+            cachedDistances = TrackGeometry.cumulativeDistancesMeters(points)
+        }
+        return cachedDistances
+    }
+}
+
+private fun cursorBubbleText(points: List<TrackPoint>, index: Int, distanceCache: TrackDistanceCache): String {
+    val distanceKm = distanceCache.distancesFor(points)[index] / 1000.0
     val altitude = points[index].elevationMeters?.roundToInt()
     val distanceText = "${formatKm1(distanceKm)} km"
     return if (altitude != null) "$distanceText · ${formatGroupedInt(altitude)} m" else distanceText
@@ -998,12 +1067,13 @@ private fun cursorBubbleContent(
     context: Context,
     points: List<TrackPoint>,
     index: Int,
+    distanceCache: TrackDistanceCache,
     photos: List<LoggedTrackPhotoEntity>,
     missingPhotoIds: Set<Long>,
 ): CursorBubbleContent {
-    val text = cursorBubbleText(points, index)
+    val text = cursorBubbleText(points, index, distanceCache)
     if (photos.isEmpty()) return CursorBubbleContent(text)
-    val cumulative = TrackGeometry.cumulativeDistancesMeters(points)
+    val cumulative = distanceCache.distancesFor(points)
     val cursorDistance = cumulative[index]
     val nearest = photos
         .mapNotNull { photo -> photo.positionPointIndex?.takeIf { it in cumulative.indices }?.let { it to photo } }
