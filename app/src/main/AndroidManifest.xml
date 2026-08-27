@@ -13,9 +13,17 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
+    <!-- RIC-43 : filesDir partait entièrement dans l'Auto Backup du système, plafonné à 25 Mo par
+         app — au-delà, c'est la sauvegarde de l'app ENTIÈRE que le système désactive, en silence.
+         Quelques dizaines de photos suffisent. Les deux fichiers de règles excluent donc
+         filesDir/photos/ et laissent tout le reste (base, préférences, GPX) : voir
+         data_extraction_rules.xml pour le raisonnement, et backup_rules.xml pour son équivalent
+         avant l'API 31. La sauvegarde applicative de Réglages reste le canal complet. -->
     <application
         android:name=".BivouacApplication"
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"

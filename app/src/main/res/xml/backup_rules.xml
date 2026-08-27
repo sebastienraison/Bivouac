@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  RIC-43 : même exclusion que data_extraction_rules.xml, pour les versions d'Android antérieures à
+  l'API 31, qui ignorent android:dataExtractionRules et ne lisent que celui-ci. minSdk est 26 : sans
+  ce doublon, la moitié basse du parc continuerait d'envoyer les photos dans l'Auto Backup et de
+  buter sur le plafond de 25 Mo. Voir data_extraction_rules.xml pour le raisonnement complet.
+-->
+<full-backup-content>
+    <exclude domain="file" path="photos" />
+</full-backup-content>
