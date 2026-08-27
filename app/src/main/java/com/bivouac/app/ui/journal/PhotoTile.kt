@@ -1,22 +1,30 @@
 package com.bivouac.app.ui.journal
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
@@ -36,15 +44,60 @@ internal fun PhotoTile(photo: LoggedTrackPhotoEntity, modifier: Modifier = Modif
     val file = remember(photo.filePath) { LoggedTrackPhotoStore.resolve(context, photo.filePath) }
     val painter = rememberAsyncImagePainter(model = file, contentScale = ContentScale.Crop)
     Box(modifier = modifier) {
-        Image(
-            painter = painter,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.matchParentSize(),
-        )
+        // L'état d'erreur de Coil plutôt qu'un File.exists() : il couvre aussi le fichier présent
+        // mais illisible, et surtout il n'ajoute aucun accès disque sur le thread de composition,
+        // là où une grille de galerie recompose souvent.
+        if (painter.state is AsyncImagePainter.State.Error) {
+            MissingPhotoPlaceholder(Modifier.matchParentSize())
+        } else {
+            Image(
+                painter = painter,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
+        }
         if (photo.positionApproximate) {
             ApproximatePositionBadge(
                 modifier = Modifier.align(Alignment.BottomStart).padding(3.dp),
+            )
+        }
+    }
+}
+
+/**
+ * RIC-43 : la copie locale de cette photo a disparu (restauration d'une sauvegarde antérieure,
+ * nettoyage manuel du stockage de l'app...).
+ *
+ * La ligne, elle, n'est jamais supprimée pour autant : ses métadonnées d'origine (voir les colonnes
+ * source* de LoggedTrackPhotoEntity) serviront à la re-acquérir depuis la galerie (RIC-151). D'ici
+ * là, elle se montre telle qu'elle est plutôt que de laisser un carré vide qu'on prendrait pour un
+ * chargement qui n'aboutit pas.
+ */
+@Composable
+private fun MissingPhotoPlaceholder(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Icon(
+                Icons.Default.BrokenImage,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                "Photo absente",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 2.dp),
             )
         }
     }

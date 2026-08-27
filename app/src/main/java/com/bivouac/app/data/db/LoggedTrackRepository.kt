@@ -472,6 +472,22 @@ class LoggedTrackRepository(context: Context) {
 
     suspend fun listPhotos(trackId: String): List<LoggedTrackPhotoEntity> = dao.getPhotos(trackId)
 
+    /**
+     * RIC-43 : parmi [photos], celles dont la copie locale a disparu — restauration d'une
+     * sauvegarde antérieure à leur ajout, nettoyage manuel du stockage de l'app, ou tout simplement
+     * une écriture qui n'a jamais abouti.
+     *
+     * Aucune de ces lignes n'est supprimée pour autant, ni ici ni ailleurs : leurs métadonnées
+     * d'origine (colonnes source* de [LoggedTrackPhotoEntity]) sont ce qui permettra de re-acquérir
+     * la photo depuis la galerie (RIC-151). Elles doivent survivre.
+     *
+     * Un stat par photo, fait une fois par rafraîchissement de la liste plutôt qu'à chaque rendu
+     * de carte ou de vignette.
+     */
+    fun missingPhotoFileIds(photos: List<LoggedTrackPhotoEntity>): Set<Long> =
+        photos.filterNot { LoggedTrackPhotoStore.resolve(appContext, it.filePath).exists() }
+            .mapTo(mutableSetOf()) { it.id }
+
     // Suppression d'une seule photo (RIC-43) : jamais une cascade ici, contrairement à delete(id)
     // ci-dessus — c'est la ligne elle-même qui disparaît, donc son chemin doit être lu avant.
     suspend fun deletePhoto(id: Long) {

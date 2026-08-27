@@ -213,6 +213,7 @@ fun JournalScreen(
     val selectedFilterTags by viewModel.selectedFilterTags.collectAsStateWithLifecycle()
     val currentTags by viewModel.currentTags.collectAsStateWithLifecycle()
     val currentPhotos by viewModel.currentPhotos.collectAsStateWithLifecycle()
+    val missingPhotoIds by viewModel.missingPhotoIds.collectAsStateWithLifecycle()
     val photosLoading by viewModel.photosLoading.collectAsStateWithLifecycle()
     val photoDeleteTarget by viewModel.photoDeleteTarget.collectAsStateWithLifecycle()
     val photoError by viewModel.photoError.collectAsStateWithLifecycle()
@@ -335,6 +336,7 @@ fun JournalScreen(
                     cursorIndex = cursorIndex,
                     onCursorChanged = { cursorIndex = it },
                     photos = currentPhotos,
+                    missingPhotoIds = missingPhotoIds,
                     repositioningPhotoId = repositioningPhotoId,
                     onPhotoRepositioned = viewModel::repositionPhoto,
                     onCancelRepositionPhoto = viewModel::cancelRepositionPhoto,
@@ -831,6 +833,7 @@ private fun JournalMap(
     cursorIndex: Int?,
     onCursorChanged: (Int) -> Unit,
     photos: List<LoggedTrackPhotoEntity> = emptyList(),
+    missingPhotoIds: Set<Long> = emptySet(),
     repositioningPhotoId: Long? = null,
     onPhotoRepositioned: (Long, Int) -> Unit = { _, _ -> },
     onCancelRepositionPhoto: () -> Unit = {},
@@ -859,6 +862,7 @@ private fun JournalMap(
             cursorIndex = cursorIndex,
             onCursorChanged = onCursorChanged,
             photos = photos,
+            missingPhotoIds = missingPhotoIds,
             repositioningPhotoId = repositioningPhotoId,
             onPhotoRepositioned = onPhotoRepositioned,
             onPhotoBubbleClick = onPhotoBubbleClick,

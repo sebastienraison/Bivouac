@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -197,6 +198,16 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     // photo n'a pas d'état "en cours d'édition".
     private val _currentPhotos = MutableStateFlow<List<LoggedTrackPhotoEntity>>(emptyList())
     val currentPhotos: StateFlow<List<LoggedTrackPhotoEntity>> = _currentPhotos.asStateFlow()
+
+    // RIC-43 : les photos de la trace ouverte dont la copie locale a disparu. Dérivé de
+    // currentPhotos plutôt que recalculé dans chacune des cinq fonctions qui l'écrivent, et
+    // recalculé sur Dispatchers.IO parce que c'est un stat par photo. La carte s'en sert pour ne
+    // pas planter de marqueur sur une photo qu'elle ne peut pas montrer, les vignettes pour
+    // afficher « photo absente » — la ligne, elle, n'est jamais supprimée (voir
+    // LoggedTrackRepository.missingPhotoFileIds).
+    val missingPhotoIds: StateFlow<Set<Long>> = _currentPhotos
+        .map { photos -> withContext(Dispatchers.IO) { repository.missingPhotoFileIds(photos) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     // Retour visuel pendant addPhotos (copie + EXIF + corrélation, potentiellement plusieurs
     // secondes sur un gros lot) — signalé par l'utilisateur en testant sur device, rien ne
@@ -715,6 +726,13 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * Placement manuel, donc jamais approximatif — même règle que repositionPhoto.
      */
     fun beginRepositionPhoto(photo: LoggedTrackPhotoEntity, cursorIndex: Int? = null) {
+        // Une photo dont le fichier a disparu n'a aucun marqueur sur la carte (voir HikeMapView) :
+        // armer le glisser afficherait la bannière sur une carte où il n'y a rien à saisir, la
+        // même impasse que « Placer sur la trace » répare par ailleurs.
+        if (photo.id in missingPhotoIds.value) {
+            _photoError.value = "Le fichier de cette photo a disparu : impossible de la placer sur la carte."
+            return
+        }
         if (photo.positionPointIndex != null) {
             _repositioningPhotoId.value = photo.id
             return
