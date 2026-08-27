@@ -74,9 +74,7 @@ data class DaySummary(val dayCount: Int, val startMillis: List<Long>)
  * passé est la fin du lot. Sans ça, une sélection de dix photos dont trois sont des doublons
  * rendait sept vignettes sans jamais dire ce qu'étaient devenues les trois autres.
  */
-data class PhotoAddReport(val added: Int, val duplicatesSkipped: Int, val failed: Int) {
-    val total: Int get() = added + duplicatesSkipped + failed
-}
+data class PhotoAddReport(val added: Int, val duplicatesSkipped: Int, val failed: Int)
 
 sealed interface DuplicateMatch {
     val existing: LoggedTrackEntity

@@ -89,6 +89,29 @@ android {
                 test.jvmArgs("--add-opens", "java.base/java.io=ALL-UNNAMED")
             }
         }
+
+        // RIC-43 : les suites instrumentées (migrations Room, sauvegarde/restauration) passent par
+        // un émulateur jetable provisionné par le build, jamais par un appareil branché.
+        // `connectedAndroidTest` désinstalle l'app à la fin de son exécution et effacerait les
+        // données réelles du téléphone de recette : la tâche à lancer est
+        // `pixel6Api34DebugAndroidTest`, qui crée l'AVD, l'exécute et le jette.
+        //
+        // API 34 pour coller au targetSdk, et image « aosp » (sans les services Google) : rien ici
+        // n'en dépend, et c'est la plus légère à télécharger. La première exécution récupère
+        // l'image système si elle manque, c'est normal.
+        managedDevices {
+            localDevices {
+                create("pixel6Api34") {
+                    device = "Pixel 6"
+                    apiLevel = 34
+                    systemImageSource = "aosp"
+                    // Explicite parce que le défaut change en AGP 10 (x86_64 -> arm64-v8a) et que
+                    // l'image aosp ne sait pas traduire l'ARM : sans cette ligne, la même
+                    // configuration cesserait de fonctionner à la prochaine montée d'AGP.
+                    testedAbi = "x86_64"
+                }
+            }
+        }
     }
 }
 

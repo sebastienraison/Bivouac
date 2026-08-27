@@ -32,8 +32,8 @@ import com.bivouac.app.data.db.LoggedTrackPhotoStore
 /**
  * RIC-43 : le rendu commun d'une photo du Journal partout où elle apparaît en petit — bandeau de la
  * vue détail comme galerie plate. Factorisé pour que l'état d'une photo (position approximative,
- * et plus tard fichier absent) se raconte de la même façon aux deux endroits, plutôt que d'être
- * réécrit deux fois.
+ * fichier absent) se raconte de la même façon aux deux endroits, plutôt que d'être réécrit deux
+ * fois.
  *
  * Le [modifier] porte la taille, la forme et le clic : le bandeau et la grille n'ont ni les mêmes
  * dimensions ni le même découpage, mais le contenu, lui, est identique.
