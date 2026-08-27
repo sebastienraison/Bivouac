@@ -524,6 +524,20 @@ private fun renderTrack(
     }
     mapView.overlays.add(trackTapOverlay(mapView, points, geoPoints, density, onTrackTapped))
 
+    // Cadrage AVANT les marqueurs, et non plus tout à la fin : clusterPhotos regroupe les photos
+    // selon leur distance en pixels d'écran, donc il lit mapView.projection. Cadrer après lui, au
+    // premier rendu d'une trace, revenait à regrouper contre la projection d'avant cadrage, sans
+    // rapport avec ce qui allait s'afficher. Le MapListener débouncé corrigeait 200 ms plus tard,
+    // visible comme un saut. Rien d'autre n'en dépend : le cadrage ne touche que la caméra, jamais
+    // la pile d'overlays.
+    //
+    // Cas résiduel : quand la vue n'a pas encore de taille, fitToTrack diffère le cadrage à son
+    // premier layout, et la projection reste dégénérée pendant ce rendu-là. C'est le MapListener
+    // qui rattrape, comme avant.
+    if (shouldFit) {
+        fitToTrack(mapView, geoPoints, visibleHeightPx)
+    }
+
     bivouacPoints.forEach { bivouac ->
         mapView.overlays.add(
             bivouacMarker(
@@ -588,9 +602,6 @@ private fun renderTrack(
         }
     }
 
-    if (shouldFit) {
-        fitToTrack(mapView, geoPoints, visibleHeightPx)
-    }
     mapView.invalidate()
 }
 
@@ -729,23 +740,15 @@ private fun bivouacMarker(
     return marker
 }
 
-// RIC-43 : marqueur photo, jamais déplaçable au tap (le repositionnement passe par le menu
-// contextuel de la vignette, pas le marqueur carte) — tap déplace seulement le curseur, comme
-// un raccourci vers "voir l'altitude de cette photo". Pas de fusion en cluster pour l'instant ;
-// avec beaucoup de photos rapprochées, les marqueurs se chevauchent (limite connue, RIC-43 en
-// note comme raffinement à mutualiser avec RIC-139).
+// RIC-43 : rayon de regroupement, en pixels d'écran plutôt qu'en mètres réels — deux photos prises
+// à 5 m l'une de l'autre doivent fusionner en cluster à un zoom éloigné (leurs marqueurs se
+// chevauchent visuellement) mais se séparer en zoomant (l'écart en pixels grandit), même
+// raisonnement que la refonte prévue des flèches de direction (RIC-139), avec laquelle ce
+// mécanisme n'est pas encore mutualisé.
 //
-// Null si la photo n'a pas de position (galerie seule) ou si l'index est devenu invalide — ne
-// devrait pas arriver en usage normal (positionPointIndex est calculé sur la même trace), mais
-// une trace ne peut techniquement pas être réimportée différemment sous le même id, donc ce
-// garde-fou coûte peu.
-// RIC-43 : distance en pixels d'ecran plutot qu'en metres reels - deux photos prises a 5 m l'une
-// de l'autre doivent fusionner en cluster a un zoom eloigne (leurs marqueurs se chevauchent
-// visuellement) mais se separer en zoomant (l'ecart en pixels grandit), meme raisonnement que la
-// refonte prevue des fleches de direction (RIC-139). Recalcule a chaque renderTrack, donc reagit
-// a un changement de zoom qui declenche par ailleurs une recomposition (tap, ajout/suppression de
-// photo...) - pas en continu pendant un pincement brut, meme limite que le reste de la carte
-// aujourd'hui.
+// Recalculé à chaque renderTrack, y compris après un pincement de zoom brut : le MapListener
+// débouncé posé plus haut dans HikeMapView déclenche exactement ce recalcul, un cluster ne reste
+// donc plus figé pendant un geste géré en interne par osmdroid.
 private const val PHOTO_CLUSTER_RADIUS_DP = 24f
 
 private data class PhotoCluster(val photos: List<LoggedTrackPhotoEntity>, val position: GeoPoint)
@@ -845,6 +848,20 @@ private fun photoMarkerIcon(context: Context, badgeText: String?, alpha: Int = 2
     return BitmapDrawable(context.resources, bitmap)
 }
 
+/**
+ * RIC-43 : le marqueur d'une photo posée sur la trace.
+ *
+ * Hors repositionnement, il n'est pas déplaçable et un tap ne fait que déplacer le curseur, comme
+ * un raccourci vers « voir l'altitude de cette photo » ; le repositionnement s'ouvre depuis le menu
+ * de la vignette, pas depuis la carte (voir RIC-149, qui arbitre la question d'une modification
+ * déclenchée depuis la carte). Les photos rapprochées sont fusionnées en amont par [clusterPhotos],
+ * ce marqueur ne voit donc jamais que des photos isolées à l'écran — ou celle qu'on est en train de
+ * déplacer, délibérément exclue du regroupement.
+ *
+ * Rend null si la photo n'a pas de position (galerie seule) ou si l'index est devenu invalide — ne
+ * devrait pas arriver en usage normal, positionPointIndex étant calculé sur cette même trace, qui
+ * ne peut techniquement pas être réimportée différemment sous le même id ; le garde-fou coûte peu.
+ */
 private fun photoMarker(
     mapView: MapView,
     points: List<TrackPoint>,
