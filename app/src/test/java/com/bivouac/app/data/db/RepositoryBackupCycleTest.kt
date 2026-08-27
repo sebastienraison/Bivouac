@@ -7,8 +7,9 @@ import com.bivouac.app.data.backup.BackupManager
 import com.bivouac.app.data.gpx.DaySegmentAggregate
 import com.bivouac.app.data.gpx.GpxWriter
 import com.bivouac.app.data.model.TrackPoint
-import java.nio.charset.StandardCharsets
 import java.io.File
+import java.nio.charset.StandardCharsets
+import java.util.zip.ZipFile
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -116,5 +117,68 @@ class RepositoryBackupCycleTest {
         assertEquals(listOf("Journal"), logged.list().map { it.name })
         assertEquals(listOf("Banque"), banked.list().map { it.name })
         assertNotNull(saved.loadLast())
+    }
+
+    /**
+     * RIC-43 : la sauvegarde doit emporter filesDir/photos/, au même titre que gpx/ et gpx-planif/.
+     * Une photo est la seule donnée de l'app qu'aucune migration ni aucun recalcul ne reconstitue :
+     * une archive sans elle ramène une ligne logged_track_photo dont le fichier n'existe nulle
+     * part.
+     *
+     * Vérifié au niveau de l'archive plutôt que par un cycle complet : la restauration ferme et
+     * remplace la base sous Robolectric, ce que BackupManagerTest exerce sur un vrai runtime
+     * Android. Ici, ce qui compte est que l'entrée soit dans le zip.
+     */
+    @Test
+    fun backupArchiveContainsJournalPhotoFiles() = runBlocking {
+        val logged = LoggedTrackRepository(context)
+        val gpx = GpxWriter.write(listOf(TrackPoint(45.0, 6.0, 1000.0, null)), "Trace test")
+        logged.commitImport(
+            PreparedImport(
+                LoggedTrackEntity(
+                    id = "ric43-logged",
+                    name = "Journal avec photo",
+                    startedAt = 0L,
+                    contentHash = "hash",
+                    distanceMeters = 1.0,
+                    elevationGainMeters = 2.0,
+                    elevationLossMeters = 3.0,
+                    pointCount = 1,
+                    estimatedDurationMinutes = 4,
+                ),
+                listOf(
+                    PreparedDay(
+                        rawGpx = gpx,
+                        contentHash = "hash",
+                        startedAtMillis = 0L,
+                        elapsedSeconds = null,
+                        segmentAggregate = DaySegmentAggregate.EMPTY,
+                    ),
+                ),
+            ),
+        )
+        // Couple fichier + ligne écrit à la main, comme le fait addPhoto : le contenu est une suite
+        // d'octets quelconque, la sauvegarde ne décode aucune image.
+        val relativePath = LoggedTrackPhotoStore.relativePath("ric43-logged", "jpg")
+        LoggedTrackPhotoStore.dir(context).mkdirs()
+        LoggedTrackPhotoStore.resolve(context, relativePath).writeBytes(byteArrayOf(0x01, 0x02, 0x03))
+        BivouacDatabase.getInstance(context).loggedTrackDao().insertPhoto(
+            LoggedTrackPhotoEntity(
+                trackId = "ric43-logged",
+                filePath = relativePath,
+                addedAtMillis = 1L,
+                contentHash = "photo-hash",
+            ),
+        )
+
+        val archive = File(context.cacheDir, "ric43-backup.zip")
+        val backup = BackupManager.backup(context, Uri.fromFile(archive))
+        assertTrue("La sauvegarde elle-même doit réussir : ${backup.exceptionOrNull()}", backup.isSuccess)
+
+        val entryNames = ZipFile(archive).use { zip -> zip.entries().toList().map { it.name } }
+        assertTrue(
+            "l'archive doit contenir le fichier photo, entrées : $entryNames",
+            entryNames.any { it == relativePath },
+        )
     }
 }

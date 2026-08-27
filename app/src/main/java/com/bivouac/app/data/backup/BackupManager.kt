@@ -5,6 +5,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
 import com.bivouac.app.data.db.BivouacDatabase
 import com.bivouac.app.data.db.LoggedTrackGpxStore
+import com.bivouac.app.data.db.LoggedTrackPhotoStore
 import com.bivouac.app.data.db.PlanificationGpxStore
 import com.bivouac.app.data.prefs.MAP_LAYER_DATASTORE_NAME
 import com.bivouac.app.data.prefs.SETTINGS_DATASTORE_NAME
@@ -26,7 +27,8 @@ sealed interface RestoreResult {
 /**
  * Full-database backup/restore (BIV-66) — a raw copy of bivouac.db (plus its WAL/SHM sidecars, if
  * SQLite hasn't already checkpointed them away), the DataStore preference files, the Journal's raw
- * GPX files (filesDir/gpx, RIC-62) and Planification's own GPX files (filesDir/gpx-planif, RIC-97),
+ * GPX files (filesDir/gpx, RIC-62), Planification's own GPX files (filesDir/gpx-planif, RIC-97) and
+ * the Journal's photos (filesDir/photos, RIC-43),
  * zipped via SAF so the destination can be anywhere the system document picker reaches (Drive,
  * Nextcloud, local storage...). Deliberately not a structured export: this is a byte-for-byte
  * safety net for aggressive test sessions and real-device recette, not a portable/partial format —
@@ -43,6 +45,11 @@ object BackupManager {
 
     // RIC-97 : même raison côté Planification (banked_track et saved_track), dans filesDir/gpx-planif/.
     private const val GPX_PLANIF_ENTRY_PREFIX = PlanificationGpxStore.DIR_NAME + "/"
+
+    // RIC-43 : même raison pour les photos du Journal, dans filesDir/photos/. Ce sont les seules
+    // données de l'app qui ne se reconstituent pas depuis un GPX : une archive sans elles ramène
+    // des lignes logged_track_photo dont les fichiers n'existent nulle part.
+    private const val PHOTOS_ENTRY_PREFIX = LoggedTrackPhotoStore.DIR_NAME + "/"
 
     // Only ever consulted together, and always the same three suffixes — see BivouacDatabase's
     // own comment on closeAndReset() for why a clean close should normally leave -wal/-shm empty
@@ -94,6 +101,9 @@ object BackupManager {
                         for (file in PlanificationGpxStore.dir(context).listFiles().orEmpty()) {
                             if (file.isFile) writeEntry(zip, GPX_PLANIF_ENTRY_PREFIX + file.name, file)
                         }
+                        for (file in LoggedTrackPhotoStore.dir(context).listFiles().orEmpty()) {
+                            if (file.isFile) writeEntry(zip, PHOTOS_ENTRY_PREFIX + file.name, file)
+                        }
                     }
                 } finally {
                     // Re-primes the singleton right away rather than leaving it null until
@@ -137,11 +147,43 @@ object BackupManager {
             } finally {
                 BivouacDatabase.getInstance(context)
             }
+            sweepOrphanPhotoFiles(context)
             RestoreResult.Success
         } catch (e: Exception) {
             RestoreResult.Error(e.message ?: "Échec de la restauration.")
         } finally {
             tempDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * RIC-43 : après une restauration réussie, les fichiers de `photos/` que plus aucune ligne ne
+     * référence sont supprimés.
+     *
+     * Le remplacement en bloc du répertoire couvre déjà le cas courant, mais pas tout : une archive
+     * peut avoir été zippée pendant qu'une écriture était à moitié faite (fichier écrit, ligne pas
+     * encore insérée), et un rollback partiel d'un ajout laisse la même trace. Sans ce balayage,
+     * ces fichiers restent sur le stockage pour toujours sans que rien ne puisse plus les nommer.
+     *
+     * Volontairement asymétrique : l'inverse — une ligne dont le fichier manque — n'est PAS traité
+     * ici. Ces lignes portent les métadonnées d'origine qui serviront à re-acquérir la photo depuis
+     * la galerie (RIC-151) ; les supprimer perdrait la seule chose qui reste d'elle. Voir
+     * LoggedTrackRepository.missingPhotoFileIds pour la façon dont l'app les affiche.
+     *
+     * Le balayage n'est jamais une cause d'échec de restauration : celle-ci a déjà réussi quand il
+     * s'exécute, et une purge ratée ne coûte que du stockage.
+     */
+    private suspend fun sweepOrphanPhotoFiles(context: Context) {
+        runCatching {
+            val dir = LoggedTrackPhotoStore.dir(context)
+            val files = dir.listFiles().orEmpty().filter { it.isFile }
+            if (files.isEmpty()) return@runCatching
+            // Le store est plat (voir LoggedTrackPhotoStore.relativePath) : comparer les noms de
+            // fichier suffit, et évite de dépendre de la façon dont le chemin relatif est écrit.
+            val referenced = BivouacDatabase.getInstance(context).loggedTrackDao()
+                .getAllPhotoFilePaths()
+                .mapTo(mutableSetOf()) { it.substringAfterLast('/') }
+            files.filterNot { it.name in referenced }.forEach { it.delete() }
         }
     }
 
@@ -187,6 +229,15 @@ object BackupManager {
         val gpxPlanifDir = PlanificationGpxStore.dir(context)
         val extractedGpxPlanifDir = File(tempDir, PlanificationGpxStore.DIR_NAME)
 
+        // RIC-43 : et pour photos/. Remplacé en bloc lui aussi, y compris quand l'archive n'en
+        // contient aucune : les fichiers de l'état courant n'ont plus rien qui les référence une
+        // fois la base d'un autre état en place. Les laisser, c'était une fuite de stockage
+        // définitive, avec des photos de l'utilisateur qui survivaient à un retour en arrière
+        // qu'il croyait complet. Contrairement aux GPX, rien ne les régénère : une archive
+        // d'avant la v15 revient donc sans photo, ce qui est exact.
+        val photosDir = LoggedTrackPhotoStore.dir(context)
+        val extractedPhotosDir = File(tempDir, LoggedTrackPhotoStore.DIR_NAME)
+
         // destination -> son original écarté (null : la destination n'existait pas avant).
         // Seules les destinations présentes dans cette map ont été mises en sûreté — c'est elle
         // (et pas `replacements`) que le rollback parcourt, pour ne jamais supprimer un original
@@ -194,6 +245,7 @@ object BackupManager {
         val originals = mutableMapOf<File, File?>()
         var gpxAside: File? = null
         var gpxPlanifAside: File? = null
+        var photosAside: File? = null
         try {
             for (destination in replacements.keys) {
                 if (destination.exists()) {
@@ -223,6 +275,14 @@ object BackupManager {
                 }
                 gpxPlanifAside = aside
             }
+            if (photosDir.exists()) {
+                val aside = File(photosDir.path + PRE_RESTORE_SUFFIX)
+                aside.deleteRecursively()
+                if (!photosDir.renameTo(aside)) {
+                    throw IOException("Impossible d'écarter le répertoire ${photosDir.name} avant remplacement.")
+                }
+                photosAside = aside
+            }
             for ((destination, extracted) in replacements) {
                 extracted?.copyTo(destination, overwrite = true)
             }
@@ -231,6 +291,9 @@ object BackupManager {
             }
             if (extractedGpxPlanifDir.exists()) {
                 extractedGpxPlanifDir.copyRecursively(gpxPlanifDir, overwrite = true)
+            }
+            if (extractedPhotosDir.exists()) {
+                extractedPhotosDir.copyRecursively(photosDir, overwrite = true)
             }
         } catch (e: Exception) {
             for ((destination, aside) in originals) {
@@ -245,11 +308,16 @@ object BackupManager {
                 gpxPlanifDir.deleteRecursively()
                 aside.renameTo(gpxPlanifDir)
             }
+            photosAside?.let { aside ->
+                photosDir.deleteRecursively()
+                aside.renameTo(photosDir)
+            }
             throw e
         }
         for (aside in originals.values) aside?.delete()
         gpxAside?.deleteRecursively()
         gpxPlanifAside?.deleteRecursively()
+        photosAside?.deleteRecursively()
     }
 
     // PRAGMA integrity_check sur la base extraite, ouverte en lecture-écriture pour qu'un
@@ -282,6 +350,8 @@ object BackupManager {
                             File(tempDir, LoggedTrackGpxStore.DIR_NAME).apply { mkdirs() }
                         entry.name.startsWith(GPX_PLANIF_ENTRY_PREFIX) ->
                             File(tempDir, PlanificationGpxStore.DIR_NAME).apply { mkdirs() }
+                        entry.name.startsWith(PHOTOS_ENTRY_PREFIX) ->
+                            File(tempDir, LoggedTrackPhotoStore.DIR_NAME).apply { mkdirs() }
                         else -> tempDir
                     }
                     File(targetDir, name).outputStream().use { out -> zip.copyTo(out) }

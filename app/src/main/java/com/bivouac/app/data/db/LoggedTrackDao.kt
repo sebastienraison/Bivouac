@@ -115,6 +115,11 @@ interface LoggedTrackDao {
     @Query("SELECT * FROM logged_track_photo WHERE id = :id")
     suspend fun getPhoto(id: Long): LoggedTrackPhotoEntity?
 
+    // RIC-43 : les chemins seuls, toutes traces confondues — ce dont le balayage des orphelins de
+    // BackupManager a besoin, sans charger les lignes entières.
+    @Query("SELECT filePath FROM logged_track_photo")
+    suspend fun getAllPhotoFilePaths(): List<String>
+
     @Insert
     suspend fun insertPhoto(photo: LoggedTrackPhotoEntity): Long
 

@@ -8,6 +8,8 @@ import com.bivouac.app.data.db.BivouacDatabase
 import com.bivouac.app.data.db.LoggedTrackDayEntity
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.LoggedTrackGpxStore
+import com.bivouac.app.data.db.LoggedTrackPhotoEntity
+import com.bivouac.app.data.db.LoggedTrackPhotoStore
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.data.prefs.SpeedCalibrationMode
@@ -40,6 +42,7 @@ class BackupManagerTest {
         BivouacDatabase.closeAndReset()
         context.deleteDatabase(BivouacDatabase.DATABASE_NAME)
         LoggedTrackGpxStore.dir(context).deleteRecursively()
+        LoggedTrackPhotoStore.dir(context).deleteRecursively()
     }
 
     @After
@@ -48,6 +51,7 @@ class BackupManagerTest {
         BivouacDatabase.closeAndReset()
         context.deleteDatabase(BivouacDatabase.DATABASE_NAME)
         LoggedTrackGpxStore.dir(context).deleteRecursively()
+        LoggedTrackPhotoStore.dir(context).deleteRecursively()
     }
 
     // RIC-62 : le contenu GPX vit dans un fichier, la ligne n'en porte que le chemin — l'insertion
@@ -57,6 +61,23 @@ class BackupManagerTest {
         LoggedTrackGpxStore.dir(context).mkdirs()
         LoggedTrackGpxStore.resolve(context, relativePath).writeText(rawGpx)
         return LoggedTrackDayEntity(trackId = trackId, dayIndex = dayIndex, rawGpxFilePath = relativePath)
+    }
+
+    // RIC-43 : même couple fichier + ligne que LoggedTrackRepository.addPhoto écrit, avec un
+    // contenu binaire quelconque — ce qui est sauvegardé et restauré est une suite d'octets, la
+    // sauvegarde ne décode aucune image.
+    private suspend fun writePhoto(trackId: String, bytes: ByteArray): LoggedTrackPhotoEntity {
+        val relativePath = LoggedTrackPhotoStore.relativePath(trackId, "jpg")
+        LoggedTrackPhotoStore.dir(context).mkdirs()
+        LoggedTrackPhotoStore.resolve(context, relativePath).writeBytes(bytes)
+        val entity = LoggedTrackPhotoEntity(
+            trackId = trackId,
+            filePath = relativePath,
+            addedAtMillis = 1L,
+            contentHash = "hash-${bytes.size}",
+        )
+        val dao = BivouacDatabase.getInstance(context).loggedTrackDao()
+        return entity.copy(id = dao.insertPhoto(entity))
     }
 
     @Test
@@ -125,6 +146,103 @@ class BackupManagerTest {
         assertEquals("<gpx><!-- contenu test backup --></gpx>", restoredGpxFile.readText())
         assertTrue(mapPrefsBytesAtBackup.contentEquals(mapPrefsFile.readBytes()))
         assertTrue(settingsPrefsBytesAtBackup.contentEquals(settingsPrefsFile.readBytes()))
+    }
+
+    /**
+     * RIC-43 : une photo est la seule donnée de l'app qui ne se reconstitue depuis rien. Une
+     * archive qui ne la contient pas ramène une ligne logged_track_photo dont le fichier n'existe
+     * nulle part, c'est-à-dire une photo perdue en silence.
+     */
+    @Test
+    fun backupThenRestoreBringsBackJournalPhotos() = runBlocking {
+        val dao = BivouacDatabase.getInstance(context).loggedTrackDao()
+        dao.insert(
+            LoggedTrackEntity(
+                id = "t1",
+                name = "Trace avec photos",
+                startedAt = 0L,
+                contentHash = "hash1",
+                distanceMeters = 5000.0,
+                elevationGainMeters = 300.0,
+                elevationLossMeters = 300.0,
+                pointCount = 10,
+                estimatedDurationMinutes = 90,
+            ),
+            listOf(writeDay("t1", 0, "<gpx><!-- contenu test backup --></gpx>")),
+        )
+        val photoBytes = byteArrayOf(0x01, 0x02, 0x03, 0x04, 0x05)
+        val photo = writePhoto("t1", photoBytes)
+
+        assertTrue(BackupManager.backup(context, Uri.fromFile(backupFile)).isSuccess)
+
+        BivouacDatabase.closeAndReset()
+        context.deleteDatabase(BivouacDatabase.DATABASE_NAME)
+        LoggedTrackGpxStore.dir(context).deleteRecursively()
+        LoggedTrackPhotoStore.dir(context).deleteRecursively()
+
+        assertEquals(RestoreResult.Success, BackupManager.restore(context, Uri.fromFile(backupFile)))
+
+        val restoredPhotos = BivouacDatabase.getInstance(context).loggedTrackDao().getPhotos("t1")
+        assertEquals(1, restoredPhotos.size)
+        assertEquals(photo.filePath, restoredPhotos.first().filePath)
+        val restoredFile = LoggedTrackPhotoStore.resolve(context, restoredPhotos.first().filePath)
+        assertTrue("le fichier photo doit revenir avec la base", restoredFile.exists())
+        assertTrue(photoBytes.contentEquals(restoredFile.readBytes()))
+    }
+
+    /**
+     * RIC-43, les deux moitiés de la cohérence après restauration, sur le même cycle :
+     *
+     * - un fichier de photos/ que plus aucune ligne ne référence est supprimé par le balayage
+     *   post-restauration — sinon il resterait sur le stockage pour toujours, sans que rien ne
+     *   puisse plus le nommer ;
+     * - une ligne dont le fichier manque survit, elle. Ses métadonnées d'origine sont ce qui
+     *   permettra de re-acquérir la photo depuis la galerie (RIC-151) : les supprimer perdrait la
+     *   seule chose qui reste d'elle.
+     */
+    @Test
+    fun restoreSweepsOrphanPhotoFilesButKeepsRowsWhoseFileIsMissing() = runBlocking {
+        val dao = BivouacDatabase.getInstance(context).loggedTrackDao()
+        dao.insert(
+            LoggedTrackEntity(
+                id = "t1",
+                name = "Trace avec photos",
+                startedAt = 0L,
+                contentHash = "hash1",
+                distanceMeters = 5000.0,
+                elevationGainMeters = 300.0,
+                elevationLossMeters = 300.0,
+                pointCount = 10,
+                estimatedDurationMinutes = 90,
+            ),
+            listOf(writeDay("t1", 0, "<gpx><!-- contenu test backup --></gpx>")),
+        )
+        // Sauvegardée avec sa ligne, mais son fichier est retiré de l'état courant juste avant la
+        // sauvegarde : l'archive porte donc une ligne sans fichier.
+        val photoWithoutFile = writePhoto("t1", byteArrayOf(0x0A, 0x0B))
+        LoggedTrackPhotoStore.resolve(context, photoWithoutFile.filePath).delete()
+
+        assertTrue(BackupManager.backup(context, Uri.fromFile(backupFile)).isSuccess)
+
+        // Écrit après la sauvegarde, donc absent de l'archive : au retour, plus aucune ligne ne le
+        // référencera.
+        val orphanFile = LoggedTrackPhotoStore.resolve(
+            context,
+            LoggedTrackPhotoStore.relativePath("t1", "jpg"),
+        )
+        LoggedTrackPhotoStore.dir(context).mkdirs()
+        orphanFile.writeBytes(byteArrayOf(0x0C, 0x0D))
+
+        assertEquals(RestoreResult.Success, BackupManager.restore(context, Uri.fromFile(backupFile)))
+
+        assertTrue("le fichier orphelin doit être balayé", !orphanFile.exists())
+        val restoredPhotos = BivouacDatabase.getInstance(context).loggedTrackDao().getPhotos("t1")
+        assertEquals(1, restoredPhotos.size)
+        assertEquals(photoWithoutFile.filePath, restoredPhotos.first().filePath)
+        assertTrue(
+            "la ligne sans fichier doit survivre (RIC-151)",
+            !LoggedTrackPhotoStore.resolve(context, restoredPhotos.first().filePath).exists(),
+        )
     }
 
     @Test
