@@ -10,6 +10,7 @@ import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackRepository
+import com.bivouac.app.data.db.PhotoAddReport
 import com.bivouac.app.data.db.PreparedImport
 import com.bivouac.app.data.db.SystemTag
 import com.bivouac.app.data.gpx.SpeedCalibration
@@ -26,7 +27,9 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -201,6 +204,19 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _photosLoading = MutableStateFlow(false)
     val photosLoading: StateFlow<Boolean> = _photosLoading.asStateFlow()
 
+    // RIC-43 : erreur d'une action photo, exposée à l'UI sur le modèle de _importError plus bas.
+    // Toutes les actions photo touchent des Uri de sélecteur et des fichiers : une Uri révoquée
+    // entre la sélection et l'ajout, une permission retirée pendant qu'on lit MediaStore, un
+    // fichier disparu — autant de cas réels qui remontaient jusqu'ici hors de viewModelScope,
+    // donc en crash de l'app.
+    private val _photoError = MutableStateFlow<String?>(null)
+    val photoError: StateFlow<String?> = _photoError.asStateFlow()
+
+    // Non nul quand un lot d'ajout s'est terminé avec quelque chose à signaler — voir addPhotos
+    // pour ce qui compte comme tel.
+    private val _photoAddReport = MutableStateFlow<PhotoAddReport?>(null)
+    val photoAddReport: StateFlow<PhotoAddReport?> = _photoAddReport.asStateFlow()
+
     // Confirmation par dialogue avant suppression d'une photo (décidé en séance de conception) —
     // même mécanique que _deleteTarget pour une trace entière, plus bas.
     private val _photoDeleteTarget = MutableStateFlow<LoggedTrackPhotoEntity?>(null)
@@ -219,6 +235,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     val dateFilteredCandidates: StateFlow<List<Uri>?> = _dateFilteredCandidates.asStateFlow()
     private val _dateFilteredPickerLoading = MutableStateFlow(false)
     val dateFilteredPickerLoading: StateFlow<Boolean> = _dateFilteredPickerLoading.asStateFlow()
+    private var dateFilteredPickerJob: Job? = null
 
     // Shared with Planification — one "which map style" preference for the whole app, not a
     // per-screen setting. Satellite falls back to the free default while non-free features are
@@ -551,19 +568,47 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** RIC-43 : sélection faite dans le Photo Picker, une ou plusieurs photos à la fois. */
+    /**
+     * RIC-43 : sélection faite dans le Photo Picker, une ou plusieurs photos à la fois.
+     *
+     * Le bilan de fin de lot n'est affiché que s'il a quelque chose à dire (un doublon écarté, un
+     * échec) : quand tout est entré, les vignettes qui apparaissent le disent déjà, et un dialogue
+     * à acquitter après chaque ajout serait une friction pour rien. C'est la différence avec le
+     * bilan d'import de sorties séparées, qui est toujours montré parce que son résultat n'est
+     * visible nulle part ailleurs.
+     */
     fun addPhotos(uris: List<Uri>) {
         if (uris.isEmpty()) return
         val entry = currentEntry() ?: return
         viewModelScope.launch {
             _photosLoading.value = true
             try {
-                withContext(Dispatchers.IO) { repository.addPhotosFromPicker(entry.id, contentResolver, uris) }
-                _currentPhotos.value = withContext(Dispatchers.IO) { repository.listPhotos(entry.id) }
+                val report = runCatching {
+                    withContext(Dispatchers.IO) {
+                        val result = repository.addPhotosFromPicker(entry.id, contentResolver, uris)
+                        result to repository.listPhotos(entry.id)
+                    }
+                }.onSuccess { (_, photos) ->
+                    _currentPhotos.value = photos
+                }.onFailure {
+                    Log.e("JournalViewModel", "Échec de l'ajout de photos", it)
+                    _photoError.value = "Impossible d'ajouter ces photos. Réessaie depuis la galerie."
+                }.getOrNull()?.first
+                if (report != null && (report.duplicatesSkipped > 0 || report.failed > 0)) {
+                    _photoAddReport.value = report
+                }
             } finally {
                 _photosLoading.value = false
             }
         }
+    }
+
+    fun dismissPhotoError() {
+        _photoError.value = null
+    }
+
+    fun dismissPhotoAddReport() {
+        _photoAddReport.value = null
     }
 
     /**
@@ -580,12 +625,31 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             _dateFilteredCandidates.value = emptyList()
             return
         }
-        viewModelScope.launch {
-            _dateFilteredPickerLoading.value = true
+        // Avant le launch, pas dedans : c'est ce drapeau qui ouvre le dialogue (voir JournalScreen),
+        // et l'ouvrir seulement une fois la coroutine ordonnancée, c'est ne rien montrer pendant
+        // la requête MediaStore — soit exactement la seconde ou deux qu'il s'agit de couvrir. Le
+        // CircularProgressIndicator du dialogue n'était jamais atteint pour cette raison.
+        _dateFilteredPickerLoading.value = true
+        dateFilteredPickerJob?.cancel()
+        dateFilteredPickerJob = viewModelScope.launch {
             try {
-                _dateFilteredCandidates.value = withContext(Dispatchers.IO) {
+                val candidates = withContext(Dispatchers.IO) {
                     MediaStorePhotoQuery.findInRange(contentResolver, start.toEpochMilli(), end.toEpochMilli())
                 }
+                _dateFilteredCandidates.value = candidates
+            } catch (e: CancellationException) {
+                // L'utilisateur a fermé le dialogue pendant la requête : rien à signaler, et
+                // surtout pas de résultat à publier. Relancée telle quelle pour ne pas transformer
+                // une annulation en succès aux yeux de la coroutine parente.
+                throw e
+            } catch (e: Exception) {
+                // SecurityException réelle : la permission galerie peut avoir été retirée entre la
+                // vérification faite par l'écran et cette requête (retrait manuel, ou révocation
+                // automatique d'une app inutilisée).
+                Log.e("JournalViewModel", "Échec de la recherche de photos par date", e)
+                _dateFilteredCandidates.value = null
+                _photoError.value = "Impossible de parcourir la galerie. " +
+                    "Vérifie l'autorisation d'accès aux photos dans les réglages d'Android."
             } finally {
                 _dateFilteredPickerLoading.value = false
             }
@@ -593,7 +657,12 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun closeDateFilteredPicker() {
+        // La requête est annulée avec le dialogue : sans ça, une recherche encore en cours
+        // republiait ses candidats à son terme et rouvrait le dialogue tout seul.
+        dateFilteredPickerJob?.cancel()
+        dateFilteredPickerJob = null
         _dateFilteredCandidates.value = null
+        _dateFilteredPickerLoading.value = false
     }
 
     fun confirmDateFilteredSelection(uris: List<Uri>) {
@@ -612,10 +681,21 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     fun confirmDeletePhoto() {
         val target = _photoDeleteTarget.value ?: return
         val entry = currentEntry() ?: return
+        // Le dialogue se referme dans tous les cas : l'échec est raconté par _photoError, laisser
+        // en plus la confirmation ouverte donnerait deux dialogues empilés sur le même incident.
+        _photoDeleteTarget.value = null
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { repository.deletePhoto(target.id) }
-            _photoDeleteTarget.value = null
-            _currentPhotos.value = withContext(Dispatchers.IO) { repository.listPhotos(entry.id) }
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    repository.deletePhoto(target.id)
+                    repository.listPhotos(entry.id)
+                }
+            }.onSuccess { photos ->
+                _currentPhotos.value = photos
+            }.onFailure {
+                Log.e("JournalViewModel", "Échec de la suppression d'une photo", it)
+                _photoError.value = "Impossible de supprimer cette photo."
+            }
         }
     }
 
@@ -636,8 +716,17 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         val entry = currentEntry() ?: return
         _repositioningPhotoId.value = null
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { repository.repositionPhoto(photoId, pointIndex) }
-            _currentPhotos.value = withContext(Dispatchers.IO) { repository.listPhotos(entry.id) }
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    repository.repositionPhoto(photoId, pointIndex)
+                    repository.listPhotos(entry.id)
+                }
+            }.onSuccess { photos ->
+                _currentPhotos.value = photos
+            }.onFailure {
+                Log.e("JournalViewModel", "Échec du repositionnement d'une photo", it)
+                _photoError.value = "Impossible de déplacer ce repère."
+            }
         }
     }
 

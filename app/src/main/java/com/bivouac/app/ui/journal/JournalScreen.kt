@@ -115,6 +115,7 @@ import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
+import com.bivouac.app.data.db.PhotoAddReport
 import com.bivouac.app.data.db.SystemTag
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
@@ -214,6 +215,8 @@ fun JournalScreen(
     val currentPhotos by viewModel.currentPhotos.collectAsStateWithLifecycle()
     val photosLoading by viewModel.photosLoading.collectAsStateWithLifecycle()
     val photoDeleteTarget by viewModel.photoDeleteTarget.collectAsStateWithLifecycle()
+    val photoError by viewModel.photoError.collectAsStateWithLifecycle()
+    val photoAddReport by viewModel.photoAddReport.collectAsStateWithLifecycle()
     val repositioningPhotoId by viewModel.repositioningPhotoId.collectAsStateWithLifecycle()
     val photoDateRangeSearchEnabled by viewModel.photoDateRangeSearchEnabled.collectAsStateWithLifecycle()
     val dateFilteredCandidates by viewModel.dateFilteredCandidates.collectAsStateWithLifecycle()
@@ -585,13 +588,42 @@ fun JournalScreen(
         )
     }
 
+    // RIC-43 : échec d'une action photo (ajout, suppression, repositionnement, ouverture du
+    // sélecteur filtré). Même traitement que importError ci-dessus : un dialogue à simple
+    // acquittement, la vue détail restant utilisable derrière.
+    photoError?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPhotoError,
+            title = { Text("Photos") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissPhotoError) { Text("OK") }
+            },
+        )
+    }
+
+    photoAddReport?.let { report ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPhotoAddReport,
+            title = { Text("Ajout terminé") },
+            text = { Text(formatPhotoAddReport(report)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissPhotoAddReport) { Text("OK") }
+            },
+        )
+    }
+
     viewedPhotoIndex?.let { index ->
         PhotoViewerDialog(photos = currentPhotos, initialIndex = index, onDismiss = { viewedPhotoIndex = null })
     }
 
-    dateFilteredCandidates?.let { candidates ->
+    // Le dialogue s'ouvre dès le début de la requête MediaStore, pas seulement quand elle a
+    // abouti : sur une pellicule fournie elle prend une seconde ou deux, pendant lesquelles
+    // l'appui sur « Ajouter » ne donnait aucun retour. C'est aussi ce qui rend enfin atteignable
+    // le CircularProgressIndicator du dialogue, jusqu'ici du code mort.
+    if (dateFilteredPickerLoading || dateFilteredCandidates != null) {
         DateFilteredPhotoPickerDialog(
-            candidates = candidates,
+            candidates = dateFilteredCandidates.orEmpty(),
             loading = dateFilteredPickerLoading,
             onConfirm = viewModel::confirmDateFilteredSelection,
             onUseGenericPicker = {
@@ -601,6 +633,36 @@ fun JournalScreen(
             onDismiss = viewModel::closeDateFilteredPicker,
         )
     }
+}
+
+/**
+ * RIC-43 : ce que le bilan de fin de lot dit, quand il a quelque chose à dire (voir
+ * JournalViewModel.addPhotos). Les doublons et les échecs sont les deux lignes qui comptent : la
+ * première explique pourquoi la sélection ne se retrouve pas entièrement dans le bandeau, la
+ * seconde qu'il reste quelque chose à refaire.
+ */
+private fun formatPhotoAddReport(report: PhotoAddReport): String {
+    val lines = mutableListOf<String>()
+    lines += when (report.added) {
+        0 -> "Aucune photo ajoutée."
+        1 -> "1 photo ajoutée."
+        else -> "${report.added} photos ajoutées."
+    }
+    if (report.duplicatesSkipped > 0) {
+        lines += if (report.duplicatesSkipped == 1) {
+            "1 photo écartée (déjà sur cette sortie)."
+        } else {
+            "${report.duplicatesSkipped} photos écartées (déjà sur cette sortie)."
+        }
+    }
+    if (report.failed > 0) {
+        lines += if (report.failed == 1) {
+            "1 photo illisible, non ajoutée."
+        } else {
+            "${report.failed} photos illisibles, non ajoutées."
+        }
+    }
+    return lines.joinToString("\n")
 }
 
 /**

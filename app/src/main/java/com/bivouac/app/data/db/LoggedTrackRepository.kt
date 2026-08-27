@@ -65,6 +65,19 @@ data class LoggedTrackDetail(val track: HikeTrack, val daySegments: List<Segment
 // Ce que la liste du Journal doit savoir des jours d'une trace, sans ouvrir de fichier.
 data class DaySummary(val dayCount: Int, val startMillis: List<Long>)
 
+/**
+ * RIC-43 : issue d'un lot d'ajout de photos, photo par photo — voir [LoggedTrackRepository.addPhotosFromPicker].
+ *
+ * Même raison d'être que [SeparateImportReport][com.bivouac.app.journal.SeparateImportReport] côté
+ * import GPX : chaque photo est traitée indépendamment, donc l'échec de l'une ne doit pas empêcher
+ * les autres d'entrer, et le seul moment où l'utilisateur peut apprendre ce qui s'est réellement
+ * passé est la fin du lot. Sans ça, une sélection de dix photos dont trois sont des doublons
+ * rendait sept vignettes sans jamais dire ce qu'étaient devenues les trois autres.
+ */
+data class PhotoAddReport(val added: Int, val duplicatesSkipped: Int, val failed: Int) {
+    val total: Int get() = added + duplicatesSkipped + failed
+}
+
 sealed interface DuplicateMatch {
     val existing: LoggedTrackEntity
     data class Exact(override val existing: LoggedTrackEntity) : DuplicateMatch
@@ -414,28 +427,47 @@ class LoggedTrackRepository(context: Context) {
      * même lot" (sélection multiple avec la même photo touchée deux fois). [seenHashes] démarre
      * avec les photos déjà en base pour ne jamais réimporter une photo déjà ajoutée à une session
      * précédente.
+     *
+     * Chaque photo est traitée indépendamment : celle dont l'Uri a été révoquée entre la sélection
+     * et l'ajout est comptée en échec et le lot continue, plutôt que d'abandonner les suivantes.
+     * Le [PhotoAddReport] rendu est ce que l'écran affiche à la fin. Seules les erreurs qui
+     * concernent le lot entier (trace illisible, base inaccessible) remontent en exception.
      */
-    suspend fun addPhotosFromPicker(trackId: String, resolver: ContentResolver, uris: List<Uri>): List<Long> {
+    suspend fun addPhotosFromPicker(trackId: String, resolver: ContentResolver, uris: List<Uri>): PhotoAddReport {
         val points = open(trackId)?.points.orEmpty()
         val seenHashes = dao.getPhotos(trackId).mapTo(mutableSetOf()) { it.contentHash }
-        return uris.mapNotNull { uri ->
-            val contentHash = resolver.openInputStream(uri)?.use { sha256(it) } ?: return@mapNotNull null
-            if (!seenHashes.add(contentHash)) return@mapNotNull null
-            val exif = PhotoExifReader.read(resolver, uri)
-            val position = PhotoPositionCorrelator.correlate(points, exif.latitude, exif.longitude, exif.takenAtMillis)
-            addPhoto(
-                trackId = trackId,
-                contentHash = contentHash,
-                resolver = resolver,
-                uri = uri,
-                takenAtMillis = exif.takenAtMillis,
-                latitude = exif.latitude,
-                longitude = exif.longitude,
-                positionPointIndex = position.pointIndex,
-                positionApproximate = position.approximate,
-                source = MediaStorePhotoQuery.readSource(resolver, uri),
-            )
+        var added = 0
+        var duplicatesSkipped = 0
+        var failed = 0
+        for (uri in uris) {
+            runCatching {
+                val contentHash = resolver.openInputStream(uri)?.use { sha256(it) }
+                    ?: throw IOException("Impossible d'ouvrir la photo sélectionnée")
+                if (!seenHashes.add(contentHash)) return@runCatching false
+                val exif = PhotoExifReader.read(resolver, uri)
+                val position =
+                    PhotoPositionCorrelator.correlate(points, exif.latitude, exif.longitude, exif.takenAtMillis)
+                addPhoto(
+                    trackId = trackId,
+                    contentHash = contentHash,
+                    resolver = resolver,
+                    uri = uri,
+                    takenAtMillis = exif.takenAtMillis,
+                    latitude = exif.latitude,
+                    longitude = exif.longitude,
+                    positionPointIndex = position.pointIndex,
+                    positionApproximate = position.approximate,
+                    source = MediaStorePhotoQuery.readSource(resolver, uri),
+                )
+                true
+            }.onSuccess { wasAdded ->
+                if (wasAdded) added++ else duplicatesSkipped++
+            }.onFailure {
+                Log.w("LoggedTrackRepository", "Photo ignorée, ajout impossible", it)
+                failed++
+            }
         }
+        return PhotoAddReport(added = added, duplicatesSkipped = duplicatesSkipped, failed = failed)
     }
 
     suspend fun listPhotos(trackId: String): List<LoggedTrackPhotoEntity> = dao.getPhotos(trackId)
