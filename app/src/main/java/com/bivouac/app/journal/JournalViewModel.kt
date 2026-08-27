@@ -699,9 +699,47 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** RIC-43 : entrée du menu long-press — active le drag sur la carte, rien n'est écrit encore. */
-    fun beginRepositionPhoto(photo: LoggedTrackPhotoEntity) {
-        _repositioningPhotoId.value = photo.id
+    /**
+     * RIC-43 : entrée du menu d'appui long sur une vignette.
+     *
+     * Photo déjà placée (« Repositionner ») : rien n'est écrit ici, le marqueur existant devient
+     * simplement déplaçable sur la carte.
+     *
+     * Photo sans position (« Placer sur la trace ») : il n'y a aucun marqueur à saisir, donc le
+     * repère est d'abord créé au point du curseur courant — ou au départ de la trace s'il n'y a pas
+     * encore de curseur — puis le même flux de glisser prend le relais pour l'affiner. C'était
+     * l'impasse de la version précédente : la bannière « Fais glisser le repère » s'affichait alors
+     * qu'aucun repère n'existait, et une photo sans GPS ni horodatage exploitable n'avait
+     * strictement aucun moyen d'atterrir sur la carte.
+     *
+     * Placement manuel, donc jamais approximatif — même règle que repositionPhoto.
+     */
+    fun beginRepositionPhoto(photo: LoggedTrackPhotoEntity, cursorIndex: Int? = null) {
+        if (photo.positionPointIndex != null) {
+            _repositioningPhotoId.value = photo.id
+            return
+        }
+        val entry = currentEntry() ?: return
+        val pointCount = (_uiState.value as? JournalUiState.Detail)?.track?.points?.size ?: 0
+        if (pointCount == 0) return
+        val target = (cursorIndex ?: 0).coerceIn(0, pointCount - 1)
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    repository.repositionPhoto(photo.id, target)
+                    repository.listPhotos(entry.id)
+                }
+            }.onSuccess { photos ->
+                _currentPhotos.value = photos
+                // Le drag n'est armé qu'une fois le repère réellement en base : l'armer avant
+                // aurait affiché la bannière sur une carte où le marqueur n'existe pas encore,
+                // c'est-à-dire exactement l'impasse qu'on répare.
+                _repositioningPhotoId.value = photo.id
+            }.onFailure {
+                Log.e("JournalViewModel", "Échec du placement d'une photo sur la trace", it)
+                _photoError.value = "Impossible de placer cette photo sur la trace."
+            }
+        }
     }
 
     fun cancelRepositionPhoto() {

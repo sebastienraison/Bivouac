@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddLocationAlt
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material3.DropdownMenu
@@ -51,9 +52,19 @@ internal fun PhotoThumbnail(
                 .combinedClickable(onClick = onClick, onLongClick = { menuExpanded = true }),
         )
         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+            // Deux libellés pour la même entrée, selon qu'un repère existe déjà ou non : sur une
+            // photo sans position, « Repositionner » promettait de déplacer quelque chose qui
+            // n'était nulle part. « Placer sur la trace » crée le repère au curseur puis enchaîne
+            // sur le même glisser (voir JournalViewModel.beginRepositionPhoto).
+            val placed = photo.positionPointIndex != null
             DropdownMenuItem(
-                text = { Text("Repositionner") },
-                leadingIcon = { Icon(Icons.Default.OpenWith, contentDescription = null) },
+                text = { Text(if (placed) "Repositionner" else "Placer sur la trace") },
+                leadingIcon = {
+                    Icon(
+                        if (placed) Icons.Default.OpenWith else Icons.Default.AddLocationAlt,
+                        contentDescription = null,
+                    )
+                },
                 onClick = { menuExpanded = false; onRepositionClick() },
             )
             DropdownMenuItem(

@@ -527,15 +527,9 @@ private fun renderTrack(
         )
     }
 
-    // RIC-43 : la photo en cours de repositionnement (le cas échéant) reste toujours son propre
-    // marqueur individuel déplaçable, jamais fusionnée dans un cluster — sinon le drag n'aurait
-    // rien de précis à saisir. Le reste du lot se regroupe normalement.
-    repositioningPhotoId?.let { id ->
-        photos.find { it.id == id }?.let { photo ->
-            photoMarker(mapView, points, geoPoints, photo, isRepositioning = true, onCursorChanged, onPhotoRepositioned)
-                ?.let { mapView.overlays.add(it) }
-        }
-    }
+    // RIC-43 : la photo en cours de repositionnement (le cas échéant) est exclue du clustering et
+    // rendue tout à la fin (voir plus bas) — jamais fusionnée dans un cluster, sinon le drag
+    // n'aurait rien de précis à saisir. Le reste du lot se regroupe normalement.
     clusterPhotos(mapView, geoPoints, photos, repositioningPhotoId, density).forEach { cluster ->
         if (cluster.photos.size == 1) {
             photoMarker(mapView, points, geoPoints, cluster.photos.first(), isRepositioning = false, onCursorChanged, onPhotoRepositioned)
@@ -569,6 +563,18 @@ private fun renderTrack(
         }, 100L)
     } else {
         cursorInfoWindow.close()
+    }
+
+    // Ajouté en dernier, donc dessiné au-dessus de tout et surtout servi en premier par la
+    // répartition des touchers (osmdroid parcourt ses overlays à l'envers). Sans ça, le marqueur
+    // du curseur — ajouté juste au-dessus et doté d'une zone de saisie de 56 dp — capturait le
+    // toucher dès que la photo était placée au même point, ce qui est précisément le cas au sortir
+    // d'un « Placer sur la trace » : le repère était visible mais impossible à saisir.
+    repositioningPhotoId?.let { id ->
+        photos.find { it.id == id }?.let { photo ->
+            photoMarker(mapView, points, geoPoints, photo, isRepositioning = true, onCursorChanged, onPhotoRepositioned)
+                ?.let { mapView.overlays.add(it) }
+        }
     }
 
     if (shouldFit) {

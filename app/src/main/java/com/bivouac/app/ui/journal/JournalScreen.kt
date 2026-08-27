@@ -366,7 +366,10 @@ fun JournalScreen(
                     photosLoading = photosLoading,
                     onAddPhotosClick = handleAddPhotosClick,
                     onDeletePhotoClick = viewModel::requestDeletePhoto,
-                    onRepositionPhotoClick = viewModel::beginRepositionPhoto,
+                    // Le curseur courant est passé au ViewModel plutôt que relu par lui : il vit
+                    // ici (état d'écran, jamais persisté), et c'est lui qui sert de point de
+                    // départ quand la photo n'a encore aucune position.
+                    onRepositionPhotoClick = { photo -> viewModel.beginRepositionPhoto(photo, cursorIndex) },
                     onPhotoClick = { index -> viewedPhotoIndex = index },
                 )
             }
@@ -893,7 +896,10 @@ private fun JournalMap(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text("Fais glisser le repère sur la carte", style = MaterialTheme.typography.bodyMedium)
-                    TextButton(onClick = onCancelRepositionPhoto) { Text("Annuler") }
+                    // « Terminé » et non « Annuler » : rien ici n'annule quoi que ce soit. Chaque
+                    // relâchement du marqueur écrit déjà la position (voir photoMarker), et un
+                    // « Placer sur la trace » a même déjà créé le repère avant d'armer le glisser.
+                    TextButton(onClick = onCancelRepositionPhoto) { Text("Terminé") }
                 }
             }
         }
