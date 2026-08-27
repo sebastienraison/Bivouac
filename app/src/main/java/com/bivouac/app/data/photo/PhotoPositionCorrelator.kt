@@ -12,8 +12,16 @@ import kotlin.math.abs
 object PhotoPositionCorrelator {
 
     // "Quelques minutes" (décidé en séance de conception) : l'horloge du téléphone-photo n'est
-    // pas garantie synchro avec le GPS. Valeur de départ, ajustable sans changer la logique
-    // ci-dessous si l'usage réel montre qu'elle est trop large ou trop stricte.
+    // pas garantie synchro avec le GPS.
+    //
+    // Valeur re-questionnée après la correction de fuseau de PhotoExifReader, et gardée telle
+    // quelle : elle avait été calibrée contre un signal biaisé (sans le correctif, une photo sans
+    // tag d'offset arrivait décalée d'une heure entière ou plus, donc systématiquement hors
+    // tolérance — aucune observation utile n'a pu en sortir). Ce qu'elle doit absorber maintenant
+    // est uniquement la dérive d'horloge du téléphone, qui se compte en secondes ou en minutes,
+    // pas en heures : 10 min reste large pour ça, et surtout assez étroit pour qu'une photo prise
+    // la veille ou après le retour ne s'accroche pas au premier/dernier point de la trace. Reste à
+    // confirmer sur de vraies photos en session device ; ajustable sans changer la logique.
     private const val TIME_TOLERANCE_MILLIS = 10 * 60 * 1000L
 
     data class Position(val pointIndex: Int?, val approximate: Boolean) {
