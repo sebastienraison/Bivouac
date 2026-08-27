@@ -777,7 +777,7 @@ private fun photoClusterMarker(mapView: MapView, cluster: PhotoCluster, onCursor
     val marker = Marker(mapView)
     marker.position = cluster.position
     marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-    marker.icon = photoClusterIcon(mapView.context, cluster.photos.size)
+    marker.icon = photoMarkerIcon(mapView.context, badgeText = clusterBadgeText(cluster.photos.size))
     marker.setInfoWindow(null)
     val targetIndex = cluster.photos.first().positionPointIndex!!
     marker.setOnMarkerClickListener { _, _ -> onCursorChanged(targetIndex); true }
@@ -785,13 +785,30 @@ private fun photoClusterMarker(mapView: MapView, cluster: PhotoCluster, onCursor
     return marker
 }
 
-// Le marqueur photo de base, redessiné avec un badge de comptage en coin — toujours pleine
-// opacité (pas de distinction approximatif/certain à l'échelle d'un cluster, simplification
-// assumée : le badge de comptage prime).
-private fun photoClusterIcon(context: Context, count: Int): Drawable {
+// Au-delà de 9, le badge dirait "12" dans un rond de 18 dp : le compte exact n'apporte rien à cette
+// taille, seul l'ordre de grandeur compte.
+private fun clusterBadgeText(count: Int): String = if (count > 9) "9+" else count.toString()
+
+// RIC-43 : le badge du positionnement approximatif sur le marqueur carte. Le point d'interrogation
+// plutôt qu'un pictogramme : à 18 dp de diamètre, un glyphe dessiné au Canvas serait illisible,
+// alors qu'un caractère unique reste net. Complète l'opacité réduite du marqueur, qui ne se voit
+// que par comparaison — donc jamais quand toutes les photos d'une sortie sont dans le même cas.
+private const val PHOTO_APPROXIMATE_BADGE_TEXT = "?"
+
+/**
+ * Le marqueur photo de base, éventuellement redessiné avec un badge dans le coin — comptage pour un
+ * cluster, point d'interrogation pour une position approximative.
+ *
+ * Un cluster est toujours à pleine opacité et ne porte jamais le badge d'approximation : à
+ * l'échelle d'un groupe, la distinction approximatif/certain n'a plus de sens (le groupe peut
+ * mélanger les deux) et le comptage prime — simplification assumée.
+ */
+private fun photoMarkerIcon(context: Context, badgeText: String?, alpha: Int = 255): Drawable {
     val density = context.resources.displayMetrics.density
     val base = ContextCompat.getDrawable(context, R.drawable.ic_marker_photo)!!.mutate()
+    base.alpha = alpha
     val bitmap = base.toBitmap(base.intrinsicWidth, base.intrinsicHeight).copy(Bitmap.Config.ARGB_8888, true)
+    if (badgeText == null) return BitmapDrawable(context.resources, bitmap)
     val canvas = Canvas(bitmap)
     val badgeRadius = 9f * density
     val badgeCx = bitmap.width - badgeRadius - 2f * density
@@ -813,8 +830,7 @@ private fun photoClusterIcon(context: Context, count: Int): Drawable {
         textSize = 10f * density
         textAlign = Paint.Align.CENTER
     }
-    val text = if (count > 9) "9+" else count.toString()
-    canvas.drawText(text, badgeCx, badgeCy - (textPaint.descent() + textPaint.ascent()) / 2, textPaint)
+    canvas.drawText(badgeText, badgeCx, badgeCy - (textPaint.descent() + textPaint.ascent()) / 2, textPaint)
     return BitmapDrawable(context.resources, bitmap)
 }
 
@@ -832,12 +848,18 @@ private fun photoMarker(
     val marker = Marker(mapView)
     marker.position = geoPoints[index]
     marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-    marker.icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_marker_photo)?.mutate()?.apply {
-        // Position déduite par horodatage : marqueur atténué plutôt qu'un second drawable, voir
-        // colors.xml (marker_photo). Pleine opacité pendant le repositionnement : ça sert aussi de
-        // repère visuel pour retrouver LE marqueur devenu déplaçable parmi les autres photos.
-        alpha = if (photo.positionApproximate && !isRepositioning) PHOTO_MARKER_APPROXIMATE_ALPHA else 255
-    }
+    // Position déduite par horodatage : marqueur atténué ET badgé d'un point d'interrogation.
+    // L'opacité seule ne remplit pas la spec, elle ne se lit que par comparaison avec un marqueur
+    // certain à l'écran au même moment — ce qui n'arrive justement pas quand toutes les photos
+    // d'une sortie sont approximatives, le cas le plus fréquent. Pleine opacité et pas de badge
+    // pendant le repositionnement : le marqueur sert alors de repère pour retrouver celui qu'on
+    // est en train de déplacer, et sa position est sur le point de devenir certaine.
+    val approximate = photo.positionApproximate && !isRepositioning
+    marker.icon = photoMarkerIcon(
+        mapView.context,
+        badgeText = if (approximate) PHOTO_APPROXIMATE_BADGE_TEXT else null,
+        alpha = if (approximate) PHOTO_MARKER_APPROXIMATE_ALPHA else 255,
+    )
     marker.setInfoWindow(null)
     marker.isDraggable = isRepositioning
     if (!isRepositioning) {

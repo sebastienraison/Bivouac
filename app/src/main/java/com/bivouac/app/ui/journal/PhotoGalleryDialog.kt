@@ -21,14 +21,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import coil.compose.AsyncImage
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
-import com.bivouac.app.data.db.LoggedTrackPhotoStore
 
 // RIC-43 : galerie plate en complément du placement sur la trace — pour qui veut juste feuilleter
 // sans passer par la carte. Tap sur une vignette ouvre la visionneuse plein écran au bon index.
@@ -38,7 +34,6 @@ internal fun PhotoGalleryDialog(
     onPhotoClick: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val context = LocalContext.current
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -61,10 +56,8 @@ internal fun PhotoGalleryDialog(
                     contentPadding = PaddingValues(2.dp),
                 ) {
                     itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
-                        AsyncImage(
-                            model = LoggedTrackPhotoStore.resolve(context, photo.filePath),
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
+                        PhotoTile(
+                            photo = photo,
                             modifier = Modifier
                                 .padding(2.dp)
                                 .aspectRatio(1f)
