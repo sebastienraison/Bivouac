@@ -212,9 +212,9 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _repositioningPhotoId = MutableStateFlow<Long?>(null)
     val repositioningPhotoId: StateFlow<Long?> = _repositioningPhotoId.asStateFlow()
 
-    // RIC-43 : non nul pendant que le selecteur filtre par date est ouvert, porte les candidats
-    // trouves par MediaStorePhotoQuery (eventuellement une liste vide, un vrai resultat "rien
-    // trouve" different de "pas encore cherche"). Voir openDateFilteredPicker.
+    // RIC-43 : non nul pendant que le sélecteur filtré par date est ouvert, porte les candidats
+    // trouvés par MediaStorePhotoQuery (éventuellement une liste vide, un vrai résultat « rien
+    // trouvé » différent de « pas encore cherché »). Voir openDateFilteredPicker.
     private val _dateFilteredCandidates = MutableStateFlow<List<Uri>?>(null)
     val dateFilteredCandidates: StateFlow<List<Uri>?> = _dateFilteredCandidates.asStateFlow()
     private val _dateFilteredPickerLoading = MutableStateFlow(false)
@@ -233,8 +233,8 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     val nonFreeFeaturesDisabled: StateFlow<Boolean> = settingsPreferences.nonFreeFeaturesDisabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    // RIC-43 : lu par l'ecran au moment de taper "Ajouter des photos" pour decider entre le
-    // Photo Picker generique et la demande de permission + selecteur filtre par date.
+    // RIC-43 : lu par l'écran au moment de taper « Ajouter des photos » pour décider entre le
+    // Photo Picker générique et la demande de permission puis le sélecteur filtré par date.
     val photoDateRangeSearchEnabled: StateFlow<Boolean> = settingsPreferences.photoDateRangeSearchEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
@@ -567,10 +567,10 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * RIC-43 : ouvre le selecteur filtre par date - appele seulement apres verification de la
-     * permission galerie cote ecran (voir PhotoLibraryPermission), jamais avant. La plage vient
-     * des horodatages reels de la trace ouverte (premier/dernier point), pas de startedAt seul :
-     * plus precis sur une sortie multi-jours, et MediaStorePhotoQuery ajoute deja sa propre marge.
+     * RIC-43 : ouvre le sélecteur filtré par date — appelé seulement après vérification de la
+     * permission galerie côté écran (voir PhotoLibraryPermission), jamais avant. La plage vient
+     * des horodatages réels de la trace ouverte (premier/dernier point), pas de startedAt seul :
+     * plus précis sur une sortie multi-jours, et MediaStorePhotoQuery ajoute déjà sa propre marge.
      */
     fun openDateFilteredPicker() {
         val track = (_uiState.value as? JournalUiState.Detail)?.track ?: return

@@ -1,61 +1,49 @@
 package com.bivouac.app.ui.journal
 
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.calculatePan
-import androidx.compose.foundation.gestures.calculateZoom
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
@@ -64,28 +52,25 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -94,7 +79,6 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -103,35 +87,26 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.state.ToggleableState
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.window.Dialog
-import coil.compose.AsyncImage
-import java.io.File
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.R
@@ -140,7 +115,6 @@ import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
-import com.bivouac.app.data.photo.PhotoLibraryPermission
 import com.bivouac.app.data.db.SystemTag
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
@@ -152,6 +126,7 @@ import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.data.model.TrekDatesFormatter
+import com.bivouac.app.data.photo.PhotoLibraryPermission
 import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.journal.ImportProgress
 import com.bivouac.app.journal.JournalDayInfo
@@ -161,15 +136,15 @@ import com.bivouac.app.journal.SeparateImportReport
 import com.bivouac.app.ui.components.ChoiceOptionCard
 import com.bivouac.app.ui.components.DrawerStop
 import com.bivouac.app.ui.components.DurationIconColor
-import com.bivouac.app.ui.components.FullScreenEmptyState
 import com.bivouac.app.ui.components.ElevationProfile
+import com.bivouac.app.ui.components.FullScreenEmptyState
 import com.bivouac.app.ui.components.GainIconColor
 import com.bivouac.app.ui.components.InfoText
-import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.StatsRows
-import com.bivouac.app.ui.components.TotalsCapsule
 import com.bivouac.app.ui.components.ThreeStopDrawerHandle
 import com.bivouac.app.ui.components.ThreeStopDrawerStopRow
+import com.bivouac.app.ui.components.TotalsCapsule
+import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.rememberThreeStopDrawerState
 import com.bivouac.app.ui.map.ColoredTrack
 import com.bivouac.app.ui.map.HikeMapView
@@ -177,8 +152,8 @@ import com.bivouac.app.ui.map.MapControls
 import com.bivouac.app.ui.nav.AppScreenHeader
 import com.bivouac.app.ui.nav.AppSection
 import com.bivouac.app.ui.nav.SectionMenuButton
+import java.io.File
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -624,162 +599,6 @@ fun JournalScreen(
                 pickPhotosLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             },
             onDismiss = viewModel::closeDateFilteredPicker,
-        )
-    }
-}
-
-// RIC-43 : appui long -> menu contextuel (Repositionner / Supprimer).
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun PhotoThumbnail(
-    photo: LoggedTrackPhotoEntity,
-    onClick: () -> Unit,
-    onDeleteClick: () -> Unit,
-    onRepositionClick: () -> Unit,
-) {
-    val context = LocalContext.current
-    var menuExpanded by remember { mutableStateOf(false) }
-    Box {
-        AsyncImage(
-            model = File(LoggedTrackPhotoStore.resolve(context, photo.filePath).path),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(72.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .combinedClickable(onClick = onClick, onLongClick = { menuExpanded = true }),
-        )
-        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-            DropdownMenuItem(
-                text = { Text("Repositionner") },
-                leadingIcon = { Icon(Icons.Default.OpenWith, contentDescription = null) },
-                onClick = { menuExpanded = false; onRepositionClick() },
-            )
-            DropdownMenuItem(
-                text = { Text("Supprimer") },
-                leadingIcon = {
-                    Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                },
-                onClick = { menuExpanded = false; onDeleteClick() },
-            )
-        }
-    }
-}
-
-// RIC-43 : galerie plate en complément du placement sur la trace — pour qui veut juste feuilleter
-// sans passer par la carte. Tap sur une vignette ouvre la visionneuse plein écran au bon index.
-@Composable
-private fun PhotoGalleryDialog(
-    photos: List<LoggedTrackPhotoEntity>,
-    onPhotoClick: (Int) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val context = LocalContext.current
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Photos (${photos.size})",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Fermer")
-                    }
-                }
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(2.dp),
-                ) {
-                    gridItemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
-                        AsyncImage(
-                            model = File(LoggedTrackPhotoStore.resolve(context, photo.filePath).path),
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .padding(2.dp)
-                                .aspectRatio(1f)
-                                .clickable { onPhotoClick(index) },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-// RIC-43 : visionneuse plein écran avec défilement entre les photos de la sortie (HorizontalPager)
-// et zoom pincé sur chaque page — fermeture par la croix plutôt qu'un tap n'importe où, pour ne
-// pas entrer en conflit avec le geste de pincement/panoramique.
-@Composable
-private fun PhotoViewerDialog(photos: List<LoggedTrackPhotoEntity>, initialIndex: Int, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    val pagerState = rememberPagerState(initialPage = initialIndex) { photos.size }
-    // Le défilement entre photos est désactivé tant que la page courante est zoomée — sinon un
-    // panoramique vers la droite/gauche à l'intérieur d'une photo zoomée changerait de page au
-    // lieu de déplacer le cadrage.
-    var zoomed by remember { mutableStateOf(false) }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-            HorizontalPager(state = pagerState, userScrollEnabled = !zoomed, modifier = Modifier.fillMaxSize()) { page ->
-                ZoomableAsyncPhoto(
-                    file = File(LoggedTrackPhotoStore.resolve(context, photos[page].filePath).path),
-                    onZoomedChanged = { zoomed = it },
-                )
-            }
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(4.dp),
-            ) {
-                Icon(Icons.Default.Close, contentDescription = "Fermer", tint = Color.White)
-            }
-        }
-    }
-}
-
-// RIC-43 : zoom pincé (1x à 5x) + panoramique une fois zoomé, remise à 1x automatique dès que le
-// pincement repasse sous 1x — pas de double-tap dédié pour l'instant, pincer suffit dans les deux
-// sens.
-@Composable
-private fun ZoomableAsyncPhoto(file: File, onZoomedChanged: (Boolean) -> Unit) {
-    var scale by remember(file) { mutableFloatStateOf(1f) }
-    var offset by remember(file) { mutableStateOf(Offset.Zero) }
-    LaunchedEffect(scale > 1f) { onZoomedChanged(scale > 1f) }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(Unit) {
-                // detectTransformGestures consomme aussi un simple glissement à un doigt (c'est
-                // un pan par définition) — ça cassait le défilement du HorizontalPager parent dès
-                // qu'on touchait une photo, signalé en testant. Boucle manuelle à la place :
-                // rien n'est consommé tant qu'il n'y a qu'un seul doigt et que l'image n'est pas
-                // déjà zoomée, le pager reste alors seul maître du geste.
-                awaitEachGesture {
-                    do {
-                        val event = awaitPointerEvent()
-                        if (event.changes.size > 1 || scale > 1f) {
-                            val newScale = (scale * event.calculateZoom()).coerceIn(1f, 5f)
-                            scale = newScale
-                            offset = if (newScale <= 1f) Offset.Zero else offset + event.calculatePan()
-                            event.changes.forEach { it.consume() }
-                        }
-                    } while (event.changes.any { it.pressed })
-                }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        AsyncImage(
-            model = file,
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y),
         )
     }
 }

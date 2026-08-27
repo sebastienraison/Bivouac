@@ -3,6 +3,7 @@ package com.bivouac.app.ui.map
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color as AndroidColor
 import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Point
@@ -161,9 +162,9 @@ private class WrappingCopyrightOverlay(context: Context) : Overlay() {
         // Esri's satellite imagery is dark/busy edge-to-edge — black text (fine on the other two,
         // paler layers) all but disappears on it. White reads reliably on aerial photography.
         textPaint.color = if (tileSource?.name() == MapLayer.SATELLITE.tileSource.name()) {
-            android.graphics.Color.WHITE
+            AndroidColor.WHITE
         } else {
-            android.graphics.Color.BLACK
+            AndroidColor.BLACK
         }
         val maxWidth = mapView.width - xOffset * 2
         if (maxWidth <= 0) return
@@ -265,14 +266,14 @@ fun HikeMapView(
     // triggers again afterwards, so it never fights a user's own pan/zoom.
     val pendingHeightCorrection = remember { mutableStateOf(false) }
 
-    // RIC-43 : le clustering des marqueurs photo (voir clusterPhotos) se recalcule a chaque appel
-    // de renderTrack, mais rien avant ceci ne declenchait cet appel pendant un pincement de zoom
-    // brut, gere entierement par osmdroid en interne - un cluster restait donc fige alors meme
-    // qu'il aurait du se separer en zoomant, signale par l'utilisateur en testant. Debounce
-    // (plutot qu'un recalcul a chaque evenement) : un pincement genere des dizaines d'evenements
+    // RIC-43 : le clustering des marqueurs photo (voir clusterPhotos) se recalcule à chaque appel
+    // de renderTrack, mais rien avant ceci ne déclenchait cet appel pendant un pincement de zoom
+    // brut, géré entièrement par osmdroid en interne — un cluster restait donc figé alors même
+    // qu'il aurait dû se séparer en zoomant, signalé par l'utilisateur en testant. Debounce
+    // (plutôt qu'un recalcul à chaque événement) : un pincement génère des dizaines d'événements
     // de scroll/zoom par seconde, et renderTrack reconstruit tous les overlays (polyligne
-    // comprise), pas seulement les photos - le declencher a chaque frame de geste aurait
-    // introduit un vrai a-coup visuel.
+    // comprise), pas seulement les photos — le déclencher à chaque frame de geste aurait
+    // introduit un vrai à-coup visuel.
     var clusterRefreshTick by remember { mutableIntStateOf(0) }
     val coroutineScope = rememberCoroutineScope()
     DisposableEffect(mapView) {
@@ -328,9 +329,9 @@ fun HikeMapView(
             modifier = Modifier.fillMaxSize().clipToBounds(),
             factory = { mapView },
             update = { view ->
-                // Lecture volontaire : force ce bloc a se re-executer quand le debounce ci-dessus
-                // incremente le compteur apres un pincement de zoom, sans quoi Compose n'a aucune
-                // raison de rappeler update() en dehors des changements qu'il lit deja plus bas.
+                // Lecture volontaire : force ce bloc à se réexécuter quand le debounce ci-dessus
+                // incrémente le compteur après un pincement de zoom, sans quoi Compose n'a aucune
+                // raison de rappeler update() en dehors des changements qu'il lit déjà plus bas.
                 clusterRefreshTick
                 if (selectedLayer != lastLayer.value) {
                     view.setTileSource(selectedLayer.tileSource)
@@ -526,9 +527,9 @@ private fun renderTrack(
         )
     }
 
-    // RIC-43 : la photo en cours de repositionnement (le cas echeant) reste toujours son propre
-    // marqueur individuel deplacable, jamais fusionnee dans un cluster - sinon le drag n'aurait
-    // rien de precis a saisir. Le reste du lot se cluster normalement.
+    // RIC-43 : la photo en cours de repositionnement (le cas échéant) reste toujours son propre
+    // marqueur individuel déplaçable, jamais fusionnée dans un cluster — sinon le drag n'aurait
+    // rien de précis à saisir. Le reste du lot se regroupe normalement.
     repositioningPhotoId?.let { id ->
         photos.find { it.id == id }?.let { photo ->
             photoMarker(mapView, points, geoPoints, photo, isRepositioning = true, onCursorChanged, onPhotoRepositioned)
@@ -762,10 +763,10 @@ private fun clusterPhotos(
     return groups.map { group -> PhotoCluster(group, geoPoints[group.first().positionPointIndex!!]) }
 }
 
-// Un seul marqueur pour tout le cluster, tap -> curseur sur la premiere photo du groupe. Pas de
-// choix individuel depuis la carte pour l'instant : le bandeau/la galerie du Journal donnent deja
-// acces a chaque photo une a une, ce marqueur groupe n'a besoin que de situer le cluster sur la
-// trace.
+// Un seul marqueur pour tout le cluster, tap -> curseur sur la première photo du groupe. Pas de
+// choix individuel depuis la carte pour l'instant : le bandeau et la galerie du Journal donnent
+// déjà accès à chaque photo une à une, ce marqueur groupé n'a besoin que de situer le cluster sur
+// la trace.
 private fun photoClusterMarker(mapView: MapView, cluster: PhotoCluster, onCursorChanged: (Int) -> Unit): Marker {
     val marker = Marker(mapView)
     marker.position = cluster.position
@@ -778,9 +779,9 @@ private fun photoClusterMarker(mapView: MapView, cluster: PhotoCluster, onCursor
     return marker
 }
 
-// Le marqueur photo de base, redessine avec un badge de comptage en coin - toujours pleine
-// opacite (pas de distinction approximatif/certain a l'echelle d'un cluster, simplification
-// assumee : le badge de comptage prime).
+// Le marqueur photo de base, redessiné avec un badge de comptage en coin — toujours pleine
+// opacité (pas de distinction approximatif/certain à l'échelle d'un cluster, simplification
+// assumée : le badge de comptage prime).
 private fun photoClusterIcon(context: Context, count: Int): Drawable {
     val density = context.resources.displayMetrics.density
     val base = ContextCompat.getDrawable(context, R.drawable.ic_marker_photo)!!.mutate()
@@ -796,13 +797,13 @@ private fun photoClusterIcon(context: Context, count: Int): Drawable {
     canvas.drawCircle(
         badgeCx, badgeCy, badgeRadius,
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = android.graphics.Color.WHITE
+            color = AndroidColor.WHITE
             style = Paint.Style.STROKE
             strokeWidth = 1.5f * density
         },
     )
     val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.WHITE
+        color = AndroidColor.WHITE
         textSize = 10f * density
         textAlign = Paint.Align.CENTER
     }
@@ -931,9 +932,9 @@ private fun cursorBubbleText(points: List<TrackPoint>, index: Int): String {
     return if (altitude != null) "$distanceText · ${formatGroupedInt(altitude)} m" else distanceText
 }
 
-// RIC-43 : distance en metres reels (pas en points de trace, dont la densite varie) - une photo
-// est jugee "au curseur" si elle tombe a moins de CURSOR_BUBBLE_PHOTO_RADIUS_METERS le long de la
-// trace, meme raisonnement de tolerance que TrackGeometry.isLoop (50 m).
+// RIC-43 : distance en mètres réels (pas en points de trace, dont la densité varie) — une photo
+// est jugée « au curseur » si elle tombe à moins de CURSOR_BUBBLE_PHOTO_RADIUS_METERS le long de
+// la trace, même raisonnement de tolérance que TrackGeometry.isLoop (50 m).
 private const val CURSOR_BUBBLE_PHOTO_RADIUS_METERS = 100.0
 
 private fun cursorBubbleContent(

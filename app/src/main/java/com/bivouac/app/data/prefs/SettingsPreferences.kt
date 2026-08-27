@@ -106,9 +106,9 @@ class SettingsPreferences(private val context: Context) {
 
     val lastBackupAtMillis: Flow<Long?> = context.settingsDataStore.data.map { it[Keys.LAST_BACKUP_AT] }
 
-    // RIC-43 : desactivee par defaut, meme convention que nonFreeFeaturesDisabled ci-dessus -
-    // activer cette bascule ne demande rien tant que l'utilisateur ne tape pas "Ajouter des
-    // photos" sur une trace, voir JournalViewModel.
+    // RIC-43 : désactivée par défaut, même convention que nonFreeFeaturesDisabled ci-dessus —
+    // activer cette bascule ne demande rien tant que l'utilisateur ne tape pas « Ajouter des
+    // photos » sur une trace, voir JournalViewModel.
     val photoDateRangeSearchEnabled: Flow<Boolean> =
         context.settingsDataStore.data.map { it[Keys.PHOTO_DATE_RANGE_SEARCH] ?: false }
 

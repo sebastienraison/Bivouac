@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,15 +37,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 
-// RIC-43 : selecteur interne filtre par date (extension optionnelle, voir SettingsScreen /
-// PhotoLibraryPermission). Les candidats sont deja trouves par MediaStorePhotoQuery avant
-// l'ouverture de ce dialogue - il ne fait que la selection multiple, jamais la requete lui-meme.
+// RIC-43 : sélecteur interne filtré par date (extension optionnelle, voir SettingsScreen /
+// PhotoLibraryPermission). Les candidats sont déjà trouvés par MediaStorePhotoQuery avant
+// l'ouverture de ce dialogue — il ne fait que la sélection multiple, jamais la requête lui-même.
 @Composable
 fun DateFilteredPhotoPickerDialog(
     candidates: List<Uri>,
@@ -91,7 +93,7 @@ fun DateFilteredPhotoPickerDialog(
                     else -> LazyVerticalGrid(
                         columns = GridCells.Fixed(3),
                         modifier = Modifier.weight(1f),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(2.dp),
+                        contentPadding = PaddingValues(2.dp),
                     ) {
                         items(candidates, key = { it.toString() }) { uri ->
                             val isSelected = uri in selected
@@ -148,4 +150,4 @@ fun DateFilteredPhotoPickerDialog(
     }
 }
 
-private val SelectedOverlayColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.35f)
+private val SelectedOverlayColor = Color.Black.copy(alpha = 0.35f)

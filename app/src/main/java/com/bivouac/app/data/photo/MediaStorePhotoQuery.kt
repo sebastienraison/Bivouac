@@ -25,14 +25,14 @@ data class PhotoSourceMetadata(
     }
 }
 
-// RIC-43 : requete filtree par plage de dates (extension optionnelle, voir PhotoLibraryPermission
-// pour la permission qui la debloque). Ne s'execute jamais sans permission accordee au prealable -
-// pas de repli automatique ici, c'est a l'appelant de decider quoi faire d'un refus.
+// RIC-43 : requête filtrée par plage de dates (extension optionnelle, voir PhotoLibraryPermission
+// pour la permission qui la débloque). Ne s'exécute jamais sans permission accordée au préalable —
+// pas de repli automatique ici, c'est à l'appelant de décider quoi faire d'un refus.
 object MediaStorePhotoQuery {
 
-    // Marge avant/apres la trace elle-meme : une photo prise au parking avant de partir, ou juste
-    // apres etre arrive, ne doit pas manquer parce qu'elle precede/suit de peu le premier/dernier
-    // point GPS enregistre.
+    // Marge avant/après la trace elle-même : une photo prise au parking avant de partir, ou juste
+    // après être arrivé, ne doit pas manquer parce qu'elle précède ou suit de peu le premier ou le
+    // dernier point GPS enregistré.
     private const val MARGIN_MILLIS = 2 * 60 * 60 * 1000L
 
     fun findInRange(resolver: ContentResolver, startMillis: Long, endMillis: Long): List<Uri> {

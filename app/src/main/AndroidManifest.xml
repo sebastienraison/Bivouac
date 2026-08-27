@@ -4,10 +4,10 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- RIC-43 : recherche de photos par plage de dates (extension optionnelle, opt-in via
-         Reglages) - jamais demandee pour la selection generique via le Photo Picker, qui n'en a
-         besoin d'aucune (PickVisualMedia s'execute hors du bac a sable de l'app). Deux
-         permissions se recouvrant par version d'API plutot qu'une seule : READ_MEDIA_IMAGES
-         n'existe qu'a partir de l'API 33, READ_EXTERNAL_STORAGE est son equivalent sur les
+         Réglages) — jamais demandée pour la sélection générique via le Photo Picker, qui n'en a
+         besoin d'aucune (PickVisualMedia s'exécute hors du bac à sable de l'app). Deux
+         permissions se recouvrant par version d'API plutôt qu'une seule : READ_MEDIA_IMAGES
+         n'existe qu'à partir de l'API 33, READ_EXTERNAL_STORAGE est son équivalent sur les
          versions couvertes par minSdk 26 en dessous. -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
