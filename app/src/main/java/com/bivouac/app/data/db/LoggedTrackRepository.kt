@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import android.webkit.MimeTypeMap
 import com.bivouac.app.data.gpx.DaySegmentAggregate
 import com.bivouac.app.data.gpx.GpxParser
 import com.bivouac.app.data.gpx.SpeedCalibration
@@ -12,8 +13,10 @@ import com.bivouac.app.data.gpx.TrackSegmenter
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
+import com.bivouac.app.data.photo.MediaStorePhotoQuery
 import com.bivouac.app.data.photo.PhotoExifReader
 import com.bivouac.app.data.photo.PhotoPositionCorrelator
+import com.bivouac.app.data.photo.PhotoSourceMetadata
 import java.io.IOException
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
@@ -354,8 +357,9 @@ class LoggedTrackRepository(context: Context) {
      * [contentHash] est fourni par l'appelant ([addPhotosFromPicker]), qui l'utilise déjà pour
      * écarter les doublons avant d'arriver ici — ce n'est donc pas le rôle de cette fonction de le
      * vérifier une deuxième fois. [takenAtMillis]/[latitude]/[longitude]/[positionPointIndex]/
-     * [positionApproximate] sont pareillement fournis par l'appelant (lecture EXIF + corrélation
-     * avec la trace) — voir LoggedTrackPhotoEntity pour ce que porte chaque champ.
+     * [positionApproximate]/[source] sont pareillement fournis par l'appelant (lecture EXIF,
+     * corrélation avec la trace, relevé MediaStore) — voir LoggedTrackPhotoEntity pour ce que porte
+     * chaque champ.
      */
     suspend fun addPhoto(
         trackId: String,
@@ -367,10 +371,11 @@ class LoggedTrackRepository(context: Context) {
         longitude: Double?,
         positionPointIndex: Int?,
         positionApproximate: Boolean,
+        source: PhotoSourceMetadata = PhotoSourceMetadata.EMPTY,
     ): Long {
         LoggedTrackPhotoStore.dir(appContext).mkdirs()
         val extension = resolver.getType(uri)
-            ?.let { android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
+            ?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
             ?: "jpg"
         val relativePath = LoggedTrackPhotoStore.relativePath(trackId, extension)
         val target = LoggedTrackPhotoStore.resolve(appContext, relativePath)
@@ -386,6 +391,9 @@ class LoggedTrackRepository(context: Context) {
             positionPointIndex = positionPointIndex,
             positionApproximate = positionApproximate,
             contentHash = contentHash,
+            sourceDisplayName = source.displayName,
+            sourceRelativePath = source.relativePath,
+            sourceDateTakenMillis = source.dateTakenMillis,
         )
         return try {
             dao.insertPhoto(entity)
@@ -425,6 +433,7 @@ class LoggedTrackRepository(context: Context) {
                 longitude = exif.longitude,
                 positionPointIndex = position.pointIndex,
                 positionApproximate = position.approximate,
+                source = MediaStorePhotoQuery.readSource(resolver, uri),
             )
         }
     }

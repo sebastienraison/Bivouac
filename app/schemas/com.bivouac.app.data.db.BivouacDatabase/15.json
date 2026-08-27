@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 15,
-    "identityHash": "148d4b396f104b75863873f835672195",
+    "identityHash": "738bcdd07890c5e335555b168c5fb90d",
     "entities": [
       {
         "tableName": "saved_track",
@@ -370,7 +370,7 @@
       },
       {
         "tableName": "logged_track_photo",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `trackId` TEXT NOT NULL, `filePath` TEXT NOT NULL, `addedAtMillis` INTEGER NOT NULL, `takenAtMillis` INTEGER, `latitude` REAL, `longitude` REAL, `positionPointIndex` INTEGER, `positionApproximate` INTEGER NOT NULL, FOREIGN KEY(`trackId`) REFERENCES `logged_track`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `trackId` TEXT NOT NULL, `filePath` TEXT NOT NULL, `addedAtMillis` INTEGER NOT NULL, `takenAtMillis` INTEGER, `latitude` REAL, `longitude` REAL, `positionPointIndex` INTEGER, `positionApproximate` INTEGER NOT NULL, `contentHash` TEXT NOT NULL, `sourceDisplayName` TEXT, `sourceRelativePath` TEXT, `sourceDateTakenMillis` INTEGER, FOREIGN KEY(`trackId`) REFERENCES `logged_track`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -421,6 +421,27 @@
             "columnName": "positionApproximate",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "contentHash",
+            "columnName": "contentHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceDisplayName",
+            "columnName": "sourceDisplayName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sourceRelativePath",
+            "columnName": "sourceRelativePath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sourceDateTakenMillis",
+            "columnName": "sourceDateTakenMillis",
+            "affinity": "INTEGER"
           }
         ],
         "primaryKey": {
@@ -457,7 +478,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '148d4b396f104b75863873f835672195')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '738bcdd07890c5e335555b168c5fb90d')"
     ]
   }
 }

@@ -3,7 +3,27 @@ package com.bivouac.app.data.photo
 import android.content.ContentResolver
 import android.content.ContentUris
 import android.net.Uri
+import android.os.Build
 import android.provider.MediaStore
+
+/**
+ * RIC-43 : ce que MediaStore sait de la photo d'origine au moment de l'ajout, relevé une fois puis
+ * dénormalisé dans LoggedTrackPhotoEntity — voir ses colonnes source* pour l'usage prévu
+ * (re-acquisition depuis la galerie, RIC-151).
+ *
+ * Tout est nullable et ne l'est pas par prudence de façade : une Uri du Photo Picker est
+ * volontairement caviardée par le système, elle ne répond pas forcément à ces colonnes, et
+ * RELATIVE_PATH n'existe qu'à partir de l'API 29.
+ */
+data class PhotoSourceMetadata(
+    val displayName: String? = null,
+    val relativePath: String? = null,
+    val dateTakenMillis: Long? = null,
+) {
+    companion object {
+        val EMPTY = PhotoSourceMetadata()
+    }
+}
 
 // RIC-43 : requete filtree par plage de dates (extension optionnelle, voir PhotoLibraryPermission
 // pour la permission qui la debloque). Ne s'execute jamais sans permission accordee au prealable -
@@ -32,4 +52,37 @@ object MediaStorePhotoQuery {
         }
         return uris
     }
+
+    /**
+     * Métadonnées d'origine d'une photo sélectionnée, quelle que soit la provenance de son [uri]
+     * (Photo Picker générique ou sélecteur filtré par date).
+     *
+     * Aucune permission n'est requise ni supposée : l'Uri porte sa propre autorisation de lecture.
+     * Tout échec (colonne absente, Uri caviardée, permission révoquée entre-temps) rend
+     * [PhotoSourceMetadata.EMPTY] plutôt qu'une exception — ces colonnes sont un bonus pour plus
+     * tard, jamais une condition de l'ajout de la photo.
+     */
+    fun readSource(resolver: ContentResolver, uri: Uri): PhotoSourceMetadata = runCatching {
+        val projection = buildList {
+            add(MediaStore.MediaColumns.DISPLAY_NAME)
+            if (Build.VERSION.SDK_INT >= 29) add(MediaStore.MediaColumns.RELATIVE_PATH)
+            add(MediaStore.Images.Media.DATE_TAKEN)
+        }.toTypedArray()
+        resolver.query(uri, projection, null, null, null)?.use { cursor ->
+            if (!cursor.moveToFirst()) return@use PhotoSourceMetadata.EMPTY
+            PhotoSourceMetadata(
+                displayName = cursor.stringOrNull(MediaStore.MediaColumns.DISPLAY_NAME),
+                relativePath = cursor.stringOrNull(MediaStore.MediaColumns.RELATIVE_PATH),
+                dateTakenMillis = cursor.longOrNull(MediaStore.Images.Media.DATE_TAKEN),
+            )
+        } ?: PhotoSourceMetadata.EMPTY
+    }.getOrDefault(PhotoSourceMetadata.EMPTY)
+
+    // getColumnIndex (et non getColumnIndexOrThrow) : une colonne absente de la projection réelle
+    // renvoyée par le fournisseur est un cas normal ici, pas une erreur.
+    private fun android.database.Cursor.stringOrNull(column: String): String? =
+        getColumnIndex(column).takeIf { it >= 0 }?.let { if (isNull(it)) null else getString(it) }
+
+    private fun android.database.Cursor.longOrNull(column: String): Long? =
+        getColumnIndex(column).takeIf { it >= 0 }?.let { if (isNull(it)) null else getLong(it) }
 }
