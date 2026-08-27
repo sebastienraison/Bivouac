@@ -53,6 +53,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val nonFreeFeaturesDisabled: StateFlow<Boolean> = settingsPreferences.nonFreeFeaturesDisabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    val photoDateRangeSearchEnabled: StateFlow<Boolean> = settingsPreferences.photoDateRangeSearchEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     val lastBackupAtMillis: StateFlow<Long?> = settingsPreferences.lastBackupAtMillis
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -132,6 +135,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setNonFreeFeaturesDisabled(disabled: Boolean) {
         viewModelScope.launch { settingsPreferences.setNonFreeFeaturesDisabled(disabled) }
+    }
+
+    fun setPhotoDateRangeSearchEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsPreferences.setPhotoDateRangeSearchEnabled(enabled) }
     }
 
     fun backup(uri: Uri) {

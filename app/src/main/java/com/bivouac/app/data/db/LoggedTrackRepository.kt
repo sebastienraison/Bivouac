@@ -12,7 +12,10 @@ import com.bivouac.app.data.gpx.TrackSegmenter
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
+import com.bivouac.app.data.photo.PhotoExifReader
+import com.bivouac.app.data.photo.PhotoPositionCorrelator
 import java.io.IOException
+import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Duration
@@ -314,11 +317,13 @@ class LoggedTrackRepository(context: Context) {
     }
 
     suspend fun delete(id: String) {
-        // Chemins relevés avant le DELETE (le CASCADE emporte les lignes de jours) ; la ligne
-        // disparaît avant son fichier, jamais l'inverse.
+        // Chemins relevés avant le DELETE (le CASCADE emporte les lignes de jours et de photos,
+        // RIC-43) ; la ligne disparaît avant son fichier, jamais l'inverse.
         val days = dao.getDays(id)
+        val photos = dao.getPhotos(id)
         dao.delete(id)
         days.forEach { LoggedTrackGpxStore.resolve(appContext, it.rawGpxFilePath).delete() }
+        photos.forEach { LoggedTrackPhotoStore.resolve(appContext, it.filePath).delete() }
     }
 
     suspend fun updateNote(id: String, note: String) {
@@ -339,6 +344,106 @@ class LoggedTrackRepository(context: Context) {
 
     suspend fun removeTag(trackId: String, tag: String) {
         dao.deleteTag(trackId, tag)
+    }
+
+    /**
+     * RIC-43 : copie [uri] en local (voir LoggedTrackPhotoStore) puis insère la ligne — même ordre
+     * "fichier d'abord, ligne ensuite" que [commitImport], pour la même raison : si l'insert
+     * échoue, le fichier tout juste écrit est retiré plutôt que laissé orphelin.
+     *
+     * [contentHash] est fourni par l'appelant ([addPhotosFromPicker]), qui l'utilise déjà pour
+     * écarter les doublons avant d'arriver ici — ce n'est donc pas le rôle de cette fonction de le
+     * vérifier une deuxième fois. [takenAtMillis]/[latitude]/[longitude]/[positionPointIndex]/
+     * [positionApproximate] sont pareillement fournis par l'appelant (lecture EXIF + corrélation
+     * avec la trace) — voir LoggedTrackPhotoEntity pour ce que porte chaque champ.
+     */
+    suspend fun addPhoto(
+        trackId: String,
+        resolver: ContentResolver,
+        uri: Uri,
+        contentHash: String,
+        takenAtMillis: Long?,
+        latitude: Double?,
+        longitude: Double?,
+        positionPointIndex: Int?,
+        positionApproximate: Boolean,
+    ): Long {
+        LoggedTrackPhotoStore.dir(appContext).mkdirs()
+        val extension = resolver.getType(uri)
+            ?.let { android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
+            ?: "jpg"
+        val relativePath = LoggedTrackPhotoStore.relativePath(trackId, extension)
+        val target = LoggedTrackPhotoStore.resolve(appContext, relativePath)
+        resolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } }
+            ?: throw IOException("Impossible d'ouvrir la photo sélectionnée")
+        val entity = LoggedTrackPhotoEntity(
+            trackId = trackId,
+            filePath = relativePath,
+            addedAtMillis = System.currentTimeMillis(),
+            takenAtMillis = takenAtMillis,
+            latitude = latitude,
+            longitude = longitude,
+            positionPointIndex = positionPointIndex,
+            positionApproximate = positionApproximate,
+            contentHash = contentHash,
+        )
+        return try {
+            dao.insertPhoto(entity)
+        } catch (e: Exception) {
+            target.delete()
+            throw e
+        }
+    }
+
+    /**
+     * RIC-43 : ce que l'écran appelle réellement après une sélection dans le Photo Picker — lit
+     * l'EXIF de chaque [uris], corrèle avec la trace (voir PhotoPositionCorrelator) puis délègue à
+     * [addPhoto]. La trace n'est ouverte qu'une fois pour tout le lot, pas par photo.
+     *
+     * Écarte les doublons par contenu (SHA-256), pas par Uri — l'Uri renvoyée par le Photo Picker
+     * n'est pas garantie stable d'une sélection à l'autre pour la même photo, donc seul le
+     * contenu permet de détecter "déjà présente sur cette trace" ou "déjà choisie plus tôt dans ce
+     * même lot" (sélection multiple avec la même photo touchée deux fois). [seenHashes] démarre
+     * avec les photos déjà en base pour ne jamais réimporter une photo déjà ajoutée à une session
+     * précédente.
+     */
+    suspend fun addPhotosFromPicker(trackId: String, resolver: ContentResolver, uris: List<Uri>): List<Long> {
+        val points = open(trackId)?.points.orEmpty()
+        val seenHashes = dao.getPhotos(trackId).mapTo(mutableSetOf()) { it.contentHash }
+        return uris.mapNotNull { uri ->
+            val contentHash = resolver.openInputStream(uri)?.use { sha256(it) } ?: return@mapNotNull null
+            if (!seenHashes.add(contentHash)) return@mapNotNull null
+            val exif = PhotoExifReader.read(resolver, uri)
+            val position = PhotoPositionCorrelator.correlate(points, exif.latitude, exif.longitude, exif.takenAtMillis)
+            addPhoto(
+                trackId = trackId,
+                contentHash = contentHash,
+                resolver = resolver,
+                uri = uri,
+                takenAtMillis = exif.takenAtMillis,
+                latitude = exif.latitude,
+                longitude = exif.longitude,
+                positionPointIndex = position.pointIndex,
+                positionApproximate = position.approximate,
+            )
+        }
+    }
+
+    suspend fun listPhotos(trackId: String): List<LoggedTrackPhotoEntity> = dao.getPhotos(trackId)
+
+    // Suppression d'une seule photo (RIC-43) : jamais une cascade ici, contrairement à delete(id)
+    // ci-dessus — c'est la ligne elle-même qui disparaît, donc son chemin doit être lu avant.
+    suspend fun deletePhoto(id: Long) {
+        val photo = dao.getPhoto(id) ?: return
+        dao.deletePhoto(id)
+        LoggedTrackPhotoStore.resolve(appContext, photo.filePath).delete()
+    }
+
+    // "Repositionner" (RIC-43) : toujours positionApproximate = false, qu'il s'agisse de corriger
+    // une position déduite par horodatage ou de déplacer une position déjà certaine — un
+    // repositionnement manuel vaut confirmation explicite dans les deux cas.
+    suspend fun repositionPhoto(id: Long, positionPointIndex: Int?) {
+        dao.updatePhotoPosition(id, positionPointIndex, positionApproximate = false)
     }
 
     /**
@@ -462,6 +567,19 @@ class LoggedTrackRepository(context: Context) {
     private fun sha256(text: String): String =
         MessageDigest.getInstance("SHA-256").digest(text.toByteArray(StandardCharsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
+
+    // RIC-43 : par flux plutôt que text.toByteArray() — une photo (quelques Mo) n'a pas à
+    // transiter par une String intermédiaire comme le fait la variante GPX ci-dessus.
+    private fun sha256(input: InputStream): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(8192)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            digest.update(buffer, 0, read)
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
 
     private companion object {
         const val ONE_HOUR_MILLIS = 3_600_000L

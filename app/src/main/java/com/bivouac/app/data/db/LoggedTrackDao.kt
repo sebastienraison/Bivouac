@@ -108,4 +108,22 @@ interface LoggedTrackDao {
 
     @Query("DELETE FROM logged_track_tag WHERE trackId = :trackId AND tag = :tag")
     suspend fun deleteTag(trackId: String, tag: String)
+
+    @Query("SELECT * FROM logged_track_photo WHERE trackId = :trackId ORDER BY takenAtMillis, addedAtMillis")
+    suspend fun getPhotos(trackId: String): List<LoggedTrackPhotoEntity>
+
+    @Query("SELECT * FROM logged_track_photo WHERE id = :id")
+    suspend fun getPhoto(id: Long): LoggedTrackPhotoEntity?
+
+    @Insert
+    suspend fun insertPhoto(photo: LoggedTrackPhotoEntity): Long
+
+    @Query("DELETE FROM logged_track_photo WHERE id = :id")
+    suspend fun deletePhoto(id: Long)
+
+    @Query(
+        "UPDATE logged_track_photo SET positionPointIndex = :positionPointIndex, " +
+            "positionApproximate = :positionApproximate WHERE id = :id",
+    )
+    suspend fun updatePhotoPosition(id: Long, positionPointIndex: Int?, positionApproximate: Boolean)
 }

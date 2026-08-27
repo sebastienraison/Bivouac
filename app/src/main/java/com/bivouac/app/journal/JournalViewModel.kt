@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.bivouac.app.bilan.JournalOpenRequest
 import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
+import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.db.PreparedImport
 import com.bivouac.app.data.db.SystemTag
@@ -17,6 +18,7 @@ import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
+import com.bivouac.app.data.photo.MediaStorePhotoQuery
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
@@ -186,6 +188,38 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _currentTags = MutableStateFlow<List<String>>(emptyList())
     val currentTags: StateFlow<List<String>> = _currentTags.asStateFlow()
 
+    // RIC-43 : photos de la trace actuellement ouverte, même raison d'être séparée que
+    // currentTags ci-dessus. Contrairement aux tags/note, chaque action (ajout, suppression,
+    // repositionnement) écrit immédiatement — pas de brouillon ni de saveDetails groupé, une
+    // photo n'a pas d'état "en cours d'édition".
+    private val _currentPhotos = MutableStateFlow<List<LoggedTrackPhotoEntity>>(emptyList())
+    val currentPhotos: StateFlow<List<LoggedTrackPhotoEntity>> = _currentPhotos.asStateFlow()
+
+    // Retour visuel pendant addPhotos (copie + EXIF + corrélation, potentiellement plusieurs
+    // secondes sur un gros lot) — signalé par l'utilisateur en testant sur device, rien ne
+    // montrait qu'un ajout était en cours.
+    private val _photosLoading = MutableStateFlow(false)
+    val photosLoading: StateFlow<Boolean> = _photosLoading.asStateFlow()
+
+    // Confirmation par dialogue avant suppression d'une photo (décidé en séance de conception) —
+    // même mécanique que _deleteTarget pour une trace entière, plus bas.
+    private val _photoDeleteTarget = MutableStateFlow<LoggedTrackPhotoEntity?>(null)
+    val photoDeleteTarget: StateFlow<LoggedTrackPhotoEntity?> = _photoDeleteTarget.asStateFlow()
+
+    // RIC-43 : id de la photo en cours de repositionnement (menu long-press -> "Repositionner"),
+    // null sinon. Pendant que non nul, HikeMapView rend cette seule photo comme un marqueur
+    // déplaçable (drag-and-snap, même mécanique que les bivouacs) — voir photoMarker.
+    private val _repositioningPhotoId = MutableStateFlow<Long?>(null)
+    val repositioningPhotoId: StateFlow<Long?> = _repositioningPhotoId.asStateFlow()
+
+    // RIC-43 : non nul pendant que le selecteur filtre par date est ouvert, porte les candidats
+    // trouves par MediaStorePhotoQuery (eventuellement une liste vide, un vrai resultat "rien
+    // trouve" different de "pas encore cherche"). Voir openDateFilteredPicker.
+    private val _dateFilteredCandidates = MutableStateFlow<List<Uri>?>(null)
+    val dateFilteredCandidates: StateFlow<List<Uri>?> = _dateFilteredCandidates.asStateFlow()
+    private val _dateFilteredPickerLoading = MutableStateFlow(false)
+    val dateFilteredPickerLoading: StateFlow<Boolean> = _dateFilteredPickerLoading.asStateFlow()
+
     // Shared with Planification — one "which map style" preference for the whole app, not a
     // per-screen setting. Satellite falls back to the free default while non-free features are
     // disabled (BIV-16), same as Planification's own selectedLayer.
@@ -197,6 +231,11 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MapLayer.HIKING)
 
     val nonFreeFeaturesDisabled: StateFlow<Boolean> = settingsPreferences.nonFreeFeaturesDisabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    // RIC-43 : lu par l'ecran au moment de taper "Ajouter des photos" pour decider entre le
+    // Photo Picker generique et la demande de permission + selecteur filtre par date.
+    val photoDateRangeSearchEnabled: StateFlow<Boolean> = settingsPreferences.photoDateRangeSearchEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     // BIV-16 Vitesse personnalisée: whichever calibration is currently active, applied when
@@ -318,10 +357,13 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _uiState.value = JournalUiState.Loading
         viewModelScope.launch {
             runCatching {
-                withContext(Dispatchers.IO) { repository.openDetail(entry.id) }
-            }.onSuccess { detail ->
+                withContext(Dispatchers.IO) {
+                    repository.openDetail(entry.id) to repository.listPhotos(entry.id)
+                }
+            }.onSuccess { (detail, photos) ->
                 _uiState.value = if (detail != null) {
                     _currentTags.value = _tagsByTrackId.value[entry.id].orEmpty()
+                    _currentPhotos.value = photos
                     // Point du premier point du jour demandé : somme des tailles des jours qui le
                     // précèdent, la trace concaténée listant les jours dans cet ordre (voir
                     // LoggedTrackRepository.openDetail). coerceIn par prudence si le jour demandé
@@ -506,6 +548,96 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             _deleteTarget.value = null
             _uiState.value = JournalUiState.Overview
             refresh()
+        }
+    }
+
+    /** RIC-43 : sélection faite dans le Photo Picker, une ou plusieurs photos à la fois. */
+    fun addPhotos(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val entry = currentEntry() ?: return
+        viewModelScope.launch {
+            _photosLoading.value = true
+            try {
+                withContext(Dispatchers.IO) { repository.addPhotosFromPicker(entry.id, contentResolver, uris) }
+                _currentPhotos.value = withContext(Dispatchers.IO) { repository.listPhotos(entry.id) }
+            } finally {
+                _photosLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * RIC-43 : ouvre le selecteur filtre par date - appele seulement apres verification de la
+     * permission galerie cote ecran (voir PhotoLibraryPermission), jamais avant. La plage vient
+     * des horodatages reels de la trace ouverte (premier/dernier point), pas de startedAt seul :
+     * plus precis sur une sortie multi-jours, et MediaStorePhotoQuery ajoute deja sa propre marge.
+     */
+    fun openDateFilteredPicker() {
+        val track = (_uiState.value as? JournalUiState.Detail)?.track ?: return
+        val start = track.points.firstOrNull()?.time
+        val end = track.points.lastOrNull()?.time
+        if (start == null || end == null) {
+            _dateFilteredCandidates.value = emptyList()
+            return
+        }
+        viewModelScope.launch {
+            _dateFilteredPickerLoading.value = true
+            try {
+                _dateFilteredCandidates.value = withContext(Dispatchers.IO) {
+                    MediaStorePhotoQuery.findInRange(contentResolver, start.toEpochMilli(), end.toEpochMilli())
+                }
+            } finally {
+                _dateFilteredPickerLoading.value = false
+            }
+        }
+    }
+
+    fun closeDateFilteredPicker() {
+        _dateFilteredCandidates.value = null
+    }
+
+    fun confirmDateFilteredSelection(uris: List<Uri>) {
+        _dateFilteredCandidates.value = null
+        addPhotos(uris)
+    }
+
+    fun requestDeletePhoto(photo: LoggedTrackPhotoEntity) {
+        _photoDeleteTarget.value = photo
+    }
+
+    fun dismissPhotoDeleteConfirmation() {
+        _photoDeleteTarget.value = null
+    }
+
+    fun confirmDeletePhoto() {
+        val target = _photoDeleteTarget.value ?: return
+        val entry = currentEntry() ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.deletePhoto(target.id) }
+            _photoDeleteTarget.value = null
+            _currentPhotos.value = withContext(Dispatchers.IO) { repository.listPhotos(entry.id) }
+        }
+    }
+
+    /** RIC-43 : entrée du menu long-press — active le drag sur la carte, rien n'est écrit encore. */
+    fun beginRepositionPhoto(photo: LoggedTrackPhotoEntity) {
+        _repositioningPhotoId.value = photo.id
+    }
+
+    fun cancelRepositionPhoto() {
+        _repositioningPhotoId.value = null
+    }
+
+    /**
+     * RIC-43 : appelé par HikeMapView à la fin du drag — jamais approximatif, un repositionnement
+     * manuel vaut confirmation explicite (voir LoggedTrackRepository.repositionPhoto).
+     */
+    fun repositionPhoto(photoId: Long, pointIndex: Int) {
+        val entry = currentEntry() ?: return
+        _repositioningPhotoId.value = null
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.repositionPhoto(photoId, pointIndex) }
+            _currentPhotos.value = withContext(Dispatchers.IO) { repository.listPhotos(entry.id) }
         }
     }
 

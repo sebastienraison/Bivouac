@@ -778,6 +778,108 @@ class BivouacDatabaseMigrationTest {
 
         migrated.close()
     }
+
+    // RIC-43 : table neuve pour les photos d'une sortie, même propriété que
+    // migrate5To6_preservesExistingDataAndAddsTagsTableAndNoteColumn ci-dessus (existant intouché,
+    // table fille utilisable dès la migration faite).
+    @Test
+    fun migrate14To15_addsEmptyPhotoTableWithoutTouchingExistingRows() {
+        helper.createDatabase(testDbName, 14).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note) VALUES " +
+                    "('track-1', 'Randonnee Belledonne', 1780300800000, 'hash-track-1', " +
+                    "8200.0, 650.0, 300.0, 3, 240, '')",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            15,
+            true,
+            BivouacDatabase.MIGRATION_14_15,
+        )
+
+        migrated.query("SELECT name FROM logged_track WHERE id = 'track-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Randonnee Belledonne", cursor.getString(0))
+        }
+
+        migrated.query("SELECT COUNT(*) FROM logged_track_photo").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+
+        migrated.execSQL(
+            "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, takenAtMillis, " +
+                "latitude, longitude, positionPointIndex, positionApproximate) VALUES " +
+                "('track-1', 'photos/track-1-abc.jpg', 1780300900000, 1780300850000, " +
+                "45.1885, 5.7245, 1, 0)",
+        )
+        migrated.query(
+            "SELECT trackId, filePath, positionPointIndex, positionApproximate " +
+                "FROM logged_track_photo",
+        ).use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("track-1", cursor.getString(0))
+            assertEquals("photos/track-1-abc.jpg", cursor.getString(1))
+            assertEquals(1, cursor.getInt(2))
+            assertEquals(0, cursor.getInt(3))
+        }
+
+        migrated.close()
+    }
+
+    // RIC-43 : contentHash arrive vide sur une ligne existante (jamais rattrapée après coup, voir
+    // le commentaire de MIGRATION_15_16) — même propriété que migrate8To9 ci-dessus, une colonne
+    // neuve qui n'altère aucune ligne déjà présente.
+    @Test
+    fun migrate15To16_addsEmptyContentHashWithoutTouchingExistingRows() {
+        helper.createDatabase(testDbName, 15).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note) VALUES " +
+                    "('track-1', 'Randonnee Belledonne', 1780300800000, 'hash-track-1', " +
+                    "8200.0, 650.0, 300.0, 3, 240, '')",
+            )
+            execSQL(
+                "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, takenAtMillis, " +
+                    "latitude, longitude, positionPointIndex, positionApproximate) VALUES " +
+                    "('track-1', 'photos/track-1-abc.jpg', 1780300900000, 1780300850000, " +
+                    "45.1885, 5.7245, 1, 0)",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            16,
+            true,
+            BivouacDatabase.MIGRATION_15_16,
+        )
+
+        migrated.query("SELECT filePath, contentHash FROM logged_track_photo").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("photos/track-1-abc.jpg", cursor.getString(0))
+            assertEquals("", cursor.getString(1))
+        }
+
+        migrated.execSQL(
+            "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, contentHash) " +
+                "VALUES ('track-1', 'photos/track-1-def.jpg', 1780301000000, 'abc123')",
+        )
+        migrated.query("SELECT COUNT(*) FROM logged_track_photo WHERE contentHash = 'abc123'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1, cursor.getInt(0))
+        }
+
+        migrated.close()
+    }
 }
 
 private fun String.escapeSql(): String = replace("'", "''")

@@ -1,12 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
-<TextView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/cursor_bubble_text"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/cursor_bubble_root"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
     android:background="@drawable/bg_cursor_bubble"
     android:paddingStart="10dp"
     android:paddingTop="6dp"
     android:paddingEnd="10dp"
-    android:paddingBottom="6dp"
-    android:textColor="#FFFFFF"
-    android:textSize="12sp" />
+    android:paddingBottom="6dp">
+
+    <!-- RIC-43 : miniature de la photo la plus proche du curseur, visible seulement quand une
+         photo est a proximite (voir HikeMapView.CursorInfoWindow) - cachee par defaut, jamais
+         de placeholder vide. -->
+    <ImageView
+        android:id="@+id/cursor_bubble_photo"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginEnd="8dp"
+        android:scaleType="centerCrop"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true"
+        android:contentDescription="@null" />
+
+    <TextView
+        android:id="@+id/cursor_bubble_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp" />
+
+</LinearLayout>

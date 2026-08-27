@@ -140,6 +140,8 @@ dependencies {
     ksp(libs.room.compiler)
     implementation(libs.datastore.preferences)
     implementation(libs.navigation.compose)
+    implementation(libs.exifinterface)
+    implementation(libs.coil.compose)
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16")
     testImplementation("androidx.test:core:1.6.1")

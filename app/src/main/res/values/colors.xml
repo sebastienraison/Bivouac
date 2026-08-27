@@ -9,4 +9,8 @@
     <!-- Journal-only point-of-track cursor (BIV-52) — deliberately not orange, that's reserved
          for the bivouac marker. -->
     <color name="marker_cursor">#00897B</color>
+    <!-- RIC-43 : troisième couleur de marqueur carte, distincte de l'orange (bivouac) et du teal
+         (curseur) — une position approximative (horodatage) réutilise cette même couleur avec une
+         opacité réduite à l'exécution plutôt qu'un second drawable, voir HikeMapView.photoMarker. -->
+    <color name="marker_photo">#6A4C93</color>
 </resources>
