@@ -729,7 +729,12 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun confirmPhotoSelection(uris: List<Uri>) {
-        _photoPickerCandidates.value = null
+        // Fermeture complète et non simple mise à null des candidats : depuis que le périmètre est
+        // changeable sans quitter le sélecteur, une requête peut être encore en cours au moment où
+        // l'utilisateur valide (il valide ce qu'il avait déjà coché, la nouvelle liste n'étant pas
+        // arrivée). Sans annulation, cette requête publiait ses résultats à son terme et rouvrait
+        // le sélecteur par-dessus l'ajout qui venait d'être lancé.
+        closePhotoPicker()
         addPhotos(uris)
     }
 
