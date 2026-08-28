@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  RIC-43 : ce que l'Auto Backup du système a le droit d'emporter (API 31+ ; voir backup_rules.xml
+  pour le mécanisme équivalent en dessous).
+
+  Tout reste inclus par défaut — la base, les préférences, les GPX du Journal et de la
+  Planification — sauf filesDir/photos/. Raison : l'Auto Backup est plafonné à 25 Mo par app, et
+  au-delà le système désactive silencieusement la sauvegarde de l'app ENTIÈRE. Quelques dizaines de
+  photos suffisent à dépasser ce plafond, et on perdrait alors aussi la sauvegarde système de tout
+  le reste, qui tient dans quelques centaines de kilo-octets et qui a une vraie valeur sur un
+  changement de téléphone.
+
+  Conséquence assumée : un changement de téléphone via l'Auto Backup ramène le Journal sans ses
+  photos, et les lignes correspondantes s'affichent en « photo absente » (voir PhotoTile). Le canal
+  complet, photos comprises, reste la sauvegarde applicative de Réglages (BIV-66 / RIC-43), qui n'a
+  aucun plafond parce que l'utilisateur choisit lui-même la destination.
+
+  Le chemin est écrit en dur ici et doit rester en phase avec LoggedTrackPhotoStore.DIR_NAME : un
+  fichier de ressources ne peut pas référencer une constante Kotlin.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="photos" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="photos" />
+    </device-transfer>
+</data-extraction-rules>

@@ -8,7 +8,11 @@ import androidx.lifecycle.viewModelScope
 import com.bivouac.app.bilan.JournalOpenRequest
 import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
+import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackRepository
+import com.bivouac.app.data.db.PendingPhotoAdd
+import com.bivouac.app.data.db.PhotoAddReport
+import com.bivouac.app.data.db.PhotoDisplayOrder
 import com.bivouac.app.data.db.PreparedImport
 import com.bivouac.app.data.db.SystemTag
 import com.bivouac.app.data.gpx.SpeedCalibration
@@ -17,6 +21,8 @@ import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
+import com.bivouac.app.data.photo.MediaStorePhotoQuery
+import com.bivouac.app.data.photo.PhotoPickerScope
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
@@ -24,7 +30,10 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,6 +41,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -112,6 +122,38 @@ data class DuplicatePlanRequest(
     val suggestedName: String,
 )
 
+/**
+ * RIC-149 : laquelle des deux opérations photo longues est en cours.
+ *
+ * Les deux se comptent en secondes sur un lot réel et méritent le même dialogue bloquant, mais
+ * elles ne racontent pas la même chose à l'utilisateur : [IMPORT] copie ce qu'il vient de choisir,
+ * [COMMIT] écrit ce qu'il vient d'enregistrer. Seul le titre du dialogue les distingue.
+ *
+ * L'import est de loin la plus longue des deux (lecture EXIF, empreinte et copie complète des
+ * octets, par photo), là où l'enregistrement se résume à un renommage et un insert : c'est
+ * pourtant lui qui n'avait qu'un discret indicateur en marge du bandeau, pendant que la croix de
+ * l'écran restait cliquable. Voir JournalScreen.
+ */
+enum class PhotoOperationPhase { IMPORT, COMMIT }
+
+/**
+ * RIC-149 : où en est l'opération photo en cours, quelle qu'elle soit.
+ *
+ * Non nul du geste qui la déclenche (validation du sélecteur pour [PhotoOperationPhase.IMPORT],
+ * disquette ou « Enregistrer » du dialogue de sortie pour [PhotoOperationPhase.COMMIT]) jusqu'à la
+ * dernière photo traitée. L'écran s'en sert pour bloquer, voir JournalScreen : tant que ce compte
+ * avance, plus rien n'est manipulable et la sortie n'a pas lieu.
+ *
+ * Un seul flux pour les deux phases, et non deux flux parallèles : elles ne peuvent pas se
+ * chevaucher (l'une comme l'autre bloque l'écran d'où part le geste qui lancerait la seconde), et
+ * un flux unique est ce qui garantit qu'un seul dialogue existe, sans arbitrage à écrire côté UI.
+ *
+ * En phase [PhotoOperationPhase.COMMIT], [total] additionne les suppressions et les ajouts, dans
+ * cet ordre : ce sont les deux moitiés du même geste, et les compter séparément donnerait deux
+ * barres qui se succèdent pour une seule attente.
+ */
+data class PhotoOperationProgress(val phase: PhotoOperationPhase, val done: Int, val total: Int)
+
 class JournalViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = LoggedTrackRepository(application)
@@ -186,6 +228,133 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _currentTags = MutableStateFlow<List<String>>(emptyList())
     val currentTags: StateFlow<List<String>> = _currentTags.asStateFlow()
 
+    // RIC-43 : photos de la trace actuellement ouverte, telles qu'elles sont en base — même raison
+    // d'être séparée que currentTags ci-dessus.
+    //
+    // RIC-149 : ce flux ne bouge plus qu'aux sauvegardes. Ce que l'écran affiche pendant une
+    // édition, c'est currentPhotos plus bas, qui y superpose les ajouts en transit et retranche les
+    // suppressions en attente.
+    private val _currentPhotos = MutableStateFlow<List<LoggedTrackPhotoEntity>>(emptyList())
+
+    /**
+     * RIC-149 : les photos choisies pendant l'édition en cours, copiées en zone de transit et pas
+     * encore enregistrées. Voir [PendingPhotoAdd].
+     */
+    private val _pendingPhotoAdds = MutableStateFlow<List<PendingPhotoAdd>>(emptyList())
+
+    /**
+     * RIC-149 : les photos que l'utilisateur a demandé à supprimer pendant l'édition en cours.
+     * Elles disparaissent immédiatement de l'affichage, mais leur ligne et leur fichier ne sont
+     * touchés qu'à la sauvegarde — abandonner l'édition les rend telles qu'elles étaient.
+     */
+    private val _pendingPhotoDeletions = MutableStateFlow<Set<Long>>(emptySet())
+
+    // RIC-152 : le débrayage est appliqué ici, à la source, et pas seulement en cachant le bandeau
+    // côté écran. Tout ce qui montre des photos part de ce flux — bandeau, galerie, marqueurs de
+    // la carte, bulle du curseur, visionneuse : le rendre vide quand la fonctionnalité est
+    // désactivée est ce qui garantit qu'il n'en reste nulle part, sans avoir à se souvenir de
+    // poser une condition à chaque point d'affichage.
+    //
+    // _currentPhotos, lui, continue de porter la vérité de la base : rien n'est supprimé, et
+    // réactiver fait tout revenir sans relire quoi que ce soit.
+    //
+    // RIC-149 : les ajouts en attente sont rendus comme des photos ordinaires (voir
+    // toDisplayEntity).
+    //
+    // Ils étaient concaténés en fin de liste, dans l'ordre où ils avaient été choisis, en pariant
+    // que personne n'attend d'une photo qu'on vient d'ajouter qu'elle se glisse ailleurs sous ses
+    // yeux. La recette a tranché l'inverse : une photo du matin ajoutée en fin d'édition se posait
+    // en bout de bandeau, puis sautait à sa place chronologique à la sauvegarde — le bandeau
+    // racontait deux histoires différentes à quelques secondes d'écart. La liste combinée est donc
+    // triée exactement comme la requête DAO l'aurait rendue, voir PhotoDisplayOrder.
+    val currentPhotos: StateFlow<List<LoggedTrackPhotoEntity>> =
+        combine(
+            _currentPhotos,
+            _pendingPhotoAdds,
+            _pendingPhotoDeletions,
+            settingsPreferences.photosEnabled,
+        ) { photos, pendingAdds, pendingDeletions, enabled ->
+            if (!enabled) {
+                emptyList()
+            } else {
+                val kept = photos.filterNot { it.id in pendingDeletions }
+                // Un ajout dont l'empreinte est déjà en base vient d'être enregistré : la liste
+                // relue le porte désormais, la version en transit ferait double emploi. C'est ce
+                // qui permet à la sauvegarde de publier la nouvelle liste AVANT de vider les
+                // attentes, donc sans que les vignettes clignotent — l'ordre inverse les ferait
+                // disparaître le temps d'un aller-retour disque.
+                val savedHashes = kept.mapTo(mutableSetOf()) { it.contentHash }
+                (kept + pendingAdds.filterNot { it.contentHash in savedHashes }.map { it.toDisplayEntity() })
+                    .sortedWith(PhotoDisplayOrder)
+            }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * RIC-149 : non nul pendant qu'un import ou un enregistrement de photos est en cours. Voir
+     * [PhotoOperationProgress], [addPhotos] et [saveDetails] pour ce qui le pose et le retire.
+     */
+    private val _photoOperationProgress = MutableStateFlow<PhotoOperationProgress?>(null)
+    val photoOperationProgress: StateFlow<PhotoOperationProgress?> = _photoOperationProgress.asStateFlow()
+
+    /**
+     * RIC-149 : y a-t-il, côté photos, quelque chose que la disquette enregistrerait ? L'écran
+     * l'agrège avec ses propres brouillons (tags, note) pour décider de l'icône de sauvegarde et de
+     * l'avertissement de sortie — voir ThreeStopJournalDetail.
+     */
+    val photosDirty: StateFlow<Boolean> =
+        combine(_pendingPhotoAdds, _pendingPhotoDeletions) { adds, deletions ->
+            adds.isNotEmpty() || deletions.isNotEmpty()
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    // Lu par l'écran pour masquer le bandeau Photos lui-même, ce qu'une liste vide ne suffirait
+    // pas à faire (elle donnerait « Aucune photo pour l'instant » et un bouton d'ajout).
+    val photosEnabled: StateFlow<Boolean> = settingsPreferences.photosEnabled
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    // RIC-43 : les photos de la trace ouverte dont la copie locale a disparu. Dérivé de
+    // currentPhotos plutôt que recalculé dans chacune des cinq fonctions qui l'écrivent, et
+    // recalculé sur Dispatchers.IO parce que c'est un stat par photo. La carte s'en sert pour ne
+    // pas planter de marqueur sur une photo qu'elle ne peut pas montrer, les vignettes pour
+    // afficher « photo absente » — la ligne, elle, n'est jamais supprimée (voir
+    // LoggedTrackRepository.missingPhotoFileIds).
+    val missingPhotoIds: StateFlow<Set<Long>> = _currentPhotos
+        .map { photos -> withContext(Dispatchers.IO) { repository.missingPhotoFileIds(photos) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    // RIC-43 : erreur d'une action photo, exposée à l'UI sur le modèle de _importError plus bas.
+    // Toutes les actions photo touchent des Uri de sélecteur et des fichiers : une Uri révoquée
+    // entre la sélection et l'ajout, une permission retirée pendant qu'on lit MediaStore, un
+    // fichier disparu — autant de cas réels qui remontaient jusqu'ici hors de viewModelScope,
+    // donc en crash de l'app.
+    private val _photoError = MutableStateFlow<String?>(null)
+    val photoError: StateFlow<String?> = _photoError.asStateFlow()
+
+    // Non nul quand un lot d'ajout s'est terminé avec quelque chose à signaler — voir addPhotos
+    // pour ce qui compte comme tel.
+    private val _photoAddReport = MutableStateFlow<PhotoAddReport?>(null)
+    val photoAddReport: StateFlow<PhotoAddReport?> = _photoAddReport.asStateFlow()
+
+    // Confirmation par dialogue avant suppression d'une photo (décidé en séance de conception) —
+    // même mécanique que _deleteTarget pour une trace entière, plus bas.
+    private val _photoDeleteTarget = MutableStateFlow<LoggedTrackPhotoEntity?>(null)
+    val photoDeleteTarget: StateFlow<LoggedTrackPhotoEntity?> = _photoDeleteTarget.asStateFlow()
+
+    // RIC-43 : non nul pendant que le sélecteur interne est ouvert, porte les candidats trouvés
+    // par MediaStorePhotoQuery (éventuellement une liste vide, un vrai résultat « rien trouvé »
+    // différent de « pas encore cherché »). Voir openPhotoPicker.
+    private val _photoPickerCandidates = MutableStateFlow<List<Uri>?>(null)
+    val photoPickerCandidates: StateFlow<List<Uri>?> = _photoPickerCandidates.asStateFlow()
+    private val _photoPickerLoading = MutableStateFlow(false)
+    val photoPickerLoading: StateFlow<Boolean> = _photoPickerLoading.asStateFlow()
+    private var photoPickerJob: Job? = null
+
+    // Périmètre courant du sélecteur. Remis à TRACK_DATES à chaque ouverture plutôt que conservé
+    // d'une fois sur l'autre : c'est le mode qui a du sens dans le cas général, et le retrouver
+    // ouvert sur toute la galerie parce qu'on y était allé une fois serait une régression
+    // silencieuse du confort qu'il apporte.
+    private val _photoPickerScope = MutableStateFlow(PhotoPickerScope.TRACK_DATES)
+    val photoPickerScope: StateFlow<PhotoPickerScope> = _photoPickerScope.asStateFlow()
+
     // Shared with Planification — one "which map style" preference for the whole app, not a
     // per-screen setting. Satellite falls back to the free default while non-free features are
     // disabled (BIV-16), same as Planification's own selectedLayer.
@@ -255,6 +424,20 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         refresh()
+        // RIC-149 : les fichiers de transit qu'un process tué en pleine édition a laissés derrière
+        // lui. Ici, à l'ouverture du Journal : c'est le seul endroit d'où un transit peut naître,
+        // et à cet instant précis aucune édition n'est en cours dans ce process, donc tout ce qui
+        // s'y trouve est par construction périmé.
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                // keptPaths et non un balayage aveugle : quitter le Journal puis y revenir aussitôt
+                // détruit le ViewModel précédent alors que son enregistrement, lui, se poursuit
+                // (NonCancellable, voir saveDetails). Ses fichiers de transit ne sont périmés qu'aux
+                // yeux d'un ViewModel qui ne les connaît pas, d'où la liste partagée.
+                runCatching { repository.purgePhotoTransit(keptPaths = transitPathsBeingCommitted.toSet()) }
+                    .onFailure { Log.w("JournalViewModel", "Nettoyage des photos en transit interrompu", it) }
+            }
+        }
         // Rattrapage des colonnes dénormalisées, sans effet une fois la banque à jour. Lancé ici
         // plutôt qu'à l'ouverture de la base : c'est le seul endroit où le travail a un scope qui
         // s'annule (quitter le Journal l'interrompt) et où il ne retarde l'affichage de rien.
@@ -315,13 +498,21 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun openTrackInternal(entry: LoggedTrackEntity, dayIndex: Int?) {
+        // RIC-149 : ouvrir une autre trace abandonne ce qui n'a pas été enregistré sur la
+        // précédente — l'écran ne laisse pas partir une édition sale sans le demander (voir
+        // ThreeStopJournalDetail.requestExit), mais l'état des photos ne doit dépendre d'aucune
+        // promesse tenue ailleurs.
+        discardPhotoEdits()
         _uiState.value = JournalUiState.Loading
         viewModelScope.launch {
             runCatching {
-                withContext(Dispatchers.IO) { repository.openDetail(entry.id) }
-            }.onSuccess { detail ->
+                withContext(Dispatchers.IO) {
+                    repository.openDetail(entry.id) to repository.listPhotos(entry.id)
+                }
+            }.onSuccess { (detail, photos) ->
                 _uiState.value = if (detail != null) {
                     _currentTags.value = _tagsByTrackId.value[entry.id].orEmpty()
+                    _currentPhotos.value = photos
                     // Point du premier point du jour demandé : somme des tailles des jours qui le
                     // précèdent, la trace concaténée listant les jours dans cet ordre (voir
                     // LoggedTrackRepository.openDetail). coerceIn par prudence si le jour demandé
@@ -358,6 +549,9 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun closeTrack() {
+        // RIC-149 : même filet qu'à l'ouverture d'une autre trace — quitter la vue détail ne peut
+        // pas laisser un transit vivant derrière lui.
+        discardPhotoEdits()
         _uiState.value = JournalUiState.Overview
     }
 
@@ -462,19 +656,87 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * the user is merely toggling chips or typing; editing this "détails" data isn't a frequent
      * operation, so it gets an explicit save/discard step rather than writing through on every tap
      * like the rest of the app does for more routine actions.
+     *
+     * RIC-149 : les photos ont rejoint ce même geste. Suppressions d'abord, ajouts ensuite : une
+     * photo supprimée puis réajoutée dans la même édition (ce que la déduplication autorise
+     * justement, voir addPhotos) doit finir présente, pas écartée en doublon par la ligne qu'on
+     * s'apprête à effacer.
+     *
+     * [onFinished] est appelé quand tout est écrit, jamais avant, et c'est ce qui rend son sens au
+     * bouton « Enregistrer » du dialogue de sortie : c'est lui qui porte la fermeture de l'écran.
+     * Signalé en recette, ce chemin-là perdait une partie des photos ajoutées alors que la
+     * disquette les enregistrait toutes. La cause tenait à l'enchaînement, sur le même clic, de
+     * cette sauvegarde puis de closeTrack : celui-ci appelle discardPhotoEdits, dont la boucle de
+     * suppression (un unlink par photo) rattrapait la boucle d'enregistrement, plus lente (un
+     * déplacement plus un insert par photo), et effaçait les fichiers de transit qu'il restait à
+     * enregistrer. La disquette ne quittant pas l'écran ne déclenchait rien de tout ça : toute
+     * l'asymétrie était là. Voir JournalPhotoCommitRaceTest.
+     *
+     * Trois verrous plutôt qu'un, parce que perdre des photos est irréversible :
+     * - la sortie attend [onFinished], donc la course n'a plus lieu d'être ;
+     * - les chemins en cours d'écriture sont déclarés dans [transitPathsBeingCommitted], que
+     *   [discardPhotoEdits], [onCleared] et le balayage de démarrage épargnent ;
+     * - l'écriture est NonCancellable, donc la mort du ViewModel pendant l'enregistrement (retour
+     *   vers un autre onglet) ne la coupe pas en deux.
      */
-    fun saveDetails(tags: Set<String>, note: String) {
-        val entry = currentEntry() ?: return
+    fun saveDetails(tags: Set<String>, note: String, onFinished: () -> Unit = {}) {
+        val entry = currentEntry() ?: return onFinished()
         val previousTags = _currentTags.value.toSet()
+        val deletions = _pendingPhotoDeletions.value
+        val additions = _pendingPhotoAdds.value
+        val photoWork = deletions.size + additions.size
+        val inFlightPaths = additions.map { it.transitPath }
+        // Posés avant le launch, donc avant que quoi que ce soit d'autre ne puisse s'exécuter : la
+        // protection ne doit pas dépendre du moment où la coroutine sera ordonnancée, c'est
+        // exactement ce qui manquait.
+        transitPathsBeingCommitted += inFlightPaths
+        if (photoWork > 0) {
+            _photoOperationProgress.value =
+                PhotoOperationProgress(PhotoOperationPhase.COMMIT, done = 0, total = photoWork)
+        }
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
+            val photoFailures = withContext(NonCancellable + Dispatchers.IO) {
                 (tags - previousTags).forEach { repository.addTag(entry.id, it) }
                 (previousTags - tags).forEach { repository.removeTag(entry.id, it) }
                 repository.updateNote(entry.id, note)
+                var failures = 0
+                if (photoWork > 0) {
+                    var done = 0
+                    val advance = {
+                        done++
+                        _photoOperationProgress.value =
+                            PhotoOperationProgress(PhotoOperationPhase.COMMIT, done, photoWork)
+                    }
+                    runCatching {
+                        repository.deletePhotos(deletions, onProgress = advance)
+                        failures = repository.commitPendingPhotos(entry.id, additions, onProgress = advance)
+                        _currentPhotos.value = repository.listPhotos(entry.id)
+                    }.onFailure {
+                        Log.e("JournalViewModel", "Échec de l'enregistrement des photos", it)
+                        failures = additions.size
+                    }
+                }
+                failures
+            }
+            transitPathsBeingCommitted -= inFlightPaths.toSet()
+            _photoOperationProgress.value = null
+            // Vidées après l'écriture, jamais avant : les vignettes en transit tiennent l'affichage
+            // jusqu'à ce que la liste relue prenne le relais, sinon elles disparaîtraient le temps
+            // d'un aller-retour disque. Le doublon que ce recouvrement pourrait produire est écarté
+            // par empreinte dans currentPhotos.
+            _pendingPhotoDeletions.value = emptySet()
+            _pendingPhotoAdds.value = emptyList()
+            if (photoFailures > 0) {
+                _photoError.value = if (photoFailures == 1) {
+                    "Une photo n'a pas pu être enregistrée."
+                } else {
+                    "$photoFailures photos n'ont pas pu être enregistrées."
+                }
             }
             _currentTags.value = tags.toList()
             _tagsByTrackId.value = _tagsByTrackId.value + (entry.id to tags.toList())
             refreshCurrentEntry(entry.id, note = note)
+            onFinished()
         }
     }
 
@@ -482,6 +744,35 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         is JournalUiState.Detail -> state.entry
         else -> null
     }
+
+    /**
+     * RIC-149 : un ajout en attente, vu comme une photo ordinaire.
+     *
+     * C'est ce qui permet au bandeau, à la galerie, à la visionneuse, aux marqueurs de la carte et à
+     * la bulle du curseur de le montrer sans rien savoir du transit : le chemin porte son propre
+     * marqueur et LoggedTrackPhotoStore.resolve sait où aller le chercher.
+     *
+     * addedAtMillis vaut l'instant de la copie en transit ([PendingPhotoAdd.stagedAtMillis]) : cette
+     * valeur ne sert qu'au tri, et un instant figé une fois pour toutes est ce qui donne au bandeau
+     * un ordre qui ne bouge pas d'une recomposition à l'autre. Le vrai addedAtMillis sera posé à
+     * l'insert, plus tard mais dans le même ordre.
+     */
+    private fun PendingPhotoAdd.toDisplayEntity(): LoggedTrackPhotoEntity = LoggedTrackPhotoEntity(
+        id = displayId,
+        trackId = currentEntry()?.id.orEmpty(),
+        filePath = transitPath,
+        addedAtMillis = stagedAtMillis,
+        takenAtMillis = takenAtMillis,
+        latitude = latitude,
+        longitude = longitude,
+        positionPointIndex = positionPointIndex,
+        positionApproximate = positionApproximate,
+        takenAtZoneCertain = takenAtZoneCertain,
+        contentHash = contentHash,
+        sourceDisplayName = source.displayName,
+        sourceRelativePath = source.relativePath,
+        sourceDateTakenMillis = source.dateTakenMillis,
+    )
 
     private fun refreshCurrentEntry(id: String, note: String) {
         _tracks.value = _tracks.value.map { if (it.id == id) it.copy(note = note) else it }
@@ -501,12 +792,272 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     fun confirmDelete() {
         val target = _deleteTarget.value ?: return
+        // La trace part avec ses photos (CASCADE + fichiers, voir LoggedTrackRepository.delete) :
+        // ce qui était en attente d'enregistrement sur elle n'a plus de destination.
+        discardPhotoEdits()
         viewModelScope.launch {
             withContext(Dispatchers.IO) { repository.delete(target.id) }
             _deleteTarget.value = null
             _uiState.value = JournalUiState.Overview
             refresh()
         }
+    }
+
+    /**
+     * RIC-43/149 : sélection faite dans le sélecteur interne, une ou plusieurs photos à la fois.
+     * Rien n'entre en base ici : les photos rejoignent la zone de transit et s'affichent dans le
+     * bandeau comme les autres, en attente de la disquette.
+     *
+     * Le bilan de fin de lot n'est affiché que s'il a quelque chose à dire (un doublon écarté, un
+     * échec) : quand tout est entré, les vignettes qui apparaissent le disent déjà, et un dialogue
+     * à acquitter après chaque ajout serait une friction pour rien. C'est la différence avec le
+     * bilan d'import de sorties séparées, qui est toujours montré parce que son résultat n'est
+     * visible nulle part ailleurs.
+     *
+     * Son moment ne bouge pas — il reste celui de la sélection, seul instant où l'on sait qu'une
+     * photo était un doublon ou illisible — mais son libellé, si : « ajoutées » sous-entendrait
+     * enregistrées. Voir formatPhotoAddReport côté écran.
+     *
+     * C'est la phase longue du cycle photo : par image, une lecture complète des octets pour
+     * l'empreinte, une lecture EXIF, une corrélation avec la trace, puis une copie complète en
+     * transit. Elle n'avait qu'un indicateur circulaire en marge du bandeau, que la recette a
+     * jugé insuffisant : rien ne disait où en était le lot, et la croix de l'écran restait
+     * cliquable pendant tout ce temps. Elle passe donc sous le même dialogue bloquant que
+     * l'enregistrement, voir [PhotoOperationProgress].
+     */
+    fun addPhotos(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val entry = currentEntry() ?: return
+        // Posé avant le launch, exactement comme dans saveDetails : le dialogue doit être à
+        // l'écran du fait même du clic, sans dépendre du moment où la coroutine sera
+        // ordonnancée. C'est aussi ce qui ferme la fenêtre pendant laquelle la croix serait
+        // encore atteignable.
+        _photoOperationProgress.value =
+            PhotoOperationProgress(PhotoOperationPhase.IMPORT, done = 0, total = uris.size)
+        viewModelScope.launch {
+            try {
+                val batch = runCatching {
+                    withContext(Dispatchers.IO) {
+                        repository.stagePhotosFromPicker(
+                            trackId = entry.id,
+                            resolver = contentResolver,
+                            uris = uris,
+                            // Le contrôle d'empreinte couvre le persisté ET le transit : deux
+                            // passages successifs dans le sélecteur sur la même photo, sans
+                            // sauvegarde entre les deux, doivent se comporter comme deux passages
+                            // séparés par une sauvegarde.
+                            alreadyStagedHashes = _pendingPhotoAdds.value.mapTo(mutableSetOf()) { it.contentHash },
+                            // À l'inverse, une photo marquée pour suppression ne sera plus là après
+                            // la sauvegarde : la refuser en doublon enfermerait l'utilisateur dans
+                            // un état où il ne peut ni la garder ni la reprendre.
+                            ignoredHashes = hashesOfPendingDeletions(),
+                            // Photo par photo, doublons et échecs compris : le compteur suit le
+                            // lot tel qu'il est traité, pas seulement ce qui en ressort.
+                            onProgress = { done ->
+                                _photoOperationProgress.value = PhotoOperationProgress(
+                                    PhotoOperationPhase.IMPORT,
+                                    done = done,
+                                    total = uris.size,
+                                )
+                            },
+                        )
+                    }
+                }.onSuccess { batch ->
+                    _pendingPhotoAdds.value = _pendingPhotoAdds.value + batch.staged
+                }.onFailure {
+                    Log.e("JournalViewModel", "Échec de l'ajout de photos", it)
+                    _photoError.value = "Impossible d'ajouter ces photos. Réessaie depuis la galerie."
+                }.getOrNull()
+                val report = batch?.report
+                if (report != null && (report.duplicatesSkipped > 0 || report.failed > 0)) {
+                    _photoAddReport.value = report
+                }
+            } finally {
+                // Le bilan de lot est posé avant : il s'ouvre donc en remplacement du dialogue
+                // bloquant, jamais derrière lui.
+                _photoOperationProgress.value = null
+            }
+        }
+    }
+
+    private fun hashesOfPendingDeletions(): Set<String> {
+        val deleted = _pendingPhotoDeletions.value
+        return _currentPhotos.value.filter { it.id in deleted }.mapTo(mutableSetOf()) { it.contentHash }
+    }
+
+    /**
+     * RIC-149 : l'abandon d'une édition, côté photos — les ajouts en transit sont effacés du disque,
+     * les suppressions en attente sont simplement oubliées, donc les photos concernées reviennent.
+     *
+     * Appelé aussi bien quand l'utilisateur choisit « Ne pas enregistrer » qu'à la fermeture de
+     * l'écran ou à l'ouverture d'une autre trace : il n'y a pas d'état d'édition photo qui survive à
+     * la sortie du mode édition.
+     */
+    fun discardPhotoEdits() {
+        // Les fichiers qu'un enregistrement est en train de déplacer sont épargnés : ils ne
+        // sont plus à l'abandon, ils sont en route. C'est le filet qui manquait quand la sortie
+        // d'écran suivait immédiatement la sauvegarde, voir saveDetails.
+        val discarded = _pendingPhotoAdds.value.filterNot { it.transitPath in transitPathsBeingCommitted }
+        _pendingPhotoAdds.value = emptyList()
+        _pendingPhotoDeletions.value = emptySet()
+        if (discarded.isEmpty()) return
+        viewModelScope.launch {
+            withContext(NonCancellable + Dispatchers.IO) { repository.discardPendingPhotos(discarded) }
+        }
+    }
+
+    /**
+     * RIC-149 : le ViewModel est détruit (retour vers un autre onglet, mort du process) alors qu'une
+     * édition tenait des transits. viewModelScope est déjà annulé à ce moment-là, donc la
+     * suppression se fait ici même, en synchrone : c'est une poignée d'appels unlink, et le seul
+     * moyen de ne pas dépendre d'une coroutine qui ne partira jamais. Ce que ce filet manque (mort
+     * brutale du process) est rattrapé au prochain démarrage, voir purgePhotoTransit.
+     */
+    override fun onCleared() {
+        // Même exception que discardPhotoEdits : un enregistrement lancé juste avant la destruction
+        // survit à celle-ci (il est NonCancellable), ses fichiers ne sont donc pas des orphelins.
+        val pending = _pendingPhotoAdds.value.filterNot { it.transitPath in transitPathsBeingCommitted }
+        if (pending.isNotEmpty()) {
+            runCatching { repository.discardPendingPhotos(pending) }
+                .onFailure { Log.w("JournalViewModel", "Photos en transit non nettoyées", it) }
+        }
+        super.onCleared()
+    }
+
+    fun dismissPhotoError() {
+        _photoError.value = null
+    }
+
+    fun dismissPhotoAddReport() {
+        _photoAddReport.value = null
+    }
+
+    /**
+     * RIC-43 : ouvre le sélecteur interne — appelé seulement après vérification de la permission
+     * galerie côté écran (voir PhotoLibraryPermission), jamais avant, et jamais du tout quand la
+     * fonctionnalité photos est désactivée.
+     */
+    fun openPhotoPicker() {
+        _photoPickerScope.value = PhotoPickerScope.TRACK_DATES
+        queryPhotoCandidates()
+    }
+
+    /** Changement de périmètre depuis le sélecteur ouvert : même requête, autre portée. */
+    fun setPhotoPickerScope(scope: PhotoPickerScope) {
+        if (_photoPickerScope.value == scope) return
+        _photoPickerScope.value = scope
+        queryPhotoCandidates()
+    }
+
+    /**
+     * Relance la requête sans changer de périmètre : ce dont le sélecteur a besoin au retour du
+     * dialogue système de re-sélection (accès partiel Android 14+), où la liste de photos visibles
+     * par l'app vient de changer sous ses pieds.
+     */
+    fun reloadPhotoPicker() {
+        queryPhotoCandidates()
+    }
+
+    /**
+     * La plage TRACK_DATES vient des horodatages réels de la trace ouverte (premier/dernier point),
+     * pas de startedAt seul : plus précis sur une sortie multi-jours, et MediaStorePhotoQuery
+     * ajoute déjà sa propre marge. Une trace sans horodatage rend une liste vide, résultat honnête
+     * que le sélecteur sait présenter en proposant d'élargir à toute la galerie.
+     */
+    private fun queryPhotoCandidates() {
+        val scope = _photoPickerScope.value
+        val track = (_uiState.value as? JournalUiState.Detail)?.track ?: return
+        val start = track.points.firstOrNull()?.time
+        val end = track.points.lastOrNull()?.time
+        if (scope == PhotoPickerScope.TRACK_DATES && (start == null || end == null)) {
+            _photoPickerCandidates.value = emptyList()
+            _photoPickerLoading.value = false
+            return
+        }
+        // Avant le launch, pas dedans : c'est ce drapeau qui ouvre le dialogue (voir JournalScreen),
+        // et l'ouvrir seulement une fois la coroutine ordonnancée, c'est ne rien montrer pendant
+        // la requête MediaStore — soit exactement la seconde ou deux qu'il s'agit de couvrir. Le
+        // CircularProgressIndicator du dialogue n'était jamais atteint pour cette raison.
+        _photoPickerLoading.value = true
+        photoPickerJob?.cancel()
+        photoPickerJob = viewModelScope.launch {
+            try {
+                val candidates = withContext(Dispatchers.IO) {
+                    when (scope) {
+                        PhotoPickerScope.TRACK_DATES ->
+                            MediaStorePhotoQuery.findInRange(contentResolver, start!!.toEpochMilli(), end!!.toEpochMilli())
+                        PhotoPickerScope.WHOLE_GALLERY -> MediaStorePhotoQuery.findAll(contentResolver)
+                    }
+                }
+                _photoPickerCandidates.value = candidates
+            } catch (e: CancellationException) {
+                // L'utilisateur a fermé le dialogue pendant la requête : rien à signaler, et
+                // surtout pas de résultat à publier. Relancée telle quelle pour ne pas transformer
+                // une annulation en succès aux yeux de la coroutine parente.
+                throw e
+            } catch (e: Exception) {
+                // SecurityException réelle : la permission galerie peut avoir été retirée entre la
+                // vérification faite par l'écran et cette requête (retrait manuel, ou révocation
+                // automatique d'une app inutilisée).
+                Log.e("JournalViewModel", "Échec de la recherche de photos", e)
+                _photoPickerCandidates.value = null
+                _photoError.value = "Impossible de parcourir la galerie. " +
+                    "Vérifie l'autorisation d'accès aux photos dans les réglages d'Android."
+            } finally {
+                _photoPickerLoading.value = false
+            }
+        }
+    }
+
+    fun closePhotoPicker() {
+        // La requête est annulée avec le dialogue : sans ça, une recherche encore en cours
+        // republiait ses candidats à son terme et rouvrait le dialogue tout seul.
+        photoPickerJob?.cancel()
+        photoPickerJob = null
+        _photoPickerCandidates.value = null
+        _photoPickerLoading.value = false
+    }
+
+    fun confirmPhotoSelection(uris: List<Uri>) {
+        // Fermeture complète et non simple mise à null des candidats : depuis que le périmètre est
+        // changeable sans quitter le sélecteur, une requête peut être encore en cours au moment où
+        // l'utilisateur valide (il valide ce qu'il avait déjà coché, la nouvelle liste n'étant pas
+        // arrivée). Sans annulation, cette requête publiait ses résultats à son terme et rouvrait
+        // le sélecteur par-dessus l'ajout qui venait d'être lancé.
+        closePhotoPicker()
+        addPhotos(uris)
+    }
+
+    fun requestDeletePhoto(photo: LoggedTrackPhotoEntity) {
+        _photoDeleteTarget.value = photo
+    }
+
+    fun dismissPhotoDeleteConfirmation() {
+        _photoDeleteTarget.value = null
+    }
+
+    /**
+     * RIC-149 : la suppression est enregistrée comme une intention, pas exécutée. La photo quitte
+     * l'affichage tout de suite (c'est ce que l'utilisateur demande), mais sa ligne et son fichier
+     * ne bougent qu'à la sauvegarde — et reviennent intacts si l'édition est abandonnée.
+     *
+     * Une photo encore en transit (ajoutée dans la même édition, jamais enregistrée) n'a rien à
+     * marquer : elle est simplement retirée du lot en attente, et ses octets partent avec elle.
+     */
+    fun confirmDeletePhoto() {
+        val target = _photoDeleteTarget.value ?: return
+        _photoDeleteTarget.value = null
+        val pendingAdd = _pendingPhotoAdds.value.find { it.displayId == target.id }
+        if (pendingAdd != null) {
+            _pendingPhotoAdds.value = _pendingPhotoAdds.value - pendingAdd
+            viewModelScope.launch {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    repository.discardPendingPhotos(listOf(pendingAdd))
+                }
+            }
+            return
+        }
+        _pendingPhotoDeletions.value = _pendingPhotoDeletions.value + target.id
     }
 
     /**
@@ -718,5 +1269,19 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         val input = repository.calibrationSamples()
         val result = SpeedCalibrationCalculator.compute(input.aggregate, input.fallbackSamples) ?: return
         settingsPreferences.setAutoCalibration(result.calibration)
+    }
+
+    private companion object {
+        /**
+         * RIC-149 : les chemins de transit qu'un enregistrement est en train de déplacer.
+         *
+         * Partagé entre instances, et pas porté par le ViewModel : un enregistrement survit à la
+         * destruction du ViewModel qui l'a lancé (il est NonCancellable), donc le suivant doit
+         * pouvoir savoir que ces fichiers-là ne sont pas des orphelins avant de balayer le transit.
+         *
+         * Ensemble concurrent : il est écrit depuis le thread principal et lu depuis les threads
+         * d'entrées/sorties du balayage.
+         */
+        val transitPathsBeingCommitted: MutableSet<String> = ConcurrentHashMap.newKeySet()
     }
 }

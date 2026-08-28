@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import android.webkit.MimeTypeMap
 import com.bivouac.app.data.gpx.DaySegmentAggregate
 import com.bivouac.app.data.gpx.GpxParser
 import com.bivouac.app.data.gpx.SpeedCalibration
@@ -12,11 +13,18 @@ import com.bivouac.app.data.gpx.TrackSegmenter
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
+import com.bivouac.app.data.photo.MediaStorePhotoQuery
+import com.bivouac.app.data.photo.PhotoExifReader
+import com.bivouac.app.data.photo.PhotoLibraryPermission
+import com.bivouac.app.data.photo.PhotoPositionCorrelator
+import com.bivouac.app.data.photo.PhotoSourceMetadata
 import java.io.IOException
+import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Duration
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 
 // A parsed-and-ready-to-store import that hasn't been written to the DB yet — lets the caller
@@ -58,6 +66,66 @@ data class LoggedTrackDetail(val track: HikeTrack, val daySegments: List<Segment
 
 // Ce que la liste du Journal doit savoir des jours d'une trace, sans ouvrir de fichier.
 data class DaySummary(val dayCount: Int, val startMillis: List<Long>)
+
+/**
+ * RIC-43 : issue d'un lot d'ajout de photos, photo par photo — voir [LoggedTrackRepository.addPhotosFromPicker].
+ *
+ * Même raison d'être que [SeparateImportReport][com.bivouac.app.journal.SeparateImportReport] côté
+ * import GPX : chaque photo est traitée indépendamment, donc l'échec de l'une ne doit pas empêcher
+ * les autres d'entrer, et le seul moment où l'utilisateur peut apprendre ce qui s'est réellement
+ * passé est la fin du lot. Sans ça, une sélection de dix photos dont trois sont des doublons
+ * rendait sept vignettes sans jamais dire ce qu'étaient devenues les trois autres.
+ */
+data class PhotoAddReport(val added: Int, val duplicatesSkipped: Int, val failed: Int)
+
+/**
+ * RIC-149 : une photo choisie dans le sélecteur, copiée en zone de transit, pas encore en base.
+ *
+ * Tout le travail coûteux (empreinte, lecture EXIF, corrélation avec la trace, copie des octets) est
+ * fait au moment de la sélection, pas à la sauvegarde : la disquette ne fait plus qu'un déplacement
+ * de fichier et un insert, donc elle répond tout de suite, et le bandeau montre les vignettes dès la
+ * validation du sélecteur — c'est-à-dire au moment où l'utilisateur s'attend à les voir.
+ *
+ * [displayId] est négatif, et n'existe que dans la mémoire du process : il sert de clé de liste et
+ * de cible de suppression tant que la photo n'a pas de vrai id. Négatif justement pour qu'il ne
+ * puisse jamais être confondu avec un id Room autogénéré, qui commence à 1.
+ */
+data class PendingPhotoAdd(
+    val displayId: Long,
+    // Chemin préfixé « transit: », résolu par LoggedTrackPhotoStore.resolve comme n'importe quel
+    // autre chemin de photo — c'est ce qui permet à l'UI d'afficher un ajout en attente sans rien
+    // savoir de son statut.
+    val transitPath: String,
+    val contentHash: String,
+    // L'instant de la copie en transit. Tient lieu d'addedAtMillis tant que la ligne n'existe pas :
+    // c'est ce qui donne au bandeau un ordre stable d'une recomposition à l'autre, et l'ordre
+    // d'entrée dans le lot quand deux photos partagent leur date de prise de vue (voir
+    // PhotoDisplayOrder). L'addedAtMillis définitif sera posé à l'insert, plus tard mais dans le
+    // même ordre.
+    val stagedAtMillis: Long,
+    val takenAtMillis: Long?,
+    val latitude: Double?,
+    val longitude: Double?,
+    val positionPointIndex: Int?,
+    val positionApproximate: Boolean,
+    val takenAtZoneCertain: Boolean?,
+    val source: PhotoSourceMetadata,
+)
+
+/** Ce que rend un passage du sélecteur : ce qui est entré en transit, et le bilan du lot. */
+data class StagedPhotoBatch(val staged: List<PendingPhotoAdd>, val report: PhotoAddReport)
+
+/** RIC-152 : ce que « Purger les photos » annonce avant d'agir — voir [LoggedTrackRepository.photoStorageSummary]. */
+data class PhotoStorageSummary(val count: Int, val totalBytes: Long)
+
+// Identifiants d'affichage des ajouts en attente : uniques pour la durée du process, et toujours
+// négatifs pour ne jamais pouvoir croiser un id Room autogénéré (qui part de 1). Au niveau du
+// fichier et non de l'instance de repository : plusieurs repositories coexistent (un par
+// ViewModel), et deux photos en attente ne doivent pas partager un id sous prétexte qu'elles
+// viennent de deux écrans différents.
+private val pendingPhotoDisplayIds = AtomicLong(0L)
+
+private fun nextPendingPhotoDisplayId(): Long = -pendingPhotoDisplayIds.incrementAndGet()
 
 sealed interface DuplicateMatch {
     val existing: LoggedTrackEntity
@@ -314,11 +382,13 @@ class LoggedTrackRepository(context: Context) {
     }
 
     suspend fun delete(id: String) {
-        // Chemins relevés avant le DELETE (le CASCADE emporte les lignes de jours) ; la ligne
-        // disparaît avant son fichier, jamais l'inverse.
+        // Chemins relevés avant le DELETE (le CASCADE emporte les lignes de jours et de photos,
+        // RIC-43) ; la ligne disparaît avant son fichier, jamais l'inverse.
         val days = dao.getDays(id)
+        val photos = dao.getPhotos(id)
         dao.delete(id)
         days.forEach { LoggedTrackGpxStore.resolve(appContext, it.rawGpxFilePath).delete() }
+        photos.forEach { LoggedTrackPhotoStore.resolve(appContext, it.filePath).delete() }
     }
 
     suspend fun updateNote(id: String, note: String) {
@@ -339,6 +409,279 @@ class LoggedTrackRepository(context: Context) {
 
     suspend fun removeTag(trackId: String, tag: String) {
         dao.deleteTag(trackId, tag)
+    }
+
+    // L'extension du fichier local, déduite du type MIME annoncé par le fournisseur — « jpg » par
+    // défaut, faute de mieux : rien ici ne décode l'image, l'extension n'est qu'une commodité.
+    private fun extensionFor(resolver: ContentResolver, uri: Uri): String =
+        resolver.getType(uri)?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) } ?: "jpg"
+
+    /**
+     * RIC-43/149 : ce que l'écran appelle après une sélection dans le sélecteur interne — lit l'EXIF
+     * de chaque [uris], corrèle avec la trace (voir PhotoPositionCorrelator) puis copie les octets
+     * en **zone de transit**, sans rien écrire en base. La trace n'est ouverte qu'une fois pour tout
+     * le lot, pas par photo.
+     *
+     * Rien n'entre dans le Journal ici : c'est [commitPendingPhotos] qui écrit, à la sauvegarde du
+     * mode édition, et [discardPendingPhotos] qui efface, à l'abandon. Voir PendingPhotoAdd pour
+     * pourquoi tout le travail lourd est fait maintenant plutôt qu'à la sauvegarde.
+     *
+     * Écarte les doublons par contenu (SHA-256), pas par Uri : deux entrées MediaStore distinctes
+     * peuvent porter exactement la même photo (copie, image reçue puis ré-enregistrée), et seul le
+     * contenu permet de détecter « déjà présente sur cette trace » ou « déjà choisie plus tôt dans
+     * ce même lot » (sélection multiple avec la même photo touchée deux fois). Le contrôle part des
+     * photos déjà en base, auxquelles l'appelant ajoute [alreadyStagedHashes] (les ajouts déjà en
+     * transit, invisibles de la base) et retire [ignoredHashes] (les photos marquées pour
+     * suppression : elles ne seront plus là après la sauvegarde, refuser leur réajout dans le même
+     * geste d'édition n'aurait aucun sens).
+     *
+     * Chaque photo est traitée indépendamment : celle dont l'Uri a été révoquée entre la sélection
+     * et l'ajout est comptée en échec et le lot continue, plutôt que d'abandonner les suivantes.
+     * Le [PhotoAddReport] rendu est ce que l'écran affiche à la fin. Seules les erreurs qui
+     * concernent le lot entier (trace illisible, base inaccessible) remontent en exception.
+     */
+    suspend fun stagePhotosFromPicker(
+        trackId: String,
+        resolver: ContentResolver,
+        uris: List<Uri>,
+        alreadyStagedHashes: Set<String> = emptySet(),
+        ignoredHashes: Set<String> = emptySet(),
+        // Appelé après chaque photo du lot avec le nombre de photos traitées, quel qu'en soit le
+        // sort (copiée, écartée en doublon, illisible) : c'est ce qui alimente le compteur du
+        // dialogue bloquant (voir JournalViewModel.addPhotos). Compter les seules photos retenues
+        // ferait stagner l'affichage sur une sélection pleine de doublons, alors que le travail,
+        // lui, avance bel et bien — c'est l'empreinte qui coûte, et elle est calculée avant de
+        // savoir si la photo sera gardée.
+        onProgress: (done: Int) -> Unit = {},
+    ): StagedPhotoBatch {
+        val points = open(trackId)?.points.orEmpty()
+        val seenHashes = dao.getPhotos(trackId)
+            .mapTo(mutableSetOf()) { it.contentHash }
+            .apply {
+                removeAll(ignoredHashes)
+                addAll(alreadyStagedHashes)
+            }
+        // Relevé une fois pour tout le lot, pas par photo : la permission ne peut pas changer au
+        // milieu sans que l'app repasse au premier plan, et c'est un checkSelfPermission par appel.
+        val mediaLocationGranted = PhotoLibraryPermission.isMediaLocationGranted(appContext)
+        val staged = mutableListOf<PendingPhotoAdd>()
+        var duplicatesSkipped = 0
+        var failed = 0
+        LoggedTrackPhotoStore.transitDir(appContext).mkdirs()
+        var processed = 0
+        for (uri in uris) {
+            runCatching {
+                val contentHash = resolver.openInputStream(uri)?.use { sha256(it) }
+                    ?: throw IOException("Impossible d'ouvrir la photo sélectionnée")
+                if (!seenHashes.add(contentHash)) return@runCatching false
+                val exif = PhotoExifReader.read(resolver, uri, requireOriginal = mediaLocationGranted)
+                val position =
+                    PhotoPositionCorrelator.correlate(points, exif.latitude, exif.longitude, exif.takenAtMillis)
+                val transitPath = LoggedTrackPhotoStore.transitPath(trackId, extensionFor(resolver, uri))
+                val target = LoggedTrackPhotoStore.resolve(appContext, transitPath)
+                resolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } }
+                    ?: throw IOException("Impossible d'ouvrir la photo sélectionnée")
+                staged += PendingPhotoAdd(
+                    displayId = nextPendingPhotoDisplayId(),
+                    transitPath = transitPath,
+                    contentHash = contentHash,
+                    stagedAtMillis = System.currentTimeMillis(),
+                    takenAtMillis = exif.takenAtMillis,
+                    latitude = exif.latitude,
+                    longitude = exif.longitude,
+                    positionPointIndex = position.pointIndex,
+                    positionApproximate = position.approximate,
+                    takenAtZoneCertain = exif.takenAtZoneCertain,
+                    source = MediaStorePhotoQuery.readSource(resolver, uri),
+                )
+                true
+            }.onSuccess { wasStaged ->
+                if (!wasStaged) duplicatesSkipped++
+            }.onFailure {
+                Log.w("LoggedTrackRepository", "Photo ignorée, ajout impossible", it)
+                failed++
+            }
+            processed++
+            onProgress(processed)
+        }
+        return StagedPhotoBatch(
+            staged = staged,
+            report = PhotoAddReport(added = staged.size, duplicatesSkipped = duplicatesSkipped, failed = failed),
+        )
+    }
+
+    /**
+     * RIC-149 : la sauvegarde du mode édition, côté ajouts — chaque fichier de transit rejoint
+     * filesDir/photos/ et sa ligne entre en base, dans cet ordre (« fichier d'abord, ligne
+     * ensuite », comme [addPhoto] et [commitImport]).
+     *
+     * Déplacement et non recopie : les octets sont déjà écrits, les relire pour les réécrire
+     * coûterait une passe complète par photo pour rien. `renameTo` échoue si cacheDir et filesDir ne
+     * sont pas sur le même volume (ce n'est pas garanti par la plateforme, seulement habituel), d'où
+     * le repli par copie.
+     *
+     * Best effort photo par photo, comme le lot d'ajout : une photo qui ne peut pas être écrite ne
+     * doit pas emporter les autres ni le reste de la sauvegarde (tags, note). Rend le nombre
+     * d'échecs, que l'appelant raconte.
+     */
+    suspend fun commitPendingPhotos(
+        trackId: String,
+        pending: List<PendingPhotoAdd>,
+        // Appelé une fois par photo traitée, réussie ou non : c'est ce qui alimente le compteur du
+        // dialogue bloquant (voir JournalViewModel.saveDetails). Sur un gros lot, l'opération se
+        // compte en secondes, et une attente muette y est indiscernable d'une app figée.
+        onProgress: () -> Unit = {},
+    ): Int {
+        if (pending.isEmpty()) return 0
+        LoggedTrackPhotoStore.dir(appContext).mkdirs()
+        var failed = 0
+        for (add in pending) {
+            runCatching {
+                val transitFile = LoggedTrackPhotoStore.resolve(appContext, add.transitPath)
+                val extension = transitFile.extension.ifEmpty { "jpg" }
+                val relativePath = LoggedTrackPhotoStore.relativePath(trackId, extension)
+                val target = LoggedTrackPhotoStore.resolve(appContext, relativePath)
+                if (!transitFile.renameTo(target)) {
+                    transitFile.inputStream().use { input -> target.outputStream().use { input.copyTo(it) } }
+                    transitFile.delete()
+                }
+                val entity = LoggedTrackPhotoEntity(
+                    trackId = trackId,
+                    filePath = relativePath,
+                    addedAtMillis = System.currentTimeMillis(),
+                    takenAtMillis = add.takenAtMillis,
+                    latitude = add.latitude,
+                    longitude = add.longitude,
+                    positionPointIndex = add.positionPointIndex,
+                    positionApproximate = add.positionApproximate,
+                    takenAtZoneCertain = add.takenAtZoneCertain,
+                    contentHash = add.contentHash,
+                    sourceDisplayName = add.source.displayName,
+                    sourceRelativePath = add.source.relativePath,
+                    sourceDateTakenMillis = add.source.dateTakenMillis,
+                )
+                try {
+                    dao.insertPhoto(entity)
+                } catch (e: Exception) {
+                    target.delete()
+                    throw e
+                }
+            }.onFailure {
+                Log.w("LoggedTrackRepository", "Photo en transit non enregistrée", it)
+                failed++
+            }
+            onProgress()
+        }
+        return failed
+    }
+
+    /**
+     * RIC-149 : l'abandon du mode édition, côté ajouts — les octets copiés en transit n'ont jamais
+     * eu de ligne, il n'y a donc que des fichiers à retirer.
+     */
+    fun discardPendingPhotos(pending: List<PendingPhotoAdd>) {
+        pending.forEach { LoggedTrackPhotoStore.resolve(appContext, it.transitPath).delete() }
+    }
+
+    /**
+     * RIC-149 : les transits qu'aucune édition en cours ne revendique.
+     *
+     * Un process tué pendant une édition (Android récupère de la mémoire, l'utilisateur balaie
+     * l'app) laisse ses fichiers de transit derrière lui, sans personne pour les abandonner. Le
+     * cache est purgeable par le système, donc ce n'est pas une fuite définitive, mais il n'y a
+     * aucune raison de laisser traîner des octets que plus rien ne peut valider : ce balayage est
+     * fait à l'ouverture du Journal, seul endroit d'où un transit peut naître.
+     *
+     * [keptPaths] existe pour que ce balayage reste sûr même appelé pendant qu'une édition tient
+     * des transits vivants.
+     */
+    fun purgePhotoTransit(keptPaths: Set<String> = emptySet()) {
+        val kept = keptPaths.map { LoggedTrackPhotoStore.resolve(appContext, it) }.toSet()
+        LoggedTrackPhotoStore.transitDir(appContext).listFiles().orEmpty()
+            .filter { it.isFile && it !in kept }
+            .forEach { it.delete() }
+    }
+
+    suspend fun listPhotos(trackId: String): List<LoggedTrackPhotoEntity> = dao.getPhotos(trackId)
+
+    /**
+     * RIC-43 : parmi [photos], celles dont la copie locale a disparu — restauration d'une
+     * sauvegarde antérieure à leur ajout, nettoyage manuel du stockage de l'app, ou tout simplement
+     * une écriture qui n'a jamais abouti.
+     *
+     * Aucune de ces lignes n'est supprimée pour autant, ni ici ni ailleurs : leurs métadonnées
+     * d'origine (colonnes source* de [LoggedTrackPhotoEntity]) sont ce qui permettra de re-acquérir
+     * la photo depuis la galerie (RIC-151). Elles doivent survivre.
+     *
+     * Un stat par photo, fait une fois par rafraîchissement de la liste plutôt qu'à chaque rendu
+     * de carte ou de vignette.
+     */
+    fun missingPhotoFileIds(photos: List<LoggedTrackPhotoEntity>): Set<Long> =
+        photos.filterNot { LoggedTrackPhotoStore.resolve(appContext, it.filePath).exists() }
+            .mapTo(mutableSetOf()) { it.id }
+
+    // Suppression d'une seule photo (RIC-43) : jamais une cascade ici, contrairement à delete(id)
+    // ci-dessus — c'est la ligne elle-même qui disparaît, donc son chemin doit être lu avant.
+    //
+    // RIC-149 : appelée à la sauvegarde du mode édition, jamais au moment où l'utilisateur tape
+    // « Supprimer » — d'ici là la suppression n'est qu'une intention, portée par le ViewModel.
+    suspend fun deletePhoto(id: Long) {
+        val photo = dao.getPhoto(id) ?: return
+        dao.deletePhoto(id)
+        LoggedTrackPhotoStore.resolve(appContext, photo.filePath).delete()
+    }
+
+    /**
+     * RIC-149 : les suppressions accumulées pendant une édition, appliquées d'un bloc.
+     *
+     * [onProgress] a le même rôle que dans [commitPendingPhotos] : les deux moitiés du même geste
+     * alimentent un seul compteur.
+     */
+    suspend fun deletePhotos(ids: Collection<Long>, onProgress: () -> Unit = {}) {
+        ids.forEach {
+            deletePhoto(it)
+            onProgress()
+        }
+    }
+
+    // "Repositionner" (RIC-43) : toujours positionApproximate = false, qu'il s'agisse de corriger
+    // une position déduite par horodatage ou de déplacer une position déjà certaine — un
+    // repositionnement manuel vaut confirmation explicite dans les deux cas.
+    //
+    // Plus atteignable depuis l'UI : le menu d'appui long d'une vignette ne garde que
+    // « Supprimer », la mécanique de placement étant différée à un lot ultérieur. Conservée telle
+    // quelle, avec sa requête DAO, pour que ce lot-là la reprenne plutôt que de la réécrire.
+    suspend fun repositionPhoto(id: Long, positionPointIndex: Int?) {
+        dao.updatePhotoPosition(id, positionPointIndex, positionApproximate = false)
+    }
+
+    /**
+     * RIC-152 : ce que le bouton « Purger les photos » affiche avant d'agir — le nombre de photos
+     * en base et la place que prennent leurs fichiers.
+     *
+     * L'espace est mesuré sur les fichiers réellement pointés par les lignes, pas sur le dossier
+     * entier : c'est ce que la purge va libérer à coup sûr, et une ligne dont le fichier a disparu
+     * (RIC-151) compte alors pour zéro octet, ce qui est exact.
+     */
+    suspend fun photoStorageSummary(): PhotoStorageSummary {
+        val paths = dao.getAllPhotoFilePaths()
+        val totalBytes = paths.sumOf { LoggedTrackPhotoStore.resolve(appContext, it).length() }
+        return PhotoStorageSummary(count = paths.size, totalBytes = totalBytes)
+    }
+
+    /**
+     * RIC-152 : vide la table des photos et le dossier qui porte leurs fichiers.
+     *
+     * Jamais appelée automatiquement, et surtout pas par la bascule des Réglages : désactiver la
+     * fonctionnalité continue de tout conserver. Il n'y a qu'un seul chemin vers ici, un bouton
+     * explicite doublé d'une confirmation.
+     *
+     * Le dossier est retiré en entier plutôt que fichier par fichier : à ce stade plus aucune ligne
+     * ne le référence, donc ce qui y resterait serait par définition orphelin.
+     */
+    suspend fun purgeAllPhotos() {
+        dao.deleteAllPhotos()
+        LoggedTrackPhotoStore.dir(appContext).deleteRecursively()
     }
 
     /**
@@ -462,6 +805,19 @@ class LoggedTrackRepository(context: Context) {
     private fun sha256(text: String): String =
         MessageDigest.getInstance("SHA-256").digest(text.toByteArray(StandardCharsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
+
+    // RIC-43 : par flux plutôt que text.toByteArray() — une photo (quelques Mo) n'a pas à
+    // transiter par une String intermédiaire comme le fait la variante GPX ci-dessus.
+    private fun sha256(input: InputStream): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(8192)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            digest.update(buffer, 0, read)
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
 
     private companion object {
         const val ONE_HOUR_MILLIS = 3_600_000L

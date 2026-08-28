@@ -1,47 +1,52 @@
 package com.bivouac.app.ui.journal
 
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
@@ -55,22 +60,20 @@ import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -84,34 +87,38 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.state.ToggleableState
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.R
 import com.bivouac.app.bilan.JournalOpenRequest
 import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
+import com.bivouac.app.data.db.LoggedTrackPhotoEntity
+import com.bivouac.app.data.db.LoggedTrackPhotoStore
+import com.bivouac.app.data.db.PhotoAddReport
 import com.bivouac.app.data.db.SystemTag
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
@@ -123,24 +130,26 @@ import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.data.model.TrekDatesFormatter
+import com.bivouac.app.data.photo.PhotoLibraryPermission
 import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.journal.ImportProgress
 import com.bivouac.app.journal.JournalDayInfo
 import com.bivouac.app.journal.JournalUiState
 import com.bivouac.app.journal.JournalViewModel
+import com.bivouac.app.journal.PhotoOperationPhase
 import com.bivouac.app.journal.SeparateImportReport
 import com.bivouac.app.ui.components.ChoiceOptionCard
 import com.bivouac.app.ui.components.DrawerStop
 import com.bivouac.app.ui.components.DurationIconColor
-import com.bivouac.app.ui.components.FullScreenEmptyState
 import com.bivouac.app.ui.components.ElevationProfile
+import com.bivouac.app.ui.components.FullScreenEmptyState
 import com.bivouac.app.ui.components.GainIconColor
 import com.bivouac.app.ui.components.InfoText
-import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.StatsRows
-import com.bivouac.app.ui.components.TotalsCapsule
 import com.bivouac.app.ui.components.ThreeStopDrawerHandle
 import com.bivouac.app.ui.components.ThreeStopDrawerStopRow
+import com.bivouac.app.ui.components.TotalsCapsule
+import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.rememberThreeStopDrawerState
 import com.bivouac.app.ui.map.ColoredTrack
 import com.bivouac.app.ui.map.HikeMapView
@@ -148,8 +157,8 @@ import com.bivouac.app.ui.map.MapControls
 import com.bivouac.app.ui.nav.AppScreenHeader
 import com.bivouac.app.ui.nav.AppSection
 import com.bivouac.app.ui.nav.SectionMenuButton
+import java.io.File
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -207,6 +216,17 @@ fun JournalScreen(
     val dayInfoByTrackId by viewModel.dayInfoByTrackId.collectAsStateWithLifecycle()
     val selectedFilterTags by viewModel.selectedFilterTags.collectAsStateWithLifecycle()
     val currentTags by viewModel.currentTags.collectAsStateWithLifecycle()
+    val currentPhotos by viewModel.currentPhotos.collectAsStateWithLifecycle()
+    val missingPhotoIds by viewModel.missingPhotoIds.collectAsStateWithLifecycle()
+    val photoDeleteTarget by viewModel.photoDeleteTarget.collectAsStateWithLifecycle()
+    val photoError by viewModel.photoError.collectAsStateWithLifecycle()
+    val photoAddReport by viewModel.photoAddReport.collectAsStateWithLifecycle()
+    val photosDirty by viewModel.photosDirty.collectAsStateWithLifecycle()
+    val photoOperationProgress by viewModel.photoOperationProgress.collectAsStateWithLifecycle()
+    val photoPickerCandidates by viewModel.photoPickerCandidates.collectAsStateWithLifecycle()
+    val photoPickerLoading by viewModel.photoPickerLoading.collectAsStateWithLifecycle()
+    val photoPickerScope by viewModel.photoPickerScope.collectAsStateWithLifecycle()
+    val photosEnabled by viewModel.photosEnabled.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedLayer by viewModel.selectedLayer.collectAsStateWithLifecycle()
     val importError by viewModel.importError.collectAsStateWithLifecycle()
@@ -249,11 +269,95 @@ fun JournalScreen(
     val pickGpxLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         viewModel.importTracks(uris)
     }
+    val journalContext = LocalContext.current
+    // RIC-43 : vrai quand la permission galerie a été refusée sur une tentative d'ajout réelle.
+    // Le refus n'est plus contourné par un repli sur le Photo Picker système (retiré) : il est
+    // raconté, avec la porte de sortie qui va avec (voir le bloc « accès refusé » du bandeau
+    // Photos). rememberSaveable pour que l'explication survive à une rotation.
+    var photoPermissionDenied by rememberSaveable { mutableStateOf(false) }
+    // RIC-43 : refus devenu définitif, c'est-à-dire dont on sait que le système ne réaffichera plus
+    // d'invite (voir PhotoLibraryPermission.isPermanentlyDenied). Relancer la demande à ce stade
+    // rend la main sans afficher un pixel : c'est le drapeau qui permet de ne pas le faire, et
+    // d'expliquer nous-mêmes à la place.
+    var photoPermissionPermanentlyDenied by rememberSaveable { mutableStateOf(false) }
+    // Le dialogue de cette explication. Un dialogue et non le seul texte du bandeau, parce que le
+    // texte, lui, est déjà à l'écran après le premier refus : l'appui suivant ne changeait donc
+    // plus rien, ce que l'utilisateur a rapporté comme un bouton mort. Un dialogue, lui, se rouvre
+    // à chaque appui, et se voit même quand le bandeau Photos est hors du champ visible du tiroir.
+    var photoPermissionBlockedDialog by rememberSaveable { mutableStateOf(false) }
+    // Demandée seulement au moment réel où l'utilisateur tape « Ajouter », jamais au démarrage.
+    // En bloc (lecture + accès partiel + ACCESS_MEDIA_LOCATION, voir requestedPermissions) : une
+    // seule invite système, et le GPS de l'EXIF débloqué du même geste.
+    val photoPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ ->
+        // Le résultat brut ne suffit pas à décider : sur Android 14, choisir « Sélectionner des
+        // photos » rend READ_MEDIA_IMAGES refusée alors que l'accès partiel, lui, est bien
+        // accordé. C'est isGranted qui tranche, pas la carte de réponses.
+        val granted = PhotoLibraryPermission.isGranted(journalContext)
+        photoPermissionDenied = !granted
+        if (granted) {
+            photoPermissionPermanentlyDenied = false
+            viewModel.openPhotoPicker()
+        } else {
+            // Le refus vient d'être opposé : c'est le seul moment où shouldShowRequestPermissionRationale
+            // répond sans ambiguïté (voir isPermanentlyDenied). S'il est définitif, le dialogue
+            // s'ouvre tout de suite plutôt qu'au prochain appui, qui ne montrerait rien de neuf.
+            photoPermissionPermanentlyDenied = PhotoLibraryPermission.isPermanentlyDenied(journalContext)
+            if (photoPermissionPermanentlyDenied) photoPermissionBlockedDialog = true
+        }
+    }
+    // Rouvre le dialogue système de re-sélection depuis le sélecteur en accès partiel : redemander
+    // la permission est la seule façon de le faire apparaître, aucune API ne l'appelle
+    // directement. La liste de photos visibles ayant pu changer, la requête est relancée quel que
+    // soit le résultat.
+    val selectMorePhotosLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ ->
+        viewModel.reloadPhotoPicker()
+    }
+    // RIC-43 : ce que produit un appui sur « Ajouter ». La décision est prise à part (voir
+    // addPhotosOutcome, plus bas) parce que sa seule règle qui compte, « aucune issue muette »,
+    // mérite d'être vérifiable sans monter un écran.
+    val handleAddPhotosClick: () -> Unit = {
+        val outcome = addPhotosOutcome(
+            photosEnabled = photosEnabled,
+            permissionGranted = PhotoLibraryPermission.isGranted(journalContext),
+            permanentlyDenied = photoPermissionPermanentlyDenied,
+        )
+        when (outcome) {
+            AddPhotosOutcome.IGNORED -> Unit
+            AddPhotosOutcome.OPEN_PICKER -> {
+                photoPermissionDenied = false
+                photoPermissionPermanentlyDenied = false
+                viewModel.openPhotoPicker()
+            }
+            // Refus définitif : la demande rendrait la main sans rien afficher. On ne la lance donc
+            // pas, et le dialogue s'ouvre à la place, à chaque appui.
+            AddPhotosOutcome.EXPLAIN_BLOCKED -> photoPermissionBlockedDialog = true
+            AddPhotosOutcome.REQUEST_PERMISSION -> {
+                // Posé avant le lancement, et pas seulement au retour : l'explication du bandeau
+                // est alors à l'écran quoi qu'il advienne de la demande, y compris si le système
+                // rendait la main sans invite ET sans rappeler personne. Le retour la lèvera si la
+                // permission finit par être accordée.
+                photoPermissionDenied = true
+                photoPermissionLauncher.launch(PhotoLibraryPermission.requestedPermissions)
+            }
+        }
+    }
 
     val coloredTracks = remember(multiTrack) { multiTrack?.entries?.let { assignTrackColors(it) }.orEmpty() }
     var highlightedTrackId by remember(multiTrack) { mutableStateOf<String?>(null) }
     val onToggleHighlight = { id: String -> highlightedTrackId = if (highlightedTrackId == id) null else id }
     var renameDialogVisible by remember { mutableStateOf(false) }
+    // RIC-43 : hissé ici (plutôt que local à ThreeStopJournalDetail) pour être ouvrable aussi
+    // bien depuis le bandeau/la galerie que depuis la bulle du curseur sur la carte, qui vit dans
+    // un composable frère (JournalMap).
+    //
+    // rememberSaveable et non remember, alors même que la rotation ne recrée plus l'Activity (voir
+    // configChanges au manifest) : la mort du process en arrière-plan, elle, reste possible, et
+    // c'est le même filet. La visionneuse doit tourner avec le téléphone, pas se refermer.
+    var viewedPhotoIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     // RIC-19 : seedé depuis detail.initialCursorIndex plutôt que toujours null — une ouverture
     // venue d'un record du Bilan sur un jour précis arrive avec son curseur déjà positionné.
     var cursorIndex by remember(detail?.entry?.id) { mutableStateOf(detail?.initialCursorIndex) }
@@ -286,6 +390,18 @@ fun JournalScreen(
                     onMapTopMeasured = { mapBoxTopPx = it },
                     cursorIndex = cursorIndex,
                     onCursorChanged = { cursorIndex = it },
+                    // RIC-43 : la croix de la bulle retire le curseur lui-même, pas seulement la
+                    // bulle — c'est le curseur qui la fait exister, une bulle fermée sur un curseur
+                    // resté planté reviendrait au moindre déplacement de la carte.
+                    onCursorCleared = { cursorIndex = null },
+                    photos = currentPhotos,
+                    missingPhotoIds = missingPhotoIds,
+                    onPhotoBubbleClick = { file ->
+                        val index = currentPhotos.indexOfFirst {
+                            LoggedTrackPhotoStore.resolve(journalContext, it.filePath) == file
+                        }
+                        if (index >= 0) viewedPhotoIndex = index
+                    },
                     nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
                 )
                 ThreeStopJournalDetail(
@@ -304,6 +420,20 @@ fun JournalScreen(
                     tagsByTrackId = tagsByTrackId,
                     onSaveDetails = viewModel::saveDetails,
                     onRenameClick = { renameDialogVisible = true },
+                    currentPhotos = currentPhotos,
+                    // RIC-149 : dernier verrou de la sortie d'écran. Le dialogue bloquant couvre
+                    // déjà la croix et le retour arrière par construction (c'est une fenêtre
+                    // par-dessus tout l'écran) ; ce drapeau est ce qui tient si jamais un chemin
+                    // lui échappait, la perte de photos n'étant pas rattrapable.
+                    photoOperationInFlight = photoOperationProgress != null,
+                    onAddPhotosClick = handleAddPhotosClick,
+                    onDeletePhotoClick = viewModel::requestDeletePhoto,
+                    onPhotoClick = { index -> viewedPhotoIndex = index },
+                    photosDirty = photosDirty,
+                    onDiscardPhotoEdits = viewModel::discardPhotoEdits,
+                    photosEnabled = photosEnabled,
+                    photoPermissionDenied = photoPermissionDenied,
+                    onOpenAppSettingsClick = { journalContext.openAppSettings() },
                 )
             }
         }
@@ -504,6 +634,183 @@ fun JournalScreen(
             },
         )
     }
+
+    // RIC-43 : confirmation par dialogue plutôt qu'un simple snackbar (décidé en séance de
+    // conception) — jamais un lot de plus de quelques photos à la fois, la friction reste
+    // acceptable. Ne touche jamais l'original côté galerie système, seulement la copie locale.
+    photoDeleteTarget?.let {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPhotoDeleteConfirmation,
+            title = { Text("Supprimer cette photo ?") },
+            text = { Text("Seule la copie dans Bivouac est supprimée, pas l'original dans ta galerie.") },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmDeletePhoto) {
+                    Text("Supprimer", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissPhotoDeleteConfirmation) { Text("Annuler") }
+            },
+        )
+    }
+
+    // RIC-43 : l'accès à la galerie a été refusé pour de bon. Le seul retour possible à ce
+    // stade, puisque le système ne redemandera plus rien et que l'application ne peut pas rouvrir
+    // son invite. Il porte la seule action qui débloque vraiment la situation.
+    if (photoPermissionBlockedDialog) {
+        AlertDialog(
+            onDismissRequest = { photoPermissionBlockedDialog = false },
+            title = { Text("Accès aux photos refusé") },
+            text = {
+                Text(
+                    "Android ne redemandera plus l'autorisation depuis l'application. " +
+                        "Pour ajouter des photos, autorise l'accès à la galerie dans les réglages de l'application.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    photoPermissionBlockedDialog = false
+                    journalContext.openAppSettings()
+                }) { Text("Ouvrir les réglages") }
+            },
+            dismissButton = {
+                TextButton(onClick = { photoPermissionBlockedDialog = false }) { Text("Annuler") }
+            },
+        )
+    }
+
+    // RIC-149 : les opérations photo longues, tant qu'elles durent. Bloquant et sans porte de
+    // sortie, sur le patron du rattrapage de base au démarrage (voir ElevationBackfillGate) : la
+    // sortie de l'écran attend déjà la fin de l'écriture (voir JournalViewModel.saveDetails), ce
+    // dialogue est ce qui donne son sens à cette attente au lieu d'une app qui semble figée.
+    //
+    // Un seul dialogue pour l'import et pour l'enregistrement, et non deux composants voisins :
+    // c'est la même attente vue par l'utilisateur, seul le titre change. La recette a montré que
+    // c'est l'import qui la fait vraiment vivre (il lit et recopie chaque fichier, quand
+    // l'enregistrement se contente d'un renommage suivi d'un insert), alors qu'il n'avait qu'un
+    // indicateur circulaire en marge du bandeau, sans compteur, et laissait la croix de l'écran
+    // cliquable pendant tout ce temps.
+    //
+    // Rendu ici, au niveau de l'écran, et non dans la vue détail : il couvre tous les chemins
+    // (validation du sélecteur, disquette, bouton « Enregistrer » du dialogue de sortie) du seul
+    // fait qu'il suit l'état du ViewModel, sans qu'aucun n'ait à y penser.
+    photoOperationProgress?.let { progress ->
+        AlertDialog(
+            onDismissRequest = {},
+            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+            title = {
+                Text(
+                    when (progress.phase) {
+                        PhotoOperationPhase.IMPORT -> "Import des photos"
+                        PhotoOperationPhase.COMMIT -> "Enregistrement des photos"
+                    },
+                )
+            },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+                    Text("${progress.done} sur ${progress.total}…")
+                }
+            },
+            confirmButton = {},
+        )
+    }
+
+    // RIC-43 : échec d'une action photo (ajout, suppression, repositionnement, ouverture du
+    // sélecteur filtré). Même traitement que importError ci-dessus : un dialogue à simple
+    // acquittement, la vue détail restant utilisable derrière.
+    photoError?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPhotoError,
+            title = { Text("Photos") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissPhotoError) { Text("OK") }
+            },
+        )
+    }
+
+    photoAddReport?.let { report ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPhotoAddReport,
+            title = { Text("Ajout terminé") },
+            text = { Text(formatPhotoAddReport(report)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissPhotoAddReport) { Text("OK") }
+            },
+        )
+    }
+
+    // currentPhotos.isNotEmpty() en garde : l'index survit à une rotation (rememberSaveable) et
+    // la liste peut être devenue vide entre-temps, notamment parce que la fonctionnalité photos
+    // vient d'être désactivée dans les Réglages (RIC-152). Une visionneuse sur zéro photo n'a
+    // rien à montrer.
+    viewedPhotoIndex?.takeIf { currentPhotos.isNotEmpty() }?.let { index ->
+        PhotoViewerDialog(
+            photos = currentPhotos,
+            initialIndex = index.coerceIn(currentPhotos.indices),
+            onDismiss = { viewedPhotoIndex = null },
+        )
+    }
+
+    // Le dialogue s'ouvre dès le début de la requête MediaStore, pas seulement quand elle a
+    // abouti : sur une pellicule fournie elle prend une seconde ou deux, pendant lesquelles
+    // l'appui sur « Ajouter » ne donnait aucun retour. C'est aussi ce qui rend enfin atteignable
+    // le CircularProgressIndicator du dialogue, jusqu'ici du code mort.
+    if (photoPickerLoading || photoPickerCandidates != null) {
+        PhotoPickerDialog(
+            candidates = photoPickerCandidates.orEmpty(),
+            loading = photoPickerLoading,
+            scope = photoPickerScope,
+            // Relu à chaque recomposition et non mémorisé : le dialogue système de re-sélection
+            // peut faire passer l'app d'un accès partiel à un accès complet pendant que ce
+            // sélecteur est ouvert, auquel cas le bandeau doit disparaître de lui-même.
+            partialAccess = PhotoLibraryPermission.isPartialAccess(journalContext),
+            onScopeChange = viewModel::setPhotoPickerScope,
+            onSelectMorePhotos = { selectMorePhotosLauncher.launch(PhotoLibraryPermission.requestedPermissions) },
+            onOpenAppSettings = { journalContext.openAppSettings() },
+            onConfirm = viewModel::confirmPhotoSelection,
+            onDismiss = viewModel::closePhotoPicker,
+        )
+    }
+}
+
+/**
+ * RIC-43 : ce que le bilan de fin de lot dit, quand il a quelque chose à dire (voir
+ * JournalViewModel.addPhotos). Les doublons et les échecs sont les deux lignes qui comptent : la
+ * première explique pourquoi la sélection ne se retrouve pas entièrement dans le bandeau, la
+ * seconde qu'il reste quelque chose à refaire.
+ */
+private fun formatPhotoAddReport(report: PhotoAddReport): String {
+    val lines = mutableListOf<String>()
+    lines += when (report.added) {
+        // RIC-149 : « en attente d'enregistrement » et non « ajoutée » tout court — à ce stade les
+        // photos sont en transit, visibles dans le bandeau mais pas encore dans le Journal. Le
+        // bilan reste rendu au moment de la sélection, seul instant où l'on sait ce qui a été
+        // écarté ou n'a pas pu être lu ; le décaler à la sauvegarde reviendrait à annoncer un
+        // doublon plusieurs minutes après le geste qui l'a produit.
+        0 -> "Aucune photo ajoutée."
+        1 -> "1 photo ajoutée, en attente d'enregistrement."
+        else -> "${report.added} photos ajoutées, en attente d'enregistrement."
+    }
+    if (report.duplicatesSkipped > 0) {
+        lines += if (report.duplicatesSkipped == 1) {
+            "1 photo écartée (déjà sur cette sortie)."
+        } else {
+            "${report.duplicatesSkipped} photos écartées (déjà sur cette sortie)."
+        }
+    }
+    if (report.failed > 0) {
+        lines += if (report.failed == 1) {
+            "1 photo illisible, non ajoutée."
+        } else {
+            "${report.failed} photos illisibles, non ajoutées."
+        }
+    }
+    return lines.joinToString("\n")
 }
 
 /**
@@ -668,6 +975,10 @@ private fun JournalMap(
     onMapTopMeasured: (Int) -> Unit,
     cursorIndex: Int?,
     onCursorChanged: (Int) -> Unit,
+    onCursorCleared: () -> Unit = {},
+    photos: List<LoggedTrackPhotoEntity> = emptyList(),
+    missingPhotoIds: Set<Long> = emptySet(),
+    onPhotoBubbleClick: (File) -> Unit = {},
     multiTracks: List<ColoredTrack> = emptyList(),
     highlightedTrackId: String? = null,
     onTraceTapped: (String) -> Unit = {},
@@ -691,6 +1002,10 @@ private fun JournalMap(
             dayBoundaryIndices = dayBoundaryIndices,
             cursorIndex = cursorIndex,
             onCursorChanged = onCursorChanged,
+            onCursorCleared = onCursorCleared,
+            photos = photos,
+            missingPhotoIds = missingPhotoIds,
+            onPhotoBubbleClick = onPhotoBubbleClick,
             multiTracks = multiTracks,
             highlightedTrackId = highlightedTrackId,
             onTraceTapped = onTraceTapped,
@@ -709,6 +1024,10 @@ private fun JournalMap(
                 nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
             )
         }
+        // RIC-43 : la bannière « Fais glisser le repère sur la carte » vivait ici. Elle part avec le
+        // flux de repositionnement, différé à un lot ultérieur — le menu d'appui long d'une vignette
+        // ne garde que « Supprimer ». Conséquence assumée : une photo sans position reste non
+        // placée, visible en galerie et dans le bandeau, absente de la carte.
     }
 }
 
@@ -1350,7 +1669,33 @@ internal fun ThreeStopJournalDetail(
     onCursorDragged: (Int) -> Unit,
     currentTags: List<String>,
     tagsByTrackId: Map<String, List<String>>,
-    onSaveDetails: (Set<String>, String) -> Unit,
+    // RIC-149 : le troisième paramètre est appelé une fois tout écrit, photos comprises. C'est ce
+    // qui permet à une sortie d'écran d'attendre la fin de l'enregistrement au lieu de partir
+    // pendant, voir JournalViewModel.saveDetails et le dialogue de sortie plus bas.
+    onSaveDetails: (Set<String>, String, () -> Unit) -> Unit,
+    currentPhotos: List<LoggedTrackPhotoEntity> = emptyList(),
+    // RIC-149 : un import ou un enregistrement de photos est en cours. Le dialogue bloquant de
+    // JournalScreen est déjà par-dessus l'écran à cet instant, donc ni la croix ni le retour
+    // arrière ne sont atteignables ; ce drapeau ferme quand même les deux, pour que la garantie
+    // « on ne quitte pas pendant une opération photo » ne repose pas sur le seul fait qu'une
+    // fenêtre est affichée par-dessus.
+    photoOperationInFlight: Boolean = false,
+    onAddPhotosClick: () -> Unit = {},
+    onDeletePhotoClick: (LoggedTrackPhotoEntity) -> Unit = {},
+    // RIC-149 : les ajouts en transit et les suppressions en attente vivent dans le ViewModel (ce
+    // sont des fichiers, pas un état de composition), mais ils font partie du même brouillon que les
+    // tags et la note ci-dessus. Ces deux paramètres sont ce qui les y raccroche : le premier
+    // alimente isDirty, le second est appelé sur les mêmes sorties que l'abandon d'un brouillon.
+    photosDirty: Boolean = false,
+    onDiscardPhotoEdits: () -> Unit = {},
+    // RIC-152 : faux quand la fonctionnalité photos est débrayée dans les Réglages. Le bandeau
+    // entier disparaît alors, plutôt que d'afficher un bloc vide avec un bouton d'ajout inerte.
+    photosEnabled: Boolean = true,
+    photoPermissionDenied: Boolean = false,
+    onOpenAppSettingsClick: () -> Unit = {},
+    // Index dans currentPhotos — le tap peut venir du bandeau ou de la galerie plate, les deux
+    // ouvrent la même visionneuse hissée au niveau de l'écran (voir plus bas), pas ici.
+    onPhotoClick: (Int) -> Unit = {},
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = LocalDensity.current
@@ -1377,7 +1722,10 @@ internal fun ThreeStopJournalDetail(
                 .filterNot { tag -> SystemTag.entries.any { it.value == tag } }
                 .distinct()
         }
-        val isDirty = draftTags != currentTags.toSet() || draftNote.text != entry.note
+        // RIC-149 : les photos sont un terme de plus dans le même brouillon. Une édition qui n'a
+        // touché que des photos allume donc l'icône de sauvegarde et déclenche l'avertissement de
+        // sortie, exactement comme une note modifiée.
+        val isDirty = draftTags != currentTags.toSet() || draftNote.text != entry.note || photosDirty
 
         fun beginEditing() {
             draftTags = currentTags.toSet()
@@ -1389,16 +1737,38 @@ internal fun ThreeStopJournalDetail(
             isEditing = true
         }
 
+        // RIC-149 : l'abandon des photos est appelé explicitement sur chaque sortie qui n'enregistre
+        // pas, et non sur un effet observant isEditing comme le faisait le repositionnement. Un
+        // effet se déclencherait aussi sur la sortie par la disquette, en concurrence avec
+        // l'enregistrement qu'elle vient de lancer — course perdue d'avance sur des fichiers.
+        fun abandonEditing() {
+            isEditing = false
+            onDiscardPhotoEdits()
+        }
+
+        // Toutes les sorties de l'écran détail passent par ici : la croix, le retour arrière, et
+        // le dialogue « modifications non enregistrées » qu'elles ouvrent le cas échéant.
         fun requestExit(exit: () -> Unit) {
+            // RIC-149 : une opération photo en vol interdit la sortie, y compris la sortie
+            // « propre » qui abandonnerait le brouillon — abandonEditing efface les fichiers de
+            // transit, et les effacer pendant qu'on est en train de les écrire est exactement la
+            // perte de photos que ce lot ferme. Rien n'est proposé à la place (pas de dialogue,
+            // pas de message) : l'attente dure quelques secondes et le dialogue bloquant la
+            // raconte déjà.
+            if (photoOperationInFlight) return
             if (isEditing && isDirty) pendingExit = exit else {
-                isEditing = false
+                abandonEditing()
                 exit()
             }
         }
 
-        fun saveAndStopEditing() {
-            if (isDirty) onSaveDetails(draftTags, draftNote.text)
+        // [onFinished] n'est appelé qu'une fois l'enregistrement réellement terminé, jamais au
+        // retour de cet appel : la disquette n'en a pas l'usage (elle reste sur l'écran), le
+        // dialogue de sortie y met sa fermeture. Le cas « rien à enregistrer » l'appelle tout de
+        // suite, sinon une sortie propre resterait à quai faute d'écriture à attendre.
+        fun saveAndStopEditing(onFinished: () -> Unit = {}) {
             isEditing = false
+            if (isDirty) onSaveDetails(draftTags, draftNote.text, onFinished) else onFinished()
         }
 
         fun toggleSystemDraftTag(systemTag: SystemTag) {
@@ -1724,6 +2094,102 @@ internal fun ThreeStopJournalDetail(
                             currentTags.forEach { tag -> ReadOnlyTagChip(tagLabel(tag), tagColor(tag)) }
                         }
                     }
+                    // RIC-152 : tout le bandeau Photos, d'un bloc. Débrayée, la
+                    // fonctionnalité ne laisse rien derrière elle ici, pas même un titre de
+                    // section vide — et la carte n'a pas non plus de marqueur ni de bulle
+                    // photo, currentPhotos étant déjà vide en amont (voir JournalViewModel).
+                    if (photosEnabled) {
+                        // RIC-149 : le séparateur qui marquait ici la frontière entre deux régimes
+                        // (Tags sous le crayon, Photos écrivant toujours immédiatement) n'a plus
+                        // d'objet, les deux blocs obéissant désormais au même mode édition. Retiré :
+                        // c'était un pansement sur une incohérence, pas un élément de mise en page.
+                        //
+                        // rememberSaveable, pas remember : même filet que viewedPhotoIndex plus
+                        // haut, pour la galerie ouverte — la rotation ne recrée plus l'Activity
+                        // (voir configChanges au manifest), la mort du process en arrière-plan
+                        // reste possible.
+                        var galleryOpen by rememberSaveable { mutableStateOf(false) }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Photos", style = MaterialTheme.typography.titleSmall)
+                                if (currentPhotos.isNotEmpty()) {
+                                    Text(
+                                        "· tout voir",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.clickable { galleryOpen = true },
+                                    )
+                                }
+                            }
+                            // RIC-149 : l'ajout n'existe qu'en mode édition, comme les tags et la
+                            // note. Le bouton reste dans l'en-tête de la section plutôt que de
+                            // devenir une tuile « + » en fin de bandeau : le bandeau disparaît
+                            // quand il n'y a aucune photo (« Aucune photo pour l'instant »), une
+                            // tuile aurait donc eu besoin d'un second point d'entrée pour ce
+                            // cas-là, et l'en-tête porte déjà l'autre action de la section
+                            // (« tout voir »).
+                            //
+                            // RIC-149 : l'indicateur circulaire qui prenait la place du bouton
+                            // pendant un import a été retiré, le dialogue bloquant le remplace.
+                            // Il ne disait que « quelque chose tourne », sans dire quoi ni
+                            // combien il en restait, et il était en marge d'un écran qui, lui,
+                            // restait entièrement manipulable — croix comprise.
+                            if (isEditing) {
+                                TextButton(onClick = onAddPhotosClick) { Text("Ajouter") }
+                            }
+                        }
+                        // RIC-43 : accès galerie refusé sur une tentative d'ajout réelle. Le WIP
+                        // retombait ici sur le Photo Picker système, qui ne demandait rien mais
+                        // rendait des photos sans GPS : le repli est retiré, l'état est expliqué, et
+                        // il porte sa propre sortie de secours vers les réglages système de l'app,
+                        // seul endroit où un refus définitif se défait.
+                        if (photoPermissionDenied && isEditing) {
+                            Text(
+                                "L'ajout de photos nécessite l'accès à la galerie.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                            TextButton(
+                                onClick = onOpenAppSettingsClick,
+                                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
+                            ) {
+                                Text("Ouvrir les réglages de l'application")
+                            }
+                        }
+                        if (currentPhotos.isEmpty()) {
+                            Text(
+                                "Aucune photo pour l'instant.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else if (currentPhotos.isNotEmpty()) {
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                itemsIndexed(currentPhotos, key = { _, photo -> photo.id }) { index, photo ->
+                                    PhotoThumbnail(
+                                        photo = photo,
+                                        editing = isEditing,
+                                        onClick = { onPhotoClick(index) },
+                                        onDeleteClick = { onDeletePhotoClick(photo) },
+                                    )
+                                }
+                            }
+                            if (galleryOpen) {
+                                PhotoGalleryDialog(
+                                    photos = currentPhotos,
+                                    onPhotoClick = { index -> galleryOpen = false; onPhotoClick(index) },
+                                    onDismiss = { galleryOpen = false },
+                                )
+                            }
+                        }
+                    }
                     Text("Notes", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
                     if (isEditing) {
                         // RIC-100. La note n'a pas de plafond de hauteur, donc le champ peut
@@ -1783,19 +2249,27 @@ internal fun ThreeStopJournalDetail(
             AlertDialog(
                 onDismissRequest = { pendingExit = null },
                 title = { Text("Modifications non enregistrées") },
-                text = { Text("Les tags et la note ont des modifications non enregistrées.") },
+                // RIC-149 : les photos sont citées avec les tags et la note — depuis qu'elles
+                // obéissent au même mode édition, « ne pas enregistrer » jette aussi les photos
+                // ajoutées et rend celles qu'on venait de supprimer.
+                text = { Text("Les modifications en cours (tags, note, photos) ne seront pas conservées.") },
                 confirmButton = {
                     TextButton(onClick = {
-                        saveAndStopEditing()
                         pendingExit = null
-                        exit()
+                        // RIC-149 : la sortie est passée en rappel de fin d'enregistrement. Elle
+                        // était appelée dans la foulée de la sauvegarde, et closeTrack effaçait
+                        // alors les fichiers de transit que l'enregistrement était en train de
+                        // déplacer : une partie des photos ajoutées se perdait, ce que la
+                        // disquette, qui ne quitte pas l'écran, ne faisait jamais. L'attente est
+                        // couverte par le dialogue bloquant de JournalScreen.
+                        saveAndStopEditing { exit() }
                     }) { Text("Enregistrer") }
                 },
                 dismissButton = {
                     Row {
                         TextButton(onClick = { pendingExit = null }) { Text("Annuler") }
                         TextButton(onClick = {
-                            isEditing = false
+                            abandonEditing()
                             pendingExit = null
                             exit()
                         }) { Text("Ne pas enregistrer", color = MaterialTheme.colorScheme.error) }
@@ -1803,6 +2277,62 @@ internal fun ThreeStopJournalDetail(
                 },
             )
         }
+    }
+}
+
+/**
+ * RIC-43 : ce qu'un appui sur « Ajouter » (bandeau Photos) doit produire.
+ *
+ * Signalé en recette : après un premier refus de la permission galerie, l'appui ne produisait plus
+ * rien, ni sélecteur, ni invite système, ni explication. Le code relançait pourtant bien la demande
+ * à chaque fois, en pariant sur le retour immédiat d'Android (une demande refusée définitivement
+ * rend la main sans afficher un pixel) pour rallumer l'état expliqué. Le pari tenait mal : cet état
+ * était déjà allumé depuis le premier refus, donc le rallumer ne changeait rien à l'écran, et c'est
+ * une ligne discrète dans un tiroir qui défile, pas forcément sous les yeux au moment de l'appui.
+ * Un état qui ne change pas ne se voit pas : ce qu'il fallait, c'était un événement.
+ *
+ * D'où [EXPLAIN_BLOCKED][AddPhotosOutcome.EXPLAIN_BLOCKED], qui ouvre un dialogue au lieu de
+ * relancer une demande qui ne dessinera rien. Et d'où cette fonction, extraite du composable pour
+ * que la règle qui compte se vérifie sans monter d'écran : hors fonctionnalité débrayée, aucune
+ * issue n'est muette.
+ */
+internal enum class AddPhotosOutcome {
+    // RIC-152 : photos débrayées dans les Réglages. Seule issue silencieuse, et elle est
+    // inatteignable en pratique, le bouton n'étant pas affiché dans ce cas : c'est une garde de
+    // dernier recours, pour que la règle « aucune demande de permission possible » soit tenue par
+    // le code qui déclenche la demande et pas seulement par celui qui affiche le bouton.
+    IGNORED,
+    OPEN_PICKER,
+    REQUEST_PERMISSION,
+    EXPLAIN_BLOCKED,
+}
+
+internal fun addPhotosOutcome(
+    photosEnabled: Boolean,
+    permissionGranted: Boolean,
+    permanentlyDenied: Boolean,
+): AddPhotosOutcome = when {
+    !photosEnabled -> AddPhotosOutcome.IGNORED
+    permissionGranted -> AddPhotosOutcome.OPEN_PICKER
+    permanentlyDenied -> AddPhotosOutcome.EXPLAIN_BLOCKED
+    else -> AddPhotosOutcome.REQUEST_PERMISSION
+}
+
+/**
+ * RIC-43 : la page « informations sur l'application » du système, seul endroit où se défait un
+ * refus de permission devenu définitif — Android ne réaffiche plus d'invite à ce stade, et rien
+ * dans l'app ne peut la rouvrir.
+ *
+ * runCatching parce qu'un Context sans activité pour l'accueillir (constructeur ROM exotique,
+ * profil restreint) ferait remonter une ActivityNotFoundException : ne pas ouvrir les réglages est
+ * un échec acceptable, planter en tentant de les ouvrir ne l'est pas.
+ */
+private fun Context.openAppSettings() {
+    runCatching {
+        startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
     }
 }
 

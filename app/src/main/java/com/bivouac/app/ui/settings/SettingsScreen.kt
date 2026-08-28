@@ -31,11 +31,14 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -68,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.BuildConfig
+import com.bivouac.app.data.db.PhotoStorageSummary
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackStatsCalculator
@@ -107,6 +111,9 @@ fun SettingsScreen(
     val selectedTrackCount by viewModel.selectedTrackCount.collectAsStateWithLifecycle()
     val journalTrackCount by viewModel.journalTrackCount.collectAsStateWithLifecycle()
     val nonFreeFeaturesDisabled by viewModel.nonFreeFeaturesDisabled.collectAsStateWithLifecycle()
+    val photosEnabled by viewModel.photosEnabled.collectAsStateWithLifecycle()
+    val photoStorage by viewModel.photoStorage.collectAsStateWithLifecycle()
+    val photoPurgeConfirmation by viewModel.photoPurgeConfirmation.collectAsStateWithLifecycle()
     val lastBackupAtMillis by viewModel.lastBackupAtMillis.collectAsStateWithLifecycle()
     val backupInProgress by viewModel.backupInProgress.collectAsStateWithLifecycle()
     val restoreInProgress by viewModel.restoreInProgress.collectAsStateWithLifecycle()
@@ -161,6 +168,12 @@ fun SettingsScreen(
                 disabled = nonFreeFeaturesDisabled,
                 onToggle = viewModel::setNonFreeFeaturesDisabled,
             )
+            JournalPhotosSection(
+                enabled = photosEnabled,
+                onToggle = viewModel::setPhotosEnabled,
+                storage = photoStorage,
+                onPurgeClick = viewModel::requestPhotoPurge,
+            )
             DataSection(
                 lastBackupAtMillis = lastBackupAtMillis,
                 backupInProgress = backupInProgress,
@@ -181,6 +194,29 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+    }
+
+    // RIC-152 : la seule suppression de photos en masse de l'app, donc une confirmation qui dit
+    // exactement ce qui part et qu'on n'en revient pas. Le chiffre est repris du relevé fait au
+    // moment du clic, pas recalculé : le dialogue doit confirmer ce que le bouton annonçait.
+    photoPurgeConfirmation?.let { storage ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPhotoPurge,
+            title = { Text("Purger les photos ?") },
+            text = {
+                Text(
+                    "${formatPhotoStorage(storage)} vont être supprimées définitivement du Journal, " +
+                        "fichiers compris. Les photos d'origine de ta galerie ne sont pas touchées. " +
+                        "Cette action est irréversible.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmPhotoPurge) {
+                    Text("Purger", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = viewModel::dismissPhotoPurge) { Text("Annuler") } },
+        )
     }
 
     backupError?.let { message ->
@@ -685,6 +721,72 @@ private fun NonFreeFeaturesSection(disabled: Boolean, onToggle: (Boolean) -> Uni
             trailing = { Switch(checked = disabled, onCheckedChange = onToggle) },
         )
     }
+}
+
+/**
+ * RIC-152 : la fonctionnalité photos du Journal, débrayable en entier.
+ *
+ * Activée par défaut, à l'inverse de la bascule non libre juste au-dessus : celle-ci ne protège
+ * de rien, elle existe pour qui ne veut simplement pas de photos dans son journal, et n'a donc
+ * aucune raison de rendre l'app plus pauvre par défaut.
+ *
+ * Le sous-titre insiste sur ce qui n'est pas évident : désactiver masque, ne supprime pas. Sans
+ * cette phrase, la bascule ressemble à un bouton dangereux et personne ne l'essaie.
+ */
+@Composable
+private fun JournalPhotosSection(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    storage: PhotoStorageSummary?,
+    onPurgeClick: () -> Unit,
+) {
+    SettingsSection(label = "Photos du Journal") {
+        SettingsRow(
+            icon = Icons.Default.PhotoLibrary,
+            title = "Associer des photos aux sorties",
+            subtitle = "Ajouter des photos à une sortie, les placer sur la trace et les revoir. " +
+                "Désactivée, aucune photo n'apparaît et l'accès à la galerie n'est jamais demandé ; " +
+                "rien n'est supprimé, tout revient en réactivant.",
+            secondaryAvatar = true,
+            trailing = { Switch(checked = enabled, onCheckedChange = onToggle) },
+        )
+        // RIC-152 : la contrepartie du « rien n'est supprimé » ci-dessus. Elle n'apparaît qu'une
+        // fois la fonctionnalité débrayée ET s'il reste effectivement des photos : proposer de
+        // purger une banque vide n'aurait aucun sens, et le proposer alors que la fonctionnalité
+        // tourne encore transformerait une bascule réversible en piège.
+        //
+        // La volumétrie est dans le libellé du bouton et pas seulement dans le dialogue : c'est
+        // elle qui donne une raison de cliquer, et c'est la question qu'on se pose en arrivant ici.
+        if (!enabled && storage != null && storage.count > 0) {
+            OutlinedButton(
+                onClick = onPurgeClick,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Purger les photos (${formatPhotoStorage(storage)})")
+            }
+        }
+    }
+}
+
+/** RIC-152 : « 12 photos, 34,5 Mo » — ce que la purge va retirer, lignes et fichiers. */
+internal fun formatPhotoStorage(storage: PhotoStorageSummary): String {
+    val photos = if (storage.count == 1) "1 photo" else "${storage.count} photos"
+    return "$photos, ${formatBytes(storage.totalBytes)}"
+}
+
+/**
+ * Taille lisible en unités décimales (Mo = 10^6 octets), comme les fabricants et les Réglages
+ * d'Android l'affichent — et non en Mio, qui donnerait un chiffre différent de celui que le système
+ * annonce pour la même app, sans que personne puisse expliquer l'écart.
+ */
+internal fun formatBytes(bytes: Long): String = when {
+    bytes >= 1_000_000_000L -> String.format(Locale.FRANCE, "%.1f Go", bytes / 1_000_000_000.0)
+    bytes >= 1_000_000L -> String.format(Locale.FRANCE, "%.1f Mo", bytes / 1_000_000.0)
+    bytes >= 1_000L -> String.format(Locale.FRANCE, "%.0f Ko", bytes / 1_000.0)
+    else -> "$bytes o"
 }
 
 @Composable

@@ -40,6 +40,7 @@ class SettingsPreferences(private val context: Context) {
         val SELECTED_TRACK_IDS = stringPreferencesKey("selection_track_ids")
         val NON_FREE_DISABLED = booleanPreferencesKey("non_free_features_disabled")
         val LAST_BACKUP_AT = longPreferencesKey("last_backup_at_millis")
+        val PHOTOS_ENABLED = booleanPreferencesKey("journal_photos_enabled")
     }
 
     // RIC-115 : contrairement à AUTO_PAUSE/SELECTION_PAUSE (repli sur SpeedCalibration.DEFAULT.
@@ -105,6 +106,15 @@ class SettingsPreferences(private val context: Context) {
 
     val lastBackupAtMillis: Flow<Long?> = context.settingsDataStore.data.map { it[Keys.LAST_BACKUP_AT] }
 
+    // RIC-152 : débrayage de toute la fonctionnalité photos du Journal. Activée par défaut,
+    // contrairement à nonFreeFeaturesDisabled ci-dessus, et pour une raison inverse : celle-là
+    // protège d'un service tiers qu'on peut ne pas vouloir joindre, celle-ci ne concerne que des
+    // données locales et n'existe que pour qui ne veut pas de photos dans son journal.
+    //
+    // Désactiver ne supprime jamais rien, ni ligne ni fichier : les photos existantes cessent
+    // seulement d'être montrées, et réapparaissent telles quelles en réactivant.
+    val photosEnabled: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.PHOTOS_ENABLED] ?: true }
+
     suspend fun setSpeedCalibrationMode(mode: SpeedCalibrationMode) {
         context.settingsDataStore.edit { it[Keys.MODE] = mode.name }
     }
@@ -149,5 +159,9 @@ class SettingsPreferences(private val context: Context) {
 
     suspend fun setLastBackupAtMillis(millis: Long) {
         context.settingsDataStore.edit { it[Keys.LAST_BACKUP_AT] = millis }
+    }
+
+    suspend fun setPhotosEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { it[Keys.PHOTOS_ENABLED] = enabled }
     }
 }

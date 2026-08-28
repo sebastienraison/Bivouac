@@ -46,7 +46,10 @@ class ThreeStopJournalDetailDirtyIndicatorTest {
                     onCursorDragged = {},
                     currentTags = emptyList(),
                     tagsByTrackId = emptyMap(),
-                    onSaveDetails = { _, _ -> },
+                    // RIC-149 : le troisième paramètre est le rappel de fin d'enregistrement, que
+                    // seule la sortie d'écran utilise. Appelé tout de suite ici, comme le ferait un
+                    // enregistrement instantané : ce test ne porte que sur l'icône de sauvegarde.
+                    onSaveDetails = { _, _, onFinished -> onFinished() },
                 )
             }
         }

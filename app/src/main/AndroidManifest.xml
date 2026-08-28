@@ -3,9 +3,39 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- RIC-43 : accès à la galerie, demandé au moment où l'utilisateur ajoute des photos à une
+         sortie du Journal et à ce moment-là seulement. Toute la sélection passe par le sélecteur
+         interne de l'app (voir PhotoPickerDialog) : le Photo Picker système, lui, n'aurait rien
+         demandé, mais il expurge le GPS de l'EXIF des photos qu'il rend et impose de retrouver
+         les bonnes à la main dans toute la pellicule. Deux permissions se recouvrant par version
+         d'API plutôt qu'une seule : READ_MEDIA_IMAGES n'existe qu'à partir de l'API 33,
+         READ_EXTERNAL_STORAGE est son équivalent sur les versions couvertes par minSdk 26 en
+         dessous. READ_MEDIA_VISUAL_USER_SELECTED est l'accès partiel d'Android 14+ ("Sélectionner
+         des photos") : demandée avec les précédentes, elle permet de fonctionner en périmètre
+         restreint plutôt que de traiter ce choix comme un refus. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+
+    <!-- RIC-43 : sans elle, depuis Android 10, MediaStore rend les photos avec leurs coordonnées
+         GPS retirées de l'EXIF — l'app lirait donc une photo géolocalisée comme si elle ne l'était
+         pas, et retomberait sur la corrélation par horodatage là où la position exacte était dans
+         le fichier. Demandée avec l'accès galerie ci-dessus (le système ne l'accorde pas seule) et
+         exploitée par MediaStore.setRequireOriginal, voir PhotoExifReader. Refusée ou indisponible,
+         la lecture continue sans GPS : dégradée, jamais bloquée. -->
+    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
+
+    <!-- RIC-43 : filesDir partait entièrement dans l'Auto Backup du système, plafonné à 25 Mo par
+         app — au-delà, c'est la sauvegarde de l'app ENTIÈRE que le système désactive, en silence.
+         Quelques dizaines de photos suffisent. Les deux fichiers de règles excluent donc
+         filesDir/photos/ et laissent tout le reste (base, préférences, GPX) : voir
+         data_extraction_rules.xml pour le raisonnement, et backup_rules.xml pour son équivalent
+         avant l'API 31. La sauvegarde applicative de Réglages reste le canal complet. -->
     <application
         android:name=".BivouacApplication"
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
@@ -16,9 +46,29 @@
              adjustPan, translate la fenêtre entière à sa façon, et surtout WindowInsets.ime reste
              vide côté Compose. Tous les écrans qui réservent la place du clavier eux-mêmes (la
              saisie des notes et des tags du Journal) s'appuient dessus. -->
+        <!-- RIC-43 : la rotation ne recrée plus l'Activity. Regarder une photo en paysage est un
+             usage de premier rang, et chaque pivot dans la visionneuse faisait clignoter toute
+             l'app derrière elle : Activity détruite puis reconstruite, carte osmdroid rechargée,
+             tiroir redessiné, le temps que la visionneuse se replace par-dessus.
+
+             Compose n'a pas besoin de cette recréation : LocalConfiguration est mis à jour par
+             onConfigurationChanged et tout ce qui en dépend se recompose, tandis que les états
+             (rememberSaveable comme ViewModel) traversent la rotation sans y toucher. La carte,
+             elle, y gagne franchement : le MapView survit au lieu de se reconstruire.
+
+             Compromis assumé : les qualificateurs de ressources liés à l'orientation ne sont plus
+             re-résolus par une recréation. Le projet n'en a aucun (pas de res/layout-land ni de
+             values-w*dp), et le seul layout XML de l'app se dimensionne au runtime (voir
+             HikeMapView.cursorBubblePhotoSidePx, calculé sur le plus grand côté de l'écran,
+             délibérément insensible à l'orientation).
+
+             uiMode volontairement absent de la liste : le passage clair/sombre continue donc de
+             recréer l'Activity, ce qui est exactement ce qu'il faut pour qu'enableEdgeToEdge
+             réapplique le bon habillage des barres système. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:windowSoftInputMode="adjustResize"
             android:label="@string/app_name">
             <intent-filter>

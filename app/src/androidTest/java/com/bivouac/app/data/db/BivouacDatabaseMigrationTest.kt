@@ -778,6 +778,158 @@ class BivouacDatabaseMigrationTest {
 
         migrated.close()
     }
+
+    // RIC-43 : table neuve pour les photos d'une sortie, même propriété que
+    // migrate5To6_preservesExistingDataAndAddsTagsTableAndNoteColumn ci-dessus (existant intouché,
+    // table fille utilisable dès la migration faite).
+    //
+    // Un seul test pour toute la table, parce qu'il n'y a qu'une seule migration : contentHash et
+    // les trois colonnes de métadonnées d'origine, ajoutés au fil du développement de RIC-43, sont
+    // consolidés dans ce même 14 -> 15 — aucune version intermédiaire n'a été publiée, donc aucune
+    // base réelle n'a jamais vu de table logged_track_photo sans elles.
+    @Test
+    fun migrate14To15_addsEmptyPhotoTableWithoutTouchingExistingRows() {
+        helper.createDatabase(testDbName, 14).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note) VALUES " +
+                    "('track-1', 'Randonnee Belledonne', 1780300800000, 'hash-track-1', " +
+                    "8200.0, 650.0, 300.0, 3, 240, '')",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            15,
+            true,
+            BivouacDatabase.MIGRATION_14_15,
+        )
+
+        migrated.query("SELECT name FROM logged_track WHERE id = 'track-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Randonnee Belledonne", cursor.getString(0))
+        }
+
+        migrated.query("SELECT COUNT(*) FROM logged_track_photo").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+
+        // Insert complet : la table doit accepter d'emblée toutes les colonnes que l'entité
+        // déclare, déduplication et métadonnées d'origine comprises.
+        migrated.execSQL(
+            "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, takenAtMillis, " +
+                "latitude, longitude, positionPointIndex, positionApproximate, contentHash, " +
+                "sourceDisplayName, sourceRelativePath, sourceDateTakenMillis) VALUES " +
+                "('track-1', 'photos/track-1-abc.jpg', 1780300900000, 1780300850000, " +
+                "45.1885, 5.7245, 1, 0, 'abc123', 'IMG_0001.jpg', 'DCIM/Camera/', 1780300850000)",
+        )
+        migrated.query(
+            "SELECT trackId, filePath, positionPointIndex, positionApproximate, contentHash, " +
+                "sourceDisplayName, sourceRelativePath, sourceDateTakenMillis FROM logged_track_photo",
+        ).use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("track-1", cursor.getString(0))
+            assertEquals("photos/track-1-abc.jpg", cursor.getString(1))
+            assertEquals(1, cursor.getInt(2))
+            assertEquals(0, cursor.getInt(3))
+            assertEquals("abc123", cursor.getString(4))
+            assertEquals("IMG_0001.jpg", cursor.getString(5))
+            assertEquals("DCIM/Camera/", cursor.getString(6))
+            assertEquals(1780300850000L, cursor.getLong(7))
+        }
+
+        // Les métadonnées d'origine sont un bonus, jamais une condition : une photo ajoutée depuis
+        // une image dont le fournisseur ne remplit pas ces colonnes doit entrer quand même.
+        migrated.execSQL(
+            "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, " +
+                "positionApproximate, contentHash) " +
+                "VALUES ('track-1', 'photos/track-1-def.jpg', 1780301000000, 0, 'def456')",
+        )
+        migrated.query(
+            "SELECT sourceDisplayName, sourceRelativePath, sourceDateTakenMillis " +
+                "FROM logged_track_photo WHERE contentHash = 'def456'",
+        ).use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertTrue(cursor.isNull(0))
+            assertTrue(cursor.isNull(1))
+            assertTrue(cursor.isNull(2))
+        }
+
+        // La cascade FK est bien en place dès la création de la table : supprimer la sortie doit
+        // emporter ses photos (voir LoggedTrackRepository.delete, qui relève les chemins avant).
+        migrated.execSQL("PRAGMA foreign_keys = ON")
+        migrated.execSQL("DELETE FROM logged_track WHERE id = 'track-1'")
+        migrated.query("SELECT COUNT(*) FROM logged_track_photo").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+
+        migrated.close()
+    }
+
+    // RIC-43 : une seule colonne ajoutée, nullable, sans rattrapage — voir MIGRATION_15_16. Ce que
+    // ce test doit prouver, c'est justement que les photos déjà en base (un appareil réel porte la
+    // v15 avec de vraies données) survivent intactes et ressortent avec takenAtZoneCertain à null,
+    // c'est-à-dire « fuseau inconnu », que positionUncertain traite comme « pas certain ».
+    @Test
+    fun migrate15To16_addsTheZoneColumnAsNullWithoutTouchingExistingPhotos() {
+        helper.createDatabase(testDbName, 15).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note) VALUES " +
+                    "('track-1', 'Randonnee Belledonne', 1780300800000, 'hash-track-1', " +
+                    "8200.0, 650.0, 300.0, 3, 240, '')",
+            )
+            execSQL(
+                "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, takenAtMillis, " +
+                    "latitude, longitude, positionPointIndex, positionApproximate, contentHash) " +
+                    "VALUES ('track-1', 'photos/track-1-abc.jpg', 1780300900000, 1780300850000, " +
+                    "NULL, NULL, 1, 1, 'abc123')",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            16,
+            true,
+            BivouacDatabase.MIGRATION_15_16,
+        )
+
+        migrated.query(
+            "SELECT filePath, positionPointIndex, positionApproximate, takenAtZoneCertain " +
+                "FROM logged_track_photo WHERE contentHash = 'abc123'",
+        ).use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("photos/track-1-abc.jpg", cursor.getString(0))
+            assertEquals(1, cursor.getInt(1))
+            assertEquals(1, cursor.getInt(2))
+            assertTrue("la colonne doit valoir null sur une ligne d'avant la migration", cursor.isNull(3))
+        }
+
+        // La colonne est utilisable dans les deux sens dès la migration faite : c'est ce que
+        // LoggedTrackRepository.addPhoto écrit désormais pour toute photo ajoutée.
+        migrated.execSQL(
+            "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, " +
+                "positionApproximate, contentHash, takenAtZoneCertain) " +
+                "VALUES ('track-1', 'photos/track-1-def.jpg', 1780301000000, 1, 'def456', 1)",
+        )
+        migrated.query(
+            "SELECT takenAtZoneCertain FROM logged_track_photo WHERE contentHash = 'def456'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1, cursor.getInt(0))
+        }
+
+        migrated.close()
+    }
 }
 
 private fun String.escapeSql(): String = replace("'", "''")

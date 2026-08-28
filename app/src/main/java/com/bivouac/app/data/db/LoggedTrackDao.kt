@@ -108,4 +108,38 @@ interface LoggedTrackDao {
 
     @Query("DELETE FROM logged_track_tag WHERE trackId = :trackId AND tag = :tag")
     suspend fun deleteTag(trackId: String, tag: String)
+
+    @Query("SELECT * FROM logged_track_photo WHERE trackId = :trackId ORDER BY takenAtMillis, addedAtMillis")
+    suspend fun getPhotos(trackId: String): List<LoggedTrackPhotoEntity>
+
+    @Query("SELECT * FROM logged_track_photo WHERE id = :id")
+    suspend fun getPhoto(id: Long): LoggedTrackPhotoEntity?
+
+    // RIC-43 : les chemins seuls, toutes traces confondues — ce dont le balayage des orphelins de
+    // BackupManager a besoin, sans charger les lignes entières.
+    @Query("SELECT filePath FROM logged_track_photo")
+    suspend fun getAllPhotoFilePaths(): List<String>
+
+    @Insert
+    suspend fun insertPhoto(photo: LoggedTrackPhotoEntity): Long
+
+    @Query("DELETE FROM logged_track_photo WHERE id = :id")
+    suspend fun deletePhoto(id: Long)
+
+    // RIC-152 : « Purger les photos », le seul endroit de l'app qui vide la table d'un bloc. Jamais
+    // appelé automatiquement — voir LoggedTrackRepository.purgeAllPhotos.
+    @Query("DELETE FROM logged_track_photo")
+    suspend fun deleteAllPhotos()
+
+    @Query("SELECT COUNT(*) FROM logged_track_photo")
+    suspend fun countPhotos(): Int
+
+    // RIC-43 : conservé alors que le repositionnement n'est plus atteignable depuis l'UI (le menu
+    // d'appui long ne garde que « Supprimer »). Le placement des photos sur la trace revient dans
+    // un lot ultérieur, qui reprendra cette requête telle quelle plutôt que de la réécrire.
+    @Query(
+        "UPDATE logged_track_photo SET positionPointIndex = :positionPointIndex, " +
+            "positionApproximate = :positionApproximate WHERE id = :id",
+    )
+    suspend fun updatePhotoPosition(id: Long, positionPointIndex: Int?, positionApproximate: Boolean)
 }
