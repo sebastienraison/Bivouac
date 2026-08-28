@@ -301,15 +301,16 @@ fun JournalScreen(
         // fonctionnalité est désactivée, mais la règle « aucune demande de permission possible »
         // mérite d'être tenue par le code qui déclenche la demande, pas seulement par celui qui
         // affiche le bouton.
-        if (!photosEnabled) Unit
-        else if (PhotoLibraryPermission.isGranted(journalContext)) {
-            photoPermissionDenied = false
-            viewModel.openPhotoPicker()
-        } else {
+        when {
+            !photosEnabled -> Unit
+            PhotoLibraryPermission.isGranted(journalContext) -> {
+                photoPermissionDenied = false
+                viewModel.openPhotoPicker()
+            }
             // Relancé à chaque tentative, y compris après un refus définitif : Android rend alors
             // la main immédiatement sans rien afficher, et c'est ce retour qui remet
             // photoPermissionDenied à vrai. Rien ne se passe en silence.
-            photoPermissionLauncher.launch(PhotoLibraryPermission.requestedPermissions)
+            else -> photoPermissionLauncher.launch(PhotoLibraryPermission.requestedPermissions)
         }
     }
 
@@ -1992,6 +1993,7 @@ internal fun ThreeStopJournalDetail(
                         // (Tags sous le crayon, Photos écrivant toujours immédiatement) n'a plus
                         // d'objet, les deux blocs obéissant désormais au même mode édition. Retiré :
                         // c'était un pansement sur une incohérence, pas un élément de mise en page.
+                        //
                         // rememberSaveable, pas remember : même filet que viewedPhotoIndex plus
                         // haut, pour la galerie ouverte — la rotation ne recrée plus l'Activity
                         // (voir configChanges au manifest), la mort du process en arrière-plan
