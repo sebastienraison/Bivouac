@@ -41,6 +41,7 @@ class LoggedTrackPhotoRepositoryTest {
         BivouacDatabase.closeAndReset()
         context.deleteDatabase(BivouacDatabase.DATABASE_NAME)
         LoggedTrackPhotoStore.dir(context).deleteRecursively()
+        LoggedTrackPhotoStore.transitDir(context).deleteRecursively()
         LoggedTrackGpxStore.dir(context).deleteRecursively()
         repository = LoggedTrackRepository(context)
     }
@@ -50,6 +51,7 @@ class LoggedTrackPhotoRepositoryTest {
         BivouacDatabase.closeAndReset()
         context.deleteDatabase(BivouacDatabase.DATABASE_NAME)
         LoggedTrackPhotoStore.dir(context).deleteRecursively()
+        LoggedTrackPhotoStore.transitDir(context).deleteRecursively()
         LoggedTrackGpxStore.dir(context).deleteRecursively()
     }
 
@@ -107,6 +109,18 @@ class LoggedTrackPhotoRepositoryTest {
     private fun photoFiles(): List<String> =
         LoggedTrackPhotoStore.dir(context).listFiles().orEmpty().filter { it.isFile }.map { it.name }.sorted()
 
+    /**
+     * RIC-149 : le cycle complet « sélection puis sauvegarde », en un appel — ce que fait le mode
+     * édition quand l'utilisateur ajoute des photos puis tape la disquette. Les tests ci-dessous
+     * portent sur le résultat de ce cycle ; les étapes séparées (transit, abandon, restauration)
+     * ont leur propre suite, LoggedTrackPhotoTransactionTest.
+     */
+    private suspend fun addPhotos(uris: List<Uri>): PhotoAddReport {
+        val batch = repository.stagePhotosFromPicker(trackId, context.contentResolver, uris)
+        repository.commitPendingPhotos(trackId, batch.staged)
+        return batch.report
+    }
+
     @Test
     fun addPhotosFromPicker_skipsTheSamePhotoTwiceInOneBatch() = runBlocking {
         createTrack()
@@ -116,7 +130,7 @@ class LoggedTrackPhotoRepositoryTest {
         // la même photo touchée deux fois, d'où la déduplication par contenu et non par Uri.
         val second = registerPhoto("b", bytes.copyOf())
 
-        val report = repository.addPhotosFromPicker(trackId, context.contentResolver, listOf(first, second))
+        val report = addPhotos(listOf(first, second))
 
         assertEquals(1, report.added)
         assertEquals(1, report.duplicatesSkipped)
@@ -129,13 +143,9 @@ class LoggedTrackPhotoRepositoryTest {
     fun addPhotosFromPicker_skipsAPhotoAlreadyAddedInAPreviousBatch() = runBlocking {
         createTrack()
         val bytes = byteArrayOf(9, 9, 9)
-        repository.addPhotosFromPicker(trackId, context.contentResolver, listOf(registerPhoto("a", bytes)))
+        addPhotos(listOf(registerPhoto("a", bytes)))
 
-        val report = repository.addPhotosFromPicker(
-            trackId,
-            context.contentResolver,
-            listOf(registerPhoto("b", bytes.copyOf())),
-        )
+        val report = addPhotos(listOf(registerPhoto("b", bytes.copyOf())))
 
         assertEquals(0, report.added)
         assertEquals(1, report.duplicatesSkipped)
@@ -154,7 +164,7 @@ class LoggedTrackPhotoRepositoryTest {
             registerPhoto("c", byteArrayOf(3)),
         )
 
-        val report = repository.addPhotosFromPicker(trackId, context.contentResolver, uris)
+        val report = addPhotos(uris)
 
         assertEquals(2, report.added)
         assertEquals(0, report.duplicatesSkipped)
@@ -173,26 +183,19 @@ class LoggedTrackPhotoRepositoryTest {
      * pointant vers un fichier absent.
      */
     @Test
-    fun addPhoto_removesTheJustWrittenFileWhenTheInsertFails() = runBlocking {
+    fun commitPendingPhotos_removesTheJustWrittenFileWhenTheInsertFails() = runBlocking {
         createTrack()
-        val uri = registerPhoto("orpheline", byteArrayOf(7, 7, 7))
+        val staged = repository.stagePhotosFromPicker(
+            trackId,
+            context.contentResolver,
+            listOf(registerPhoto("orpheline", byteArrayOf(7, 7, 7))),
+        ).staged
 
-        val thrown = runCatching {
-            repository.addPhoto(
-                trackId = "trace-qui-n-existe-pas",
-                resolver = context.contentResolver,
-                uri = uri,
-                contentHash = "hash",
-                takenAtMillis = null,
-                latitude = null,
-                longitude = null,
-                positionPointIndex = null,
-                positionApproximate = false,
-                takenAtZoneCertain = null,
-            )
-        }.exceptionOrNull()
+        // Le commit vise une trace qui n'existe pas : la contrainte de clé étrangère refuse
+        // l'insert, après que le fichier a déjà rejoint filesDir.
+        val failures = repository.commitPendingPhotos("trace-qui-n-existe-pas", staged)
 
-        assertTrue("l'insert doit échouer sur la clé étrangère", thrown != null)
+        assertEquals("l'insert doit échouer sur la clé étrangère", 1, failures)
         assertEquals("le fichier tout juste écrit doit être retiré", emptyList<String>(), photoFiles())
         assertEquals(0, repository.listPhotos(trackId).size)
     }
@@ -202,7 +205,7 @@ class LoggedTrackPhotoRepositoryTest {
         createTrack()
         val uri = registerPhoto("a", byteArrayOf(4, 5, 6))
 
-        repository.addPhotosFromPicker(trackId, context.contentResolver, listOf(uri))
+        addPhotos(listOf(uri))
 
         val photo = repository.listPhotos(trackId).single()
         val file = LoggedTrackPhotoStore.resolve(context, photo.filePath)
@@ -216,11 +219,7 @@ class LoggedTrackPhotoRepositoryTest {
     @Test
     fun deletingATrackAlsoDeletesItsPhotoFiles() = runBlocking {
         createTrack()
-        repository.addPhotosFromPicker(
-            trackId,
-            context.contentResolver,
-            listOf(registerPhoto("a", byteArrayOf(1)), registerPhoto("b", byteArrayOf(2))),
-        )
+        addPhotos(listOf(registerPhoto("a", byteArrayOf(1)), registerPhoto("b", byteArrayOf(2))))
         assertEquals(2, photoFiles().size)
 
         repository.delete(trackId)
@@ -234,7 +233,7 @@ class LoggedTrackPhotoRepositoryTest {
     @Test
     fun missingPhotoFileIds_reportsRowsWhoseFileIsGoneWithoutRemovingThem() = runBlocking {
         createTrack()
-        repository.addPhotosFromPicker(trackId, context.contentResolver, listOf(registerPhoto("a", byteArrayOf(1))))
+        addPhotos(listOf(registerPhoto("a", byteArrayOf(1))))
         val photo = repository.listPhotos(trackId).single()
         assertTrue(LoggedTrackPhotoStore.resolve(context, photo.filePath).delete())
 
