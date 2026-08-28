@@ -11,7 +11,7 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -19,8 +19,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -40,6 +40,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import coil.compose.AsyncImage
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
@@ -57,7 +59,7 @@ internal fun PhotoViewerDialog(photos: List<LoggedTrackPhotoEntity>, initialInde
     // lieu de déplacer le cadrage.
     var zoomed by remember { mutableStateOf(false) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        DrawBehindDisplayCutout()
+        ImmersiveBlackWindow()
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
             HorizontalPager(state = pagerState, userScrollEnabled = !zoomed, modifier = Modifier.fillMaxSize()) { page ->
                 ZoomableAsyncPhoto(
@@ -67,7 +69,11 @@ internal fun PhotoViewerDialog(photos: List<LoggedTrackPhotoEntity>, initialInde
             }
             IconButton(
                 onClick = onDismiss,
-                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(4.dp),
+                // safeDrawingPadding et non statusBarsPadding : les barres système étant masquées,
+                // l'inset de statut vaut zéro et ne protège plus rien. Ce qui reste à éviter, c'est
+                // l'encoche — que la fenêtre couvre désormais volontairement, et sous laquelle la
+                // croix serait à moitié illisible.
+                modifier = Modifier.align(Alignment.TopEnd).safeDrawingPadding().padding(4.dp),
             ) {
                 Icon(Icons.Default.Close, contentDescription = "Fermer", tint = Color.White)
             }
@@ -76,28 +82,34 @@ internal fun PhotoViewerDialog(photos: List<LoggedTrackPhotoEntity>, initialInde
 }
 
 /**
- * RIC-43 : la visionneuse dessine derrière l'encoche caméra, pour que son fond noir couvre
- * réellement tout l'écran.
+ * RIC-43 : la visionneuse occupe réellement toute la dalle — barres système masquées, encoche
+ * couverte, fond noir de bord à bord — et rend tout à la fermeture.
  *
- * Signalé en recette : en paysage, la bande latérale qui porte l'encoche restait de la couleur du
- * système, une barre claire en plein bord d'une photo. Par défaut une fenêtre est mise en boîte
- * autour de l'encoche, ce qui est le bon comportement pour une interface, et le mauvais pour une
- * visionneuse plein écran.
+ * Deux recettes successives ont mené ici. La première signalait, en paysage, la bande latérale de
+ * l'encoche restée à la couleur du système : une fenêtre est par défaut mise en boîte autour de
+ * l'encoche, bon comportement pour une interface, mauvais pour une visionneuse. Dessiner derrière
+ * l'encoche a réglé ce bord-là, mais la seconde recette a montré que la barre de statut, elle,
+ * restait en haut : couvrir l'encoche ne dit rien des barres, qui sont un réglage à part.
  *
- * Sur la fenêtre du dialogue et non sur celle de l'Activity : il n'y a alors rien à restaurer, la
- * fenêtre disparaissant avec le dialogue. Poser l'attribut sur l'Activity aurait demandé de le
- * défaire à la fermeture, et de le redéfaire correctement après une rotation ou une mort de
- * process — trois occasions de laisser l'app dans un état qu'elle n'a pas choisi.
+ * D'où le mode immersif ici : les barres sont masquées tant que la visionneuse est ouverte, et un
+ * balayage depuis le bord les fait revenir le temps de s'en servir (BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE)
+ * — les cacher sans porte de sortie serait s'arroger la navigation du téléphone.
+ *
+ * Tout est porté par la fenêtre du dialogue et non par celle de l'Activity, comme le correctif
+ * d'encoche l'était déjà : la fenêtre disparaît avec le dialogue, donc l'app retrouve son état
+ * d'elle-même. Le `show` du onDispose est une ceinture de plus, pour le cas où le contrôleur
+ * d'inserts d'une ROM tiendrait l'état plus longtemps que la fenêtre qui l'a demandé.
  *
  * ALWAYS à partir de l'API 30, qui couvre les encoches où qu'elles soient ; SHORT_EDGES sur 28-29,
  * la seule valeur disponible à l'époque, et qui suffit ici (en paysage, le bord qui porte l'encoche
  * est justement un petit côté). En dessous de l'API 28 il n'y a pas d'encoche à gérer.
  */
 @Composable
-private fun DrawBehindDisplayCutout() {
-    val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
-    SideEffect {
-        val window = dialogWindow ?: return@SideEffect
+private fun ImmersiveBlackWindow() {
+    val view = LocalView.current
+    val dialogWindow = (view.parent as? DialogWindowProvider)?.window
+    DisposableEffect(dialogWindow) {
+        val window = dialogWindow ?: return@DisposableEffect onDispose {}
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             // Attributs relus, modifiés, puis réassignés : c'est setAttributes qui déclenche le
@@ -113,6 +125,13 @@ private fun DrawBehindDisplayCutout() {
         // Le fond de la fenêtre elle-même, et pas seulement celui du Box : pendant le layout, et
         // dans la bande de l'encoche que le contenu n'a pas encore couverte, c'est lui qui se voit.
         window.setBackgroundDrawable(ColorDrawable(AndroidColor.BLACK))
+        // L'assombrissement que tout dialogue pose derrière lui : invisible sous un contenu noir
+        // opaque, mais bien visible dans la bande que ce contenu ne couvrait pas encore.
+        window.setDimAmount(0f)
+        val controller = WindowInsetsControllerCompat(window, view)
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        onDispose { controller.show(WindowInsetsCompat.Type.systemBars()) }
     }
 }
 
