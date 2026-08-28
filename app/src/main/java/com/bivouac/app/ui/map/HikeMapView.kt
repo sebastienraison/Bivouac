@@ -67,6 +67,9 @@ import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.formatKm1
 import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -1055,9 +1058,29 @@ private fun cursorBubbleContent(
     return CursorBubbleContent(
         text = text,
         photoFiles = present.map { (photo, _) -> LoggedTrackPhotoStore.resolve(context, photo.filePath) },
+        // Parallèle à photoFiles, un élément par photo du lot : c'est ce qui permet à l'heure
+        // affichée de suivre le carrousel sans que la bulle ait à retenir les entités.
+        photoTimes = present.map { (photo, _) -> photo.takenAtMillis?.let(::formatPhotoTimeOfDay) },
         initialPhotoIndex = present.indexOfFirst { (photo, _) -> photo.id == closest.id }.coerceAtLeast(0),
     )
 }
+
+/**
+ * RIC-43 : l'heure de prise de vue telle que la bulle du curseur la montre.
+ *
+ * Même forme que partout ailleurs dans l'app (JournalScreen.formatTimeOfDay, les jours de trek,
+ * les dates de sortie) : « HH:mm », dans le fuseau du téléphone. Rien n'est affiché quand
+ * takenAtMillis est nul — une photo sans EXIF exploitable ne doit pas se voir attribuer une heure
+ * qui serait celle de son import.
+ *
+ * Le fuseau est appliqué à chaque appel plutôt que figé dans le formateur : celui-ci vit aussi
+ * longtemps que le process, et l'app peut très bien changer de fuseau entre deux (voyage, passage
+ * à l'heure d'été) sans être relancée.
+ */
+private fun formatPhotoTimeOfDay(takenAtMillis: Long): String =
+    PHOTO_TIME_FORMATTER.withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(takenAtMillis))
+
+private val PHOTO_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm", Locale.FRANCE)
 
 // Negative: lifts the bubble's anchor above the marker's own geo point by roughly the pin's
 // rendered height, so the bubble sits above the pin instead of covering it (and blocking drags).
@@ -1068,6 +1091,10 @@ private data class CursorBubbleContent(
     // Vide quand aucune photo n'est assez proche. Plusieurs entrées quand plusieurs le sont : la
     // vignette devient alors parcourable, avec un compteur.
     val photoFiles: List<File> = emptyList(),
+    // Même taille et même ordre que photoFiles, une entrée nulle valant « heure inconnue ». Une
+    // liste parallèle plutôt qu'une liste de paires : seule photoFiles est manipulée par le
+    // carrousel, et les heures n'y interviennent qu'au moment de composer la ligne de texte.
+    val photoTimes: List<String?> = emptyList(),
     val initialPhotoIndex: Int = 0,
     val photoMissing: Boolean = false,
 )
@@ -1115,6 +1142,12 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
     // chaque déplacement du curseur : changer d'endroit sur la trace, c'est changer de lot.
     private var photoFiles: List<File> = emptyList()
     private var photoIndex = 0
+
+    // RIC-43 : la ligne distance/altitude nue, et les heures de prise de vue du lot. Retenues
+    // séparément parce que le texte affiché est la somme des deux et se recompose à chaque
+    // feuilletage : sans la version nue, chaque swipe empilerait une heure de plus.
+    private var baseText: String = ""
+    private var photoTimes: List<String?> = emptyList()
 
     private val textView = mView.findViewById<TextView>(R.id.cursor_bubble_text)
     private val photoFrame = mView.findViewById<View>(R.id.cursor_bubble_photo_frame)
@@ -1189,7 +1222,22 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
         })
     }
 
+    /**
+     * RIC-43 : la ligne du haut de la bulle — distance et altitude du curseur, puis l'heure de la
+     * photo montrée en dessous quand on la connaît.
+     *
+     * Sur la même ligne et non sous la vignette : c'est le même registre d'information (où, à
+     * quelle altitude, à quelle heure), et la bulle n'a pas de place à donner à une ligne de plus.
+     * Suit le carrousel, d'où l'appel depuis [showCurrentPhoto] et pas seulement depuis [onOpen] :
+     * feuilleter change de photo, donc d'heure.
+     */
+    private fun renderBubbleText() {
+        val time = photoTimes.getOrNull(photoIndex)
+        textView.text = if (time == null) baseText else "$baseText · $time"
+    }
+
     private fun showCurrentPhoto() {
+        renderBubbleText()
         val file = photoFiles.getOrNull(photoIndex) ?: return
         photoView.scaleType = ImageView.ScaleType.CENTER_CROP
         // error() en plus du chemin : le fichier peut avoir disparu entre le relevé de
@@ -1207,9 +1255,13 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
 
     override fun onOpen(item: Any?) {
         val content = item as? CursorBubbleContent ?: return
-        textView.text = content.text
+        baseText = content.text
         photoFiles = content.photoFiles
+        photoTimes = content.photoTimes
         photoIndex = content.initialPhotoIndex.coerceIn(0, (content.photoFiles.size - 1).coerceAtLeast(0))
+        // Posé tout de suite : les deux branches sans photo affichable en restent là, et celle qui
+        // en a une le repose avec l'heure via showCurrentPhoto.
+        renderBubbleText()
         when {
             content.photoFiles.isNotEmpty() -> {
                 photoFrame.visibility = View.VISIBLE
