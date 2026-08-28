@@ -12,6 +12,7 @@ import android.graphics.drawable.Drawable
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.util.DisplayMetrics
 import android.view.MotionEvent
 import android.view.View
 import android.widget.ImageView
@@ -69,6 +70,7 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.log2
+import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import kotlinx.coroutines.Job
@@ -1086,6 +1088,33 @@ private data class CursorBubbleContent(
     val photoMissing: Boolean = false,
 )
 
+/**
+ * RIC-43 : le côté de la vignette dans la bulle du curseur.
+ *
+ * Elle faisait 48 dp, soit une miniature qui disait « il y a une photo ici » sans permettre de
+ * reconnaître laquelle. Or c'est en promenant le curseur le long de la trace qu'on retrouve une
+ * photo : la vignette doit être assez grande pour être identifiée d'un coup d'œil, quitte à ce que
+ * la bulle prenne de la place. Un tap dessus ouvre la visionneuse plein écran.
+ *
+ * Calculée en fraction de l'écran plutôt qu'en dp figés, parce que « 20 % de l'écran » est ce qui
+ * a du sens ici : la même valeur en dp serait envahissante sur un petit téléphone et timide sur
+ * une tablette. Rapportée au plus grand côté, ce qui a la propriété utile de ne pas changer quand
+ * le téléphone pivote — la bulle garde exactement la même taille en portrait et en paysage.
+ *
+ * Bornée aux deux extrémités : en dessous du minimum on retombe sur la miniature qu'on cherchait à
+ * quitter, et au-dessus du maximum la bulle mange l'écran d'une tablette au lieu de s'y poser.
+ */
+private const val CURSOR_BUBBLE_PHOTO_SCREEN_FRACTION = 0.20f
+private const val CURSOR_BUBBLE_PHOTO_MIN_DP = 88f
+private const val CURSOR_BUBBLE_PHOTO_MAX_DP = 168f
+
+private fun cursorBubblePhotoSidePx(metrics: DisplayMetrics): Int {
+    val longestSidePx = max(metrics.widthPixels, metrics.heightPixels).toFloat()
+    return (longestSidePx * CURSOR_BUBBLE_PHOTO_SCREEN_FRACTION)
+        .coerceIn(CURSOR_BUBBLE_PHOTO_MIN_DP * metrics.density, CURSOR_BUBBLE_PHOTO_MAX_DP * metrics.density)
+        .toInt()
+}
+
 // Minimal InfoWindow (osmdroid's marker-anchored bubble mechanism — it repositions itself on
 // every pan/zoom, so the bubble tracks the marker without any Compose-side involvement) showing
 // a distance/altitude readout, plus the thumbnail of the nearest photo when one falls close
@@ -1096,6 +1125,19 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
     // cette fenêtre est un remember() unique pour toute la durée de vie de HikeMapView, alors que
     // le callback dépend de currentPhotos/du contexte de la recomposition courante.
     var onPhotoClick: (File) -> Unit = {}
+
+    // Taille fixée ici et non dans le layout XML : elle se calcule sur l'écran réel (voir
+    // cursorBubblePhotoSidePx), ce qu'une dimension figée en dp ne sait pas faire. Une fois, à la
+    // construction : la formule ne dépend pas de l'orientation, il n'y a donc rien à recalculer
+    // quand le téléphone pivote.
+    init {
+        val photoView = mView.findViewById<ImageView>(R.id.cursor_bubble_photo)
+        val side = cursorBubblePhotoSidePx(mapView.resources.displayMetrics)
+        photoView.layoutParams = photoView.layoutParams.apply {
+            width = side
+            height = side
+        }
+    }
 
     override fun onOpen(item: Any?) {
         val content = item as? CursorBubbleContent ?: return

@@ -11,13 +11,17 @@
     android:paddingEnd="10dp"
     android:paddingBottom="6dp">
 
-    <!-- RIC-43 : miniature de la photo la plus proche du curseur, visible seulement quand une
+    <!-- RIC-43 : vignette de la photo la plus proche du curseur, visible seulement quand une
          photo est a proximite (voir HikeMapView.CursorInfoWindow) - cachee par defaut, jamais
-         de placeholder vide. -->
+         de placeholder vide. Un tap dessus ouvre la visionneuse plein ecran.
+
+         Les dimensions ci-dessous ne sont qu'un point de depart : CursorInfoWindow les remplace
+         a la construction par une fraction de l'ecran (voir cursorBubblePhotoSidePx), ce qu'un
+         dp fige ne sait pas exprimer. -->
     <ImageView
         android:id="@+id/cursor_bubble_photo"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
         android:layout_marginEnd="8dp"
         android:scaleType="centerCrop"
         android:visibility="gone"
