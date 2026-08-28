@@ -2,6 +2,8 @@ package com.bivouac.app.data.photo
 
 import android.content.ContentResolver
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import androidx.exifinterface.media.ExifInterface
 import java.io.InputStream
 import java.time.LocalDateTime
@@ -33,8 +35,33 @@ data class PhotoExifData(
 
 object PhotoExifReader {
 
-    fun read(resolver: ContentResolver, uri: Uri): PhotoExifData =
-        runCatching { resolver.openInputStream(uri)?.use { read(it) } }.getOrNull() ?: EMPTY
+    /**
+     * RIC-43 : l'EXIF de la photo désignée par [uri].
+     *
+     * [requireOriginal] demande à MediaStore l'EXIF non expurgé, ce qu'il ne rend que si
+     * ACCESS_MEDIA_LOCATION est accordée (voir PhotoLibraryPermission.isMediaLocationGranted, dont
+     * c'est la valeur attendue ici). Sans ça, depuis Android 10, MediaStore retire les coordonnées
+     * GPS de toute photo qu'il rend : une photo géolocalisée était lue comme si elle ne l'était
+     * pas, et sa position exacte, présente dans le fichier, était remplacée par une corrélation
+     * temporelle approximative.
+     *
+     * Repli explicite sur l'Uri ordinaire à la moindre difficulté : setRequireOriginal ne
+     * s'applique qu'aux Uri MediaStore, et l'ouverture peut lever une SecurityException si la
+     * permission a été retirée entre la vérification et la lecture. On lit alors sans GPS, ce qui
+     * est exactement le comportement d'avant — dégradé, jamais bloqué.
+     */
+    fun read(resolver: ContentResolver, uri: Uri, requireOriginal: Boolean = false): PhotoExifData {
+        if (requireOriginal && Build.VERSION.SDK_INT >= 29) {
+            runCatching { MediaStore.setRequireOriginal(uri) }.getOrNull()
+                ?.let { original -> readOrNull(resolver, original)?.let { return it } }
+        }
+        return readOrNull(resolver, uri) ?: EMPTY
+    }
+
+    // Null (et non EMPTY) quand la lecture elle-même échoue : c'est ce qui permet à read() de
+    // distinguer « cette Uri n'a rien donné, essayons l'autre » de « lu, mais sans métadonnée ».
+    private fun readOrNull(resolver: ContentResolver, uri: Uri): PhotoExifData? =
+        runCatching { resolver.openInputStream(uri)?.use { read(it) } }.getOrNull()
 
     /**
      * Surcharge par flux, séparée de la lecture d'Uri ci-dessus pour que la logique EXIF soit

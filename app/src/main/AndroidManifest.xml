@@ -3,15 +3,27 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- RIC-43 : recherche de photos par plage de dates (extension optionnelle, opt-in via
-         Réglages) — jamais demandée pour la sélection générique via le Photo Picker, qui n'en a
-         besoin d'aucune (PickVisualMedia s'exécute hors du bac à sable de l'app). Deux
-         permissions se recouvrant par version d'API plutôt qu'une seule : READ_MEDIA_IMAGES
-         n'existe qu'à partir de l'API 33, READ_EXTERNAL_STORAGE est son équivalent sur les
-         versions couvertes par minSdk 26 en dessous. -->
+    <!-- RIC-43 : accès à la galerie, demandé au moment où l'utilisateur ajoute des photos à une
+         sortie du Journal et à ce moment-là seulement. Toute la sélection passe par le sélecteur
+         interne de l'app (voir PhotoPickerDialog) : le Photo Picker système, lui, n'aurait rien
+         demandé, mais il expurge le GPS de l'EXIF des photos qu'il rend et impose de retrouver
+         les bonnes à la main dans toute la pellicule. Deux permissions se recouvrant par version
+         d'API plutôt qu'une seule : READ_MEDIA_IMAGES n'existe qu'à partir de l'API 33,
+         READ_EXTERNAL_STORAGE est son équivalent sur les versions couvertes par minSdk 26 en
+         dessous. READ_MEDIA_VISUAL_USER_SELECTED est l'accès partiel d'Android 14+ ("Sélectionner
+         des photos") : demandée avec les précédentes, elle permet de fonctionner en périmètre
+         restreint plutôt que de traiter ce choix comme un refus. -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+
+    <!-- RIC-43 : sans elle, depuis Android 10, MediaStore rend les photos avec leurs coordonnées
+         GPS retirées de l'EXIF — l'app lirait donc une photo géolocalisée comme si elle ne l'était
+         pas, et retomberait sur la corrélation par horodatage là où la position exacte était dans
+         le fichier. Demandée avec l'accès galerie ci-dessus (le système ne l'accorde pas seule) et
+         exploitée par MediaStore.setRequireOriginal, voir PhotoExifReader. Refusée ou indisponible,
+         la lecture continue sans GPS : dégradée, jamais bloquée. -->
+    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
 
     <!-- RIC-43 : filesDir partait entièrement dans l'Auto Backup du système, plafonné à 25 Mo par
          app — au-delà, c'est la sauvegarde de l'app ENTIÈRE que le système désactive, en silence.

@@ -15,6 +15,7 @@ import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
 import com.bivouac.app.data.photo.PhotoExifReader
+import com.bivouac.app.data.photo.PhotoLibraryPermission
 import com.bivouac.app.data.photo.PhotoPositionCorrelator
 import com.bivouac.app.data.photo.PhotoSourceMetadata
 import java.io.IOException
@@ -436,6 +437,9 @@ class LoggedTrackRepository(context: Context) {
     suspend fun addPhotosFromPicker(trackId: String, resolver: ContentResolver, uris: List<Uri>): PhotoAddReport {
         val points = open(trackId)?.points.orEmpty()
         val seenHashes = dao.getPhotos(trackId).mapTo(mutableSetOf()) { it.contentHash }
+        // Relevé une fois pour tout le lot, pas par photo : la permission ne peut pas changer au
+        // milieu sans que l'app repasse au premier plan, et c'est un checkSelfPermission par appel.
+        val mediaLocationGranted = PhotoLibraryPermission.isMediaLocationGranted(appContext)
         var added = 0
         var duplicatesSkipped = 0
         var failed = 0
@@ -444,7 +448,7 @@ class LoggedTrackRepository(context: Context) {
                 val contentHash = resolver.openInputStream(uri)?.use { sha256(it) }
                     ?: throw IOException("Impossible d'ouvrir la photo sélectionnée")
                 if (!seenHashes.add(contentHash)) return@runCatching false
-                val exif = PhotoExifReader.read(resolver, uri)
+                val exif = PhotoExifReader.read(resolver, uri, requireOriginal = mediaLocationGranted)
                 val position =
                     PhotoPositionCorrelator.correlate(points, exif.latitude, exif.longitude, exif.takenAtMillis)
                 addPhoto(
