@@ -275,6 +275,16 @@ fun JournalScreen(
     // raconté, avec la porte de sortie qui va avec (voir le bloc « accès refusé » du bandeau
     // Photos). rememberSaveable pour que l'explication survive à une rotation.
     var photoPermissionDenied by rememberSaveable { mutableStateOf(false) }
+    // RIC-43 : refus devenu définitif, c'est-à-dire dont on sait que le système ne réaffichera plus
+    // d'invite (voir PhotoLibraryPermission.isPermanentlyDenied). Relancer la demande à ce stade
+    // rend la main sans afficher un pixel : c'est le drapeau qui permet de ne pas le faire, et
+    // d'expliquer nous-mêmes à la place.
+    var photoPermissionPermanentlyDenied by rememberSaveable { mutableStateOf(false) }
+    // Le dialogue de cette explication. Un dialogue et non le seul texte du bandeau, parce que le
+    // texte, lui, est déjà à l'écran après le premier refus : l'appui suivant ne changeait donc
+    // plus rien, ce que l'utilisateur a rapporté comme un bouton mort. Un dialogue, lui, se rouvre
+    // à chaque appui, et se voit même quand le bandeau Photos est hors du champ visible du tiroir.
+    var photoPermissionBlockedDialog by rememberSaveable { mutableStateOf(false) }
     // Demandée seulement au moment réel où l'utilisateur tape « Ajouter », jamais au démarrage.
     // En bloc (lecture + accès partiel + ACCESS_MEDIA_LOCATION, voir requestedPermissions) : une
     // seule invite système, et le GPS de l'EXIF débloqué du même geste.
@@ -286,7 +296,16 @@ fun JournalScreen(
         // accordé. C'est isGranted qui tranche, pas la carte de réponses.
         val granted = PhotoLibraryPermission.isGranted(journalContext)
         photoPermissionDenied = !granted
-        if (granted) viewModel.openPhotoPicker()
+        if (granted) {
+            photoPermissionPermanentlyDenied = false
+            viewModel.openPhotoPicker()
+        } else {
+            // Le refus vient d'être opposé : c'est le seul moment où shouldShowRequestPermissionRationale
+            // répond sans ambiguïté (voir isPermanentlyDenied). S'il est définitif, le dialogue
+            // s'ouvre tout de suite plutôt qu'au prochain appui, qui ne montrerait rien de neuf.
+            photoPermissionPermanentlyDenied = PhotoLibraryPermission.isPermanentlyDenied(journalContext)
+            if (photoPermissionPermanentlyDenied) photoPermissionBlockedDialog = true
+        }
     }
     // Rouvre le dialogue système de re-sélection depuis le sélecteur en accès partiel : redemander
     // la permission est la seule façon de le faire apparaître, aucune API ne l'appelle
@@ -297,21 +316,33 @@ fun JournalScreen(
     ) { _ ->
         viewModel.reloadPhotoPicker()
     }
+    // RIC-43 : ce que produit un appui sur « Ajouter ». La décision est prise à part (voir
+    // addPhotosOutcome, plus bas) parce que sa seule règle qui compte, « aucune issue muette »,
+    // mérite d'être vérifiable sans monter un écran.
     val handleAddPhotosClick: () -> Unit = {
-        // RIC-152 : garde de dernier recours. L'écran ne montre déjà aucun bouton d'ajout quand la
-        // fonctionnalité est désactivée, mais la règle « aucune demande de permission possible »
-        // mérite d'être tenue par le code qui déclenche la demande, pas seulement par celui qui
-        // affiche le bouton.
-        when {
-            !photosEnabled -> Unit
-            PhotoLibraryPermission.isGranted(journalContext) -> {
+        val outcome = addPhotosOutcome(
+            photosEnabled = photosEnabled,
+            permissionGranted = PhotoLibraryPermission.isGranted(journalContext),
+            permanentlyDenied = photoPermissionPermanentlyDenied,
+        )
+        when (outcome) {
+            AddPhotosOutcome.IGNORED -> Unit
+            AddPhotosOutcome.OPEN_PICKER -> {
                 photoPermissionDenied = false
+                photoPermissionPermanentlyDenied = false
                 viewModel.openPhotoPicker()
             }
-            // Relancé à chaque tentative, y compris après un refus définitif : Android rend alors
-            // la main immédiatement sans rien afficher, et c'est ce retour qui remet
-            // photoPermissionDenied à vrai. Rien ne se passe en silence.
-            else -> photoPermissionLauncher.launch(PhotoLibraryPermission.requestedPermissions)
+            // Refus définitif : la demande rendrait la main sans rien afficher. On ne la lance donc
+            // pas, et le dialogue s'ouvre à la place, à chaque appui.
+            AddPhotosOutcome.EXPLAIN_BLOCKED -> photoPermissionBlockedDialog = true
+            AddPhotosOutcome.REQUEST_PERMISSION -> {
+                // Posé avant le lancement, et pas seulement au retour : l'explication du bandeau
+                // est alors à l'écran quoi qu'il advienne de la demande, y compris si le système
+                // rendait la main sans invite ET sans rappeler personne. Le retour la lèvera si la
+                // permission finit par être accordée.
+                photoPermissionDenied = true
+                photoPermissionLauncher.launch(PhotoLibraryPermission.requestedPermissions)
+            }
         }
     }
 
@@ -615,6 +646,31 @@ fun JournalScreen(
             },
             dismissButton = {
                 TextButton(onClick = viewModel::dismissPhotoDeleteConfirmation) { Text("Annuler") }
+            },
+        )
+    }
+
+    // RIC-43 : l'accès à la galerie a été refusé pour de bon. Le seul retour possible à ce
+    // stade, puisque le système ne redemandera plus rien et que l'application ne peut pas rouvrir
+    // son invite. Il porte la seule action qui débloque vraiment la situation.
+    if (photoPermissionBlockedDialog) {
+        AlertDialog(
+            onDismissRequest = { photoPermissionBlockedDialog = false },
+            title = { Text("Accès aux photos refusé") },
+            text = {
+                Text(
+                    "Android ne redemandera plus l'autorisation depuis l'application. " +
+                        "Pour ajouter des photos, autorise l'accès à la galerie dans les réglages de l'application.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    photoPermissionBlockedDialog = false
+                    journalContext.openAppSettings()
+                }) { Text("Ouvrir les réglages") }
+            },
+            dismissButton = {
+                TextButton(onClick = { photoPermissionBlockedDialog = false }) { Text("Annuler") }
             },
         )
     }
@@ -2186,6 +2242,44 @@ internal fun ThreeStopJournalDetail(
             )
         }
     }
+}
+
+/**
+ * RIC-43 : ce qu'un appui sur « Ajouter » (bandeau Photos) doit produire.
+ *
+ * Signalé en recette : après un premier refus de la permission galerie, l'appui ne produisait plus
+ * rien, ni sélecteur, ni invite système, ni explication. Le code relançait pourtant bien la demande
+ * à chaque fois, en pariant sur le retour immédiat d'Android (une demande refusée définitivement
+ * rend la main sans afficher un pixel) pour rallumer l'état expliqué. Le pari tenait mal : cet état
+ * était déjà allumé depuis le premier refus, donc le rallumer ne changeait rien à l'écran, et c'est
+ * une ligne discrète dans un tiroir qui défile, pas forcément sous les yeux au moment de l'appui.
+ * Un état qui ne change pas ne se voit pas : ce qu'il fallait, c'était un événement.
+ *
+ * D'où [EXPLAIN_BLOCKED][AddPhotosOutcome.EXPLAIN_BLOCKED], qui ouvre un dialogue au lieu de
+ * relancer une demande qui ne dessinera rien. Et d'où cette fonction, extraite du composable pour
+ * que la règle qui compte se vérifie sans monter d'écran : hors fonctionnalité débrayée, aucune
+ * issue n'est muette.
+ */
+internal enum class AddPhotosOutcome {
+    // RIC-152 : photos débrayées dans les Réglages. Seule issue silencieuse, et elle est
+    // inatteignable en pratique, le bouton n'étant pas affiché dans ce cas : c'est une garde de
+    // dernier recours, pour que la règle « aucune demande de permission possible » soit tenue par
+    // le code qui déclenche la demande et pas seulement par celui qui affiche le bouton.
+    IGNORED,
+    OPEN_PICKER,
+    REQUEST_PERMISSION,
+    EXPLAIN_BLOCKED,
+}
+
+internal fun addPhotosOutcome(
+    photosEnabled: Boolean,
+    permissionGranted: Boolean,
+    permanentlyDenied: Boolean,
+): AddPhotosOutcome = when {
+    !photosEnabled -> AddPhotosOutcome.IGNORED
+    permissionGranted -> AddPhotosOutcome.OPEN_PICKER
+    permanentlyDenied -> AddPhotosOutcome.EXPLAIN_BLOCKED
+    else -> AddPhotosOutcome.REQUEST_PERMISSION
 }
 
 /**

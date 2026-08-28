@@ -1,9 +1,12 @@
 package com.bivouac.app.data.photo
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 // RIC-43 : la permission galerie, seule porte d'entrée des photos du Journal depuis que toute la
@@ -63,6 +66,37 @@ object PhotoLibraryPermission {
      */
     fun isMediaLocationGranted(context: Context): Boolean =
         Build.VERSION.SDK_INT < 29 || granted(context, Manifest.permission.ACCESS_MEDIA_LOCATION)
+
+    /**
+     * RIC-43 : le refus qu'on vient d'essuyer est-il définitif, c'est-à-dire le système
+     * refusera-t-il désormais d'afficher son invite ?
+     *
+     * À n'appeler qu'au retour d'une demande refusée, et c'est ce qui lève l'ambiguïté de
+     * `shouldShowRequestPermissionRationale` : il rend false aussi bien pour « jamais demandé » que
+     * pour « refusé définitivement », deux situations qu'aucune API ne distingue. Au retour d'un
+     * refus, le premier cas est exclu par construction.
+     *
+     * Compte pour beaucoup ici : une demande relancée après un refus définitif rend la main
+     * immédiatement, sans afficher quoi que ce soit. C'est ce qui rendait l'appui sur « Ajouter »
+     * muet, voir JournalScreen. Le savoir, c'est pouvoir expliquer nous-mêmes au lieu de relancer
+     * une demande qui ne dessinera rien.
+     *
+     * Sans Activity sous la main (cas théorique, l'écran en a toujours une), on répond « pas
+     * définitif » : mieux vaut relancer une demande de trop que de condamner l'ajout de photos sur
+     * une supposition.
+     */
+    fun isPermanentlyDenied(context: Context): Boolean {
+        val activity = context.findActivity() ?: return false
+        return !ActivityCompat.shouldShowRequestPermissionRationale(activity, manifestPermission)
+    }
+
+    // Le Context d'un composable est un ContextWrapper enveloppant l'Activity, parfois sur
+    // plusieurs couches (thème Material, ContextThemeWrapper de la vue hôte).
+    private tailrec fun Context.findActivity(): Activity? = when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
 
     private fun granted(context: Context, permission: String): Boolean =
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
