@@ -8,6 +8,7 @@ import com.bivouac.app.data.backup.AppRestart
 import com.bivouac.app.data.backup.BackupManager
 import com.bivouac.app.data.backup.RestoreResult
 import com.bivouac.app.data.db.LoggedTrackRepository
+import com.bivouac.app.data.db.PhotoStorageSummary
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.prefs.SettingsPreferences
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -58,6 +60,31 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     // Photos à chaque ouverture des Réglages.
     val photosEnabled: StateFlow<Boolean> = settingsPreferences.photosEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    // Bousculé après une purge, pour que le relevé ci-dessous soit refait. Le reste du temps c'est
+    // la bascule qui le déclenche.
+    private val _photoStorageRefresh = MutableStateFlow(0)
+
+    /**
+     * RIC-152 : ce que les photos occupent réellement, relevé seulement quand la fonctionnalité est
+     * désactivée — c'est le seul cas où le bouton de purge existe, et il n'y a aucune raison de
+     * compter des fichiers pour ne rien en faire.
+     *
+     * Recalculé à chaque bascule et non une fois à l'ouverture de l'écran : désactiver puis voir
+     * apparaître le bouton dans la foulée est exactement ce qu'on attend, et l'obliger à ressortir
+     * des Réglages pour le voir serait incompréhensible.
+     */
+    val photoStorage: StateFlow<PhotoStorageSummary?> =
+        combine(settingsPreferences.photosEnabled, _photoStorageRefresh) { enabled, _ -> enabled }
+            .map { enabled ->
+                if (enabled) null else withContext(Dispatchers.IO) { loggedTrackRepository.photoStorageSummary() }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    // Non nul pendant que le dialogue de confirmation est ouvert — il porte le relevé montré au
+    // moment du clic, pour que le dialogue chiffre exactement ce que le bouton annonçait.
+    private val _photoPurgeConfirmation = MutableStateFlow<PhotoStorageSummary?>(null)
+    val photoPurgeConfirmation: StateFlow<PhotoStorageSummary?> = _photoPurgeConfirmation.asStateFlow()
 
     val lastBackupAtMillis: StateFlow<Long?> = settingsPreferences.lastBackupAtMillis
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -142,6 +169,28 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setPhotosEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsPreferences.setPhotosEnabled(enabled) }
+    }
+
+    /**
+     * RIC-152 : la purge est demandée, pas encore faite — le dialogue de confirmation s'ouvre.
+     *
+     * Rien n'est jamais purgé automatiquement : désactiver la fonctionnalité continue de tout
+     * conserver, et ce bouton est le seul chemin vers la suppression des photos en masse.
+     */
+    fun requestPhotoPurge() {
+        _photoPurgeConfirmation.value = photoStorage.value ?: return
+    }
+
+    fun dismissPhotoPurge() {
+        _photoPurgeConfirmation.value = null
+    }
+
+    fun confirmPhotoPurge() {
+        _photoPurgeConfirmation.value = null
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { loggedTrackRepository.purgeAllPhotos() }
+            _photoStorageRefresh.value += 1
+        }
     }
 
     fun backup(uri: Uri) {
