@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.dp
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 
 // RIC-43 : vignette du bandeau « Photos » de la vue détail, appui long -> menu contextuel
-// (Repositionner / Supprimer). Sorti de JournalScreen.kt, comme DateFilteredPhotoPickerDialog :
+// (Repositionner / Supprimer). Sorti de JournalScreen.kt, comme PhotoPickerDialog :
 // l'écran hébergeait quatre composables photo qui n'ont rien à voir avec sa mécanique de tiroir.
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

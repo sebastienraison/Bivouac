@@ -418,12 +418,12 @@ class LoggedTrackRepository(context: Context) {
     }
 
     /**
-     * RIC-43 : ce que l'écran appelle réellement après une sélection dans le Photo Picker — lit
+     * RIC-43 : ce que l'écran appelle réellement après une sélection dans le sélecteur interne — lit
      * l'EXIF de chaque [uris], corrèle avec la trace (voir PhotoPositionCorrelator) puis délègue à
      * [addPhoto]. La trace n'est ouverte qu'une fois pour tout le lot, pas par photo.
      *
-     * Écarte les doublons par contenu (SHA-256), pas par Uri — l'Uri renvoyée par le Photo Picker
-     * n'est pas garantie stable d'une sélection à l'autre pour la même photo, donc seul le
+     * Écarte les doublons par contenu (SHA-256), pas par Uri : deux entrées MediaStore distinctes
+     * peuvent porter exactement la même photo (copie, image reçue puis ré-enregistrée), et seul le
      * contenu permet de détecter "déjà présente sur cette trace" ou "déjà choisie plus tôt dans ce
      * même lot" (sélection multiple avec la même photo touchée deux fois). [seenHashes] démarre
      * avec les photos déjà en base pour ne jamais réimporter une photo déjà ajoutée à une session

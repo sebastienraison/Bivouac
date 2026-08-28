@@ -112,7 +112,7 @@ class LoggedTrackPhotoRepositoryTest {
         createTrack()
         val bytes = byteArrayOf(1, 2, 3, 4)
         val first = registerPhoto("a", bytes)
-        // Uri différente, contenu identique : exactement ce que le Photo Picker peut renvoyer pour
+        // Uri différente, contenu identique : exactement ce que MediaStore peut présenter pour
         // la même photo touchée deux fois, d'où la déduplication par contenu et non par Uri.
         val second = registerPhoto("b", bytes.copyOf())
 

@@ -40,7 +40,6 @@ class SettingsPreferences(private val context: Context) {
         val SELECTED_TRACK_IDS = stringPreferencesKey("selection_track_ids")
         val NON_FREE_DISABLED = booleanPreferencesKey("non_free_features_disabled")
         val LAST_BACKUP_AT = longPreferencesKey("last_backup_at_millis")
-        val PHOTO_DATE_RANGE_SEARCH = booleanPreferencesKey("photo_date_range_search_enabled")
     }
 
     // RIC-115 : contrairement à AUTO_PAUSE/SELECTION_PAUSE (repli sur SpeedCalibration.DEFAULT.
@@ -106,12 +105,6 @@ class SettingsPreferences(private val context: Context) {
 
     val lastBackupAtMillis: Flow<Long?> = context.settingsDataStore.data.map { it[Keys.LAST_BACKUP_AT] }
 
-    // RIC-43 : désactivée par défaut, même convention que nonFreeFeaturesDisabled ci-dessus —
-    // activer cette bascule ne demande rien tant que l'utilisateur ne tape pas « Ajouter des
-    // photos » sur une trace, voir JournalViewModel.
-    val photoDateRangeSearchEnabled: Flow<Boolean> =
-        context.settingsDataStore.data.map { it[Keys.PHOTO_DATE_RANGE_SEARCH] ?: false }
-
     suspend fun setSpeedCalibrationMode(mode: SpeedCalibrationMode) {
         context.settingsDataStore.edit { it[Keys.MODE] = mode.name }
     }
@@ -156,9 +149,5 @@ class SettingsPreferences(private val context: Context) {
 
     suspend fun setLastBackupAtMillis(millis: Long) {
         context.settingsDataStore.edit { it[Keys.LAST_BACKUP_AT] = millis }
-    }
-
-    suspend fun setPhotoDateRangeSearchEnabled(enabled: Boolean) {
-        context.settingsDataStore.edit { it[Keys.PHOTO_DATE_RANGE_SEARCH] = enabled }
     }
 }

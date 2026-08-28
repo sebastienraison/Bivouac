@@ -843,7 +843,7 @@ class BivouacDatabaseMigrationTest {
         }
 
         // Les métadonnées d'origine sont un bonus, jamais une condition : une photo ajoutée depuis
-        // une Uri caviardée par le Photo Picker n'en a aucune et doit entrer quand même.
+        // une image dont le fournisseur ne remplit pas ces colonnes doit entrer quand même.
         migrated.execSQL(
             "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, " +
                 "positionApproximate, contentHash) " +

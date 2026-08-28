@@ -108,7 +108,6 @@ fun SettingsScreen(
     val selectedTrackCount by viewModel.selectedTrackCount.collectAsStateWithLifecycle()
     val journalTrackCount by viewModel.journalTrackCount.collectAsStateWithLifecycle()
     val nonFreeFeaturesDisabled by viewModel.nonFreeFeaturesDisabled.collectAsStateWithLifecycle()
-    val photoDateRangeSearchEnabled by viewModel.photoDateRangeSearchEnabled.collectAsStateWithLifecycle()
     val lastBackupAtMillis by viewModel.lastBackupAtMillis.collectAsStateWithLifecycle()
     val backupInProgress by viewModel.backupInProgress.collectAsStateWithLifecycle()
     val restoreInProgress by viewModel.restoreInProgress.collectAsStateWithLifecycle()
@@ -162,10 +161,6 @@ fun SettingsScreen(
             NonFreeFeaturesSection(
                 disabled = nonFreeFeaturesDisabled,
                 onToggle = viewModel::setNonFreeFeaturesDisabled,
-            )
-            PhotoDateRangeSearchSection(
-                enabled = photoDateRangeSearchEnabled,
-                onToggle = viewModel::setPhotoDateRangeSearchEnabled,
             )
             DataSection(
                 lastBackupAtMillis = lastBackupAtMillis,
@@ -689,22 +684,6 @@ private fun NonFreeFeaturesSection(disabled: Boolean, onToggle: (Boolean) -> Uni
             subtitle = "Coupe le fond satellite Esri et le lien météo Meteoblue",
             secondaryAvatar = true,
             trailing = { Switch(checked = disabled, onCheckedChange = onToggle) },
-        )
-    }
-}
-
-// RIC-43 : activer la bascule ne demande rien tant que l'utilisateur ne tape pas "Ajouter des
-// photos" sur une trace du Journal — la permission galerie n'est demandée qu'à ce moment précis,
-// voir JournalViewModel/PhotoLibraryPermission.
-@Composable
-private fun PhotoDateRangeSearchSection(enabled: Boolean, onToggle: (Boolean) -> Unit) {
-    SettingsSection(label = "Photos du Journal") {
-        SettingsRow(
-            icon = Icons.Default.Search,
-            title = "Aide à retrouver les photos d'une sortie",
-            subtitle = "Filtre le sélecteur de photos sur la période de la sortie plutôt que d'afficher toute la pellicule — demande un accès à la galerie",
-            secondaryAvatar = true,
-            trailing = { Switch(checked = enabled, onCheckedChange = onToggle) },
         )
     }
 }

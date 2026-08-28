@@ -45,19 +45,20 @@ data class LoggedTrackPhotoEntity(
     val positionPointIndex: Int? = null,
     val positionApproximate: Boolean = false,
     // SHA-256 des octets de la photo, même principe que LoggedTrackEntity.contentHash — sert à
-    // refuser un doublon (même photo sélectionnée deux fois, dans le même lot ou plus tard) sans
-    // se fier à l'Uri du Photo Picker, qui n'est pas garantie stable d'une sélection à l'autre.
-    // Toujours renseigné : la table naît avec cette colonne (migration 14->15), il n'existe donc
-    // aucune ligne d'avant elle.
+    // refuser un doublon : la même photo cochée deux fois dans le même lot, ou ajoutée à nouveau
+    // dans une session ultérieure, ou présente en deux exemplaires dans la pellicule sous deux
+    // noms. Par le contenu et non par l'Uri : deux entrées MediaStore distinctes peuvent porter
+    // exactement la même photo. Toujours renseigné : la table naît avec cette colonne (migration
+    // 14->15), il n'existe donc aucune ligne d'avant elle.
     val contentHash: String = "",
     // Métadonnées d'origine relevées dans MediaStore au moment de l'ajout, jamais relues ensuite.
     // Elles ne servent à rien aujourd'hui : elles sont là pour la re-acquisition depuis la galerie
     // (RIC-151), qui aura besoin de retrouver la photo d'origine quand la copie locale a disparu —
     // d'où aussi le refus de supprimer automatiquement une ligne dont le fichier manque.
     //
-    // Les trois sont nullables parce qu'aucune n'est garantie : une Uri du Photo Picker est
-    // volontairement caviardée par le système et ne répond pas forcément à ces colonnes, et
-    // RELATIVE_PATH n'existe qu'à partir de l'API 29. Une valeur absente n'est pas une anomalie.
+    // Les trois sont nullables parce qu'aucune n'est garantie : le fournisseur ne remplit pas
+    // forcément ces colonnes pour toute image indexée, et RELATIVE_PATH n'existe qu'à partir de
+    // l'API 29. Une valeur absente n'est pas une anomalie.
     //
     // sourceDateTakenMillis est bien distinct de takenAtMillis ci-dessus : celui-ci vient de
     // l'EXIF de la photo (avec la reconstitution de fuseau de PhotoExifReader), celui-là est le

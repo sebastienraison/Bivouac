@@ -1,9 +1,11 @@
 package com.bivouac.app.ui.journal
 
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -219,9 +222,9 @@ fun JournalScreen(
     val photoError by viewModel.photoError.collectAsStateWithLifecycle()
     val photoAddReport by viewModel.photoAddReport.collectAsStateWithLifecycle()
     val repositioningPhotoId by viewModel.repositioningPhotoId.collectAsStateWithLifecycle()
-    val photoDateRangeSearchEnabled by viewModel.photoDateRangeSearchEnabled.collectAsStateWithLifecycle()
-    val dateFilteredCandidates by viewModel.dateFilteredCandidates.collectAsStateWithLifecycle()
-    val dateFilteredPickerLoading by viewModel.dateFilteredPickerLoading.collectAsStateWithLifecycle()
+    val photoPickerCandidates by viewModel.photoPickerCandidates.collectAsStateWithLifecycle()
+    val photoPickerLoading by viewModel.photoPickerLoading.collectAsStateWithLifecycle()
+    val photoPickerScope by viewModel.photoPickerScope.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedLayer by viewModel.selectedLayer.collectAsStateWithLifecycle()
     val importError by viewModel.importError.collectAsStateWithLifecycle()
@@ -264,32 +267,43 @@ fun JournalScreen(
     val pickGpxLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         viewModel.importTracks(uris)
     }
-    // RIC-43 : Photo Picker système, aucune permission galerie requise pour cette seule sélection.
-    val pickPhotosLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia(),
-    ) { uris: List<Uri> ->
-        viewModel.addPhotos(uris)
-    }
-    // RIC-43 : demandée seulement au moment réel où l'utilisateur tape "Ajouter des photos", et
-    // seulement si la bascule Réglages est active — jamais au démarrage, jamais si elle est
-    // désactivée. Un refus (ou une révocation ultérieure) retombe silencieusement sur le Photo
-    // Picker générique ci-dessus, jamais un état bloqué.
     val journalContext = LocalContext.current
+    // RIC-43 : vrai quand la permission galerie a été refusée sur une tentative d'ajout réelle.
+    // Le refus n'est plus contourné par un repli sur le Photo Picker système (retiré) : il est
+    // raconté, avec la porte de sortie qui va avec (voir le bloc « accès refusé » du bandeau
+    // Photos). rememberSaveable pour que l'explication survive à une rotation.
+    var photoPermissionDenied by rememberSaveable { mutableStateOf(false) }
+    // Demandée seulement au moment réel où l'utilisateur tape « Ajouter », jamais au démarrage.
+    // En bloc (lecture + accès partiel + ACCESS_MEDIA_LOCATION, voir requestedPermissions) : une
+    // seule invite système, et le GPS de l'EXIF débloqué du même geste.
     val photoPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted: Boolean ->
-        if (granted || PhotoLibraryPermission.isGranted(journalContext)) {
-            viewModel.openDateFilteredPicker()
-        } else {
-            pickPhotosLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-        }
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ ->
+        // Le résultat brut ne suffit pas à décider : sur Android 14, choisir « Sélectionner des
+        // photos » rend READ_MEDIA_IMAGES refusée alors que l'accès partiel, lui, est bien
+        // accordé. C'est isGranted qui tranche, pas la carte de réponses.
+        val granted = PhotoLibraryPermission.isGranted(journalContext)
+        photoPermissionDenied = !granted
+        if (granted) viewModel.openPhotoPicker()
+    }
+    // Rouvre le dialogue système de re-sélection depuis le sélecteur en accès partiel : redemander
+    // la permission est la seule façon de le faire apparaître, aucune API ne l'appelle
+    // directement. La liste de photos visibles ayant pu changer, la requête est relancée quel que
+    // soit le résultat.
+    val selectMorePhotosLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ ->
+        viewModel.reloadPhotoPicker()
     }
     val handleAddPhotosClick: () -> Unit = {
-        when {
-            !photoDateRangeSearchEnabled ->
-                pickPhotosLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            PhotoLibraryPermission.isGranted(journalContext) -> viewModel.openDateFilteredPicker()
-            else -> photoPermissionLauncher.launch(PhotoLibraryPermission.manifestPermission)
+        if (PhotoLibraryPermission.isGranted(journalContext)) {
+            photoPermissionDenied = false
+            viewModel.openPhotoPicker()
+        } else {
+            // Relancé à chaque tentative, y compris après un refus définitif : Android rend alors
+            // la main immédiatement sans rien afficher, et c'est ce retour qui remet
+            // photoPermissionDenied à vrai. Rien ne se passe en silence.
+            photoPermissionLauncher.launch(PhotoLibraryPermission.requestedPermissions)
         }
     }
 
@@ -373,6 +387,8 @@ fun JournalScreen(
                     // départ quand la photo n'a encore aucune position.
                     onRepositionPhotoClick = { photo -> viewModel.beginRepositionPhoto(photo, cursorIndex) },
                     onPhotoClick = { index -> viewedPhotoIndex = index },
+                    photoPermissionDenied = photoPermissionDenied,
+                    onOpenAppSettingsClick = { journalContext.openAppSettings() },
                 )
             }
         }
@@ -626,16 +642,19 @@ fun JournalScreen(
     // abouti : sur une pellicule fournie elle prend une seconde ou deux, pendant lesquelles
     // l'appui sur « Ajouter » ne donnait aucun retour. C'est aussi ce qui rend enfin atteignable
     // le CircularProgressIndicator du dialogue, jusqu'ici du code mort.
-    if (dateFilteredPickerLoading || dateFilteredCandidates != null) {
-        DateFilteredPhotoPickerDialog(
-            candidates = dateFilteredCandidates.orEmpty(),
-            loading = dateFilteredPickerLoading,
-            onConfirm = viewModel::confirmDateFilteredSelection,
-            onUseGenericPicker = {
-                viewModel.closeDateFilteredPicker()
-                pickPhotosLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            },
-            onDismiss = viewModel::closeDateFilteredPicker,
+    if (photoPickerLoading || photoPickerCandidates != null) {
+        PhotoPickerDialog(
+            candidates = photoPickerCandidates.orEmpty(),
+            loading = photoPickerLoading,
+            scope = photoPickerScope,
+            // Relu à chaque recomposition et non mémorisé : le dialogue système de re-sélection
+            // peut faire passer l'app d'un accès partiel à un accès complet pendant que ce
+            // sélecteur est ouvert, auquel cas le bandeau doit disparaître de lui-même.
+            partialAccess = PhotoLibraryPermission.isPartialAccess(journalContext),
+            onScopeChange = viewModel::setPhotoPickerScope,
+            onSelectMorePhotos = { selectMorePhotosLauncher.launch(PhotoLibraryPermission.requestedPermissions) },
+            onConfirm = viewModel::confirmPhotoSelection,
+            onDismiss = viewModel::closePhotoPicker,
         )
     }
 }
@@ -1554,6 +1573,8 @@ internal fun ThreeStopJournalDetail(
     onAddPhotosClick: () -> Unit = {},
     onDeletePhotoClick: (LoggedTrackPhotoEntity) -> Unit = {},
     onRepositionPhotoClick: (LoggedTrackPhotoEntity) -> Unit = {},
+    photoPermissionDenied: Boolean = false,
+    onOpenAppSettingsClick: () -> Unit = {},
     // Index dans currentPhotos — le tap peut venir du bandeau ou de la galerie plate, les deux
     // ouvrent la même visionneuse hissée au niveau de l'écran (voir plus bas), pas ici.
     onPhotoClick: (Int) -> Unit = {},
@@ -1962,6 +1983,25 @@ internal fun ThreeStopJournalDetail(
                             TextButton(onClick = onAddPhotosClick) { Text("Ajouter") }
                         }
                     }
+                    // RIC-43 : accès galerie refusé sur une tentative d'ajout réelle. Le WIP
+                    // retombait ici sur le Photo Picker système, qui ne demandait rien mais
+                    // rendait des photos sans GPS : le repli est retiré, l'état est expliqué, et
+                    // il porte sa propre sortie de secours vers les réglages système de l'app,
+                    // seul endroit où un refus définitif se défait.
+                    if (photoPermissionDenied) {
+                        Text(
+                            "L'ajout de photos nécessite l'accès à la galerie.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                        TextButton(
+                            onClick = onOpenAppSettingsClick,
+                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
+                        ) {
+                            Text("Ouvrir les réglages de l'application")
+                        }
+                    }
                     if (currentPhotos.isEmpty() && !photosLoading) {
                         Text(
                             "Aucune photo pour l'instant.",
@@ -2069,6 +2109,24 @@ internal fun ThreeStopJournalDetail(
                 },
             )
         }
+    }
+}
+
+/**
+ * RIC-43 : la page « informations sur l'application » du système, seul endroit où se défait un
+ * refus de permission devenu définitif — Android ne réaffiche plus d'invite à ce stade, et rien
+ * dans l'app ne peut la rouvrir.
+ *
+ * runCatching parce qu'un Context sans activité pour l'accueillir (constructeur ROM exotique,
+ * profil restreint) ferait remonter une ActivityNotFoundException : ne pas ouvrir les réglages est
+ * un échec acceptable, planter en tentant de les ouvrir ne l'est pas.
+ */
+private fun Context.openAppSettings() {
+    runCatching {
+        startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
     }
 }
 

@@ -20,6 +20,7 @@ import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
+import com.bivouac.app.data.photo.PhotoPickerScope
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
@@ -239,14 +240,21 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _repositioningPhotoId = MutableStateFlow<Long?>(null)
     val repositioningPhotoId: StateFlow<Long?> = _repositioningPhotoId.asStateFlow()
 
-    // RIC-43 : non nul pendant que le sélecteur filtré par date est ouvert, porte les candidats
-    // trouvés par MediaStorePhotoQuery (éventuellement une liste vide, un vrai résultat « rien
-    // trouvé » différent de « pas encore cherché »). Voir openDateFilteredPicker.
-    private val _dateFilteredCandidates = MutableStateFlow<List<Uri>?>(null)
-    val dateFilteredCandidates: StateFlow<List<Uri>?> = _dateFilteredCandidates.asStateFlow()
-    private val _dateFilteredPickerLoading = MutableStateFlow(false)
-    val dateFilteredPickerLoading: StateFlow<Boolean> = _dateFilteredPickerLoading.asStateFlow()
-    private var dateFilteredPickerJob: Job? = null
+    // RIC-43 : non nul pendant que le sélecteur interne est ouvert, porte les candidats trouvés
+    // par MediaStorePhotoQuery (éventuellement une liste vide, un vrai résultat « rien trouvé »
+    // différent de « pas encore cherché »). Voir openPhotoPicker.
+    private val _photoPickerCandidates = MutableStateFlow<List<Uri>?>(null)
+    val photoPickerCandidates: StateFlow<List<Uri>?> = _photoPickerCandidates.asStateFlow()
+    private val _photoPickerLoading = MutableStateFlow(false)
+    val photoPickerLoading: StateFlow<Boolean> = _photoPickerLoading.asStateFlow()
+    private var photoPickerJob: Job? = null
+
+    // Périmètre courant du sélecteur. Remis à TRACK_DATES à chaque ouverture plutôt que conservé
+    // d'une fois sur l'autre : c'est le mode qui a du sens dans le cas général, et le retrouver
+    // ouvert sur toute la galerie parce qu'on y était allé une fois serait une régression
+    // silencieuse du confort qu'il apporte.
+    private val _photoPickerScope = MutableStateFlow(PhotoPickerScope.TRACK_DATES)
+    val photoPickerScope: StateFlow<PhotoPickerScope> = _photoPickerScope.asStateFlow()
 
     // Shared with Planification — one "which map style" preference for the whole app, not a
     // per-screen setting. Satellite falls back to the free default while non-free features are
@@ -259,11 +267,6 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MapLayer.HIKING)
 
     val nonFreeFeaturesDisabled: StateFlow<Boolean> = settingsPreferences.nonFreeFeaturesDisabled
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
-
-    // RIC-43 : lu par l'écran au moment de taper « Ajouter des photos » pour décider entre le
-    // Photo Picker générique et la demande de permission puis le sélecteur filtré par date.
-    val photoDateRangeSearchEnabled: StateFlow<Boolean> = settingsPreferences.photoDateRangeSearchEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     // BIV-16 Vitesse personnalisée: whichever calibration is currently active, applied when
@@ -580,7 +583,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * RIC-43 : sélection faite dans le Photo Picker, une ou plusieurs photos à la fois.
+     * RIC-43 : sélection faite dans le sélecteur interne, une ou plusieurs photos à la fois.
      *
      * Le bilan de fin de lot n'est affiché que s'il a quelque chose à dire (un doublon écarté, un
      * échec) : quand tout est entré, les vignettes qui apparaissent le disent déjà, et un dialogue
@@ -623,31 +626,63 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * RIC-43 : ouvre le sélecteur filtré par date — appelé seulement après vérification de la
-     * permission galerie côté écran (voir PhotoLibraryPermission), jamais avant. La plage vient
-     * des horodatages réels de la trace ouverte (premier/dernier point), pas de startedAt seul :
-     * plus précis sur une sortie multi-jours, et MediaStorePhotoQuery ajoute déjà sa propre marge.
+     * RIC-43 : ouvre le sélecteur interne — appelé seulement après vérification de la permission
+     * galerie côté écran (voir PhotoLibraryPermission), jamais avant, et jamais du tout quand la
+     * fonctionnalité photos est désactivée.
      */
-    fun openDateFilteredPicker() {
+    fun openPhotoPicker() {
+        _photoPickerScope.value = PhotoPickerScope.TRACK_DATES
+        queryPhotoCandidates()
+    }
+
+    /** Changement de périmètre depuis le sélecteur ouvert : même requête, autre portée. */
+    fun setPhotoPickerScope(scope: PhotoPickerScope) {
+        if (_photoPickerScope.value == scope) return
+        _photoPickerScope.value = scope
+        queryPhotoCandidates()
+    }
+
+    /**
+     * Relance la requête sans changer de périmètre : ce dont le sélecteur a besoin au retour du
+     * dialogue système de re-sélection (accès partiel Android 14+), où la liste de photos visibles
+     * par l'app vient de changer sous ses pieds.
+     */
+    fun reloadPhotoPicker() {
+        queryPhotoCandidates()
+    }
+
+    /**
+     * La plage TRACK_DATES vient des horodatages réels de la trace ouverte (premier/dernier point),
+     * pas de startedAt seul : plus précis sur une sortie multi-jours, et MediaStorePhotoQuery
+     * ajoute déjà sa propre marge. Une trace sans horodatage rend une liste vide, résultat honnête
+     * que le sélecteur sait présenter en proposant d'élargir à toute la galerie.
+     */
+    private fun queryPhotoCandidates() {
+        val scope = _photoPickerScope.value
         val track = (_uiState.value as? JournalUiState.Detail)?.track ?: return
         val start = track.points.firstOrNull()?.time
         val end = track.points.lastOrNull()?.time
-        if (start == null || end == null) {
-            _dateFilteredCandidates.value = emptyList()
+        if (scope == PhotoPickerScope.TRACK_DATES && (start == null || end == null)) {
+            _photoPickerCandidates.value = emptyList()
+            _photoPickerLoading.value = false
             return
         }
         // Avant le launch, pas dedans : c'est ce drapeau qui ouvre le dialogue (voir JournalScreen),
         // et l'ouvrir seulement une fois la coroutine ordonnancée, c'est ne rien montrer pendant
         // la requête MediaStore — soit exactement la seconde ou deux qu'il s'agit de couvrir. Le
         // CircularProgressIndicator du dialogue n'était jamais atteint pour cette raison.
-        _dateFilteredPickerLoading.value = true
-        dateFilteredPickerJob?.cancel()
-        dateFilteredPickerJob = viewModelScope.launch {
+        _photoPickerLoading.value = true
+        photoPickerJob?.cancel()
+        photoPickerJob = viewModelScope.launch {
             try {
                 val candidates = withContext(Dispatchers.IO) {
-                    MediaStorePhotoQuery.findInRange(contentResolver, start.toEpochMilli(), end.toEpochMilli())
+                    when (scope) {
+                        PhotoPickerScope.TRACK_DATES ->
+                            MediaStorePhotoQuery.findInRange(contentResolver, start!!.toEpochMilli(), end!!.toEpochMilli())
+                        PhotoPickerScope.WHOLE_GALLERY -> MediaStorePhotoQuery.findAll(contentResolver)
+                    }
                 }
-                _dateFilteredCandidates.value = candidates
+                _photoPickerCandidates.value = candidates
             } catch (e: CancellationException) {
                 // L'utilisateur a fermé le dialogue pendant la requête : rien à signaler, et
                 // surtout pas de résultat à publier. Relancée telle quelle pour ne pas transformer
@@ -657,27 +692,27 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 // SecurityException réelle : la permission galerie peut avoir été retirée entre la
                 // vérification faite par l'écran et cette requête (retrait manuel, ou révocation
                 // automatique d'une app inutilisée).
-                Log.e("JournalViewModel", "Échec de la recherche de photos par date", e)
-                _dateFilteredCandidates.value = null
+                Log.e("JournalViewModel", "Échec de la recherche de photos", e)
+                _photoPickerCandidates.value = null
                 _photoError.value = "Impossible de parcourir la galerie. " +
                     "Vérifie l'autorisation d'accès aux photos dans les réglages d'Android."
             } finally {
-                _dateFilteredPickerLoading.value = false
+                _photoPickerLoading.value = false
             }
         }
     }
 
-    fun closeDateFilteredPicker() {
+    fun closePhotoPicker() {
         // La requête est annulée avec le dialogue : sans ça, une recherche encore en cours
         // republiait ses candidats à son terme et rouvrait le dialogue tout seul.
-        dateFilteredPickerJob?.cancel()
-        dateFilteredPickerJob = null
-        _dateFilteredCandidates.value = null
-        _dateFilteredPickerLoading.value = false
+        photoPickerJob?.cancel()
+        photoPickerJob = null
+        _photoPickerCandidates.value = null
+        _photoPickerLoading.value = false
     }
 
-    fun confirmDateFilteredSelection(uris: List<Uri>) {
-        _dateFilteredCandidates.value = null
+    fun confirmPhotoSelection(uris: List<Uri>) {
+        _photoPickerCandidates.value = null
         addPhotos(uris)
     }
 
