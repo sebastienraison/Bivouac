@@ -871,6 +871,65 @@ class BivouacDatabaseMigrationTest {
 
         migrated.close()
     }
+
+    // RIC-43 : une seule colonne ajoutée, nullable, sans rattrapage — voir MIGRATION_15_16. Ce que
+    // ce test doit prouver, c'est justement que les photos déjà en base (un appareil réel porte la
+    // v15 avec de vraies données) survivent intactes et ressortent avec takenAtZoneCertain à null,
+    // c'est-à-dire « fuseau inconnu », que positionUncertain traite comme « pas certain ».
+    @Test
+    fun migrate15To16_addsTheZoneColumnAsNullWithoutTouchingExistingPhotos() {
+        helper.createDatabase(testDbName, 15).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note) VALUES " +
+                    "('track-1', 'Randonnee Belledonne', 1780300800000, 'hash-track-1', " +
+                    "8200.0, 650.0, 300.0, 3, 240, '')",
+            )
+            execSQL(
+                "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, takenAtMillis, " +
+                    "latitude, longitude, positionPointIndex, positionApproximate, contentHash) " +
+                    "VALUES ('track-1', 'photos/track-1-abc.jpg', 1780300900000, 1780300850000, " +
+                    "NULL, NULL, 1, 1, 'abc123')",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            16,
+            true,
+            BivouacDatabase.MIGRATION_15_16,
+        )
+
+        migrated.query(
+            "SELECT filePath, positionPointIndex, positionApproximate, takenAtZoneCertain " +
+                "FROM logged_track_photo WHERE contentHash = 'abc123'",
+        ).use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("photos/track-1-abc.jpg", cursor.getString(0))
+            assertEquals(1, cursor.getInt(1))
+            assertEquals(1, cursor.getInt(2))
+            assertTrue("la colonne doit valoir null sur une ligne d'avant la migration", cursor.isNull(3))
+        }
+
+        // La colonne est utilisable dans les deux sens dès la migration faite : c'est ce que
+        // LoggedTrackRepository.addPhoto écrit désormais pour toute photo ajoutée.
+        migrated.execSQL(
+            "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, " +
+                "positionApproximate, contentHash, takenAtZoneCertain) " +
+                "VALUES ('track-1', 'photos/track-1-def.jpg', 1780301000000, 1, 'def456', 1)",
+        )
+        migrated.query(
+            "SELECT takenAtZoneCertain FROM logged_track_photo WHERE contentHash = 'def456'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1, cursor.getInt(0))
+        }
+
+        migrated.close()
+    }
 }
 
 private fun String.escapeSql(): String = replace("'", "''")

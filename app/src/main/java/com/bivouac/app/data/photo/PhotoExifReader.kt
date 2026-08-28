@@ -15,7 +15,21 @@ import java.util.Locale
 // nullable — beaucoup de photos (capture d'écran, image envoyée par un tiers, appareil sans GPS)
 // n'ont ni l'un ni l'autre, cas déjà prévu par la spec ("rien n'est perdu, juste moins bien
 // situé").
-data class PhotoExifData(val takenAtMillis: Long?, val latitude: Double?, val longitude: Double?)
+//
+// takenAtZoneCertain dit si [takenAtMillis] repose sur un fuseau connu du fichier lui-même, ou
+// sur la supposition « la photo a été prise dans le fuseau où tourne le téléphone aujourd'hui »
+// (voir originalDateTimeMillis). C'est ce qui distingue une corrélation par horodatage fiable
+// d'une corrélation seulement plausible, et c'est à ce titre que la donnée est persistée
+// (LoggedTrackPhotoEntity.takenAtZoneCertain) puis affichée par la pastille de positionnement
+// approximatif. Deux sources la rendent vraie : l'horodatage GPS, en UTC par construction, et le
+// tag d'offset EXIF quand l'appareil l'écrit. Faux par défaut : en l'absence d'information, on
+// n'affirme rien.
+data class PhotoExifData(
+    val takenAtMillis: Long?,
+    val latitude: Double?,
+    val longitude: Double?,
+    val takenAtZoneCertain: Boolean = false,
+)
 
 object PhotoExifReader {
 
@@ -30,15 +44,23 @@ object PhotoExifReader {
     fun read(input: InputStream): PhotoExifData {
         val exif = runCatching { ExifInterface(input) }.getOrNull() ?: return EMPTY
         val latLong = runCatching { exif.latLong }.getOrNull()
+        // getGpsDateTime() d'abord : dérivé de TAG_GPS_DATESTAMP/TAG_GPS_TIMESTAMP, en UTC et donc
+        // non ambigu (takenAtZoneCertain = true sans autre condition). Le repli DateTimeOriginal,
+        // lui, demande une correction et n'est certain que s'il porte son tag d'offset, voir
+        // originalDateTimeMillis.
+        val gpsDateTime = runCatching { exif.gpsDateTime }.getOrNull()
+        val original = if (gpsDateTime == null) originalDateTimeMillis(exif) else null
         return PhotoExifData(
-            // getGpsDateTime() d'abord : dérivé de TAG_GPS_DATESTAMP/TAG_GPS_TIMESTAMP, en UTC et
-            // donc non ambigu. Le repli DateTimeOriginal, lui, demande une correction, voir
-            // originalDateTimeMillis.
-            takenAtMillis = runCatching { exif.gpsDateTime }.getOrNull() ?: originalDateTimeMillis(exif),
+            takenAtMillis = gpsDateTime ?: original?.millis,
             latitude = latLong?.get(0),
             longitude = latLong?.get(1),
+            takenAtZoneCertain = if (gpsDateTime != null) true else original?.zoneCertain == true,
         )
     }
+
+    // L'horodatage de prise de vue reconstitué, et la façon dont son fuseau a été obtenu — les
+    // deux sont indissociables, d'où un porteur plutôt qu'un simple Long? rendu.
+    private data class OriginalDateTime(val millis: Long, val zoneCertain: Boolean)
 
     /**
      * TAG_DATETIME_ORIGINAL, interprété dans le fuseau porté par TAG_OFFSET_TIME_ORIGINAL quand il
@@ -65,7 +87,7 @@ object PhotoExifReader {
      * puisque c'est précisément l'absence du tag d'offset qui pose problème. Le repositionnement
      * manuel reste la sortie de secours dans ce cas.
      */
-    private fun originalDateTimeMillis(exif: ExifInterface): Long? {
+    private fun originalDateTimeMillis(exif: ExifInterface): OriginalDateTime? {
         val raw = runCatching { exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL) }.getOrNull() ?: return null
         // Même garde que la lib : un horodatage tout à zéro ("0000:00:00 00:00:00") est un
         // remplissage d'appareil, pas une date.
@@ -74,10 +96,15 @@ object PhotoExifReader {
             runCatching { LocalDateTime.parse(raw.trim(), format) }.getOrNull()
         } ?: return null
         val offset = runCatching { exif.getAttribute(ExifInterface.TAG_OFFSET_TIME_ORIGINAL) }.getOrNull()
-        val zone = offset?.takeIf { OFFSET_PATTERN.matches(it) }
+        val declaredZone = offset?.takeIf { OFFSET_PATTERN.matches(it) }
             ?.let { runCatching { ZoneOffset.of(it) as ZoneId }.getOrNull() }
-            ?: ZoneId.systemDefault()
-        return wallClock.atZone(zone).toInstant().toEpochMilli()
+        // Un offset illisible compte comme un offset absent, ici aussi : le fuseau du téléphone
+        // sert de repli, et le résultat n'est donc pas certain pour autant.
+        val zone = declaredZone ?: ZoneId.systemDefault()
+        return OriginalDateTime(
+            millis = wallClock.atZone(zone).toInstant().toEpochMilli(),
+            zoneCertain = declaredZone != null,
+        )
     }
 
     // Le format EXIF canonique, plus la variante à tirets que la lib tolère aussi : quelques
@@ -91,5 +118,5 @@ object PhotoExifReader {
     // (la borne des fuseaux réels).
     private val OFFSET_PATTERN = Regex("^[+-](0\\d|1[0-4]):\\d{2}$")
 
-    private val EMPTY = PhotoExifData(null, null, null)
+    private val EMPTY = PhotoExifData(null, null, null, takenAtZoneCertain = false)
 }

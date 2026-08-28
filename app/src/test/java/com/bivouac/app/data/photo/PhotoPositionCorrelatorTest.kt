@@ -38,6 +38,52 @@ class PhotoPositionCorrelatorTest {
         assertTrue("un placement GPS n'est jamais approximatif", !position.approximate)
     }
 
+    // Garde de distance : un GPS parfaitement valide mais qui n'est pas sur cette trace (photo
+    // prise chez soi, sur la route, ou pendant une autre sortie du même appareil) ne doit plus
+    // accrocher la photo au point le moins lointain. ~0,1 degré de latitude = ~11 km, très
+    // au-delà de la borne de 500 m.
+    @Test
+    fun gpsFarFromTheTrack_yieldsNoPosition() {
+        val position = PhotoPositionCorrelator.correlate(
+            points,
+            latitude = points[0].latitude + 0.1,
+            longitude = points[0].longitude,
+            takenAtMillis = null,
+        )
+
+        assertNull(position.pointIndex)
+        assertTrue(!position.approximate)
+    }
+
+    // La borne ne doit pas rejeter un écart légitime : ~0,002 degré de latitude = ~220 m, ce que
+    // peut produire un fix dégradé ou une photo prise depuis un belvédère à côté du sentier.
+    @Test
+    fun gpsSlightlyOffTheTrack_stillSnapsToTheNearestPoint() {
+        val position = PhotoPositionCorrelator.correlate(
+            points,
+            latitude = points[2].latitude + 0.002,
+            longitude = points[2].longitude,
+            takenAtMillis = null,
+        )
+
+        assertEquals(2, position.pointIndex)
+        assertTrue(!position.approximate)
+    }
+
+    // Un GPS valide mais hors trace dit que la photo n'a pas été prise dessus : l'horodatage, même
+    // parfaitement dans la tolérance, ne doit pas servir de session de rattrapage.
+    @Test
+    fun gpsFarFromTheTrack_doesNotFallBackToTimeCorrelation() {
+        val position = PhotoPositionCorrelator.correlate(
+            points,
+            latitude = points[0].latitude + 0.1,
+            longitude = points[0].longitude,
+            takenAtMillis = points[2].time!!.toEpochMilli(),
+        )
+
+        assertNull(position.pointIndex)
+    }
+
     @Test
     fun noGps_timestampWithinTolerance_correlatesToNearestPointByTime_andIsApproximate() {
         // 2 minutes après le point d'index 3 (8h15, soit 8h17) : plus proche de lui (2 min) que du

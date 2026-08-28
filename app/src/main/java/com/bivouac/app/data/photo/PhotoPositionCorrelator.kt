@@ -1,5 +1,6 @@
 package com.bivouac.app.data.photo
 
+import com.bivouac.app.data.gpx.GeoMath
 import com.bivouac.app.data.gpx.TrackGeometry
 import com.bivouac.app.data.model.TrackPoint
 import kotlin.math.abs
@@ -24,6 +25,26 @@ object PhotoPositionCorrelator {
     // confirmer sur de vraies photos en session device ; ajustable sans changer la logique.
     private const val TIME_TOLERANCE_MILLIS = 10 * 60 * 1000L
 
+    /**
+     * Pendant spatial de [TIME_TOLERANCE_MILLIS] : au-delà, le GPS de la photo n'est pas retenu et
+     * la photo reste sans position, plutôt que d'être accrochée au point de la trace le moins
+     * lointain d'une trace dont elle n'a rien à voir.
+     *
+     * Le cas visé est réel et n'était pas couvert : une photo prise chez soi, sur le trajet en
+     * voiture, ou dans une autre sortie du même appareil, porte un GPS parfaitement valide qui
+     * n'est simplement pas sur cette trace-là — [TrackGeometry.nearestPointIndex] rend malgré tout
+     * un index, et la photo atterrissait sur le premier ou le dernier point sans le moindre signal.
+     *
+     * 500 m, parce que la borne doit passer largement au-dessus de tout ce qui peut légitimement
+     * séparer une photo de la trace : erreur d'un fix GPS dégradé sous couvert forestier ou en
+     * fond de vallon (quelques dizaines de mètres, exceptionnellement une centaine), écart entre
+     * le sentier et le belvédère d'où la photo est prise, et espacement entre deux points
+     * enregistrés (de l'ordre de quelques dizaines de mètres à pied). Et elle doit rester très en
+     * dessous de l'échelle à laquelle « ailleurs » commence : un demi-kilomètre, c'est déjà un
+     * autre versant. Ajustable sans changer la logique, comme la tolérance temporelle.
+     */
+    private const val GPS_MAX_DISTANCE_METERS = 500.0
+
     data class Position(val pointIndex: Int?, val approximate: Boolean) {
         companion object {
             val NONE = Position(pointIndex = null, approximate = false)
@@ -33,12 +54,24 @@ object PhotoPositionCorrelator {
     fun correlate(points: List<TrackPoint>, latitude: Double?, longitude: Double?, takenAtMillis: Long?): Position {
         if (points.isEmpty()) return Position.NONE
         if (latitude != null && longitude != null) {
-            return Position(TrackGeometry.nearestPointIndex(points, latitude, longitude), approximate = false)
+            nearestIndexByDistance(points, latitude, longitude)?.let { return Position(it, approximate = false) }
+            // Volontairement pas de repli sur la corrélation temporelle quand le GPS est là mais
+            // trop loin : un GPS valide qui tombe à des kilomètres de la trace dit que la photo
+            // n'a pas été prise dessus, et l'horodatage ne saurait le contredire.
+            return Position.NONE
         }
         if (takenAtMillis != null) {
             nearestIndexByTime(points, takenAtMillis)?.let { return Position(it, approximate = true) }
         }
         return Position.NONE
+    }
+
+    // Hors tolérance, aucune position : même règle que [nearestIndexByTime], appliquée à l'espace.
+    private fun nearestIndexByDistance(points: List<TrackPoint>, latitude: Double, longitude: Double): Int? {
+        val index = TrackGeometry.nearestPointIndex(points, latitude, longitude)
+        val point = points[index]
+        val distanceMeters = GeoMath.haversineMeters(latitude, longitude, point.latitude, point.longitude)
+        return index.takeIf { distanceMeters <= GPS_MAX_DISTANCE_METERS }
     }
 
     // Hors tolérance, aucune position n'est retenue plutôt que la plus proche quand même : une

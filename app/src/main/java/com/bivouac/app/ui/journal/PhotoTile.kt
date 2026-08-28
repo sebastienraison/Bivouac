@@ -28,6 +28,7 @@ import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
+import com.bivouac.app.data.db.positionUncertain
 
 /**
  * RIC-43 : le rendu commun d'une photo du Journal partout où elle apparaît en petit — bandeau de la
@@ -57,7 +58,7 @@ internal fun PhotoTile(photo: LoggedTrackPhotoEntity, modifier: Modifier = Modif
                 modifier = Modifier.matchParentSize(),
             )
         }
-        if (photo.positionApproximate) {
+        if (photo.positionUncertain) {
             ApproximatePositionBadge(
                 modifier = Modifier.align(Alignment.BottomStart).padding(3.dp),
             )
@@ -104,14 +105,17 @@ private fun MissingPhotoPlaceholder(modifier: Modifier = Modifier) {
 }
 
 /**
- * RIC-43 : « positionnement approximatif », c'est-à-dire une position déduite de l'horodatage et
- * non d'un GPS ni d'un placement manuel.
+ * RIC-43 : « positionnement approximatif », c'est-à-dire une position déduite de l'horodatage
+ * alors que le fuseau de cet horodatage n'était pas connu du fichier — voir
+ * LoggedTrackPhotoEntity.positionUncertain pour les trois autres chemins, tous fiables et donc
+ * sans pastille.
  *
- * Le WIP ne le signalait que par une opacité réduite du marqueur carte, invisible en pratique
- * (rien à quoi comparer quand toutes les photos d'une sortie sont dans le même cas) et absente de
- * la galerie. Un pictogramme discret plutôt qu'un libellé : la vignette la plus petite fait 72 dp,
- * un texte y serait illisible, et la même pastille sert aux deux tailles. Le sens reste accessible
- * par la description de contenu.
+ * Le badge est porté par la photo, jamais par la carte : le WIP signalait aussi le cas par un
+ * marqueur estompé et un « ? » sur la carte, invisible en pratique (rien à quoi comparer quand
+ * toutes les photos d'une sortie sont dans le même cas) et absent de la galerie. Un pictogramme
+ * discret plutôt qu'un libellé : la vignette la plus petite fait 72 dp, un texte y serait
+ * illisible, et la même pastille sert à toutes les tailles. Le sens reste accessible par la
+ * description de contenu.
  */
 @Composable
 private fun ApproximatePositionBadge(modifier: Modifier = Modifier) {

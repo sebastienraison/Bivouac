@@ -16,9 +16,10 @@ import androidx.room.PrimaryKey
 // quand aucune corrélation (GPS ni horodatage) n'a été possible : la photo reste alors accessible
 // seulement depuis la galerie plate, jamais un blocage.
 //
-// positionApproximate distingue une position déduite par horodatage (bandeau "positionnement
-// approximatif" côté UI) d'une position certaine — GPS d'origine ou repositionnement manuel par
-// l'utilisateur, qui vaut confirmation explicite au même titre qu'un GPS exact.
+// positionApproximate distingue une position déduite par horodatage d'une position certaine : GPS
+// d'origine, ou repositionnement manuel par l'utilisateur, qui vaut confirmation explicite au même
+// titre qu'un GPS exact. Attention, il ne suffit plus à lui seul pour décider d'afficher la
+// pastille côté UI, voir positionUncertain plus bas.
 @Entity(
     tableName = "logged_track_photo",
     foreignKeys = [
@@ -65,4 +66,32 @@ data class LoggedTrackPhotoEntity(
     val sourceDisplayName: String? = null,
     val sourceRelativePath: String? = null,
     val sourceDateTakenMillis: Long? = null,
+    // Le fuseau qui a servi à reconstituer takenAtMillis était-il porté par le fichier lui-même
+    // (horodatage GPS en UTC, ou tag d'offset EXIF), ou seulement supposé être celui du téléphone
+    // au moment de l'ajout ? Voir PhotoExifData.takenAtZoneCertain, dont c'est la persistance.
+    //
+    // Nullable, et null pour les lignes d'avant la migration 15->16 : l'information n'était pas
+    // relevée à l'époque, et rouvrir les fichiers pour la rattraper coûterait une lecture EXIF par
+    // photo sans rien garantir (le fichier a pu disparaître). « Inconnu » se comporte alors comme
+    // « pas certain », c'est-à-dire exactement comme avant la migration côté affichage.
+    val takenAtZoneCertain: Boolean? = null,
 )
+
+/**
+ * RIC-43 : la photo mérite-t-elle la pastille « positionnement approximatif » ?
+ *
+ * Un seul cas la mérite : une position déduite de la seule corrélation temporelle, alors que le
+ * fuseau de l'horodatage n'était pas connu du fichier. C'est le seul où la position peut être
+ * franchement fausse sans que rien ne le laisse voir, puisque le fuseau du téléphone au moment de
+ * l'ajout tient alors lieu d'hypothèse (voir PhotoExifReader).
+ *
+ * Les trois autres chemins sont fiables et ne portent donc aucune pastille : le GPS de la photo
+ * (désormais borné en distance, voir PhotoPositionCorrelator), la corrélation temporelle avec un
+ * fuseau certain (à la dérive d'horloge près, qui se compte en minutes), et le placement ou le
+ * repositionnement manuel, qui vaut confirmation explicite.
+ *
+ * Extension et non colonne : c'est une lecture des deux colonnes ci-dessus, pas un troisième état
+ * à tenir synchronisé avec elles.
+ */
+val LoggedTrackPhotoEntity.positionUncertain: Boolean
+    get() = positionApproximate && takenAtZoneCertain != true

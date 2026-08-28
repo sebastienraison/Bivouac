@@ -8,6 +8,7 @@ import java.time.ZoneOffset
 import java.util.TimeZone
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -66,6 +67,9 @@ class PhotoExifReaderTest {
         assertEquals(expected, data.takenAtMillis)
         assertNull(data.latitude)
         assertNull(data.longitude)
+        // Le fuseau n'est pas dans le fichier, il est supposé : c'est ce que
+        // LoggedTrackPhotoEntity.positionUncertain traduira par une pastille sur la vignette.
+        assertFalse("un fuseau supposé n'est pas un fuseau certain", data.takenAtZoneCertain)
     }
 
     // Le défaut que corrige RIC-43 : sans le correctif, l'heure murale était rendue telle quelle
@@ -99,6 +103,7 @@ class PhotoExifReaderTest {
         val expected = LocalDateTime.of(2026, 6, 12, 10, 30, 0)
             .toInstant(ZoneOffset.ofHoursMinutes(5, 30)).toEpochMilli()
         assertEquals(expected, data.takenAtMillis)
+        assertTrue("le fichier porte son propre fuseau", data.takenAtZoneCertain)
     }
 
     // Un offset illisible doit se comporter comme un offset absent (la lib l'ignore aussi), et pas
@@ -115,6 +120,9 @@ class PhotoExifReaderTest {
         val expected = LocalDateTime.of(2026, 6, 12, 10, 30, 0)
             .atZone(ZoneId.of("Europe/Paris")).toInstant().toEpochMilli()
         assertEquals(expected, data.takenAtMillis)
+        // Et un offset illisible ne vaut pas davantage qu'un offset absent : le fuseau reste
+        // supposé, donc pas certain.
+        assertFalse(data.takenAtZoneCertain)
     }
 
     // GPS actif : l'horodatage GPS est en UTC par construction et prime sur DateTimeOriginal,
@@ -131,6 +139,8 @@ class PhotoExifReaderTest {
 
         val expected = LocalDateTime.of(2026, 6, 12, 8, 30, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
         assertEquals(expected, data.takenAtMillis)
+        // De l'UTC vrai : aussi certain qu'un tag d'offset, et sans dépendre du téléphone.
+        assertTrue(data.takenAtZoneCertain)
     }
 
     @Test
@@ -159,6 +169,7 @@ class PhotoExifReaderTest {
         assertNull(data.takenAtMillis)
         assertNull(data.latitude)
         assertNull(data.longitude)
+        assertFalse(data.takenAtZoneCertain)
     }
 
     // Contenu qui n'est pas une image du tout : la lecture doit dégrader en « aucune métadonnée »,

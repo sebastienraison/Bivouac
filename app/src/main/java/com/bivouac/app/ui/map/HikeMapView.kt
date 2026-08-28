@@ -819,17 +819,11 @@ private fun photoClusterMarker(
 // taille, seul l'ordre de grandeur compte.
 private fun clusterBadgeText(count: Int): String = if (count > 9) "9+" else count.toString()
 
-// RIC-43 : le badge du positionnement approximatif sur le marqueur carte. Le point d'interrogation
-// plutôt qu'un pictogramme : à 18 dp de diamètre, un glyphe dessiné au Canvas serait illisible,
-// alors qu'un caractère unique reste net. Complète l'opacité réduite du marqueur, qui ne se voit
-// que par comparaison — donc jamais quand toutes les photos d'une sortie sont dans le même cas.
-private const val PHOTO_APPROXIMATE_BADGE_TEXT = "?"
-
 /**
  * RIC-43 : les icônes de marqueur photo déjà fabriquées, réutilisées d'un rendu à l'autre.
  *
  * photoMarkerIcon rasterise un Bitmap neuf à chaque appel, alors que le rendu ne dépend que du
- * badge — au plus une douzaine de combinaisons (1 à 9, « 9+ », « ? », et le marqueur nu). Or
+ * badge — au plus une douzaine de combinaisons (2 à 9, « 9+ », et le marqueur nu). Or
  * renderTrack les refabriquait toutes à chaque recomposition et après chaque pincement de zoom
  * débouncé, c'est-à-dire plusieurs fois par seconde de manipulation de la carte.
  *
@@ -917,17 +911,13 @@ private fun photoMarker(
     val marker = Marker(mapView)
     marker.position = geoPoints[index]
     marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-    // Position déduite par horodatage : marqueur atténué ET badgé d'un point d'interrogation.
-    // L'opacité seule ne remplit pas la spec, elle ne se lit que par comparaison avec un marqueur
-    // certain à l'écran au même moment — ce qui n'arrive justement pas quand toutes les photos
-    // d'une sortie sont approximatives, le cas le plus fréquent. Pleine opacité et pas de badge
-    // pendant le repositionnement : le marqueur sert alors de repère pour retrouver celui qu'on
-    // est en train de déplacer, et sa position est sur le point de devenir certaine.
-    val approximate = photo.positionApproximate && !isRepositioning
-    marker.icon = iconCache.get(mapView.context, if (approximate) PHOTO_APPROXIMATE_BADGE_TEXT else null)
-    // Via Marker.alpha et non l'alpha du drawable : osmdroid réécrit ce dernier à chaque frame,
-    // voir photoMarkerIcon.
-    marker.alpha = if (approximate) PHOTO_MARKER_APPROXIMATE_ALPHA else 1f
+    // Marqueur identique pour toutes les photos posées : le positionnement approximatif est
+    // signalé par les vignettes (bandeau, galerie), jamais par la carte. Décidé en revue de
+    // conception, et pour cause : ni l'opacité réduite ni le « ? » que portait le WIP ne se
+    // lisaient sur la carte, la première parce qu'elle demande un marqueur certain à côté pour
+    // qu'il y ait quoi que ce soit à comparer, le second parce qu'il s'ajoutait à un marqueur déjà
+    // petit. Le badge appartient à la photo, la carte se contente de situer.
+    marker.icon = iconCache.get(mapView.context, null)
     marker.setInfoWindow(null)
     marker.isDraggable = isRepositioning
     if (!isRepositioning) {
@@ -956,10 +946,6 @@ private fun photoMarker(
     })
     return marker
 }
-
-// Fraction et non valeur 0-255 : c'est ce que Marker.alpha attend, la seule voie d'atténuation
-// qu'osmdroid respecte (voir photoMarkerIcon).
-private const val PHOTO_MARKER_APPROXIMATE_ALPHA = 0.55f
 
 // Same drag-and-snap gabarit as a bivouac marker, but nothing here is ever persisted — every
 // snapped position during a drag is immediately reported as final via onCursorChanged (no

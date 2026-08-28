@@ -188,6 +188,7 @@ class LoggedTrackPhotoRepositoryTest {
                 longitude = null,
                 positionPointIndex = null,
                 positionApproximate = false,
+                takenAtZoneCertain = null,
             )
         }.exceptionOrNull()
 

@@ -368,7 +368,7 @@ class LoggedTrackRepository(context: Context) {
      * [contentHash] est fourni par l'appelant ([addPhotosFromPicker]), qui l'utilise déjà pour
      * écarter les doublons avant d'arriver ici — ce n'est donc pas le rôle de cette fonction de le
      * vérifier une deuxième fois. [takenAtMillis]/[latitude]/[longitude]/[positionPointIndex]/
-     * [positionApproximate]/[source] sont pareillement fournis par l'appelant (lecture EXIF,
+     * [positionApproximate]/[takenAtZoneCertain]/[source] sont pareillement fournis par l'appelant (lecture EXIF,
      * corrélation avec la trace, relevé MediaStore) — voir LoggedTrackPhotoEntity pour ce que porte
      * chaque champ.
      */
@@ -382,6 +382,7 @@ class LoggedTrackRepository(context: Context) {
         longitude: Double?,
         positionPointIndex: Int?,
         positionApproximate: Boolean,
+        takenAtZoneCertain: Boolean?,
         source: PhotoSourceMetadata = PhotoSourceMetadata.EMPTY,
     ): Long {
         LoggedTrackPhotoStore.dir(appContext).mkdirs()
@@ -401,6 +402,7 @@ class LoggedTrackRepository(context: Context) {
             longitude = longitude,
             positionPointIndex = positionPointIndex,
             positionApproximate = positionApproximate,
+            takenAtZoneCertain = takenAtZoneCertain,
             contentHash = contentHash,
             sourceDisplayName = source.displayName,
             sourceRelativePath = source.relativePath,
@@ -455,6 +457,7 @@ class LoggedTrackRepository(context: Context) {
                     longitude = exif.longitude,
                     positionPointIndex = position.pointIndex,
                     positionApproximate = position.approximate,
+                    takenAtZoneCertain = exif.takenAtZoneCertain,
                     source = MediaStorePhotoQuery.readSource(resolver, uri),
                 )
                 true

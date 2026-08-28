@@ -30,7 +30,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open") — a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 15
+        const val SCHEMA_VERSION = 16
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -418,6 +418,24 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-43 : le fuseau de l'horodatage de prise de vue était-il connu du fichier, ou
+        // seulement supposé ? Voir LoggedTrackPhotoEntity.takenAtZoneCertain : c'est ce qui
+        // distingue désormais une position vraiment approximative d'une position fiable.
+        //
+        // Migration séparée et non consolidée dans le 14 -> 15 ci-dessus, contrairement aux
+        // colonnes ajoutées pendant le développement de RIC-43 : un appareil réel porte déjà la
+        // v15 avec de vraies photos, réécrire cette migration lui ferait rater celle-ci.
+        //
+        // Colonne nullable, aucun rattrapage : les lignes existantes valent null, ce que
+        // positionUncertain traite comme « pas certain », soit exactement l'affichage qu'elles
+        // avaient avant la migration. Rouvrir chaque fichier pour relire son EXIF coûterait une
+        // lecture par photo sans rien garantir (le fichier a pu disparaître, voir RIC-151).
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `logged_track_photo` ADD COLUMN `takenAtZoneCertain` INTEGER")
+            }
+        }
+
         // ~256K points de code par tranche : au pire quadruplé en UTF-8 ça reste sous la fenêtre de
         // 2 Mo, et un GPX réel (ASCII pour l'essentiel) en est très loin.
         private const val MIGRATION_CHUNK_CODE_POINTS = 256 * 1024
@@ -492,6 +510,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                         MIGRATION_12_13,
                         MIGRATION_13_14,
                         MIGRATION_14_15,
+                        MIGRATION_15_16,
                     )
                     .build()
                     .also { instance = it }
