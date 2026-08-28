@@ -1008,8 +1008,13 @@ private fun cursorBubbleText(points: List<TrackPoint>, index: Int, distanceCache
 
 // RIC-43 : distance en mètres réels (pas en points de trace, dont la densité varie) — une photo
 // est jugée « au curseur » si elle tombe à moins de CURSOR_BUBBLE_PHOTO_RADIUS_METERS le long de
-// la trace, même raisonnement de tolérance que TrackGeometry.isLoop (50 m).
-private const val CURSOR_BUBBLE_PHOTO_RADIUS_METERS = 100.0
+// la trace.
+//
+// 20 m et non 100 m comme au premier jet : à 100 m le carrousel rassemblait des photos prises à
+// des endroits que le marcheur distingue parfaitement, ce qui revenait à répondre « voilà les
+// photos du coin » à une question qui porte sur un point précis. Vingt mètres, c'est la portée de
+// ce qu'on appelle « ici » en rando : au-delà, ce n'est plus le même endroit.
+private const val CURSOR_BUBBLE_PHOTO_RADIUS_METERS = 20.0
 
 /**
  * RIC-43 : ce que la bulle a à montrer au point [index] — la ligne distance/altitude, et les photos
