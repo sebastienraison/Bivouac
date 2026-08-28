@@ -30,6 +30,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -120,6 +121,19 @@ data class DuplicatePlanRequest(
     val bivouacPoints: List<BivouacPoint>,
     val suggestedName: String,
 )
+
+/**
+ * RIC-149 : où en est l'enregistrement des photos d'une édition.
+ *
+ * Non nul du clic sur la disquette (ou sur « Enregistrer » du dialogue de sortie) jusqu'à la
+ * dernière photo écrite. L'écran s'en sert pour bloquer, voir JournalScreen : tant que ce compte
+ * avance, plus rien n'est manipulable et la sortie n'a pas lieu.
+ *
+ * [total] additionne les suppressions et les ajouts, dans cet ordre : ce sont les deux moitiés du
+ * même geste, et les compter séparément donnerait deux barres qui se succèdent pour une seule
+ * attente.
+ */
+data class PhotoCommitProgress(val done: Int, val total: Int)
 
 class JournalViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -255,6 +269,13 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                     .sortedWith(PhotoDisplayOrder)
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * RIC-149 : non nul pendant qu'un enregistrement de photos est en cours. Voir
+     * [PhotoCommitProgress], et [saveDetails] pour ce qui le pose et le retire.
+     */
+    private val _photoCommitProgress = MutableStateFlow<PhotoCommitProgress?>(null)
+    val photoCommitProgress: StateFlow<PhotoCommitProgress?> = _photoCommitProgress.asStateFlow()
 
     /**
      * RIC-149 : y a-t-il, côté photos, quelque chose que la disquette enregistrerait ? L'écran
@@ -396,7 +417,11 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         // s'y trouve est par construction périmé.
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                runCatching { repository.purgePhotoTransit() }
+                // keptPaths et non un balayage aveugle : quitter le Journal puis y revenir aussitôt
+                // détruit le ViewModel précédent alors que son enregistrement, lui, se poursuit
+                // (NonCancellable, voir saveDetails). Ses fichiers de transit ne sont périmés qu'aux
+                // yeux d'un ViewModel qui ne les connaît pas, d'où la liste partagée.
+                runCatching { repository.purgePhotoTransit(keptPaths = transitPathsBeingCommitted.toSet()) }
                     .onFailure { Log.w("JournalViewModel", "Nettoyage des photos en transit interrompu", it) }
             }
         }
@@ -623,22 +648,48 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * photo supprimée puis réajoutée dans la même édition (ce que la déduplication autorise
      * justement, voir addPhotos) doit finir présente, pas écartée en doublon par la ligne qu'on
      * s'apprête à effacer.
+     *
+     * [onFinished] est appelé quand tout est écrit, jamais avant, et c'est ce qui rend son sens au
+     * bouton « Enregistrer » du dialogue de sortie : c'est lui qui porte la fermeture de l'écran.
+     * Signalé en recette, ce chemin-là perdait une partie des photos ajoutées alors que la
+     * disquette les enregistrait toutes. La cause tenait à l'enchaînement, sur le même clic, de
+     * cette sauvegarde puis de closeTrack : celui-ci appelle discardPhotoEdits, dont la boucle de
+     * suppression (un unlink par photo) rattrapait la boucle d'enregistrement, plus lente (un
+     * déplacement plus un insert par photo), et effaçait les fichiers de transit qu'il restait à
+     * enregistrer. La disquette ne quittant pas l'écran ne déclenchait rien de tout ça : toute
+     * l'asymétrie était là. Voir JournalPhotoCommitRaceTest.
+     *
+     * Trois verrous plutôt qu'un, parce que perdre des photos est irréversible :
+     * - la sortie attend [onFinished], donc la course n'a plus lieu d'être ;
+     * - les chemins en cours d'écriture sont déclarés dans [transitPathsBeingCommitted], que
+     *   [discardPhotoEdits], [onCleared] et le balayage de démarrage épargnent ;
+     * - l'écriture est NonCancellable, donc la mort du ViewModel pendant l'enregistrement (retour
+     *   vers un autre onglet) ne la coupe pas en deux.
      */
-    fun saveDetails(tags: Set<String>, note: String) {
-        val entry = currentEntry() ?: return
+    fun saveDetails(tags: Set<String>, note: String, onFinished: () -> Unit = {}) {
+        val entry = currentEntry() ?: return onFinished()
         val previousTags = _currentTags.value.toSet()
         val deletions = _pendingPhotoDeletions.value
         val additions = _pendingPhotoAdds.value
+        val photoWork = deletions.size + additions.size
+        val inFlightPaths = additions.map { it.transitPath }
+        // Posés avant le launch, donc avant que quoi que ce soit d'autre ne puisse s'exécuter : la
+        // protection ne doit pas dépendre du moment où la coroutine sera ordonnancée, c'est
+        // exactement ce qui manquait.
+        transitPathsBeingCommitted += inFlightPaths
+        if (photoWork > 0) _photoCommitProgress.value = PhotoCommitProgress(done = 0, total = photoWork)
         viewModelScope.launch {
-            val photoFailures = withContext(Dispatchers.IO) {
+            val photoFailures = withContext(NonCancellable + Dispatchers.IO) {
                 (tags - previousTags).forEach { repository.addTag(entry.id, it) }
                 (previousTags - tags).forEach { repository.removeTag(entry.id, it) }
                 repository.updateNote(entry.id, note)
                 var failures = 0
-                if (deletions.isNotEmpty() || additions.isNotEmpty()) {
+                if (photoWork > 0) {
+                    var done = 0
+                    val advance = { done++; _photoCommitProgress.value = PhotoCommitProgress(done, photoWork) }
                     runCatching {
-                        repository.deletePhotos(deletions)
-                        failures = repository.commitPendingPhotos(entry.id, additions)
+                        repository.deletePhotos(deletions, onProgress = advance)
+                        failures = repository.commitPendingPhotos(entry.id, additions, onProgress = advance)
                         _currentPhotos.value = repository.listPhotos(entry.id)
                     }.onFailure {
                         Log.e("JournalViewModel", "Échec de l'enregistrement des photos", it)
@@ -647,6 +698,8 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 }
                 failures
             }
+            transitPathsBeingCommitted -= inFlightPaths.toSet()
+            _photoCommitProgress.value = null
             // Vidées après l'écriture, jamais avant : les vignettes en transit tiennent l'affichage
             // jusqu'à ce que la liste relue prenne le relais, sinon elles disparaîtraient le temps
             // d'un aller-retour disque. Le doublon que ce recouvrement pourrait produire est écarté
@@ -663,6 +716,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             _currentTags.value = tags.toList()
             _tagsByTrackId.value = _tagsByTrackId.value + (entry.id to tags.toList())
             refreshCurrentEntry(entry.id, note = note)
+            onFinished()
         }
     }
 
@@ -797,7 +851,10 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * la sortie du mode édition.
      */
     fun discardPhotoEdits() {
-        val discarded = _pendingPhotoAdds.value
+        // Les fichiers qu'un enregistrement est en train de déplacer sont épargnés : ils ne
+        // sont plus à l'abandon, ils sont en route. C'est le filet qui manquait quand la sortie
+        // d'écran suivait immédiatement la sauvegarde, voir saveDetails.
+        val discarded = _pendingPhotoAdds.value.filterNot { it.transitPath in transitPathsBeingCommitted }
         _pendingPhotoAdds.value = emptyList()
         _pendingPhotoDeletions.value = emptySet()
         if (discarded.isEmpty()) return
@@ -814,7 +871,9 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * brutale du process) est rattrapé au prochain démarrage, voir purgePhotoTransit.
      */
     override fun onCleared() {
-        val pending = _pendingPhotoAdds.value
+        // Même exception que discardPhotoEdits : un enregistrement lancé juste avant la destruction
+        // survit à celle-ci (il est NonCancellable), ses fichiers ne sont donc pas des orphelins.
+        val pending = _pendingPhotoAdds.value.filterNot { it.transitPath in transitPathsBeingCommitted }
         if (pending.isNotEmpty()) {
             runCatching { repository.discardPendingPhotos(pending) }
                 .onFailure { Log.w("JournalViewModel", "Photos en transit non nettoyées", it) }
@@ -1167,5 +1226,19 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         val input = repository.calibrationSamples()
         val result = SpeedCalibrationCalculator.compute(input.aggregate, input.fallbackSamples) ?: return
         settingsPreferences.setAutoCalibration(result.calibration)
+    }
+
+    private companion object {
+        /**
+         * RIC-149 : les chemins de transit qu'un enregistrement est en train de déplacer.
+         *
+         * Partagé entre instances, et pas porté par le ViewModel : un enregistrement survit à la
+         * destruction du ViewModel qui l'a lancé (il est NonCancellable), donc le suivant doit
+         * pouvoir savoir que ces fichiers-là ne sont pas des orphelins avant de balayer le transit.
+         *
+         * Ensemble concurrent : il est écrit depuis le thread principal et lu depuis les threads
+         * d'entrées/sorties du balayage.
+         */
+        val transitPathsBeingCommitted: MutableSet<String> = ConcurrentHashMap.newKeySet()
     }
 }

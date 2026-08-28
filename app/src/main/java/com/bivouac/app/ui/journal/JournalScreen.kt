@@ -222,6 +222,7 @@ fun JournalScreen(
     val photoError by viewModel.photoError.collectAsStateWithLifecycle()
     val photoAddReport by viewModel.photoAddReport.collectAsStateWithLifecycle()
     val photosDirty by viewModel.photosDirty.collectAsStateWithLifecycle()
+    val photoCommitProgress by viewModel.photoCommitProgress.collectAsStateWithLifecycle()
     val photoPickerCandidates by viewModel.photoPickerCandidates.collectAsStateWithLifecycle()
     val photoPickerLoading by viewModel.photoPickerLoading.collectAsStateWithLifecycle()
     val photoPickerScope by viewModel.photoPickerScope.collectAsStateWithLifecycle()
@@ -615,6 +616,32 @@ fun JournalScreen(
             dismissButton = {
                 TextButton(onClick = viewModel::dismissPhotoDeleteConfirmation) { Text("Annuler") }
             },
+        )
+    }
+
+    // RIC-149 : l'enregistrement des photos, tant qu'il dure. Bloquant et sans porte de sortie,
+    // sur le patron du rattrapage de base au démarrage (voir ElevationBackfillGate) : la sortie de
+    // l'écran attend déjà la fin de l'écriture (voir JournalViewModel.saveDetails), ce dialogue est
+    // ce qui donne son sens à cette attente au lieu d'une app qui semble figée.
+    //
+    // Rendu ici, au niveau de l'écran, et non dans la vue détail : il couvre les deux chemins
+    // d'enregistrement (la disquette et le bouton « Enregistrer » du dialogue de sortie) du seul
+    // fait qu'il suit l'état du ViewModel, sans que ni l'un ni l'autre n'ait à y penser.
+    photoCommitProgress?.let { progress ->
+        AlertDialog(
+            onDismissRequest = {},
+            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+            title = { Text("Enregistrement des photos") },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+                    Text("${progress.done} sur ${progress.total}…")
+                }
+            },
+            confirmButton = {},
         )
     }
 
@@ -1568,7 +1595,10 @@ internal fun ThreeStopJournalDetail(
     onCursorDragged: (Int) -> Unit,
     currentTags: List<String>,
     tagsByTrackId: Map<String, List<String>>,
-    onSaveDetails: (Set<String>, String) -> Unit,
+    // RIC-149 : le troisième paramètre est appelé une fois tout écrit, photos comprises. C'est ce
+    // qui permet à une sortie d'écran d'attendre la fin de l'enregistrement au lieu de partir
+    // pendant, voir JournalViewModel.saveDetails et le dialogue de sortie plus bas.
+    onSaveDetails: (Set<String>, String, () -> Unit) -> Unit,
     currentPhotos: List<LoggedTrackPhotoEntity> = emptyList(),
     photosLoading: Boolean = false,
     onAddPhotosClick: () -> Unit = {},
@@ -1644,9 +1674,13 @@ internal fun ThreeStopJournalDetail(
             }
         }
 
-        fun saveAndStopEditing() {
-            if (isDirty) onSaveDetails(draftTags, draftNote.text)
+        // [onFinished] n'est appelé qu'une fois l'enregistrement réellement terminé, jamais au
+        // retour de cet appel : la disquette n'en a pas l'usage (elle reste sur l'écran), le
+        // dialogue de sortie y met sa fermeture. Le cas « rien à enregistrer » l'appelle tout de
+        // suite, sinon une sortie propre resterait à quai faute d'écriture à attendre.
+        fun saveAndStopEditing(onFinished: () -> Unit = {}) {
             isEditing = false
+            if (isDirty) onSaveDetails(draftTags, draftNote.text, onFinished) else onFinished()
         }
 
         fun toggleSystemDraftTag(systemTag: SystemTag) {
@@ -2129,9 +2163,14 @@ internal fun ThreeStopJournalDetail(
                 text = { Text("Les modifications en cours (tags, note, photos) ne seront pas conservées.") },
                 confirmButton = {
                     TextButton(onClick = {
-                        saveAndStopEditing()
                         pendingExit = null
-                        exit()
+                        // RIC-149 : la sortie est passée en rappel de fin d'enregistrement. Elle
+                        // était appelée dans la foulée de la sauvegarde, et closeTrack effaçait
+                        // alors les fichiers de transit que l'enregistrement était en train de
+                        // déplacer : une partie des photos ajoutées se perdait, ce que la
+                        // disquette, qui ne quitte pas l'écran, ne faisait jamais. L'attente est
+                        // couverte par le dialogue bloquant de JournalScreen.
+                        saveAndStopEditing { exit() }
                     }) { Text("Enregistrer") }
                 },
                 dismissButton = {

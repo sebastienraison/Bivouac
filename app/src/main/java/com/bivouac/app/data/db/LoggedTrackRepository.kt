@@ -514,7 +514,14 @@ class LoggedTrackRepository(context: Context) {
      * doit pas emporter les autres ni le reste de la sauvegarde (tags, note). Rend le nombre
      * d'échecs, que l'appelant raconte.
      */
-    suspend fun commitPendingPhotos(trackId: String, pending: List<PendingPhotoAdd>): Int {
+    suspend fun commitPendingPhotos(
+        trackId: String,
+        pending: List<PendingPhotoAdd>,
+        // Appelé une fois par photo traitée, réussie ou non : c'est ce qui alimente le compteur du
+        // dialogue bloquant (voir JournalViewModel.saveDetails). Sur un gros lot, l'opération se
+        // compte en secondes, et une attente muette y est indiscernable d'une app figée.
+        onProgress: () -> Unit = {},
+    ): Int {
         if (pending.isEmpty()) return 0
         LoggedTrackPhotoStore.dir(appContext).mkdirs()
         var failed = 0
@@ -553,6 +560,7 @@ class LoggedTrackRepository(context: Context) {
                 Log.w("LoggedTrackRepository", "Photo en transit non enregistrée", it)
                 failed++
             }
+            onProgress()
         }
         return failed
     }
@@ -613,9 +621,17 @@ class LoggedTrackRepository(context: Context) {
         LoggedTrackPhotoStore.resolve(appContext, photo.filePath).delete()
     }
 
-    /** RIC-149 : les suppressions accumulées pendant une édition, appliquées d'un bloc. */
-    suspend fun deletePhotos(ids: Collection<Long>) {
-        ids.forEach { deletePhoto(it) }
+    /**
+     * RIC-149 : les suppressions accumulées pendant une édition, appliquées d'un bloc.
+     *
+     * [onProgress] a le même rôle que dans [commitPendingPhotos] : les deux moitiés du même geste
+     * alimentent un seul compteur.
+     */
+    suspend fun deletePhotos(ids: Collection<Long>, onProgress: () -> Unit = {}) {
+        ids.forEach {
+            deletePhoto(it)
+            onProgress()
+        }
     }
 
     // "Repositionner" (RIC-43) : toujours positionApproximate = false, qu'il s'agisse de corriger
