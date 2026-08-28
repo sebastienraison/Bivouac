@@ -68,6 +68,9 @@ internal fun PhotoPickerDialog(
     partialAccess: Boolean,
     onScopeChange: (PhotoPickerScope) -> Unit,
     onSelectMorePhotos: () -> Unit,
+    // RIC-43 : la page « informations sur l'application » du système, seul endroit où un accès
+    // partiel se transforme en accès complet.
+    onOpenAppSettings: () -> Unit,
     onConfirm: (List<Uri>) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -108,7 +111,11 @@ internal fun PhotoPickerDialog(
                     )
                 }
                 if (partialAccess) {
-                    PartialAccessBanner(onSelectMorePhotos = onSelectMorePhotos)
+                    PartialAccessBanner(
+                        scope = scope,
+                        onSelectMorePhotos = onSelectMorePhotos,
+                        onOpenAppSettings = onOpenAppSettings,
+                    )
                 }
                 when {
                     loading -> Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -214,27 +221,54 @@ internal fun PhotoPickerDialog(
  * les photos explicitement ouvertes à l'app, ce qui est un choix légitime et pas un refus, mais
  * qui produit une grille trompeuse si rien ne le dit : la pellicule a l'air vide ou incomplète.
  *
- * Le bouton relance la demande de permission, ce qui est la seule façon de rouvrir le dialogue
- * système de re-sélection (il n'existe pas d'API pour l'appeler directement).
+ * « Sélectionner plus de photos » relance la demande de permission, ce qui est la seule façon de
+ * rouvrir le dialogue système de re-sélection (il n'existe pas d'API pour l'appeler directement).
+ *
+ * Le périmètre « Toute la galerie » a droit à un rappel plus explicite et à une seconde sortie.
+ * C'est là que le malentendu est le plus fort : demander toute la galerie et obtenir une poignée de
+ * photos, sans que le libellé du chip ne dise rien, se lit comme une pellicule vide plutôt que
+ * comme une autorisation restreinte. Et c'est là que « en ouvrir quelques-unes de plus » n'est
+ * souvent pas la bonne réponse : celui qui demande toute sa galerie veut l'accès complet, qui ne
+ * s'accorde que dans les réglages système.
  */
 @Composable
-private fun PartialAccessBanner(onSelectMorePhotos: () -> Unit) {
+private fun PartialAccessBanner(
+    scope: PhotoPickerScope,
+    onSelectMorePhotos: () -> Unit,
+    onOpenAppSettings: () -> Unit,
+) {
+    val wholeGallery = scope == PhotoPickerScope.WHOLE_GALLERY
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.secondaryContainer,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "Seules les photos que tu as autorisées sont visibles.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(onClick = onSelectMorePhotos) { Text("Sélectionner plus de photos") }
+        if (wholeGallery) {
+            Column(modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 4.dp)) {
+                Text(
+                    "Autorisation partielle : même en « Toute la galerie », seules les photos que tu as " +
+                        "sélectionnées sont visibles.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = onSelectMorePhotos) { Text("Sélectionner plus de photos") }
+                    TextButton(onClick = onOpenAppSettings) { Text("Accès complet") }
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Seules les photos que tu as autorisées sont visibles.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onSelectMorePhotos) { Text("Sélectionner plus de photos") }
+            }
         }
     }
 }
