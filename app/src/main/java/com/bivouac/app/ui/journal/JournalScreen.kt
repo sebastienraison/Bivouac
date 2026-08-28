@@ -221,7 +221,7 @@ fun JournalScreen(
     val photoDeleteTarget by viewModel.photoDeleteTarget.collectAsStateWithLifecycle()
     val photoError by viewModel.photoError.collectAsStateWithLifecycle()
     val photoAddReport by viewModel.photoAddReport.collectAsStateWithLifecycle()
-    val repositioningPhotoId by viewModel.repositioningPhotoId.collectAsStateWithLifecycle()
+    val photosDirty by viewModel.photosDirty.collectAsStateWithLifecycle()
     val photoPickerCandidates by viewModel.photoPickerCandidates.collectAsStateWithLifecycle()
     val photoPickerLoading by viewModel.photoPickerLoading.collectAsStateWithLifecycle()
     val photoPickerScope by viewModel.photoPickerScope.collectAsStateWithLifecycle()
@@ -358,11 +358,12 @@ fun JournalScreen(
                     onMapTopMeasured = { mapBoxTopPx = it },
                     cursorIndex = cursorIndex,
                     onCursorChanged = { cursorIndex = it },
+                    // RIC-43 : la croix de la bulle retire le curseur lui-même, pas seulement la
+                    // bulle — c'est le curseur qui la fait exister, une bulle fermée sur un curseur
+                    // resté planté reviendrait au moindre déplacement de la carte.
+                    onCursorCleared = { cursorIndex = null },
                     photos = currentPhotos,
                     missingPhotoIds = missingPhotoIds,
-                    repositioningPhotoId = repositioningPhotoId,
-                    onPhotoRepositioned = viewModel::repositionPhoto,
-                    onCancelRepositionPhoto = viewModel::cancelRepositionPhoto,
                     onPhotoBubbleClick = { file ->
                         val index = currentPhotos.indexOfFirst {
                             LoggedTrackPhotoStore.resolve(journalContext, it.filePath) == file
@@ -391,12 +392,9 @@ fun JournalScreen(
                     photosLoading = photosLoading,
                     onAddPhotosClick = handleAddPhotosClick,
                     onDeletePhotoClick = viewModel::requestDeletePhoto,
-                    // Le curseur courant est passé au ViewModel plutôt que relu par lui : il vit
-                    // ici (état d'écran, jamais persisté), et c'est lui qui sert de point de
-                    // départ quand la photo n'a encore aucune position.
-                    onRepositionPhotoClick = { photo -> viewModel.beginRepositionPhoto(photo, cursorIndex) },
                     onPhotoClick = { index -> viewedPhotoIndex = index },
-                    onEditingStopped = viewModel::cancelRepositionPhoto,
+                    photosDirty = photosDirty,
+                    onDiscardPhotoEdits = viewModel::discardPhotoEdits,
                     photosEnabled = photosEnabled,
                     photoPermissionDenied = photoPermissionDenied,
                     onOpenAppSettingsClick = { journalContext.openAppSettings() },
@@ -672,6 +670,7 @@ fun JournalScreen(
             partialAccess = PhotoLibraryPermission.isPartialAccess(journalContext),
             onScopeChange = viewModel::setPhotoPickerScope,
             onSelectMorePhotos = { selectMorePhotosLauncher.launch(PhotoLibraryPermission.requestedPermissions) },
+            onOpenAppSettings = { journalContext.openAppSettings() },
             onConfirm = viewModel::confirmPhotoSelection,
             onDismiss = viewModel::closePhotoPicker,
         )
@@ -687,9 +686,14 @@ fun JournalScreen(
 private fun formatPhotoAddReport(report: PhotoAddReport): String {
     val lines = mutableListOf<String>()
     lines += when (report.added) {
+        // RIC-149 : « en attente d'enregistrement » et non « ajoutée » tout court — à ce stade les
+        // photos sont en transit, visibles dans le bandeau mais pas encore dans le Journal. Le
+        // bilan reste rendu au moment de la sélection, seul instant où l'on sait ce qui a été
+        // écarté ou n'a pas pu être lu ; le décaler à la sauvegarde reviendrait à annoncer un
+        // doublon plusieurs minutes après le geste qui l'a produit.
         0 -> "Aucune photo ajoutée."
-        1 -> "1 photo ajoutée."
-        else -> "${report.added} photos ajoutées."
+        1 -> "1 photo ajoutée, en attente d'enregistrement."
+        else -> "${report.added} photos ajoutées, en attente d'enregistrement."
     }
     if (report.duplicatesSkipped > 0) {
         lines += if (report.duplicatesSkipped == 1) {
@@ -870,11 +874,9 @@ private fun JournalMap(
     onMapTopMeasured: (Int) -> Unit,
     cursorIndex: Int?,
     onCursorChanged: (Int) -> Unit,
+    onCursorCleared: () -> Unit = {},
     photos: List<LoggedTrackPhotoEntity> = emptyList(),
     missingPhotoIds: Set<Long> = emptySet(),
-    repositioningPhotoId: Long? = null,
-    onPhotoRepositioned: (Long, Int) -> Unit = { _, _ -> },
-    onCancelRepositionPhoto: () -> Unit = {},
     onPhotoBubbleClick: (File) -> Unit = {},
     multiTracks: List<ColoredTrack> = emptyList(),
     highlightedTrackId: String? = null,
@@ -899,10 +901,9 @@ private fun JournalMap(
             dayBoundaryIndices = dayBoundaryIndices,
             cursorIndex = cursorIndex,
             onCursorChanged = onCursorChanged,
+            onCursorCleared = onCursorCleared,
             photos = photos,
             missingPhotoIds = missingPhotoIds,
-            repositioningPhotoId = repositioningPhotoId,
-            onPhotoRepositioned = onPhotoRepositioned,
             onPhotoBubbleClick = onPhotoBubbleClick,
             multiTracks = multiTracks,
             highlightedTrackId = highlightedTrackId,
@@ -922,29 +923,10 @@ private fun JournalMap(
                 nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
             )
         }
-        // RIC-43 : bannière "Repositionner" — le seul repère visuel pour retrouver quel marqueur
-        // vient de devenir déplaçable (voir photoMarker.isRepositioning), avec une sortie
-        // explicite sans écrire ("Annuler").
-        if (repositioningPhotoId != null) {
-            Surface(
-                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 16.dp),
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = 3.dp,
-            ) {
-                Row(
-                    modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text("Fais glisser le repère sur la carte", style = MaterialTheme.typography.bodyMedium)
-                    // « Terminé » et non « Annuler » : rien ici n'annule quoi que ce soit. Chaque
-                    // relâchement du marqueur écrit déjà la position (voir photoMarker), et un
-                    // « Placer sur la trace » a même déjà créé le repère avant d'armer le glisser.
-                    TextButton(onClick = onCancelRepositionPhoto) { Text("Terminé") }
-                }
-            }
-        }
+        // RIC-43 : la bannière « Fais glisser le repère sur la carte » vivait ici. Elle part avec le
+        // flux de repositionnement, différé à un lot ultérieur — le menu d'appui long d'une vignette
+        // ne garde que « Supprimer ». Conséquence assumée : une photo sans position reste non
+        // placée, visible en galerie et dans le bandeau, absente de la carte.
     }
 }
 
@@ -1591,10 +1573,12 @@ internal fun ThreeStopJournalDetail(
     photosLoading: Boolean = false,
     onAddPhotosClick: () -> Unit = {},
     onDeletePhotoClick: (LoggedTrackPhotoEntity) -> Unit = {},
-    onRepositionPhotoClick: (LoggedTrackPhotoEntity) -> Unit = {},
-    // RIC-149 : appelé chaque fois que le mode édition retombe, pour que l'écran termine ce qui
-    // n'a plus lieu d'être en consultation (un repositionnement de photo en cours).
-    onEditingStopped: () -> Unit = {},
+    // RIC-149 : les ajouts en transit et les suppressions en attente vivent dans le ViewModel (ce
+    // sont des fichiers, pas un état de composition), mais ils font partie du même brouillon que les
+    // tags et la note ci-dessus. Ces deux paramètres sont ce qui les y raccroche : le premier
+    // alimente isDirty, le second est appelé sur les mêmes sorties que l'abandon d'un brouillon.
+    photosDirty: Boolean = false,
+    onDiscardPhotoEdits: () -> Unit = {},
     // RIC-152 : faux quand la fonctionnalité photos est débrayée dans les Réglages. Le bandeau
     // entier disparaît alors, plutôt que d'afficher un bloc vide avec un bouton d'ajout inerte.
     photosEnabled: Boolean = true,
@@ -1629,15 +1613,10 @@ internal fun ThreeStopJournalDetail(
                 .filterNot { tag -> SystemTag.entries.any { it.value == tag } }
                 .distinct()
         }
-        val isDirty = draftTags != currentTags.toSet() || draftNote.text != entry.note
-
-        // RIC-149 : le repositionnement d'une photo se joue sur la carte, hors de ce bloc, mais
-        // il a été lancé depuis le menu d'une vignette, donc depuis le mode édition. Sortir du
-        // mode édition pendant qu'il est en cours doit donc y mettre fin, faute de quoi il
-        // resterait un marqueur déplaçable sur une vue redevenue consultation. Sur un effet plutôt
-        // que sur chacun des cinq endroits qui écrivent isEditing : c'est la valeur qui compte,
-        // pas le chemin qui y mène.
-        LaunchedEffect(isEditing) { if (!isEditing) onEditingStopped() }
+        // RIC-149 : les photos sont un terme de plus dans le même brouillon. Une édition qui n'a
+        // touché que des photos allume donc l'icône de sauvegarde et déclenche l'avertissement de
+        // sortie, exactement comme une note modifiée.
+        val isDirty = draftTags != currentTags.toSet() || draftNote.text != entry.note || photosDirty
 
         fun beginEditing() {
             draftTags = currentTags.toSet()
@@ -1649,9 +1628,18 @@ internal fun ThreeStopJournalDetail(
             isEditing = true
         }
 
+        // RIC-149 : l'abandon des photos est appelé explicitement sur chaque sortie qui n'enregistre
+        // pas, et non sur un effet observant isEditing comme le faisait le repositionnement. Un
+        // effet se déclencherait aussi sur la sortie par la disquette, en concurrence avec
+        // l'enregistrement qu'elle vient de lancer — course perdue d'avance sur des fichiers.
+        fun abandonEditing() {
+            isEditing = false
+            onDiscardPhotoEdits()
+        }
+
         fun requestExit(exit: () -> Unit) {
             if (isEditing && isDirty) pendingExit = exit else {
-                isEditing = false
+                abandonEditing()
                 exit()
             }
         }
@@ -2064,7 +2052,6 @@ internal fun ThreeStopJournalDetail(
                                         editing = isEditing,
                                         onClick = { onPhotoClick(index) },
                                         onDeleteClick = { onDeletePhotoClick(photo) },
-                                        onRepositionClick = { onRepositionPhotoClick(photo) },
                                     )
                                 }
                             }
@@ -2136,7 +2123,10 @@ internal fun ThreeStopJournalDetail(
             AlertDialog(
                 onDismissRequest = { pendingExit = null },
                 title = { Text("Modifications non enregistrées") },
-                text = { Text("Les tags et la note ont des modifications non enregistrées.") },
+                // RIC-149 : les photos sont citées avec les tags et la note — depuis qu'elles
+                // obéissent au même mode édition, « ne pas enregistrer » jette aussi les photos
+                // ajoutées et rend celles qu'on venait de supprimer.
+                text = { Text("Les modifications en cours (tags, note, photos) ne seront pas conservées.") },
                 confirmButton = {
                     TextButton(onClick = {
                         saveAndStopEditing()
@@ -2148,7 +2138,7 @@ internal fun ThreeStopJournalDetail(
                     Row {
                         TextButton(onClick = { pendingExit = null }) { Text("Annuler") }
                         TextButton(onClick = {
-                            isEditing = false
+                            abandonEditing()
                             pendingExit = null
                             exit()
                         }) { Text("Ne pas enregistrer", color = MaterialTheme.colorScheme.error) }

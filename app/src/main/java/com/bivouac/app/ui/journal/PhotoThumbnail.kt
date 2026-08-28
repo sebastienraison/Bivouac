@@ -6,9 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddLocationAlt
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -29,11 +27,15 @@ import com.bivouac.app.data.db.LoggedTrackPhotoEntity
  * PhotoPickerDialog : l'écran hébergeait quatre composables photo qui n'ont rien à voir avec sa
  * mécanique de tiroir.
  *
- * RIC-149 : l'appui long et son menu (Repositionner / Placer sur la trace / Supprimer)
- * n'existent qu'en mode [editing], au même titre que les tags et la note. Hors édition, la
- * vignette est en consultation stricte : un appui long ne fait rien du tout, plutôt que d'ouvrir
- * un menu aux entrées grisées qui laisserait croire à une action momentanément indisponible.
- * Voir, zoomer et feuilleter restent libres dans les deux cas, par le tap.
+ * RIC-149 : l'appui long et son menu n'existent qu'en mode [editing], au même titre que les tags et
+ * la note. Hors édition, la vignette est en consultation stricte : un appui long ne fait rien du
+ * tout, plutôt que d'ouvrir un menu aux entrées grisées qui laisserait croire à une action
+ * momentanément indisponible. Voir, zoomer et feuilleter restent libres dans les deux cas, par le
+ * tap.
+ *
+ * RIC-43 : le menu se réduit à « Supprimer ». Les entrées « Repositionner » et « Placer sur la
+ * trace » partent avec le flux de placement sur la trace, différé à un lot ultérieur — un menu à
+ * une seule entrée vaut mieux qu'une entrée qui promet une mécanique inachevée.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -42,7 +44,6 @@ internal fun PhotoThumbnail(
     editing: Boolean,
     onClick: () -> Unit,
     onDeleteClick: () -> Unit,
-    onRepositionClick: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     // Quitter le mode édition pendant que le menu est ouvert le referme : sans ça, il resterait à
@@ -60,21 +61,6 @@ internal fun PhotoThumbnail(
                 ),
         )
         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-            // Deux libellés pour la même entrée, selon qu'un repère existe déjà ou non : sur une
-            // photo sans position, « Repositionner » promettait de déplacer quelque chose qui
-            // n'était nulle part. « Placer sur la trace » crée le repère au curseur puis enchaîne
-            // sur le même glisser (voir JournalViewModel.beginRepositionPhoto).
-            val placed = photo.positionPointIndex != null
-            DropdownMenuItem(
-                text = { Text(if (placed) "Repositionner" else "Placer sur la trace") },
-                leadingIcon = {
-                    Icon(
-                        if (placed) Icons.Default.OpenWith else Icons.Default.AddLocationAlt,
-                        contentDescription = null,
-                    )
-                },
-                onClick = { menuExpanded = false; onRepositionClick() },
-            )
             DropdownMenuItem(
                 text = { Text("Supprimer") },
                 leadingIcon = {

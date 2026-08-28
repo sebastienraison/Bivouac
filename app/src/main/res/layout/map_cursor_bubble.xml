@@ -1,39 +1,88 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- RIC-43 : la bulle du curseur. Disposition verticale depuis le retour de recette : distance et
+     altitude passent AU-DESSUS de la vignette, en une ligne compacte. Cote a cote, elles
+     elargissaient la bulle d'une colonne de texte entiere pour deux valeurs courtes, alors que la
+     vedette est la photo. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/cursor_bubble_root"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
+    android:orientation="vertical"
     android:background="@drawable/bg_cursor_bubble"
     android:paddingStart="10dp"
     android:paddingTop="6dp"
-    android:paddingEnd="10dp"
+    android:paddingEnd="6dp"
     android:paddingBottom="6dp">
 
-    <!-- RIC-43 : vignette de la photo la plus proche du curseur, visible seulement quand une
-         photo est a proximite (voir HikeMapView.CursorInfoWindow) - cachee par defaut, jamais
-         de placeholder vide. Un tap dessus ouvre la visionneuse plein ecran.
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/cursor_bubble_text"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp" />
+
+        <!-- RIC-43 : la seule sortie de la bulle, et du curseur qu'elle accompagne. Sans elle, un
+             curseur pose une fois ne se retirait plus jamais. -->
+        <ImageView
+            android:id="@+id/cursor_bubble_close"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_marginStart="4dp"
+            android:padding="6dp"
+            android:src="@drawable/ic_close_bubble"
+            android:scaleType="fitCenter"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Fermer le curseur" />
+
+    </LinearLayout>
+
+    <!-- RIC-43 : vignette de la photo la plus proche du curseur, visible seulement quand une photo
+         est a proximite (voir HikeMapView.CursorInfoWindow) - cachee par defaut, jamais de
+         placeholder vide. Un tap dessus ouvre la visionneuse plein ecran, un balayage horizontal
+         passe a la photo suivante quand plusieurs sont regroupees au meme endroit.
 
          Les dimensions ci-dessous ne sont qu'un point de depart : CursorInfoWindow les remplace
          a la construction par une fraction de l'ecran (voir cursorBubblePhotoSidePx), ce qu'un
          dp fige ne sait pas exprimer. -->
-    <ImageView
-        android:id="@+id/cursor_bubble_photo"
-        android:layout_width="120dp"
-        android:layout_height="120dp"
-        android:layout_marginEnd="8dp"
-        android:scaleType="centerCrop"
-        android:visibility="gone"
-        android:clickable="true"
-        android:focusable="true"
-        android:contentDescription="@null" />
-
-    <TextView
-        android:id="@+id/cursor_bubble_text"
+    <FrameLayout
+        android:id="@+id/cursor_bubble_photo_frame"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:textColor="#FFFFFF"
-        android:textSize="12sp" />
+        android:layout_marginTop="4dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/cursor_bubble_photo"
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:scaleType="centerCrop"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="@null" />
+
+        <TextView
+            android:id="@+id/cursor_bubble_counter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="4dp"
+            android:background="@drawable/bg_bubble_counter"
+            android:paddingStart="6dp"
+            android:paddingTop="2dp"
+            android:paddingEnd="6dp"
+            android:paddingBottom="2dp"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:visibility="gone" />
+
+    </FrameLayout>
 
 </LinearLayout>

@@ -10,6 +10,7 @@ import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackRepository
+import com.bivouac.app.data.db.PendingPhotoAdd
 import com.bivouac.app.data.db.PhotoAddReport
 import com.bivouac.app.data.db.PreparedImport
 import com.bivouac.app.data.db.SystemTag
@@ -193,11 +194,26 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _currentTags = MutableStateFlow<List<String>>(emptyList())
     val currentTags: StateFlow<List<String>> = _currentTags.asStateFlow()
 
-    // RIC-43 : photos de la trace actuellement ouverte, même raison d'être séparée que
-    // currentTags ci-dessus. Contrairement aux tags/note, chaque action (ajout, suppression,
-    // repositionnement) écrit immédiatement — pas de brouillon ni de saveDetails groupé, une
-    // photo n'a pas d'état "en cours d'édition".
+    // RIC-43 : photos de la trace actuellement ouverte, telles qu'elles sont en base — même raison
+    // d'être séparée que currentTags ci-dessus.
+    //
+    // RIC-149 : ce flux ne bouge plus qu'aux sauvegardes. Ce que l'écran affiche pendant une
+    // édition, c'est currentPhotos plus bas, qui y superpose les ajouts en transit et retranche les
+    // suppressions en attente.
     private val _currentPhotos = MutableStateFlow<List<LoggedTrackPhotoEntity>>(emptyList())
+
+    /**
+     * RIC-149 : les photos choisies pendant l'édition en cours, copiées en zone de transit et pas
+     * encore enregistrées. Voir [PendingPhotoAdd].
+     */
+    private val _pendingPhotoAdds = MutableStateFlow<List<PendingPhotoAdd>>(emptyList())
+
+    /**
+     * RIC-149 : les photos que l'utilisateur a demandé à supprimer pendant l'édition en cours.
+     * Elles disparaissent immédiatement de l'affichage, mais leur ligne et leur fichier ne sont
+     * touchés qu'à la sauvegarde — abandonner l'édition les rend telles qu'elles étaient.
+     */
+    private val _pendingPhotoDeletions = MutableStateFlow<Set<Long>>(emptySet())
 
     // RIC-152 : le débrayage est appliqué ici, à la source, et pas seulement en cachant le bandeau
     // côté écran. Tout ce qui montre des photos part de ce flux — bandeau, galerie, marqueurs de
@@ -207,10 +223,42 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     //
     // _currentPhotos, lui, continue de porter la vérité de la base : rien n'est supprimé, et
     // réactiver fait tout revenir sans relire quoi que ce soit.
+    //
+    // RIC-149 : les ajouts en attente sont rendus comme des photos ordinaires (voir
+    // toDisplayEntity) et se rangent à la fin du bandeau, dans l'ordre où ils ont été choisis. Ils
+    // ne prendront leur place définitive (tri par date de prise de vue) qu'à la sauvegarde, quand
+    // la base rendra la liste triée : personne n'attend d'une photo qu'on vient d'ajouter qu'elle
+    // se glisse ailleurs dans le bandeau sous ses yeux.
     val currentPhotos: StateFlow<List<LoggedTrackPhotoEntity>> =
-        combine(_currentPhotos, settingsPreferences.photosEnabled) { photos, enabled ->
-            if (enabled) photos else emptyList()
+        combine(
+            _currentPhotos,
+            _pendingPhotoAdds,
+            _pendingPhotoDeletions,
+            settingsPreferences.photosEnabled,
+        ) { photos, pendingAdds, pendingDeletions, enabled ->
+            if (!enabled) {
+                emptyList()
+            } else {
+                val kept = photos.filterNot { it.id in pendingDeletions }
+                // Un ajout dont l'empreinte est déjà en base vient d'être enregistré : la liste
+                // relue le porte désormais, la version en transit ferait double emploi. C'est ce
+                // qui permet à la sauvegarde de publier la nouvelle liste AVANT de vider les
+                // attentes, donc sans que les vignettes clignotent — l'ordre inverse les ferait
+                // disparaître le temps d'un aller-retour disque.
+                val savedHashes = kept.mapTo(mutableSetOf()) { it.contentHash }
+                kept + pendingAdds.filterNot { it.contentHash in savedHashes }.map { it.toDisplayEntity() }
+            }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * RIC-149 : y a-t-il, côté photos, quelque chose que la disquette enregistrerait ? L'écran
+     * l'agrège avec ses propres brouillons (tags, note) pour décider de l'icône de sauvegarde et de
+     * l'avertissement de sortie — voir ThreeStopJournalDetail.
+     */
+    val photosDirty: StateFlow<Boolean> =
+        combine(_pendingPhotoAdds, _pendingPhotoDeletions) { adds, deletions ->
+            adds.isNotEmpty() || deletions.isNotEmpty()
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     // Lu par l'écran pour masquer le bandeau Photos lui-même, ce qu'une liste vide ne suffirait
     // pas à faire (elle donnerait « Aucune photo pour l'instant » et un bouton d'ajout).
@@ -250,12 +298,6 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     // même mécanique que _deleteTarget pour une trace entière, plus bas.
     private val _photoDeleteTarget = MutableStateFlow<LoggedTrackPhotoEntity?>(null)
     val photoDeleteTarget: StateFlow<LoggedTrackPhotoEntity?> = _photoDeleteTarget.asStateFlow()
-
-    // RIC-43 : id de la photo en cours de repositionnement (menu long-press -> "Repositionner"),
-    // null sinon. Pendant que non nul, HikeMapView rend cette seule photo comme un marqueur
-    // déplaçable (drag-and-snap, même mécanique que les bivouacs) — voir photoMarker.
-    private val _repositioningPhotoId = MutableStateFlow<Long?>(null)
-    val repositioningPhotoId: StateFlow<Long?> = _repositioningPhotoId.asStateFlow()
 
     // RIC-43 : non nul pendant que le sélecteur interne est ouvert, porte les candidats trouvés
     // par MediaStorePhotoQuery (éventuellement une liste vide, un vrai résultat « rien trouvé »
@@ -342,6 +384,16 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         refresh()
+        // RIC-149 : les fichiers de transit qu'un process tué en pleine édition a laissés derrière
+        // lui. Ici, à l'ouverture du Journal : c'est le seul endroit d'où un transit peut naître,
+        // et à cet instant précis aucune édition n'est en cours dans ce process, donc tout ce qui
+        // s'y trouve est par construction périmé.
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching { repository.purgePhotoTransit() }
+                    .onFailure { Log.w("JournalViewModel", "Nettoyage des photos en transit interrompu", it) }
+            }
+        }
         // Rattrapage des colonnes dénormalisées, sans effet une fois la banque à jour. Lancé ici
         // plutôt qu'à l'ouverture de la base : c'est le seul endroit où le travail a un scope qui
         // s'annule (quitter le Journal l'interrompt) et où il ne retarde l'affichage de rien.
@@ -402,6 +454,11 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun openTrackInternal(entry: LoggedTrackEntity, dayIndex: Int?) {
+        // RIC-149 : ouvrir une autre trace abandonne ce qui n'a pas été enregistré sur la
+        // précédente — l'écran ne laisse pas partir une édition sale sans le demander (voir
+        // ThreeStopJournalDetail.requestExit), mais l'état des photos ne doit dépendre d'aucune
+        // promesse tenue ailleurs.
+        discardPhotoEdits()
         _uiState.value = JournalUiState.Loading
         viewModelScope.launch {
             runCatching {
@@ -448,6 +505,9 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun closeTrack() {
+        // RIC-149 : même filet qu'à l'ouverture d'une autre trace — quitter la vue détail ne peut
+        // pas laisser un transit vivant derrière lui.
+        discardPhotoEdits()
         _uiState.value = JournalUiState.Overview
     }
 
@@ -552,15 +612,47 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * the user is merely toggling chips or typing; editing this "détails" data isn't a frequent
      * operation, so it gets an explicit save/discard step rather than writing through on every tap
      * like the rest of the app does for more routine actions.
+     *
+     * RIC-149 : les photos ont rejoint ce même geste. Suppressions d'abord, ajouts ensuite : une
+     * photo supprimée puis réajoutée dans la même édition (ce que la déduplication autorise
+     * justement, voir addPhotos) doit finir présente, pas écartée en doublon par la ligne qu'on
+     * s'apprête à effacer.
      */
     fun saveDetails(tags: Set<String>, note: String) {
         val entry = currentEntry() ?: return
         val previousTags = _currentTags.value.toSet()
+        val deletions = _pendingPhotoDeletions.value
+        val additions = _pendingPhotoAdds.value
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
+            val photoFailures = withContext(Dispatchers.IO) {
                 (tags - previousTags).forEach { repository.addTag(entry.id, it) }
                 (previousTags - tags).forEach { repository.removeTag(entry.id, it) }
                 repository.updateNote(entry.id, note)
+                var failures = 0
+                if (deletions.isNotEmpty() || additions.isNotEmpty()) {
+                    runCatching {
+                        repository.deletePhotos(deletions)
+                        failures = repository.commitPendingPhotos(entry.id, additions)
+                        _currentPhotos.value = repository.listPhotos(entry.id)
+                    }.onFailure {
+                        Log.e("JournalViewModel", "Échec de l'enregistrement des photos", it)
+                        failures = additions.size
+                    }
+                }
+                failures
+            }
+            // Vidées après l'écriture, jamais avant : les vignettes en transit tiennent l'affichage
+            // jusqu'à ce que la liste relue prenne le relais, sinon elles disparaîtraient le temps
+            // d'un aller-retour disque. Le doublon que ce recouvrement pourrait produire est écarté
+            // par empreinte dans currentPhotos.
+            _pendingPhotoDeletions.value = emptySet()
+            _pendingPhotoAdds.value = emptyList()
+            if (photoFailures > 0) {
+                _photoError.value = if (photoFailures == 1) {
+                    "Une photo n'a pas pu être enregistrée."
+                } else {
+                    "$photoFailures photos n'ont pas pu être enregistrées."
+                }
             }
             _currentTags.value = tags.toList()
             _tagsByTrackId.value = _tagsByTrackId.value + (entry.id to tags.toList())
@@ -572,6 +664,34 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         is JournalUiState.Detail -> state.entry
         else -> null
     }
+
+    /**
+     * RIC-149 : un ajout en attente, vu comme une photo ordinaire.
+     *
+     * C'est ce qui permet au bandeau, à la galerie, à la visionneuse, aux marqueurs de la carte et à
+     * la bulle du curseur de le montrer sans rien savoir du transit : le chemin porte son propre
+     * marqueur et LoggedTrackPhotoStore.resolve sait où aller le chercher.
+     *
+     * addedAtMillis vaut « maintenant » et non l'instant réel de la copie : cette valeur ne sert
+     * qu'au tri, que le bandeau ne fait pas sur les ajouts en attente (ils restent en fin de liste,
+     * dans l'ordre choisi), et la vraie sera posée à l'insert.
+     */
+    private fun PendingPhotoAdd.toDisplayEntity(): LoggedTrackPhotoEntity = LoggedTrackPhotoEntity(
+        id = displayId,
+        trackId = currentEntry()?.id.orEmpty(),
+        filePath = transitPath,
+        addedAtMillis = System.currentTimeMillis(),
+        takenAtMillis = takenAtMillis,
+        latitude = latitude,
+        longitude = longitude,
+        positionPointIndex = positionPointIndex,
+        positionApproximate = positionApproximate,
+        takenAtZoneCertain = takenAtZoneCertain,
+        contentHash = contentHash,
+        sourceDisplayName = source.displayName,
+        sourceRelativePath = source.relativePath,
+        sourceDateTakenMillis = source.dateTakenMillis,
+    )
 
     private fun refreshCurrentEntry(id: String, note: String) {
         _tracks.value = _tracks.value.map { if (it.id == id) it.copy(note = note) else it }
@@ -591,6 +711,9 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     fun confirmDelete() {
         val target = _deleteTarget.value ?: return
+        // La trace part avec ses photos (CASCADE + fichiers, voir LoggedTrackRepository.delete) :
+        // ce qui était en attente d'enregistrement sur elle n'a plus de destination.
+        discardPhotoEdits()
         viewModelScope.launch {
             withContext(Dispatchers.IO) { repository.delete(target.id) }
             _deleteTarget.value = null
@@ -600,13 +723,19 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * RIC-43 : sélection faite dans le sélecteur interne, une ou plusieurs photos à la fois.
+     * RIC-43/149 : sélection faite dans le sélecteur interne, une ou plusieurs photos à la fois.
+     * Rien n'entre en base ici : les photos rejoignent la zone de transit et s'affichent dans le
+     * bandeau comme les autres, en attente de la disquette.
      *
      * Le bilan de fin de lot n'est affiché que s'il a quelque chose à dire (un doublon écarté, un
      * échec) : quand tout est entré, les vignettes qui apparaissent le disent déjà, et un dialogue
      * à acquitter après chaque ajout serait une friction pour rien. C'est la différence avec le
      * bilan d'import de sorties séparées, qui est toujours montré parce que son résultat n'est
      * visible nulle part ailleurs.
+     *
+     * Son moment ne bouge pas — il reste celui de la sélection, seul instant où l'on sait qu'une
+     * photo était un doublon ou illisible — mais son libellé, si : « ajoutées » sous-entendrait
+     * enregistrées. Voir formatPhotoAddReport côté écran.
      */
     fun addPhotos(uris: List<Uri>) {
         if (uris.isEmpty()) return
@@ -614,17 +743,30 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _photosLoading.value = true
             try {
-                val report = runCatching {
+                val batch = runCatching {
                     withContext(Dispatchers.IO) {
-                        val result = repository.addPhotosFromPicker(entry.id, contentResolver, uris)
-                        result to repository.listPhotos(entry.id)
+                        repository.stagePhotosFromPicker(
+                            trackId = entry.id,
+                            resolver = contentResolver,
+                            uris = uris,
+                            // Le contrôle d'empreinte couvre le persisté ET le transit : deux
+                            // passages successifs dans le sélecteur sur la même photo, sans
+                            // sauvegarde entre les deux, doivent se comporter comme deux passages
+                            // séparés par une sauvegarde.
+                            alreadyStagedHashes = _pendingPhotoAdds.value.mapTo(mutableSetOf()) { it.contentHash },
+                            // À l'inverse, une photo marquée pour suppression ne sera plus là après
+                            // la sauvegarde : la refuser en doublon enfermerait l'utilisateur dans
+                            // un état où il ne peut ni la garder ni la reprendre.
+                            ignoredHashes = hashesOfPendingDeletions(),
+                        )
                     }
-                }.onSuccess { (_, photos) ->
-                    _currentPhotos.value = photos
+                }.onSuccess { batch ->
+                    _pendingPhotoAdds.value = _pendingPhotoAdds.value + batch.staged
                 }.onFailure {
                     Log.e("JournalViewModel", "Échec de l'ajout de photos", it)
                     _photoError.value = "Impossible d'ajouter ces photos. Réessaie depuis la galerie."
-                }.getOrNull()?.first
+                }.getOrNull()
+                val report = batch?.report
                 if (report != null && (report.duplicatesSkipped > 0 || report.failed > 0)) {
                     _photoAddReport.value = report
                 }
@@ -632,6 +774,45 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 _photosLoading.value = false
             }
         }
+    }
+
+    private fun hashesOfPendingDeletions(): Set<String> {
+        val deleted = _pendingPhotoDeletions.value
+        return _currentPhotos.value.filter { it.id in deleted }.mapTo(mutableSetOf()) { it.contentHash }
+    }
+
+    /**
+     * RIC-149 : l'abandon d'une édition, côté photos — les ajouts en transit sont effacés du disque,
+     * les suppressions en attente sont simplement oubliées, donc les photos concernées reviennent.
+     *
+     * Appelé aussi bien quand l'utilisateur choisit « Ne pas enregistrer » qu'à la fermeture de
+     * l'écran ou à l'ouverture d'une autre trace : il n'y a pas d'état d'édition photo qui survive à
+     * la sortie du mode édition.
+     */
+    fun discardPhotoEdits() {
+        val discarded = _pendingPhotoAdds.value
+        _pendingPhotoAdds.value = emptyList()
+        _pendingPhotoDeletions.value = emptySet()
+        if (discarded.isEmpty()) return
+        viewModelScope.launch {
+            withContext(NonCancellable + Dispatchers.IO) { repository.discardPendingPhotos(discarded) }
+        }
+    }
+
+    /**
+     * RIC-149 : le ViewModel est détruit (retour vers un autre onglet, mort du process) alors qu'une
+     * édition tenait des transits. viewModelScope est déjà annulé à ce moment-là, donc la
+     * suppression se fait ici même, en synchrone : c'est une poignée d'appels unlink, et le seul
+     * moyen de ne pas dépendre d'une coroutine qui ne partira jamais. Ce que ce filet manque (mort
+     * brutale du process) est rattrapé au prochain démarrage, voir purgePhotoTransit.
+     */
+    override fun onCleared() {
+        val pending = _pendingPhotoAdds.value
+        if (pending.isNotEmpty()) {
+            runCatching { repository.discardPendingPhotos(pending) }
+                .onFailure { Log.w("JournalViewModel", "Photos en transit non nettoyées", it) }
+        }
+        super.onCleared()
     }
 
     fun dismissPhotoError() {
@@ -746,101 +927,28 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _photoDeleteTarget.value = null
     }
 
+    /**
+     * RIC-149 : la suppression est enregistrée comme une intention, pas exécutée. La photo quitte
+     * l'affichage tout de suite (c'est ce que l'utilisateur demande), mais sa ligne et son fichier
+     * ne bougent qu'à la sauvegarde — et reviennent intacts si l'édition est abandonnée.
+     *
+     * Une photo encore en transit (ajoutée dans la même édition, jamais enregistrée) n'a rien à
+     * marquer : elle est simplement retirée du lot en attente, et ses octets partent avec elle.
+     */
     fun confirmDeletePhoto() {
         val target = _photoDeleteTarget.value ?: return
-        val entry = currentEntry() ?: return
-        // Le dialogue se referme dans tous les cas : l'échec est raconté par _photoError, laisser
-        // en plus la confirmation ouverte donnerait deux dialogues empilés sur le même incident.
         _photoDeleteTarget.value = null
-        viewModelScope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    repository.deletePhoto(target.id)
-                    repository.listPhotos(entry.id)
+        val pendingAdd = _pendingPhotoAdds.value.find { it.displayId == target.id }
+        if (pendingAdd != null) {
+            _pendingPhotoAdds.value = _pendingPhotoAdds.value - pendingAdd
+            viewModelScope.launch {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    repository.discardPendingPhotos(listOf(pendingAdd))
                 }
-            }.onSuccess { photos ->
-                _currentPhotos.value = photos
-            }.onFailure {
-                Log.e("JournalViewModel", "Échec de la suppression d'une photo", it)
-                _photoError.value = "Impossible de supprimer cette photo."
             }
-        }
-    }
-
-    /**
-     * RIC-43 : entrée du menu d'appui long sur une vignette.
-     *
-     * Photo déjà placée (« Repositionner ») : rien n'est écrit ici, le marqueur existant devient
-     * simplement déplaçable sur la carte.
-     *
-     * Photo sans position (« Placer sur la trace ») : il n'y a aucun marqueur à saisir, donc le
-     * repère est d'abord créé au point du curseur courant — ou au départ de la trace s'il n'y a pas
-     * encore de curseur — puis le même flux de glisser prend le relais pour l'affiner. C'était
-     * l'impasse de la version précédente : la bannière « Fais glisser le repère » s'affichait alors
-     * qu'aucun repère n'existait, et une photo sans GPS ni horodatage exploitable n'avait
-     * strictement aucun moyen d'atterrir sur la carte.
-     *
-     * Placement manuel, donc jamais approximatif — même règle que repositionPhoto.
-     */
-    fun beginRepositionPhoto(photo: LoggedTrackPhotoEntity, cursorIndex: Int? = null) {
-        // Une photo dont le fichier a disparu n'a aucun marqueur sur la carte (voir HikeMapView) :
-        // armer le glisser afficherait la bannière sur une carte où il n'y a rien à saisir, la
-        // même impasse que « Placer sur la trace » répare par ailleurs.
-        if (photo.id in missingPhotoIds.value) {
-            _photoError.value = "Le fichier de cette photo a disparu : impossible de la placer sur la carte."
             return
         }
-        if (photo.positionPointIndex != null) {
-            _repositioningPhotoId.value = photo.id
-            return
-        }
-        val entry = currentEntry() ?: return
-        val pointCount = (_uiState.value as? JournalUiState.Detail)?.track?.points?.size ?: 0
-        if (pointCount == 0) return
-        val target = (cursorIndex ?: 0).coerceIn(0, pointCount - 1)
-        viewModelScope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    repository.repositionPhoto(photo.id, target)
-                    repository.listPhotos(entry.id)
-                }
-            }.onSuccess { photos ->
-                _currentPhotos.value = photos
-                // Le drag n'est armé qu'une fois le repère réellement en base : l'armer avant
-                // aurait affiché la bannière sur une carte où le marqueur n'existe pas encore,
-                // c'est-à-dire exactement l'impasse qu'on répare.
-                _repositioningPhotoId.value = photo.id
-            }.onFailure {
-                Log.e("JournalViewModel", "Échec du placement d'une photo sur la trace", it)
-                _photoError.value = "Impossible de placer cette photo sur la trace."
-            }
-        }
-    }
-
-    fun cancelRepositionPhoto() {
-        _repositioningPhotoId.value = null
-    }
-
-    /**
-     * RIC-43 : appelé par HikeMapView à la fin du drag — jamais approximatif, un repositionnement
-     * manuel vaut confirmation explicite (voir LoggedTrackRepository.repositionPhoto).
-     */
-    fun repositionPhoto(photoId: Long, pointIndex: Int) {
-        val entry = currentEntry() ?: return
-        _repositioningPhotoId.value = null
-        viewModelScope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    repository.repositionPhoto(photoId, pointIndex)
-                    repository.listPhotos(entry.id)
-                }
-            }.onSuccess { photos ->
-                _currentPhotos.value = photos
-            }.onFailure {
-                Log.e("JournalViewModel", "Échec du repositionnement d'une photo", it)
-                _photoError.value = "Impossible de déplacer ce repère."
-            }
-        }
+        _pendingPhotoDeletions.value = _pendingPhotoDeletions.value + target.id
     }
 
     /**

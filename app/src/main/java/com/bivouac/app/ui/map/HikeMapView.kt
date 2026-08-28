@@ -15,6 +15,7 @@ import android.text.TextPaint
 import android.util.DisplayMetrics
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.compose.foundation.layout.Box
@@ -222,11 +223,9 @@ fun HikeMapView(
     // restent visibles dans la bulle du curseur, qui dit alors explicitement « photo absente »
     // plutôt que de faire comme s'il n'y avait jamais eu de photo à cet endroit.
     missingPhotoIds: Set<Long> = emptySet(),
-    // Non nul pendant "Repositionner" (menu long-press d'une vignette) : cette seule photo rend
-    // un marqueur déplaçable, drag-and-snap comme un bivouac. onPhotoRepositioned est appelé une
-    // fois au relâchement, jamais pendant le drag.
-    repositioningPhotoId: Long? = null,
-    onPhotoRepositioned: (photoId: Long, trackPointIndex: Int) -> Unit = { _, _ -> },
+    // RIC-43 : la croix de la bulle du curseur. Ferme la bulle en retirant le curseur, qui est ce
+    // qui la fait exister — jusqu'ici rien ne permettait de s'en débarrasser une fois posé.
+    onCursorCleared: () -> Unit = {},
     // RIC-43 : tap sur la miniature de la bulle du curseur — ouvre la visionneuse plein écran
     // côté écran (voir CursorInfoWindow, qui porte le vrai listener de clic).
     onPhotoBubbleClick: (File) -> Unit = {},
@@ -360,7 +359,7 @@ fun HikeMapView(
                     onTrackTapped, onBivouacMoved, onBivouacDragPreview,
                     cursorIndex, onCursorChanged, cursorInfoWindow, cursorDragState,
                     distanceCache, photoIconCache,
-                    photos, missingPhotoIds, repositioningPhotoId, onPhotoRepositioned, onPhotoBubbleClick,
+                    photos, missingPhotoIds, onCursorCleared, onPhotoBubbleClick,
                     multiTracks, highlightedTrackId, onTraceTapped, copyrightOverlay,
                 )
                 pendingHeightCorrection.value = when {
@@ -436,8 +435,7 @@ private fun renderTrack(
     iconCache: PhotoMarkerIconCache,
     photos: List<LoggedTrackPhotoEntity>,
     missingPhotoIds: Set<Long>,
-    repositioningPhotoId: Long?,
-    onPhotoRepositioned: (Long, Int) -> Unit,
+    onCursorCleared: () -> Unit,
     onPhotoBubbleClick: (File) -> Unit,
     multiTracks: List<ColoredTrack>,
     highlightedTrackId: String?,
@@ -546,6 +544,29 @@ private fun renderTrack(
         fitToTrack(mapView, geoPoints, visibleHeightPx)
     }
 
+    // RIC-43 : une photo dont la copie locale a disparu n'a aucun marqueur — taper un repère qui
+    // n'ouvrirait rien serait pire que son absence. Elle reste néanmoins dans `photos` pour la
+    // bulle du curseur, qui sait dire « photo absente » (voir cursorBubbleContent).
+    val placeablePhotos = if (missingPhotoIds.isEmpty()) photos else photos.filter { it.id !in missingPhotoIds }
+
+    clusterPhotos(mapView, geoPoints, placeablePhotos, density).forEach { cluster ->
+        if (cluster.photos.size == 1) {
+            photoMarker(mapView, geoPoints, cluster.photos.first(), onCursorChanged, iconCache)
+                ?.let { mapView.overlays.add(it) }
+        } else {
+            mapView.overlays.add(photoClusterMarker(mapView, cluster, onCursorChanged, iconCache))
+        }
+    }
+
+    // RIC-43 : les bivouacs APRÈS les photos, donc dessinés par-dessus. osmdroid empile ses
+    // overlays dans l'ordre d'ajout : les photos passaient devant, et sur une sortie où l'on a
+    // beaucoup photographié le soir, le pin du bivouac disparaissait purement et simplement
+    // derrière elles. L'endroit où l'on a dormi prime : c'est le point remarquable de la trace,
+    // une photo de plus ou de moins ne l'est pas.
+    //
+    // Sans effet sur les touchers malgré la distribution à l'envers d'osmdroid : les bivouacs du
+    // Journal ne sont pas déplaçables et leur listener rend false, le toucher continue donc sa
+    // route vers le marqueur photo qui se trouve dessous.
     bivouacPoints.forEach { bivouac ->
         mapView.overlays.add(
             bivouacMarker(
@@ -555,25 +576,6 @@ private fun renderTrack(
         )
     }
 
-    // RIC-43 : une photo dont la copie locale a disparu n'a aucun marqueur — taper un repère qui
-    // n'ouvrirait rien serait pire que son absence. Elle reste néanmoins dans `photos` pour la
-    // bulle du curseur, qui sait dire « photo absente » (voir cursorBubbleContent).
-    val placeablePhotos = if (missingPhotoIds.isEmpty()) photos else photos.filter { it.id !in missingPhotoIds }
-
-    // La photo en cours de repositionnement (le cas échéant) est exclue du clustering et rendue
-    // tout à la fin (voir plus bas) — jamais fusionnée dans un cluster, sinon le drag n'aurait
-    // rien de précis à saisir. Le reste du lot se regroupe normalement.
-    clusterPhotos(mapView, geoPoints, placeablePhotos, repositioningPhotoId, density).forEach { cluster ->
-        if (cluster.photos.size == 1) {
-            photoMarker(
-                mapView, points, geoPoints, cluster.photos.first(), isRepositioning = false,
-                onCursorChanged, onPhotoRepositioned, iconCache,
-            )?.let { mapView.overlays.add(it) }
-        } else {
-            mapView.overlays.add(photoClusterMarker(mapView, cluster, onCursorChanged, iconCache))
-        }
-    }
-
     mapView.overlays.addAll(endpointMarkers(mapView, points))
     mapView.overlays.addAll(directionArrowMarkers(mapView, points, geoPoints))
 
@@ -581,6 +583,7 @@ private fun renderTrack(
         // Assigné avant de construire cursorMarker ci-dessous : son drag peut ouvrir la bulle
         // bien avant le postDelayed plus bas, ce callback doit déjà être le bon à ce moment-là.
         cursorInfoWindow.onPhotoClick = onPhotoBubbleClick
+        cursorInfoWindow.onCloseClick = onCursorCleared
         mapView.overlays.add(
             cursorMarker(
                 mapView, points, geoPoints, cursorIndex, density, onCursorChanged,
@@ -599,20 +602,6 @@ private fun renderTrack(
         }, 100L)
     } else {
         cursorInfoWindow.close()
-    }
-
-    // Ajouté en dernier, donc dessiné au-dessus de tout et surtout servi en premier par la
-    // répartition des touchers (osmdroid parcourt ses overlays à l'envers). Sans ça, le marqueur
-    // du curseur — ajouté juste au-dessus et doté d'une zone de saisie de 56 dp — capturait le
-    // toucher dès que la photo était placée au même point, ce qui est précisément le cas au sortir
-    // d'un « Placer sur la trace » : le repère était visible mais impossible à saisir.
-    repositioningPhotoId?.let { id ->
-        placeablePhotos.find { it.id == id }?.let { photo ->
-            photoMarker(
-                mapView, points, geoPoints, photo, isRepositioning = true,
-                onCursorChanged, onPhotoRepositioned, iconCache,
-            )?.let { mapView.overlays.add(it) }
-        }
     }
 
     mapView.invalidate()
@@ -770,14 +759,12 @@ private fun clusterPhotos(
     mapView: MapView,
     geoPoints: List<GeoPoint>,
     photos: List<LoggedTrackPhotoEntity>,
-    excludedId: Long?,
     density: Float,
 ): List<PhotoCluster> {
     val radiusPx = PHOTO_CLUSTER_RADIUS_DP * density
     val groups = mutableListOf<MutableList<LoggedTrackPhotoEntity>>()
     val groupScreenPoints = mutableListOf<Point>()
     for (photo in photos) {
-        if (photo.id == excludedId) continue
         val index = photo.positionPointIndex ?: continue
         if (index !in geoPoints.indices) continue
         val screenPoint = mapView.projection.toPixels(geoPoints[index], Point())
@@ -887,12 +874,11 @@ private fun photoMarkerIcon(context: Context, badgeText: String?): Drawable {
 /**
  * RIC-43 : le marqueur d'une photo posée sur la trace.
  *
- * Hors repositionnement, il n'est pas déplaçable et un tap ne fait que déplacer le curseur, comme
- * un raccourci vers « voir l'altitude de cette photo » ; le repositionnement s'ouvre depuis le menu
- * de la vignette, pas depuis la carte (voir RIC-149, qui arbitre la question d'une modification
- * déclenchée depuis la carte). Les photos rapprochées sont fusionnées en amont par [clusterPhotos],
- * ce marqueur ne voit donc jamais que des photos isolées à l'écran — ou celle qu'on est en train de
- * déplacer, délibérément exclue du regroupement.
+ * Il n'est pas déplaçable et un tap ne fait que déplacer le curseur, comme un raccourci vers « voir
+ * l'altitude de cette photo ». Le repositionnement, qui rendait ce marqueur saisissable, est
+ * différé à un lot ultérieur : le menu d'appui long d'une vignette ne garde que « Supprimer ». Les
+ * photos rapprochées sont fusionnées en amont par [clusterPhotos], ce marqueur ne voit donc jamais
+ * que des photos isolées à l'écran.
  *
  * Rend null si la photo n'a pas de position (galerie seule) ou si l'index est devenu invalide — ne
  * devrait pas arriver en usage normal, positionPointIndex étant calculé sur cette même trace, qui
@@ -900,12 +886,9 @@ private fun photoMarkerIcon(context: Context, badgeText: String?): Drawable {
  */
 private fun photoMarker(
     mapView: MapView,
-    points: List<TrackPoint>,
     geoPoints: List<GeoPoint>,
     photo: LoggedTrackPhotoEntity,
-    isRepositioning: Boolean,
     onCursorChanged: (Int) -> Unit,
-    onRepositioned: (Long, Int) -> Unit,
     iconCache: PhotoMarkerIconCache,
 ): Marker? {
     val index = photo.positionPointIndex ?: return null
@@ -921,31 +904,8 @@ private fun photoMarker(
     // petit. Le badge appartient à la photo, la carte se contente de situer.
     marker.icon = iconCache.get(mapView.context, null)
     marker.setInfoWindow(null)
-    marker.isDraggable = isRepositioning
-    if (!isRepositioning) {
-        marker.setOnMarkerClickListener { _, _ -> onCursorChanged(index); true }
-        return marker
-    }
-
-    // Même gabarit drag-and-snap que bivouacMarker : chaque frame de drag se raccroche au point
-    // de trace le plus proche, seul le relâchement écrit (onRepositioned), jamais une position
-    // intermédiaire.
-    marker.setOnMarkerClickListener { _, _ -> true }
-    marker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
-        override fun onMarkerDragStart(marker: Marker) = Unit
-
-        override fun onMarkerDrag(marker: Marker) {
-            val current = marker.position
-            val nearestIndex = TrackGeometry.nearestPointIndex(points, current.latitude, current.longitude)
-            marker.position = geoPoints[nearestIndex]
-            mapView.invalidate()
-        }
-
-        override fun onMarkerDragEnd(marker: Marker) {
-            val nearestIndex = TrackGeometry.nearestPointIndex(points, marker.position.latitude, marker.position.longitude)
-            onRepositioned(photo.id, nearestIndex)
-        }
-    })
+    marker.isDraggable = false
+    marker.setOnMarkerClickListener { _, _ -> onCursorChanged(index); true }
     return marker
 }
 
@@ -1051,6 +1011,19 @@ private fun cursorBubbleText(points: List<TrackPoint>, index: Int, distanceCache
 // la trace, même raisonnement de tolérance que TrackGeometry.isLoop (50 m).
 private const val CURSOR_BUBBLE_PHOTO_RADIUS_METERS = 100.0
 
+/**
+ * RIC-43 : ce que la bulle a à montrer au point [index] — la ligne distance/altitude, et les photos
+ * qui tombent assez près pour lui appartenir.
+ *
+ * Toutes les photos du rayon, et non plus seulement la plus proche : c'est ce qui donne son contenu
+ * au carrousel. Un pin de cluster place le curseur sur la première photo de son groupe (voir
+ * photoClusterMarker), et le rayon reprend alors exactement les mêmes — sans que la bulle ait
+ * besoin de connaître le regroupement, qui est une affaire de pixels d'écran, donc de zoom.
+ *
+ * L'ordre est celui de [photos], c'est-à-dire celui du bandeau et de la galerie (chronologique) :
+ * feuilleter ici et feuilleter là-bas doivent donner la même suite. La photo la plus proche du
+ * curseur est celle affichée en premier, pas forcément la première du lot.
+ */
 private fun cursorBubbleContent(
     context: Context,
     points: List<TrackPoint>,
@@ -1063,19 +1036,22 @@ private fun cursorBubbleContent(
     if (photos.isEmpty()) return CursorBubbleContent(text)
     val cumulative = distanceCache.distancesFor(points)
     val cursorDistance = cumulative[index]
-    val nearest = photos
-        .mapNotNull { photo -> photo.positionPointIndex?.takeIf { it in cumulative.indices }?.let { it to photo } }
-        .minByOrNull { (pointIndex, _) -> abs(cumulative[pointIndex] - cursorDistance) }
-        ?: return CursorBubbleContent(text)
-    val (pointIndex, photo) = nearest
-    if (abs(cumulative[pointIndex] - cursorDistance) > CURSOR_BUBBLE_PHOTO_RADIUS_METERS) {
-        return CursorBubbleContent(text)
+    val nearby = photos.mapNotNull { photo ->
+        val pointIndex = photo.positionPointIndex?.takeIf { it in cumulative.indices } ?: return@mapNotNull null
+        val gap = abs(cumulative[pointIndex] - cursorDistance)
+        if (gap > CURSOR_BUBBLE_PHOTO_RADIUS_METERS) null else photo to gap
     }
-    // RIC-43 : la photo la plus proche est retenue même si son fichier a disparu. Elle n'a alors
-    // pas de marqueur, mais la bulle la signale quand même : « il y avait une photo ici, elle n'est
-    // plus là » vaut mieux qu'un silence indiscernable de « il n'y en a jamais eu ».
-    if (photo.id in missingPhotoIds) return CursorBubbleContent(text, photoMissing = true)
-    return CursorBubbleContent(text, photoFile = LoggedTrackPhotoStore.resolve(context, photo.filePath))
+    if (nearby.isEmpty()) return CursorBubbleContent(text)
+    val present = nearby.filterNot { (photo, _) -> photo.id in missingPhotoIds }
+    // RIC-43 : plus rien à montrer, mais il y avait bien une photo ici. La bulle le dit au lieu de
+    // se taire — un silence serait indiscernable de « il n'y en a jamais eu ».
+    if (present.isEmpty()) return CursorBubbleContent(text, photoMissing = true)
+    val closest = present.minByOrNull { (_, gap) -> gap }!!.first
+    return CursorBubbleContent(
+        text = text,
+        photoFiles = present.map { (photo, _) -> LoggedTrackPhotoStore.resolve(context, photo.filePath) },
+        initialPhotoIndex = present.indexOfFirst { (photo, _) -> photo.id == closest.id }.coerceAtLeast(0),
+    )
 }
 
 // Negative: lifts the bubble's anchor above the marker's own geo point by roughly the pin's
@@ -1084,7 +1060,10 @@ private fun cursorBubbleOffsetY(density: Float): Int = -(CURSOR_MARKER_HEIGHT_DP
 
 private data class CursorBubbleContent(
     val text: String,
-    val photoFile: File? = null,
+    // Vide quand aucune photo n'est assez proche. Plusieurs entrées quand plusieurs le sont : la
+    // vignette devient alors parcourable, avec un compteur.
+    val photoFiles: List<File> = emptyList(),
+    val initialPhotoIndex: Int = 0,
     val photoMissing: Boolean = false,
 )
 
@@ -1121,56 +1100,133 @@ private fun cursorBubblePhotoSidePx(metrics: DisplayMetrics): Int {
 // enough to the cursor (RIC-43). Reused across the whole HikeMapView lifetime rather than
 // recreated per render, since InfoWindow owns a real child View added to the MapView.
 private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_cursor_bubble, mapView) {
-    // RIC-43 : réassigné à chaque renderTrack (voir plus haut) plutôt que passé au constructeur —
+    // RIC-43 : réassignés à chaque renderTrack (voir plus haut) plutôt que passés au constructeur —
     // cette fenêtre est un remember() unique pour toute la durée de vie de HikeMapView, alors que
-    // le callback dépend de currentPhotos/du contexte de la recomposition courante.
+    // les callbacks dépendent de currentPhotos/du contexte de la recomposition courante.
     var onPhotoClick: (File) -> Unit = {}
+    var onCloseClick: () -> Unit = {}
+
+    // Le lot courant du carrousel et la page affichée. Rechargés à chaque onOpen, c'est-à-dire à
+    // chaque déplacement du curseur : changer d'endroit sur la trace, c'est changer de lot.
+    private var photoFiles: List<File> = emptyList()
+    private var photoIndex = 0
+
+    private val textView = mView.findViewById<TextView>(R.id.cursor_bubble_text)
+    private val photoFrame = mView.findViewById<View>(R.id.cursor_bubble_photo_frame)
+    private val photoView = mView.findViewById<ImageView>(R.id.cursor_bubble_photo)
+    private val counterView = mView.findViewById<TextView>(R.id.cursor_bubble_counter)
+
+    // Le seuil au-delà duquel un glissement est un feuilletage et non un tap qui a bougé — celui
+    // du système, exactement celui qu'utilise un ViewPager, plutôt qu'une valeur inventée ici.
+    private val pagingSlop = ViewConfiguration.get(mapView.context).scaledPagingTouchSlop
 
     // Taille fixée ici et non dans le layout XML : elle se calcule sur l'écran réel (voir
     // cursorBubblePhotoSidePx), ce qu'une dimension figée en dp ne sait pas faire. Une fois, à la
     // construction : la formule ne dépend pas de l'orientation, il n'y a donc rien à recalculer
     // quand le téléphone pivote.
     init {
-        val photoView = mView.findViewById<ImageView>(R.id.cursor_bubble_photo)
         val side = cursorBubblePhotoSidePx(mapView.resources.displayMetrics)
         photoView.layoutParams = photoView.layoutParams.apply {
             width = side
             height = side
         }
+        mView.findViewById<View>(R.id.cursor_bubble_close).setOnClickListener { onCloseClick() }
+        // Le tap reste un vrai clic de View (accessibilité, retour sonore) ; le listener de touche
+        // ci-dessous ne fait que décider si le geste était un tap ou un feuilletage.
+        photoView.setOnClickListener { photoFiles.getOrNull(photoIndex)?.let(onPhotoClick) }
+        installSwipeGesture()
+    }
+
+    /**
+     * RIC-43 : le feuilletage du carrousel, à la main.
+     *
+     * Un ViewPager2 ou un RecyclerView ferait le même travail mieux, mais chacun demanderait
+     * d'introduire une dépendance et un adaptateur pour piloter deux ImageView dans une bulle de
+     * 150 pixels de côté. Le geste attendu se résume à « quel côté, et assez loin ? » : trois
+     * branches d'un onTouch, sans inertie ni animation de page, suffisent à l'exprimer.
+     *
+     * requestDisallowInterceptTouchEvent : la bulle est une vue enfant du MapView, qui interprète
+     * tout glissement horizontal comme un déplacement de carte. Sans ça, feuilleter ferait
+     * défiler la carte sous la bulle.
+     */
+    private fun installSwipeGesture() {
+        photoView.setOnTouchListener(object : View.OnTouchListener {
+            private var downX = 0f
+            private var downY = 0f
+
+            override fun onTouch(view: View, event: MotionEvent): Boolean {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = event.x
+                        downY = event.y
+                        view.parent?.requestDisallowInterceptTouchEvent(true)
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        val dx = event.x - downX
+                        val dy = event.y - downY
+                        // Horizontal franc et dominant : un glissement vertical appartient à la
+                        // carte, et un petit tremblement à un tap.
+                        val isSwipe = photoFiles.size > 1 && abs(dx) > pagingSlop && abs(dx) > abs(dy)
+                        if (isSwipe) {
+                            // Borné plutôt que circulaire : le compteur annonce « 2/5 », donc les
+                            // extrémités doivent se sentir comme des extrémités.
+                            photoIndex = (photoIndex + if (dx < 0) 1 else -1).coerceIn(photoFiles.indices)
+                            showCurrentPhoto()
+                        } else if (abs(dx) <= pagingSlop && abs(dy) <= pagingSlop) {
+                            view.performClick()
+                        }
+                    }
+                    MotionEvent.ACTION_CANCEL -> view.parent?.requestDisallowInterceptTouchEvent(false)
+                }
+                return true
+            }
+        })
+    }
+
+    private fun showCurrentPhoto() {
+        val file = photoFiles.getOrNull(photoIndex) ?: return
+        photoView.scaleType = ImageView.ScaleType.CENTER_CROP
+        // error() en plus du chemin : le fichier peut avoir disparu entre le relevé de
+        // missingPhotoIds et l'ouverture de la bulle, ou être présent mais illisible. Sans ce
+        // repli, Coil laisserait simplement la miniature précédente à l'écran.
+        photoView.load(file) { error(R.drawable.ic_photo_missing) }
+        photoView.contentDescription = null
+        if (photoFiles.size > 1) {
+            counterView.visibility = View.VISIBLE
+            counterView.text = "${photoIndex + 1}/${photoFiles.size}"
+        } else {
+            counterView.visibility = View.GONE
+        }
     }
 
     override fun onOpen(item: Any?) {
         val content = item as? CursorBubbleContent ?: return
-        mView.findViewById<TextView>(R.id.cursor_bubble_text).text = content.text
-        val photoView = mView.findViewById<ImageView>(R.id.cursor_bubble_photo)
+        textView.text = content.text
+        photoFiles = content.photoFiles
+        photoIndex = content.initialPhotoIndex.coerceIn(0, (content.photoFiles.size - 1).coerceAtLeast(0))
         when {
-            content.photoFile != null -> {
-                photoView.visibility = View.VISIBLE
-                photoView.scaleType = ImageView.ScaleType.CENTER_CROP
-                // error() en plus du chemin : le fichier peut avoir disparu entre le relevé de
-                // missingPhotoIds et l'ouverture de la bulle, ou être présent mais illisible.
-                // Sans ce repli, Coil laisserait simplement la miniature précédente à l'écran.
-                photoView.load(content.photoFile) { error(R.drawable.ic_photo_missing) }
-                photoView.contentDescription = null
+            content.photoFiles.isNotEmpty() -> {
+                photoFrame.visibility = View.VISIBLE
                 photoView.isClickable = true
-                photoView.setOnClickListener { onPhotoClick(content.photoFile) }
+                showCurrentPhoto()
             }
             // RIC-43 : la copie locale a disparu. La bulle le dit au lieu de faire comme s'il n'y
             // avait jamais eu de photo ici — la ligne, elle, survit (voir RIC-151).
             content.photoMissing -> {
-                photoView.visibility = View.VISIBLE
+                photoFrame.visibility = View.VISIBLE
+                counterView.visibility = View.GONE
                 photoView.scaleType = ImageView.ScaleType.CENTER_INSIDE
                 photoView.setImageResource(R.drawable.ic_photo_missing)
                 photoView.contentDescription = "Photo absente"
                 photoView.isClickable = false
-                photoView.setOnClickListener(null)
             }
             else -> {
-                photoView.visibility = View.GONE
+                photoFrame.visibility = View.GONE
+                counterView.visibility = View.GONE
                 photoView.setImageDrawable(null)
                 photoView.contentDescription = null
                 photoView.isClickable = false
-                photoView.setOnClickListener(null)
             }
         }
     }
