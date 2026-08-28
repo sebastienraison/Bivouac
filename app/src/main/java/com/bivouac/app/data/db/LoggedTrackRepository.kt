@@ -97,6 +97,12 @@ data class PendingPhotoAdd(
     // savoir de son statut.
     val transitPath: String,
     val contentHash: String,
+    // L'instant de la copie en transit. Tient lieu d'addedAtMillis tant que la ligne n'existe pas :
+    // c'est ce qui donne au bandeau un ordre stable d'une recomposition à l'autre, et l'ordre
+    // d'entrée dans le lot quand deux photos partagent leur date de prise de vue (voir
+    // PhotoDisplayOrder). L'addedAtMillis définitif sera posé à l'insert, plus tard mais dans le
+    // même ordre.
+    val stagedAtMillis: Long,
     val takenAtMillis: Long?,
     val latitude: Double?,
     val longitude: Double?,
@@ -471,6 +477,7 @@ class LoggedTrackRepository(context: Context) {
                     displayId = nextPendingPhotoDisplayId(),
                     transitPath = transitPath,
                     contentHash = contentHash,
+                    stagedAtMillis = System.currentTimeMillis(),
                     takenAtMillis = exif.takenAtMillis,
                     latitude = exif.latitude,
                     longitude = exif.longitude,

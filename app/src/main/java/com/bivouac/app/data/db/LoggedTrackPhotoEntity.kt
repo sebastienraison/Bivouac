@@ -79,6 +79,29 @@ data class LoggedTrackPhotoEntity(
 )
 
 /**
+ * RIC-43 : l'ordre dans lequel les photos d'une sortie se présentent partout — bandeau, galerie,
+ * visionneuse, carrousel de la bulle.
+ *
+ * C'est, mot pour mot, le `ORDER BY takenAtMillis, addedAtMillis` de
+ * [LoggedTrackDao.getPhotos] : chronologique par date de prise de vue, et à date égale (ou absente)
+ * par ordre d'entrée dans le Journal. Les photos sans EXIF de date passent donc devant, exactement
+ * comme SQLite range les NULL en tête d'un tri croissant — d'où le `nullsFirst`.
+ *
+ * Il existe en Kotlin parce que l'écran ne montre pas que la base : pendant une édition, les ajouts
+ * en transit se superposent aux photos persistées (voir JournalViewModel.currentPhotos), et cette
+ * liste combinée doit se ranger comme la requête l'aurait fait. Sans quoi une photo prise le matin
+ * s'affiche en fin de bandeau tant qu'elle n'est pas enregistrée, puis saute à sa place
+ * chronologique à la sauvegarde : deux ordres pour la même sortie, à quelques secondes d'écart.
+ *
+ * Signalé en recette. Le tri est stable côté Kotlin (`sortedWith`), donc deux photos strictement
+ * ex æquo gardent l'ordre de la liste d'entrée : les persistées d'abord, puis les ajouts dans
+ * l'ordre où ils ont été choisis.
+ */
+val PhotoDisplayOrder: Comparator<LoggedTrackPhotoEntity> =
+    compareBy<LoggedTrackPhotoEntity, Long?>(nullsFirst()) { it.takenAtMillis }
+        .thenBy { it.addedAtMillis }
+
+/**
  * RIC-43 : la photo mérite-t-elle la pastille « positionnement approximatif » ?
  *
  * Un seul cas la mérite : une position déduite de la seule corrélation temporelle, alors que le

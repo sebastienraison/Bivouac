@@ -251,6 +251,60 @@ class LoggedTrackPhotoTransactionTest {
     }
 
     /**
+     * RIC-43 : le comparateur qui range les photos à l'écran doit rendre, à la photo près, l'ordre
+     * de la requête DAO — c'est toute sa raison d'être (voir [PhotoDisplayOrder]).
+     *
+     * Vérifié contre la vraie base et non contre une réécriture du `ORDER BY` en commentaire : les
+     * deux cas qui se devinent mal sont ici, la date de prise de vue absente (SQLite range les NULL
+     * en tête d'un tri croissant, `nullsFirst` côté Kotlin) et l'égalité de dates, départagée par
+     * l'ordre d'entrée dans le Journal.
+     */
+    @Test
+    fun photoDisplayOrder_reproducesTheDaoOrderByToThePhoto() = runBlocking {
+        createTrack()
+        val dao = BivouacDatabase.getInstance(context).loggedTrackDao()
+        // Insérées dans un ordre qui n'est ni celui de la prise de vue ni celui de l'ajout, pour
+        // qu'un tri qui ne trierait rien ne puisse pas passer par chance.
+        val inserted = listOf(
+            // takenAtMillis, addedAtMillis
+            2_000L to 10L,
+            null to 90L,
+            1_000L to 30L,
+            2_000L to 5L,
+            null to 20L,
+            3_000L to 1L,
+            1_000L to 31L,
+        ).map { (takenAt, addedAt) ->
+            val id = dao.insertPhoto(
+                LoggedTrackPhotoEntity(
+                    trackId = trackId,
+                    filePath = "photos/$trackId-$takenAt-$addedAt.jpg",
+                    addedAtMillis = addedAt,
+                    takenAtMillis = takenAt,
+                    contentHash = "hash-$takenAt-$addedAt",
+                ),
+            )
+            id
+        }
+
+        val fromDatabase = dao.getPhotos(trackId)
+        val sortedInKotlin = fromDatabase.shuffled().sortedWith(PhotoDisplayOrder)
+
+        assertEquals(inserted.size, fromDatabase.size)
+        assertEquals(
+            "le tri Kotlin doit rendre exactement l'ordre du ORDER BY",
+            fromDatabase.map { it.id },
+            sortedInKotlin.map { it.id },
+        )
+        // Et l'ordre attendu lui-même, écrit à la main : sans lui, les deux côtés pourraient être
+        // faux de la même façon.
+        assertEquals(
+            listOf(null to 20L, null to 90L, 1_000L to 30L, 1_000L to 31L, 2_000L to 5L, 2_000L to 10L, 3_000L to 1L),
+            fromDatabase.map { it.takenAtMillis to it.addedAtMillis },
+        )
+    }
+
+    /**
      * RIC-152 : « Purger les photos ». Le relevé annoncé par le bouton et le résultat de la purge,
      * vérifiés ensemble — annoncer une volumétrie puis en supprimer une autre serait pire que ne
      * rien annoncer.

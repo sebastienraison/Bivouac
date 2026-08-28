@@ -12,6 +12,7 @@ import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.db.PendingPhotoAdd
 import com.bivouac.app.data.db.PhotoAddReport
+import com.bivouac.app.data.db.PhotoDisplayOrder
 import com.bivouac.app.data.db.PreparedImport
 import com.bivouac.app.data.db.SystemTag
 import com.bivouac.app.data.gpx.SpeedCalibration
@@ -225,10 +226,14 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     // réactiver fait tout revenir sans relire quoi que ce soit.
     //
     // RIC-149 : les ajouts en attente sont rendus comme des photos ordinaires (voir
-    // toDisplayEntity) et se rangent à la fin du bandeau, dans l'ordre où ils ont été choisis. Ils
-    // ne prendront leur place définitive (tri par date de prise de vue) qu'à la sauvegarde, quand
-    // la base rendra la liste triée : personne n'attend d'une photo qu'on vient d'ajouter qu'elle
-    // se glisse ailleurs dans le bandeau sous ses yeux.
+    // toDisplayEntity).
+    //
+    // Ils étaient concaténés en fin de liste, dans l'ordre où ils avaient été choisis, en pariant
+    // que personne n'attend d'une photo qu'on vient d'ajouter qu'elle se glisse ailleurs sous ses
+    // yeux. La recette a tranché l'inverse : une photo du matin ajoutée en fin d'édition se posait
+    // en bout de bandeau, puis sautait à sa place chronologique à la sauvegarde — le bandeau
+    // racontait deux histoires différentes à quelques secondes d'écart. La liste combinée est donc
+    // triée exactement comme la requête DAO l'aurait rendue, voir PhotoDisplayOrder.
     val currentPhotos: StateFlow<List<LoggedTrackPhotoEntity>> =
         combine(
             _currentPhotos,
@@ -246,7 +251,8 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 // attentes, donc sans que les vignettes clignotent — l'ordre inverse les ferait
                 // disparaître le temps d'un aller-retour disque.
                 val savedHashes = kept.mapTo(mutableSetOf()) { it.contentHash }
-                kept + pendingAdds.filterNot { it.contentHash in savedHashes }.map { it.toDisplayEntity() }
+                (kept + pendingAdds.filterNot { it.contentHash in savedHashes }.map { it.toDisplayEntity() })
+                    .sortedWith(PhotoDisplayOrder)
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -672,15 +678,16 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * la bulle du curseur de le montrer sans rien savoir du transit : le chemin porte son propre
      * marqueur et LoggedTrackPhotoStore.resolve sait où aller le chercher.
      *
-     * addedAtMillis vaut « maintenant » et non l'instant réel de la copie : cette valeur ne sert
-     * qu'au tri, que le bandeau ne fait pas sur les ajouts en attente (ils restent en fin de liste,
-     * dans l'ordre choisi), et la vraie sera posée à l'insert.
+     * addedAtMillis vaut l'instant de la copie en transit ([PendingPhotoAdd.stagedAtMillis]) : cette
+     * valeur ne sert qu'au tri, et un instant figé une fois pour toutes est ce qui donne au bandeau
+     * un ordre qui ne bouge pas d'une recomposition à l'autre. Le vrai addedAtMillis sera posé à
+     * l'insert, plus tard mais dans le même ordre.
      */
     private fun PendingPhotoAdd.toDisplayEntity(): LoggedTrackPhotoEntity = LoggedTrackPhotoEntity(
         id = displayId,
         trackId = currentEntry()?.id.orEmpty(),
         filePath = transitPath,
-        addedAtMillis = System.currentTimeMillis(),
+        addedAtMillis = stagedAtMillis,
         takenAtMillis = takenAtMillis,
         latitude = latitude,
         longitude = longitude,
