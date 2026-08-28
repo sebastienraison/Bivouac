@@ -198,7 +198,24 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     // repositionnement) écrit immédiatement — pas de brouillon ni de saveDetails groupé, une
     // photo n'a pas d'état "en cours d'édition".
     private val _currentPhotos = MutableStateFlow<List<LoggedTrackPhotoEntity>>(emptyList())
-    val currentPhotos: StateFlow<List<LoggedTrackPhotoEntity>> = _currentPhotos.asStateFlow()
+
+    // RIC-152 : le débrayage est appliqué ici, à la source, et pas seulement en cachant le bandeau
+    // côté écran. Tout ce qui montre des photos part de ce flux — bandeau, galerie, marqueurs de
+    // la carte, bulle du curseur, visionneuse : le rendre vide quand la fonctionnalité est
+    // désactivée est ce qui garantit qu'il n'en reste nulle part, sans avoir à se souvenir de
+    // poser une condition à chaque point d'affichage.
+    //
+    // _currentPhotos, lui, continue de porter la vérité de la base : rien n'est supprimé, et
+    // réactiver fait tout revenir sans relire quoi que ce soit.
+    val currentPhotos: StateFlow<List<LoggedTrackPhotoEntity>> =
+        combine(_currentPhotos, settingsPreferences.photosEnabled) { photos, enabled ->
+            if (enabled) photos else emptyList()
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // Lu par l'écran pour masquer le bandeau Photos lui-même, ce qu'une liste vide ne suffirait
+    // pas à faire (elle donnerait « Aucune photo pour l'instant » et un bouton d'ajout).
+    val photosEnabled: StateFlow<Boolean> = settingsPreferences.photosEnabled
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     // RIC-43 : les photos de la trace ouverte dont la copie locale a disparu. Dérivé de
     // currentPhotos plutôt que recalculé dans chacune des cinq fonctions qui l'écrivent, et

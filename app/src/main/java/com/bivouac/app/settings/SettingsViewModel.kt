@@ -53,6 +53,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val nonFreeFeaturesDisabled: StateFlow<Boolean> = settingsPreferences.nonFreeFeaturesDisabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    // RIC-152 : activée par défaut, y compris comme valeur initiale du StateFlow — un faux
+    // "désactivé" le temps de la première lecture du DataStore ferait clignoter tout le bandeau
+    // Photos à chaque ouverture des Réglages.
+    val photosEnabled: StateFlow<Boolean> = settingsPreferences.photosEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
     val lastBackupAtMillis: StateFlow<Long?> = settingsPreferences.lastBackupAtMillis
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -132,6 +138,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setNonFreeFeaturesDisabled(disabled: Boolean) {
         viewModelScope.launch { settingsPreferences.setNonFreeFeaturesDisabled(disabled) }
+    }
+
+    fun setPhotosEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsPreferences.setPhotosEnabled(enabled) }
     }
 
     fun backup(uri: Uri) {

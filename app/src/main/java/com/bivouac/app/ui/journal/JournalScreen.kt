@@ -225,6 +225,7 @@ fun JournalScreen(
     val photoPickerCandidates by viewModel.photoPickerCandidates.collectAsStateWithLifecycle()
     val photoPickerLoading by viewModel.photoPickerLoading.collectAsStateWithLifecycle()
     val photoPickerScope by viewModel.photoPickerScope.collectAsStateWithLifecycle()
+    val photosEnabled by viewModel.photosEnabled.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedLayer by viewModel.selectedLayer.collectAsStateWithLifecycle()
     val importError by viewModel.importError.collectAsStateWithLifecycle()
@@ -296,7 +297,12 @@ fun JournalScreen(
         viewModel.reloadPhotoPicker()
     }
     val handleAddPhotosClick: () -> Unit = {
-        if (PhotoLibraryPermission.isGranted(journalContext)) {
+        // RIC-152 : garde de dernier recours. L'écran ne montre déjà aucun bouton d'ajout quand la
+        // fonctionnalité est désactivée, mais la règle « aucune demande de permission possible »
+        // mérite d'être tenue par le code qui déclenche la demande, pas seulement par celui qui
+        // affiche le bouton.
+        if (!photosEnabled) Unit
+        else if (PhotoLibraryPermission.isGranted(journalContext)) {
             photoPermissionDenied = false
             viewModel.openPhotoPicker()
         } else {
@@ -387,6 +393,7 @@ fun JournalScreen(
                     // départ quand la photo n'a encore aucune position.
                     onRepositionPhotoClick = { photo -> viewModel.beginRepositionPhoto(photo, cursorIndex) },
                     onPhotoClick = { index -> viewedPhotoIndex = index },
+                    photosEnabled = photosEnabled,
                     photoPermissionDenied = photoPermissionDenied,
                     onOpenAppSettingsClick = { journalContext.openAppSettings() },
                 )
@@ -634,8 +641,16 @@ fun JournalScreen(
         )
     }
 
-    viewedPhotoIndex?.let { index ->
-        PhotoViewerDialog(photos = currentPhotos, initialIndex = index, onDismiss = { viewedPhotoIndex = null })
+    // currentPhotos.isNotEmpty() en garde : l'index survit à une rotation (rememberSaveable) et
+    // la liste peut être devenue vide entre-temps, notamment parce que la fonctionnalité photos
+    // vient d'être désactivée dans les Réglages (RIC-152). Une visionneuse sur zéro photo n'a
+    // rien à montrer.
+    viewedPhotoIndex?.takeIf { currentPhotos.isNotEmpty() }?.let { index ->
+        PhotoViewerDialog(
+            photos = currentPhotos,
+            initialIndex = index.coerceIn(currentPhotos.indices),
+            onDismiss = { viewedPhotoIndex = null },
+        )
     }
 
     // Le dialogue s'ouvre dès le début de la requête MediaStore, pas seulement quand elle a
@@ -1573,6 +1588,9 @@ internal fun ThreeStopJournalDetail(
     onAddPhotosClick: () -> Unit = {},
     onDeletePhotoClick: (LoggedTrackPhotoEntity) -> Unit = {},
     onRepositionPhotoClick: (LoggedTrackPhotoEntity) -> Unit = {},
+    // RIC-152 : faux quand la fonctionnalité photos est débrayée dans les Réglages. Le bandeau
+    // entier disparaît alors, plutôt que d'afficher un bloc vide avec un bouton d'ajout inerte.
+    photosEnabled: Boolean = true,
     photoPermissionDenied: Boolean = false,
     onOpenAppSettingsClick: () -> Unit = {},
     // Index dans currentPhotos — le tap peut venir du bandeau ou de la galerie plate, les deux
@@ -1951,83 +1969,89 @@ internal fun ThreeStopJournalDetail(
                             currentTags.forEach { tag -> ReadOnlyTagChip(tagLabel(tag), tagColor(tag)) }
                         }
                     }
-                    // Divider plutôt qu'un simple padding : les Tags juste au-dessus basculent
-                    // avec le mode édition (crayon), alors que Photos écrit toujours
-                    // immédiatement (RIC-43) — le séparateur marque que ce n'est pas la suite du
-                    // même bloc, un utilisateur l'a signalé comme prêtant à confusion en testant.
-                    HorizontalDivider(modifier = Modifier.padding(top = 12.dp))
-                    // rememberSaveable, pas remember : MainActivity ne déclare pas configChanges,
-                    // une rotation recrée l'Activity et efface un remember simple — la visionneuse
-                    // se refermait silencieusement au lieu de tourner avec le téléphone, signalé
-                    // en testant.
-                    var galleryOpen by rememberSaveable { mutableStateOf(false) }
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Photos", style = MaterialTheme.typography.titleSmall)
-                            if (currentPhotos.isNotEmpty()) {
-                                Text(
-                                    "· tout voir",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.clickable { galleryOpen = true },
-                                )
+                    // RIC-152 : tout le bandeau Photos, d'un bloc. Débrayée, la
+                    // fonctionnalité ne laisse rien derrière elle ici, pas même un titre de
+                    // section vide — et la carte n'a pas non plus de marqueur ni de bulle
+                    // photo, currentPhotos étant déjà vide en amont (voir JournalViewModel).
+                    if (photosEnabled) {
+                        // Divider plutôt qu'un simple padding : les Tags juste au-dessus basculent
+                        // avec le mode édition (crayon), alors que Photos écrit toujours
+                        // immédiatement (RIC-43) — le séparateur marque que ce n'est pas la suite du
+                        // même bloc, un utilisateur l'a signalé comme prêtant à confusion en testant.
+                        HorizontalDivider(modifier = Modifier.padding(top = 12.dp))
+                        // rememberSaveable, pas remember : MainActivity ne déclare pas configChanges,
+                        // une rotation recrée l'Activity et efface un remember simple — la visionneuse
+                        // se refermait silencieusement au lieu de tourner avec le téléphone, signalé
+                        // en testant.
+                        var galleryOpen by rememberSaveable { mutableStateOf(false) }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Photos", style = MaterialTheme.typography.titleSmall)
+                                if (currentPhotos.isNotEmpty()) {
+                                    Text(
+                                        "· tout voir",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.clickable { galleryOpen = true },
+                                    )
+                                }
+                            }
+                            if (photosLoading) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                TextButton(onClick = onAddPhotosClick) { Text("Ajouter") }
                             }
                         }
-                        if (photosLoading) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        } else {
-                            TextButton(onClick = onAddPhotosClick) { Text("Ajouter") }
-                        }
-                    }
-                    // RIC-43 : accès galerie refusé sur une tentative d'ajout réelle. Le WIP
-                    // retombait ici sur le Photo Picker système, qui ne demandait rien mais
-                    // rendait des photos sans GPS : le repli est retiré, l'état est expliqué, et
-                    // il porte sa propre sortie de secours vers les réglages système de l'app,
-                    // seul endroit où un refus définitif se défait.
-                    if (photoPermissionDenied) {
-                        Text(
-                            "L'ajout de photos nécessite l'accès à la galerie.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                        TextButton(
-                            onClick = onOpenAppSettingsClick,
-                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
-                        ) {
-                            Text("Ouvrir les réglages de l'application")
-                        }
-                    }
-                    if (currentPhotos.isEmpty() && !photosLoading) {
-                        Text(
-                            "Aucune photo pour l'instant.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    } else if (currentPhotos.isNotEmpty()) {
-                        LazyRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            itemsIndexed(currentPhotos, key = { _, photo -> photo.id }) { index, photo ->
-                                PhotoThumbnail(
-                                    photo = photo,
-                                    onClick = { onPhotoClick(index) },
-                                    onDeleteClick = { onDeletePhotoClick(photo) },
-                                    onRepositionClick = { onRepositionPhotoClick(photo) },
-                                )
-                            }
-                        }
-                        if (galleryOpen) {
-                            PhotoGalleryDialog(
-                                photos = currentPhotos,
-                                onPhotoClick = { index -> galleryOpen = false; onPhotoClick(index) },
-                                onDismiss = { galleryOpen = false },
+                        // RIC-43 : accès galerie refusé sur une tentative d'ajout réelle. Le WIP
+                        // retombait ici sur le Photo Picker système, qui ne demandait rien mais
+                        // rendait des photos sans GPS : le repli est retiré, l'état est expliqué, et
+                        // il porte sa propre sortie de secours vers les réglages système de l'app,
+                        // seul endroit où un refus définitif se défait.
+                        if (photoPermissionDenied) {
+                            Text(
+                                "L'ajout de photos nécessite l'accès à la galerie.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp),
                             )
+                            TextButton(
+                                onClick = onOpenAppSettingsClick,
+                                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
+                            ) {
+                                Text("Ouvrir les réglages de l'application")
+                            }
+                        }
+                        if (currentPhotos.isEmpty() && !photosLoading) {
+                            Text(
+                                "Aucune photo pour l'instant.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else if (currentPhotos.isNotEmpty()) {
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                itemsIndexed(currentPhotos, key = { _, photo -> photo.id }) { index, photo ->
+                                    PhotoThumbnail(
+                                        photo = photo,
+                                        onClick = { onPhotoClick(index) },
+                                        onDeleteClick = { onDeletePhotoClick(photo) },
+                                        onRepositionClick = { onRepositionPhotoClick(photo) },
+                                    )
+                                }
+                            }
+                            if (galleryOpen) {
+                                PhotoGalleryDialog(
+                                    photos = currentPhotos,
+                                    onPhotoClick = { index -> galleryOpen = false; onPhotoClick(index) },
+                                    onDismiss = { galleryOpen = false },
+                                )
+                            }
                         }
                     }
                     Text("Notes", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))

@@ -31,8 +31,8 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
@@ -108,6 +108,7 @@ fun SettingsScreen(
     val selectedTrackCount by viewModel.selectedTrackCount.collectAsStateWithLifecycle()
     val journalTrackCount by viewModel.journalTrackCount.collectAsStateWithLifecycle()
     val nonFreeFeaturesDisabled by viewModel.nonFreeFeaturesDisabled.collectAsStateWithLifecycle()
+    val photosEnabled by viewModel.photosEnabled.collectAsStateWithLifecycle()
     val lastBackupAtMillis by viewModel.lastBackupAtMillis.collectAsStateWithLifecycle()
     val backupInProgress by viewModel.backupInProgress.collectAsStateWithLifecycle()
     val restoreInProgress by viewModel.restoreInProgress.collectAsStateWithLifecycle()
@@ -161,6 +162,10 @@ fun SettingsScreen(
             NonFreeFeaturesSection(
                 disabled = nonFreeFeaturesDisabled,
                 onToggle = viewModel::setNonFreeFeaturesDisabled,
+            )
+            JournalPhotosSection(
+                enabled = photosEnabled,
+                onToggle = viewModel::setPhotosEnabled,
             )
             DataSection(
                 lastBackupAtMillis = lastBackupAtMillis,
@@ -684,6 +689,31 @@ private fun NonFreeFeaturesSection(disabled: Boolean, onToggle: (Boolean) -> Uni
             subtitle = "Coupe le fond satellite Esri et le lien météo Meteoblue",
             secondaryAvatar = true,
             trailing = { Switch(checked = disabled, onCheckedChange = onToggle) },
+        )
+    }
+}
+
+/**
+ * RIC-152 : la fonctionnalité photos du Journal, débrayable en entier.
+ *
+ * Activée par défaut, à l'inverse de la bascule non libre juste au-dessus : celle-ci ne protège
+ * de rien, elle existe pour qui ne veut simplement pas de photos dans son journal, et n'a donc
+ * aucune raison de rendre l'app plus pauvre par défaut.
+ *
+ * Le sous-titre insiste sur ce qui n'est pas évident : désactiver masque, ne supprime pas. Sans
+ * cette phrase, la bascule ressemble à un bouton dangereux et personne ne l'essaie.
+ */
+@Composable
+private fun JournalPhotosSection(enabled: Boolean, onToggle: (Boolean) -> Unit) {
+    SettingsSection(label = "Photos du Journal") {
+        SettingsRow(
+            icon = Icons.Default.PhotoLibrary,
+            title = "Associer des photos aux sorties",
+            subtitle = "Ajouter des photos à une sortie, les placer sur la trace et les revoir. " +
+                "Désactivée, aucune photo n'apparaît et l'accès à la galerie n'est jamais demandé ; " +
+                "rien n'est supprimé, tout revient en réactivant.",
+            secondaryAvatar = true,
+            trailing = { Switch(checked = enabled, onCheckedChange = onToggle) },
         )
     }
 }
