@@ -319,9 +319,11 @@ fun JournalScreen(
     var renameDialogVisible by remember { mutableStateOf(false) }
     // RIC-43 : hissé ici (plutôt que local à ThreeStopJournalDetail) pour être ouvrable aussi
     // bien depuis le bandeau/la galerie que depuis la bulle du curseur sur la carte, qui vit dans
-    // un composable frère (JournalMap). rememberSaveable : une rotation recrée l'Activity (pas de
-    // configChanges déclaré) et effacerait un remember simple — la visionneuse doit tourner avec
-    // le téléphone, pas se refermer.
+    // un composable frère (JournalMap).
+    //
+    // rememberSaveable et non remember, alors même que la rotation ne recrée plus l'Activity (voir
+    // configChanges au manifest) : la mort du process en arrière-plan, elle, reste possible, et
+    // c'est le même filet. La visionneuse doit tourner avec le téléphone, pas se refermer.
     var viewedPhotoIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     // RIC-19 : seedé depuis detail.initialCursorIndex plutôt que toujours null — une ouverture
     // venue d'un record du Bilan sur un jour précis arrive avec son curseur déjà positionné.
@@ -1990,10 +1992,10 @@ internal fun ThreeStopJournalDetail(
                         // (Tags sous le crayon, Photos écrivant toujours immédiatement) n'a plus
                         // d'objet, les deux blocs obéissant désormais au même mode édition. Retiré :
                         // c'était un pansement sur une incohérence, pas un élément de mise en page.
-                        // rememberSaveable, pas remember : MainActivity ne déclare pas configChanges,
-                        // une rotation recrée l'Activity et efface un remember simple — la visionneuse
-                        // se refermait silencieusement au lieu de tourner avec le téléphone, signalé
-                        // en testant.
+                        // rememberSaveable, pas remember : même filet que viewedPhotoIndex plus
+                        // haut, pour la galerie ouverte — la rotation ne recrée plus l'Activity
+                        // (voir configChanges au manifest), la mort du process en arrière-plan
+                        // reste possible.
                         var galleryOpen by rememberSaveable { mutableStateOf(false) }
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
