@@ -393,6 +393,7 @@ fun JournalScreen(
                     // départ quand la photo n'a encore aucune position.
                     onRepositionPhotoClick = { photo -> viewModel.beginRepositionPhoto(photo, cursorIndex) },
                     onPhotoClick = { index -> viewedPhotoIndex = index },
+                    onEditingStopped = viewModel::cancelRepositionPhoto,
                     photosEnabled = photosEnabled,
                     photoPermissionDenied = photoPermissionDenied,
                     onOpenAppSettingsClick = { journalContext.openAppSettings() },
@@ -1588,6 +1589,9 @@ internal fun ThreeStopJournalDetail(
     onAddPhotosClick: () -> Unit = {},
     onDeletePhotoClick: (LoggedTrackPhotoEntity) -> Unit = {},
     onRepositionPhotoClick: (LoggedTrackPhotoEntity) -> Unit = {},
+    // RIC-149 : appelé chaque fois que le mode édition retombe, pour que l'écran termine ce qui
+    // n'a plus lieu d'être en consultation (un repositionnement de photo en cours).
+    onEditingStopped: () -> Unit = {},
     // RIC-152 : faux quand la fonctionnalité photos est débrayée dans les Réglages. Le bandeau
     // entier disparaît alors, plutôt que d'afficher un bloc vide avec un bouton d'ajout inerte.
     photosEnabled: Boolean = true,
@@ -1623,6 +1627,14 @@ internal fun ThreeStopJournalDetail(
                 .distinct()
         }
         val isDirty = draftTags != currentTags.toSet() || draftNote.text != entry.note
+
+        // RIC-149 : le repositionnement d'une photo se joue sur la carte, hors de ce bloc, mais
+        // il a été lancé depuis le menu d'une vignette, donc depuis le mode édition. Sortir du
+        // mode édition pendant qu'il est en cours doit donc y mettre fin, faute de quoi il
+        // resterait un marqueur déplaçable sur une vue redevenue consultation. Sur un effet plutôt
+        // que sur chacun des cinq endroits qui écrivent isEditing : c'est la valeur qui compte,
+        // pas le chemin qui y mène.
+        LaunchedEffect(isEditing) { if (!isEditing) onEditingStopped() }
 
         fun beginEditing() {
             draftTags = currentTags.toSet()
@@ -1974,11 +1986,10 @@ internal fun ThreeStopJournalDetail(
                     // section vide — et la carte n'a pas non plus de marqueur ni de bulle
                     // photo, currentPhotos étant déjà vide en amont (voir JournalViewModel).
                     if (photosEnabled) {
-                        // Divider plutôt qu'un simple padding : les Tags juste au-dessus basculent
-                        // avec le mode édition (crayon), alors que Photos écrit toujours
-                        // immédiatement (RIC-43) — le séparateur marque que ce n'est pas la suite du
-                        // même bloc, un utilisateur l'a signalé comme prêtant à confusion en testant.
-                        HorizontalDivider(modifier = Modifier.padding(top = 12.dp))
+                        // RIC-149 : le séparateur qui marquait ici la frontière entre deux régimes
+                        // (Tags sous le crayon, Photos écrivant toujours immédiatement) n'a plus
+                        // d'objet, les deux blocs obéissant désormais au même mode édition. Retiré :
+                        // c'était un pansement sur une incohérence, pas un élément de mise en page.
                         // rememberSaveable, pas remember : MainActivity ne déclare pas configChanges,
                         // une rotation recrée l'Activity et efface un remember simple — la visionneuse
                         // se refermait silencieusement au lieu de tourner avec le téléphone, signalé
@@ -2000,9 +2011,16 @@ internal fun ThreeStopJournalDetail(
                                     )
                                 }
                             }
+                            // RIC-149 : l'ajout n'existe qu'en mode édition, comme les tags et la
+                            // note. Le bouton reste dans l'en-tête de la section plutôt que de
+                            // devenir une tuile « + » en fin de bandeau : le bandeau disparaît
+                            // quand il n'y a aucune photo (« Aucune photo pour l'instant »), une
+                            // tuile aurait donc eu besoin d'un second point d'entrée pour ce
+                            // cas-là, et l'en-tête porte déjà l'autre action de la section
+                            // (« tout voir »).
                             if (photosLoading) {
                                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                            } else {
+                            } else if (isEditing) {
                                 TextButton(onClick = onAddPhotosClick) { Text("Ajouter") }
                             }
                         }
@@ -2011,7 +2029,7 @@ internal fun ThreeStopJournalDetail(
                         // rendait des photos sans GPS : le repli est retiré, l'état est expliqué, et
                         // il porte sa propre sortie de secours vers les réglages système de l'app,
                         // seul endroit où un refus définitif se défait.
-                        if (photoPermissionDenied) {
+                        if (photoPermissionDenied && isEditing) {
                             Text(
                                 "L'ajout de photos nécessite l'accès à la galerie.",
                                 style = MaterialTheme.typography.bodySmall,
@@ -2039,6 +2057,7 @@ internal fun ThreeStopJournalDetail(
                                 itemsIndexed(currentPhotos, key = { _, photo -> photo.id }) { index, photo ->
                                     PhotoThumbnail(
                                         photo = photo,
+                                        editing = isEditing,
                                         onClick = { onPhotoClick(index) },
                                         onDeleteClick = { onDeletePhotoClick(photo) },
                                         onRepositionClick = { onRepositionPhotoClick(photo) },

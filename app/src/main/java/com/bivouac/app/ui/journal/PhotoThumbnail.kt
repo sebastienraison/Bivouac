@@ -24,25 +24,40 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 
-// RIC-43 : vignette du bandeau « Photos » de la vue détail, appui long -> menu contextuel
-// (Repositionner / Supprimer). Sorti de JournalScreen.kt, comme PhotoPickerDialog :
-// l'écran hébergeait quatre composables photo qui n'ont rien à voir avec sa mécanique de tiroir.
+/**
+ * RIC-43 : vignette du bandeau « Photos » de la vue détail. Sortie de JournalScreen.kt, comme
+ * PhotoPickerDialog : l'écran hébergeait quatre composables photo qui n'ont rien à voir avec sa
+ * mécanique de tiroir.
+ *
+ * RIC-149 : l'appui long et son menu (Repositionner / Placer sur la trace / Supprimer)
+ * n'existent qu'en mode [editing], au même titre que les tags et la note. Hors édition, la
+ * vignette est en consultation stricte : un appui long ne fait rien du tout, plutôt que d'ouvrir
+ * un menu aux entrées grisées qui laisserait croire à une action momentanément indisponible.
+ * Voir, zoomer et feuilleter restent libres dans les deux cas, par le tap.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun PhotoThumbnail(
     photo: LoggedTrackPhotoEntity,
+    editing: Boolean,
     onClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onRepositionClick: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    // Quitter le mode édition pendant que le menu est ouvert le referme : sans ça, il resterait à
+    // l'écran, seul reliquat modifiant d'une vue redevenue consultation.
+    if (!editing && menuExpanded) menuExpanded = false
     Box {
         PhotoTile(
             photo = photo,
             modifier = Modifier
                 .size(72.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .combinedClickable(onClick = onClick, onLongClick = { menuExpanded = true }),
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = if (editing) ({ menuExpanded = true }) else null,
+                ),
         )
         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
             // Deux libellés pour la même entrée, selon qu'un repère existe déjà ou non : sur une
