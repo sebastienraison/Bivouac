@@ -421,6 +421,11 @@ fun JournalScreen(
                     onSaveDetails = viewModel::saveDetails,
                     onRenameClick = { renameDialogVisible = true },
                     currentPhotos = currentPhotos,
+                    // RIC-149 : dernier verrou de la sortie d'écran. Le dialogue bloquant couvre
+                    // déjà la croix et le retour arrière par construction (c'est une fenêtre
+                    // par-dessus tout l'écran) ; ce drapeau est ce qui tient si jamais un chemin
+                    // lui échappait, la perte de photos n'étant pas rattrapable.
+                    photoOperationInFlight = photoOperationProgress != null,
                     onAddPhotosClick = handleAddPhotosClick,
                     onDeletePhotoClick = viewModel::requestDeletePhoto,
                     onPhotoClick = { index -> viewedPhotoIndex = index },
@@ -1669,6 +1674,12 @@ internal fun ThreeStopJournalDetail(
     // pendant, voir JournalViewModel.saveDetails et le dialogue de sortie plus bas.
     onSaveDetails: (Set<String>, String, () -> Unit) -> Unit,
     currentPhotos: List<LoggedTrackPhotoEntity> = emptyList(),
+    // RIC-149 : un import ou un enregistrement de photos est en cours. Le dialogue bloquant de
+    // JournalScreen est déjà par-dessus l'écran à cet instant, donc ni la croix ni le retour
+    // arrière ne sont atteignables ; ce drapeau ferme quand même les deux, pour que la garantie
+    // « on ne quitte pas pendant une opération photo » ne repose pas sur le seul fait qu'une
+    // fenêtre est affichée par-dessus.
+    photoOperationInFlight: Boolean = false,
     onAddPhotosClick: () -> Unit = {},
     onDeletePhotoClick: (LoggedTrackPhotoEntity) -> Unit = {},
     // RIC-149 : les ajouts en transit et les suppressions en attente vivent dans le ViewModel (ce
@@ -1735,7 +1746,16 @@ internal fun ThreeStopJournalDetail(
             onDiscardPhotoEdits()
         }
 
+        // Toutes les sorties de l'écran détail passent par ici : la croix, le retour arrière, et
+        // le dialogue « modifications non enregistrées » qu'elles ouvrent le cas échéant.
         fun requestExit(exit: () -> Unit) {
+            // RIC-149 : une opération photo en vol interdit la sortie, y compris la sortie
+            // « propre » qui abandonnerait le brouillon — abandonEditing efface les fichiers de
+            // transit, et les effacer pendant qu'on est en train de les écrire est exactement la
+            // perte de photos que ce lot ferme. Rien n'est proposé à la place (pas de dialogue,
+            // pas de message) : l'attente dure quelques secondes et le dialogue bloquant la
+            // raconte déjà.
+            if (photoOperationInFlight) return
             if (isEditing && isDirty) pendingExit = exit else {
                 abandonEditing()
                 exit()
