@@ -1,5 +1,9 @@
 package com.bivouac.app.ui.journal
 
+import android.graphics.Color as AndroidColor
+import android.graphics.drawable.ColorDrawable
+import android.os.Build
+import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.calculatePan
@@ -16,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -29,9 +34,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 import coil.compose.AsyncImage
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
@@ -49,6 +57,7 @@ internal fun PhotoViewerDialog(photos: List<LoggedTrackPhotoEntity>, initialInde
     // lieu de déplacer le cadrage.
     var zoomed by remember { mutableStateOf(false) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        DrawBehindDisplayCutout()
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
             HorizontalPager(state = pagerState, userScrollEnabled = !zoomed, modifier = Modifier.fillMaxSize()) { page ->
                 ZoomableAsyncPhoto(
@@ -63,6 +72,47 @@ internal fun PhotoViewerDialog(photos: List<LoggedTrackPhotoEntity>, initialInde
                 Icon(Icons.Default.Close, contentDescription = "Fermer", tint = Color.White)
             }
         }
+    }
+}
+
+/**
+ * RIC-43 : la visionneuse dessine derrière l'encoche caméra, pour que son fond noir couvre
+ * réellement tout l'écran.
+ *
+ * Signalé en recette : en paysage, la bande latérale qui porte l'encoche restait de la couleur du
+ * système, une barre claire en plein bord d'une photo. Par défaut une fenêtre est mise en boîte
+ * autour de l'encoche, ce qui est le bon comportement pour une interface, et le mauvais pour une
+ * visionneuse plein écran.
+ *
+ * Sur la fenêtre du dialogue et non sur celle de l'Activity : il n'y a alors rien à restaurer, la
+ * fenêtre disparaissant avec le dialogue. Poser l'attribut sur l'Activity aurait demandé de le
+ * défaire à la fermeture, et de le redéfaire correctement après une rotation ou une mort de
+ * process — trois occasions de laisser l'app dans un état qu'elle n'a pas choisi.
+ *
+ * ALWAYS à partir de l'API 30, qui couvre les encoches où qu'elles soient ; SHORT_EDGES sur 28-29,
+ * la seule valeur disponible à l'époque, et qui suffit ici (en paysage, le bord qui porte l'encoche
+ * est justement un petit côté). En dessous de l'API 28 il n'y a pas d'encoche à gérer.
+ */
+@Composable
+private fun DrawBehindDisplayCutout() {
+    val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+    SideEffect {
+        val window = dialogWindow ?: return@SideEffect
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            // Attributs relus, modifiés, puis réassignés : c'est setAttributes qui déclenche le
+            // relayout de la fenêtre, muter l'objet en place ne suffirait pas.
+            val attributes = window.attributes
+            attributes.layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+            window.attributes = attributes
+        }
+        // Le fond de la fenêtre elle-même, et pas seulement celui du Box : pendant le layout, et
+        // dans la bande de l'encoche que le contenu n'a pas encore couverte, c'est lui qui se voit.
+        window.setBackgroundDrawable(ColorDrawable(AndroidColor.BLACK))
     }
 }
 
