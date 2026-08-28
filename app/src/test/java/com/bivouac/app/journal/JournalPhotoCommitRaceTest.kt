@@ -46,6 +46,10 @@ import org.robolectric.Shadows.shadowOf
  * Même infrastructure Robolectric que LoggedTrackPhotoTransactionTest (vrai Context, vraie base,
  * vrais fichiers), avec en plus le pilotage du looper principal : viewModelScope y publie ses
  * reprises, et un test qui ne le fait pas tourner n'attendrait rien de ce qu'il déclenche.
+ *
+ * S'y ajoute ce qui garde l'écran verrouillé pendant les deux opérations photo longues, import
+ * compris : [JournalViewModel.photoOperationProgress] est ce dont l'écran tire son dialogue
+ * bloquant, et le publier trop tard rouvrirait exactement la porte que ces tests ferment.
  */
 @RunWith(RobolectricTestRunner::class)
 class JournalPhotoCommitRaceTest {
@@ -122,17 +126,23 @@ class JournalPhotoCommitRaceTest {
     fun theExitCallbackOnlyRunsOnceEveryPhotoIsWritten() {
         val entry = openTrackWithStagedPhotos()
         var photosWhenExitRan = -1
-        var progressWhenExitRan: PhotoCommitProgress? = PhotoCommitProgress(0, 0)
+        var progressWhenExitRan: PhotoOperationProgress? =
+            PhotoOperationProgress(PhotoOperationPhase.COMMIT, 0, 0)
 
         viewModel.saveDetails(tags = emptySet(), note = "Sortie avec photos") {
             photosWhenExitRan = runBlocking { repository.listPhotos(entry.id) }.size
-            progressWhenExitRan = viewModel.photoCommitProgress.value
+            progressWhenExitRan = viewModel.photoOperationProgress.value
             viewModel.closeTrack()
         }
         assertEquals(
             "le compteur doit être publié dès l'appel, pas quand la coroutine sera ordonnancée",
             photoCount,
-            viewModel.photoCommitProgress.value?.total,
+            viewModel.photoOperationProgress.value?.total,
+        )
+        assertEquals(
+            "et il doit annoncer l'enregistrement, pas l'import",
+            PhotoOperationPhase.COMMIT,
+            viewModel.photoOperationProgress.value?.phase,
         )
 
         waitUntil("la fermeture n'a jamais eu lieu") { photosWhenExitRan >= 0 }
@@ -140,6 +150,50 @@ class JournalPhotoCommitRaceTest {
         assertEquals("le dialogue bloquant doit être retiré avant la sortie", null, progressWhenExitRan)
         awaitIdle()
         assertEveryPhotoSaved(entry.id)
+    }
+
+    /**
+     * RIC-149 : l'import passe sous le même dialogue bloquant que l'enregistrement.
+     *
+     * Le compteur doit exister dès le retour de [JournalViewModel.addPhotos], donc avant qu'aucune
+     * coroutine n'ait pu être ordonnancée : c'est la fenêtre pendant laquelle la croix de l'écran
+     * restait atteignable, et un état publié « quand la coroutine démarrera » ne la fermerait pas.
+     *
+     * La phase est vérifiée avec le compte : c'est elle qui décide du titre du dialogue, et un
+     * import annoncé comme un enregistrement dirait à l'utilisateur que ses photos sont déjà dans
+     * le Journal alors qu'elles n'ont pas quitté le transit.
+     */
+    @Test
+    fun theImportBlocksFromTheVeryFirstFrameAndSaysSo() {
+        val entry = runBlocking { createTrack() }
+        viewModel = JournalViewModel(application)
+        viewModel.openTrack(entry)
+        waitUntil("la trace ne s'est pas ouverte") { viewModel.uiState.value is JournalUiState.Detail }
+
+        viewModel.addPhotos((1..photoCount).map { registerPhoto(it) })
+
+        val progress = viewModel.photoOperationProgress.value
+        assertEquals(
+            "le dialogue doit être demandé dès l'appel, pas quand la coroutine sera ordonnancée",
+            PhotoOperationProgress(PhotoOperationPhase.IMPORT, done = 0, total = photoCount),
+            progress,
+        )
+    }
+
+    /**
+     * Et il se retire de lui-même une fois le lot en transit : un dialogue sans porte de sortie qui
+     * resterait à l'écran enfermerait l'utilisateur dans la trace ouverte.
+     */
+    @Test
+    fun theImportProgressIsClearedOnceTheBatchIsStaged() {
+        openTrackWithStagedPhotos()
+
+        assertEquals(
+            "plus rien ne doit bloquer une fois le lot en transit",
+            null,
+            viewModel.photoOperationProgress.value,
+        )
+        assertEquals("et le lot doit bien être là", photoCount, transitFiles().size)
     }
 
     /**
@@ -168,7 +222,7 @@ class JournalPhotoCommitRaceTest {
 
         viewModel.addPhotos((1..photoCount).map { registerPhoto(it) })
         waitUntil("les photos ne sont pas arrivées en transit") {
-            !viewModel.photosLoading.value && viewModel.photosDirty.value
+            viewModel.photoOperationProgress.value == null && viewModel.photosDirty.value
         }
         assertEquals("le lot entier doit être en transit avant l'enregistrement", photoCount, transitFiles().size)
         assertEquals("rien ne doit être en base avant l'enregistrement", 0, runBlocking { repository.listPhotos(entry.id) }.size)

@@ -174,6 +174,39 @@ class LoggedTrackPhotoRepositoryTest {
     }
 
     /**
+     * RIC-149 : la progression de l'import, celle qui alimente le compteur du dialogue bloquant.
+     *
+     * Une photo traitée est une avancée, quel qu'en soit le sort : le lot contient donc à dessein
+     * une photo ordinaire, un doublon (écarté) et une Uri illisible (échec), et le compteur doit
+     * passer par 1, 2 puis 3 malgré cela. Compter les seules photos retenues ferait stagner le
+     * dialogue sur une sélection pleine de doublons, alors que le travail coûteux (l'empreinte)
+     * a bel et bien été fait pour chacune.
+     */
+    @Test
+    fun stagePhotosFromPicker_reportsOneStepPerPhotoIncludingDuplicatesAndFailures() = runBlocking {
+        createTrack()
+        val bytes = byteArrayOf(7, 7, 7, 7)
+        val uris = listOf(
+            registerPhoto("a", bytes),
+            registerPhoto("a-bis", bytes.copyOf()),
+            registerUnreadablePhoto("boom"),
+        )
+        val steps = mutableListOf<Int>()
+
+        val batch = repository.stagePhotosFromPicker(
+            trackId,
+            context.contentResolver,
+            uris,
+            onProgress = { done -> steps += done },
+        )
+
+        assertEquals("un pas par photo du lot, dans l'ordre", listOf(1, 2, 3), steps)
+        assertEquals(1, batch.report.added)
+        assertEquals(1, batch.report.duplicatesSkipped)
+        assertEquals(1, batch.report.failed)
+    }
+
+    /**
      * L'ordre « fichier d'abord, ligne ensuite » et son rollback, vérifiés ensemble : l'insert est
      * mis en échec par une contrainte de clé étrangère (trace inexistante), et ce qui doit rester
      * derrière est exactement rien.

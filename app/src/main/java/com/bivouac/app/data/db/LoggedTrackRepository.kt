@@ -446,6 +446,13 @@ class LoggedTrackRepository(context: Context) {
         uris: List<Uri>,
         alreadyStagedHashes: Set<String> = emptySet(),
         ignoredHashes: Set<String> = emptySet(),
+        // Appelé après chaque photo du lot avec le nombre de photos traitées, quel qu'en soit le
+        // sort (copiée, écartée en doublon, illisible) : c'est ce qui alimente le compteur du
+        // dialogue bloquant (voir JournalViewModel.addPhotos). Compter les seules photos retenues
+        // ferait stagner l'affichage sur une sélection pleine de doublons, alors que le travail,
+        // lui, avance bel et bien — c'est l'empreinte qui coûte, et elle est calculée avant de
+        // savoir si la photo sera gardée.
+        onProgress: (done: Int) -> Unit = {},
     ): StagedPhotoBatch {
         val points = open(trackId)?.points.orEmpty()
         val seenHashes = dao.getPhotos(trackId)
@@ -461,6 +468,7 @@ class LoggedTrackRepository(context: Context) {
         var duplicatesSkipped = 0
         var failed = 0
         LoggedTrackPhotoStore.transitDir(appContext).mkdirs()
+        var processed = 0
         for (uri in uris) {
             runCatching {
                 val contentHash = resolver.openInputStream(uri)?.use { sha256(it) }
@@ -493,6 +501,8 @@ class LoggedTrackRepository(context: Context) {
                 Log.w("LoggedTrackRepository", "Photo ignorée, ajout impossible", it)
                 failed++
             }
+            processed++
+            onProgress(processed)
         }
         return StagedPhotoBatch(
             staged = staged,

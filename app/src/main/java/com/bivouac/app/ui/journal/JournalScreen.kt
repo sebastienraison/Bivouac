@@ -136,6 +136,7 @@ import com.bivouac.app.journal.ImportProgress
 import com.bivouac.app.journal.JournalDayInfo
 import com.bivouac.app.journal.JournalUiState
 import com.bivouac.app.journal.JournalViewModel
+import com.bivouac.app.journal.PhotoOperationPhase
 import com.bivouac.app.journal.SeparateImportReport
 import com.bivouac.app.ui.components.ChoiceOptionCard
 import com.bivouac.app.ui.components.DrawerStop
@@ -217,12 +218,11 @@ fun JournalScreen(
     val currentTags by viewModel.currentTags.collectAsStateWithLifecycle()
     val currentPhotos by viewModel.currentPhotos.collectAsStateWithLifecycle()
     val missingPhotoIds by viewModel.missingPhotoIds.collectAsStateWithLifecycle()
-    val photosLoading by viewModel.photosLoading.collectAsStateWithLifecycle()
     val photoDeleteTarget by viewModel.photoDeleteTarget.collectAsStateWithLifecycle()
     val photoError by viewModel.photoError.collectAsStateWithLifecycle()
     val photoAddReport by viewModel.photoAddReport.collectAsStateWithLifecycle()
     val photosDirty by viewModel.photosDirty.collectAsStateWithLifecycle()
-    val photoCommitProgress by viewModel.photoCommitProgress.collectAsStateWithLifecycle()
+    val photoOperationProgress by viewModel.photoOperationProgress.collectAsStateWithLifecycle()
     val photoPickerCandidates by viewModel.photoPickerCandidates.collectAsStateWithLifecycle()
     val photoPickerLoading by viewModel.photoPickerLoading.collectAsStateWithLifecycle()
     val photoPickerScope by viewModel.photoPickerScope.collectAsStateWithLifecycle()
@@ -421,7 +421,6 @@ fun JournalScreen(
                     onSaveDetails = viewModel::saveDetails,
                     onRenameClick = { renameDialogVisible = true },
                     currentPhotos = currentPhotos,
-                    photosLoading = photosLoading,
                     onAddPhotosClick = handleAddPhotosClick,
                     onDeletePhotoClick = viewModel::requestDeletePhoto,
                     onPhotoClick = { index -> viewedPhotoIndex = index },
@@ -675,19 +674,33 @@ fun JournalScreen(
         )
     }
 
-    // RIC-149 : l'enregistrement des photos, tant qu'il dure. Bloquant et sans porte de sortie,
-    // sur le patron du rattrapage de base au démarrage (voir ElevationBackfillGate) : la sortie de
-    // l'écran attend déjà la fin de l'écriture (voir JournalViewModel.saveDetails), ce dialogue est
-    // ce qui donne son sens à cette attente au lieu d'une app qui semble figée.
+    // RIC-149 : les opérations photo longues, tant qu'elles durent. Bloquant et sans porte de
+    // sortie, sur le patron du rattrapage de base au démarrage (voir ElevationBackfillGate) : la
+    // sortie de l'écran attend déjà la fin de l'écriture (voir JournalViewModel.saveDetails), ce
+    // dialogue est ce qui donne son sens à cette attente au lieu d'une app qui semble figée.
     //
-    // Rendu ici, au niveau de l'écran, et non dans la vue détail : il couvre les deux chemins
-    // d'enregistrement (la disquette et le bouton « Enregistrer » du dialogue de sortie) du seul
-    // fait qu'il suit l'état du ViewModel, sans que ni l'un ni l'autre n'ait à y penser.
-    photoCommitProgress?.let { progress ->
+    // Un seul dialogue pour l'import et pour l'enregistrement, et non deux composants voisins :
+    // c'est la même attente vue par l'utilisateur, seul le titre change. La recette a montré que
+    // c'est l'import qui la fait vraiment vivre (il lit et recopie chaque fichier, quand
+    // l'enregistrement se contente d'un renommage suivi d'un insert), alors qu'il n'avait qu'un
+    // indicateur circulaire en marge du bandeau, sans compteur, et laissait la croix de l'écran
+    // cliquable pendant tout ce temps.
+    //
+    // Rendu ici, au niveau de l'écran, et non dans la vue détail : il couvre tous les chemins
+    // (validation du sélecteur, disquette, bouton « Enregistrer » du dialogue de sortie) du seul
+    // fait qu'il suit l'état du ViewModel, sans qu'aucun n'ait à y penser.
+    photoOperationProgress?.let { progress ->
         AlertDialog(
             onDismissRequest = {},
             properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-            title = { Text("Enregistrement des photos") },
+            title = {
+                Text(
+                    when (progress.phase) {
+                        PhotoOperationPhase.IMPORT -> "Import des photos"
+                        PhotoOperationPhase.COMMIT -> "Enregistrement des photos"
+                    },
+                )
+            },
             text = {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -1656,7 +1669,6 @@ internal fun ThreeStopJournalDetail(
     // pendant, voir JournalViewModel.saveDetails et le dialogue de sortie plus bas.
     onSaveDetails: (Set<String>, String, () -> Unit) -> Unit,
     currentPhotos: List<LoggedTrackPhotoEntity> = emptyList(),
-    photosLoading: Boolean = false,
     onAddPhotosClick: () -> Unit = {},
     onDeletePhotoClick: (LoggedTrackPhotoEntity) -> Unit = {},
     // RIC-149 : les ajouts en transit et les suppressions en attente vivent dans le ViewModel (ce
@@ -2100,9 +2112,13 @@ internal fun ThreeStopJournalDetail(
                             // tuile aurait donc eu besoin d'un second point d'entrée pour ce
                             // cas-là, et l'en-tête porte déjà l'autre action de la section
                             // (« tout voir »).
-                            if (photosLoading) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                            } else if (isEditing) {
+                            //
+                            // RIC-149 : l'indicateur circulaire qui prenait la place du bouton
+                            // pendant un import a été retiré, le dialogue bloquant le remplace.
+                            // Il ne disait que « quelque chose tourne », sans dire quoi ni
+                            // combien il en restait, et il était en marge d'un écran qui, lui,
+                            // restait entièrement manipulable — croix comprise.
+                            if (isEditing) {
                                 TextButton(onClick = onAddPhotosClick) { Text("Ajouter") }
                             }
                         }
@@ -2125,7 +2141,7 @@ internal fun ThreeStopJournalDetail(
                                 Text("Ouvrir les réglages de l'application")
                             }
                         }
-                        if (currentPhotos.isEmpty() && !photosLoading) {
+                        if (currentPhotos.isEmpty()) {
                             Text(
                                 "Aucune photo pour l'instant.",
                                 style = MaterialTheme.typography.bodySmall,

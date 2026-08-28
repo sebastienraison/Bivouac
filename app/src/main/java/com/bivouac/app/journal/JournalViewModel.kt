@@ -123,17 +123,36 @@ data class DuplicatePlanRequest(
 )
 
 /**
- * RIC-149 : où en est l'enregistrement des photos d'une édition.
+ * RIC-149 : laquelle des deux opérations photo longues est en cours.
  *
- * Non nul du clic sur la disquette (ou sur « Enregistrer » du dialogue de sortie) jusqu'à la
- * dernière photo écrite. L'écran s'en sert pour bloquer, voir JournalScreen : tant que ce compte
+ * Les deux se comptent en secondes sur un lot réel et méritent le même dialogue bloquant, mais
+ * elles ne racontent pas la même chose à l'utilisateur : [IMPORT] copie ce qu'il vient de choisir,
+ * [COMMIT] écrit ce qu'il vient d'enregistrer. Seul le titre du dialogue les distingue.
+ *
+ * L'import est de loin la plus longue des deux (lecture EXIF, empreinte et copie complète des
+ * octets, par photo), là où l'enregistrement se résume à un renommage et un insert : c'est
+ * pourtant lui qui n'avait qu'un discret indicateur en marge du bandeau, pendant que la croix de
+ * l'écran restait cliquable. Voir JournalScreen.
+ */
+enum class PhotoOperationPhase { IMPORT, COMMIT }
+
+/**
+ * RIC-149 : où en est l'opération photo en cours, quelle qu'elle soit.
+ *
+ * Non nul du geste qui la déclenche (validation du sélecteur pour [PhotoOperationPhase.IMPORT],
+ * disquette ou « Enregistrer » du dialogue de sortie pour [PhotoOperationPhase.COMMIT]) jusqu'à la
+ * dernière photo traitée. L'écran s'en sert pour bloquer, voir JournalScreen : tant que ce compte
  * avance, plus rien n'est manipulable et la sortie n'a pas lieu.
  *
- * [total] additionne les suppressions et les ajouts, dans cet ordre : ce sont les deux moitiés du
- * même geste, et les compter séparément donnerait deux barres qui se succèdent pour une seule
- * attente.
+ * Un seul flux pour les deux phases, et non deux flux parallèles : elles ne peuvent pas se
+ * chevaucher (l'une comme l'autre bloque l'écran d'où part le geste qui lancerait la seconde), et
+ * un flux unique est ce qui garantit qu'un seul dialogue existe, sans arbitrage à écrire côté UI.
+ *
+ * En phase [PhotoOperationPhase.COMMIT], [total] additionne les suppressions et les ajouts, dans
+ * cet ordre : ce sont les deux moitiés du même geste, et les compter séparément donnerait deux
+ * barres qui se succèdent pour une seule attente.
  */
-data class PhotoCommitProgress(val done: Int, val total: Int)
+data class PhotoOperationProgress(val phase: PhotoOperationPhase, val done: Int, val total: Int)
 
 class JournalViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -271,11 +290,11 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /**
-     * RIC-149 : non nul pendant qu'un enregistrement de photos est en cours. Voir
-     * [PhotoCommitProgress], et [saveDetails] pour ce qui le pose et le retire.
+     * RIC-149 : non nul pendant qu'un import ou un enregistrement de photos est en cours. Voir
+     * [PhotoOperationProgress], [addPhotos] et [saveDetails] pour ce qui le pose et le retire.
      */
-    private val _photoCommitProgress = MutableStateFlow<PhotoCommitProgress?>(null)
-    val photoCommitProgress: StateFlow<PhotoCommitProgress?> = _photoCommitProgress.asStateFlow()
+    private val _photoOperationProgress = MutableStateFlow<PhotoOperationProgress?>(null)
+    val photoOperationProgress: StateFlow<PhotoOperationProgress?> = _photoOperationProgress.asStateFlow()
 
     /**
      * RIC-149 : y a-t-il, côté photos, quelque chose que la disquette enregistrerait ? L'écran
@@ -301,12 +320,6 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     val missingPhotoIds: StateFlow<Set<Long>> = _currentPhotos
         .map { photos -> withContext(Dispatchers.IO) { repository.missingPhotoFileIds(photos) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
-
-    // Retour visuel pendant addPhotos (copie + EXIF + corrélation, potentiellement plusieurs
-    // secondes sur un gros lot) — signalé par l'utilisateur en testant sur device, rien ne
-    // montrait qu'un ajout était en cours.
-    private val _photosLoading = MutableStateFlow(false)
-    val photosLoading: StateFlow<Boolean> = _photosLoading.asStateFlow()
 
     // RIC-43 : erreur d'une action photo, exposée à l'UI sur le modèle de _importError plus bas.
     // Toutes les actions photo touchent des Uri de sélecteur et des fichiers : une Uri révoquée
@@ -677,7 +690,10 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         // protection ne doit pas dépendre du moment où la coroutine sera ordonnancée, c'est
         // exactement ce qui manquait.
         transitPathsBeingCommitted += inFlightPaths
-        if (photoWork > 0) _photoCommitProgress.value = PhotoCommitProgress(done = 0, total = photoWork)
+        if (photoWork > 0) {
+            _photoOperationProgress.value =
+                PhotoOperationProgress(PhotoOperationPhase.COMMIT, done = 0, total = photoWork)
+        }
         viewModelScope.launch {
             val photoFailures = withContext(NonCancellable + Dispatchers.IO) {
                 (tags - previousTags).forEach { repository.addTag(entry.id, it) }
@@ -686,7 +702,11 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 var failures = 0
                 if (photoWork > 0) {
                     var done = 0
-                    val advance = { done++; _photoCommitProgress.value = PhotoCommitProgress(done, photoWork) }
+                    val advance = {
+                        done++
+                        _photoOperationProgress.value =
+                            PhotoOperationProgress(PhotoOperationPhase.COMMIT, done, photoWork)
+                    }
                     runCatching {
                         repository.deletePhotos(deletions, onProgress = advance)
                         failures = repository.commitPendingPhotos(entry.id, additions, onProgress = advance)
@@ -699,7 +719,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 failures
             }
             transitPathsBeingCommitted -= inFlightPaths.toSet()
-            _photoCommitProgress.value = null
+            _photoOperationProgress.value = null
             // Vidées après l'écriture, jamais avant : les vignettes en transit tiennent l'affichage
             // jusqu'à ce que la liste relue prenne le relais, sinon elles disparaîtraient le temps
             // d'un aller-retour disque. Le doublon que ce recouvrement pourrait produire est écarté
@@ -797,12 +817,24 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * Son moment ne bouge pas — il reste celui de la sélection, seul instant où l'on sait qu'une
      * photo était un doublon ou illisible — mais son libellé, si : « ajoutées » sous-entendrait
      * enregistrées. Voir formatPhotoAddReport côté écran.
+     *
+     * C'est la phase longue du cycle photo : par image, une lecture complète des octets pour
+     * l'empreinte, une lecture EXIF, une corrélation avec la trace, puis une copie complète en
+     * transit. Elle n'avait qu'un indicateur circulaire en marge du bandeau, que la recette a
+     * jugé insuffisant : rien ne disait où en était le lot, et la croix de l'écran restait
+     * cliquable pendant tout ce temps. Elle passe donc sous le même dialogue bloquant que
+     * l'enregistrement, voir [PhotoOperationProgress].
      */
     fun addPhotos(uris: List<Uri>) {
         if (uris.isEmpty()) return
         val entry = currentEntry() ?: return
+        // Posé avant le launch, exactement comme dans saveDetails : le dialogue doit être à
+        // l'écran du fait même du clic, sans dépendre du moment où la coroutine sera
+        // ordonnancée. C'est aussi ce qui ferme la fenêtre pendant laquelle la croix serait
+        // encore atteignable.
+        _photoOperationProgress.value =
+            PhotoOperationProgress(PhotoOperationPhase.IMPORT, done = 0, total = uris.size)
         viewModelScope.launch {
-            _photosLoading.value = true
             try {
                 val batch = runCatching {
                     withContext(Dispatchers.IO) {
@@ -819,6 +851,15 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                             // la sauvegarde : la refuser en doublon enfermerait l'utilisateur dans
                             // un état où il ne peut ni la garder ni la reprendre.
                             ignoredHashes = hashesOfPendingDeletions(),
+                            // Photo par photo, doublons et échecs compris : le compteur suit le
+                            // lot tel qu'il est traité, pas seulement ce qui en ressort.
+                            onProgress = { done ->
+                                _photoOperationProgress.value = PhotoOperationProgress(
+                                    PhotoOperationPhase.IMPORT,
+                                    done = done,
+                                    total = uris.size,
+                                )
+                            },
                         )
                     }
                 }.onSuccess { batch ->
@@ -832,7 +873,9 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                     _photoAddReport.value = report
                 }
             } finally {
-                _photosLoading.value = false
+                // Le bilan de lot est posé avant : il s'ouvre donc en remplacement du dialogue
+                // bloquant, jamais derrière lui.
+                _photoOperationProgress.value = null
             }
         }
     }
