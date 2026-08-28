@@ -99,9 +99,10 @@ private fun formatKm(km: Double): String {
 
 /**
  * Elevation profile of the whole track, with a dot for each bivouac point at its actual altitude,
- * and altitude/distance rulers. Renders nothing if any point is missing elevation data —
- * real-world GPX files virtually always have it on every point or none at all, so a partial
- * series isn't worth reconstructing.
+ * and altitude/distance rulers. RIC-138 : un export GPX réel a parfois quelques points sans
+ * altitude, épars dans le fichier — [TrackStatsCalculator.smoothedElevationSeries] les interpole
+ * plutôt que d'abandonner toute la série ; ce composant ne rend donc rien seulement si AUCUN point
+ * de la trace n'a d'altitude.
  *
  * [cursorIndex] (Journal-only, BIV-52) draws a synced marker at that point; tapping or
  * horizontally dragging anywhere on the plot reports the nearest point's index via

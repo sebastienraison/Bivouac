@@ -110,12 +110,60 @@ object TrackStatsCalculator {
     /**
      * Smoothed elevation for each point, index-aligned with [points] (for charting, where a
      * marker needs to land on the exact index a [com.bivouac.app.data.model.BivouacPoint]
-     * refers to). Returns null if any point lacks elevation, rather than silently compacting the
-     * series and breaking that index alignment.
+     * refers to).
+     *
+     * RIC-138 : un point sans `<ele>` — un export GPX réel en a parfois quelques-uns épars, pas
+     * forcément le fichier entier — obtient une altitude interpolée linéairement entre ses plus
+     * proches voisins connus, plutôt que de faire échouer toute la série ; compacter la liste
+     * casserait justement cet alignement d'index. Un trou en tout début ou toute fin de trace
+     * (aucun voisin connu d'un côté) est étendu à plat depuis le point connu le plus proche : il
+     * n'y a rien vers quoi interpoler de ce côté-là, et une extension plate est la supposition la
+     * moins arbitraire. Ne retourne null que si AUCUN point de la trace n'a d'altitude — il n'y a
+     * alors rien du tout à partir de quoi interpoler, et le profil reste vide comme avant RIC-138.
      */
     fun smoothedElevationSeries(points: List<TrackPoint>): List<Double>? {
-        val elevations = points.map { it.elevationMeters ?: return null }
+        val elevations = interpolateElevations(points) ?: return null
         return smoothValues(elevations)
+    }
+
+    // internal (pas private) pour un test unitaire direct de l'interpolation, indépendant de la
+    // fenêtre de lissage de smoothValues (voir SmoothedElevationSeriesTest).
+    internal fun interpolateElevations(points: List<TrackPoint>): List<Double>? {
+        if (points.isEmpty()) return emptyList()
+        if (points.none { it.elevationMeters != null }) return null
+
+        val result = DoubleArray(points.size)
+        var previousKnownIndex = -1
+        var previousKnownValue = 0.0
+        var i = 0
+        while (i < points.size) {
+            val elevation = points[i].elevationMeters
+            if (elevation != null) {
+                result[i] = elevation
+                previousKnownIndex = i
+                previousKnownValue = elevation
+                i++
+                continue
+            }
+            // Étendue du trou courant : de i (inclus) à j (exclu), j étant soit le prochain point
+            // connu, soit la fin de la trace.
+            var j = i
+            while (j < points.size && points[j].elevationMeters == null) j++
+            val nextKnownIndex = j.takeIf { it < points.size }
+            val nextKnownValue = nextKnownIndex?.let { points[it].elevationMeters!! }
+            for (k in i until j) {
+                result[k] = when {
+                    previousKnownIndex < 0 -> nextKnownValue!! // trou en tout début de trace
+                    nextKnownIndex == null -> previousKnownValue // trou en toute fin de trace
+                    else -> {
+                        val t = (k - previousKnownIndex).toDouble() / (nextKnownIndex - previousKnownIndex)
+                        previousKnownValue + t * (nextKnownValue!! - previousKnownValue)
+                    }
+                }
+            }
+            i = j
+        }
+        return result.toList()
     }
 
     private fun smoothValues(values: List<Double>): List<Double> {

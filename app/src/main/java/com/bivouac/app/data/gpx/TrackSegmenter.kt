@@ -55,9 +55,11 @@ object TrackSegmenter {
      * abandonné (trop court pour que sa pente ait un sens).
      *
      * Seuls les points porteurs à la fois d'une altitude et d'un horodatage sont pris en compte —
-     * les deux sont nécessaires (altitude pour le dénivelé, horodatage pour la durée d'un segment),
-     * et [TrackStatsCalculator.smoothedElevationSeries] exige justement l'absence de trou
-     * d'altitude sur la série qu'on lui passe.
+     * les deux sont nécessaires (altitude pour le dénivelé, horodatage pour la durée d'un
+     * segment). RIC-138 : [TrackStatsCalculator.smoothedElevationSeries] sait désormais interpoler
+     * les trous d'altitude, mais on préfère ici ne classer un segment plat/pentu que sur des
+     * altitudes réellement mesurées — une valeur interpolée n'apporte aucune pente réelle, autant
+     * l'exclure du calcul plutôt que de biaiser la classification vers "plat".
      */
     fun segment(points: List<TrackPoint>, segmentLengthMeters: Double = SEGMENT_LENGTH_METERS): List<TrackSegment> {
         val usable = points.filter { it.elevationMeters != null && it.time != null }
