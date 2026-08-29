@@ -306,11 +306,29 @@ object BackupManager {
                 return@withContext RestoreResult.VersionTooNew(backupVersion, BivouacDatabase.SCHEMA_VERSION)
             }
 
-            BivouacDatabase.closeAndReset()
-            try {
-                replaceWithRollback(context, tempDir)
-            } finally {
-                BivouacDatabase.getInstance(context)
+            // RIC-158 : même moniteur que backup() (RIC-128) et pour la même raison, pas
+            // seulement pour se protéger d'un backup() concurrent — celui-là est déjà exclu par
+            // ExclusiveOperations (RIC-156), qui empêche toute paire de ces opérations de démarrer
+            // en même temps. Ce que ExclusiveOperations NE couvre PAS, c'est un accès DB tiers qui
+            // n'en fait pas partie : n'importe quel repository, sur n'importe quel écran, peut
+            // appeler BivouacDatabase.getInstance() à tout moment (lecture réactive d'un
+            // StateFlow, recomposition...). Sans ce verrou, un tel appel pendant la fenêtre
+            // ci-dessous rouvrirait silencieusement une base — vide ou à moitié remplacée, selon
+            // l'instant exact — pendant que replaceWithRollback() écarte puis remplace ses
+            // fichiers, un risque plus grave ici que pour backup() puisque les fichiers eux-mêmes
+            // sont renommés/remplacés, pas seulement copiés. Réentrant sans risque : closeAndReset()
+            // et getInstance() reprennent le même moniteur (synchronized(this) sur le companion
+            // object, qui résout vers cette même instance de classe) depuis le même thread, et ce
+            // bloc ne traverse aucun point de suspension (aucun appel ci-dessous n'est `suspend`),
+            // donc jamais tenu au travers d'un changement de thread — même raisonnement que
+            // BackupManager.writeBackup.
+            synchronized(BivouacDatabase) {
+                BivouacDatabase.closeAndReset()
+                try {
+                    replaceWithRollback(context, tempDir)
+                } finally {
+                    BivouacDatabase.getInstance(context)
+                }
             }
             sweepOrphanPhotoFiles(context)
             RestoreResult.Success
