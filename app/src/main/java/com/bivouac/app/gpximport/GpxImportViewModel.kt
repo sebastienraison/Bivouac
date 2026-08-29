@@ -17,6 +17,8 @@ import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrackPoint
+import com.bivouac.app.data.operations.ExclusiveOperation
+import com.bivouac.app.data.operations.ExclusiveOperations
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
@@ -412,7 +414,18 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /**
+     * RIC-158 : entre au registre d'exclusion — l'écriture qui suit atterrit dans gpx-planif/,
+     * exactement ce qu'une sauvegarde zippe et qu'une restauration remplace en bloc. loadDuplicate()
+     * n'est jamais appelée qu'à un moment où [_uiState] vaut Idle (soit rien n'était ouvert, soit
+     * performClose() vient de l'y remettre juste avant) : un refus peut donc toujours s'exprimer en
+     * GpxImportUiState.Error sans écraser une trace en cours d'édition.
+     */
     private fun loadDuplicate(plan: DuplicatePlan) {
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.PLANIFICATION_IMPORT)) {
+            _uiState.value = GpxImportUiState.Error(exclusiveOperationRefusalMessage())
+            return
+        }
         _uiState.value = GpxImportUiState.Loaded(
             plan.track,
             TrackStatsCalculator.compute(plan.track.points, activeCalibration.value),
@@ -420,34 +433,66 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         _bivouacPoints.value = plan.bivouacPoints
         _currentBankedId.value = null
         _dirty.value = false
-        persistCurrentState()
+        viewModelScope.launch {
+            try {
+                persistCurrentStateNow()
+            } finally {
+                ExclusiveOperations.finish(ExclusiveOperation.PLANIFICATION_IMPORT)
+            }
+        }
         _nameDialogRequest.value = NameDialogRequest(plan.suggestedName, NameDialogPurpose.DUPLICATE)
     }
 
     // --- Import / restauration ---
 
+    /**
+     * RIC-158 : même registre que loadDuplicate() ci-dessus — l'auto-save de fin d'import écrit
+     * dans gpx-planif/. Le bouton « Ouvrir une trace » qui appelle cette fonction n'existe que
+     * lorsque [_uiState] vaut déjà Idle ou Error (voir GpxImportScreen), donc un refus, comme pour
+     * loadDuplicate(), ne peut jamais écraser une trace en cours d'édition — d'où le verrou pris
+     * AVANT de rien remettre à zéro.
+     */
     fun importGpx(resolver: ContentResolver, uri: Uri) {
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.PLANIFICATION_IMPORT)) {
+            _uiState.value = GpxImportUiState.Error(exclusiveOperationRefusalMessage())
+            return
+        }
         _uiState.value = GpxImportUiState.Loading
         _bivouacPoints.value = emptyList()
         _currentBankedId.value = null
         _dirty.value = false
         viewModelScope.launch {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    val track = resolver.openInputStream(uri)?.use { GpxParser.parse(it) }
-                        ?: throw IOException("Impossible d'ouvrir le fichier sélectionné")
-                    track to TrackStatsCalculator.compute(track.points, activeCalibration.value)
+            try {
+                val result = runCatching {
+                    withContext(Dispatchers.IO) {
+                        val track = resolver.openInputStream(uri)?.use { GpxParser.parse(it) }
+                            ?: throw IOException("Impossible d'ouvrir le fichier sélectionné")
+                        track to TrackStatsCalculator.compute(track.points, activeCalibration.value)
+                    }
                 }
+                _uiState.value = result.fold(
+                    onSuccess = { (track, stats) -> GpxImportUiState.Loaded(track, stats) },
+                    onFailure = {
+                        Log.e("GpxImportViewModel", "Échec de l'import GPX", it)
+                        GpxImportUiState.Error("Trace incorrecte ou fichier illisible.")
+                    },
+                )
+                persistCurrentStateNow()
+            } finally {
+                ExclusiveOperations.finish(ExclusiveOperation.PLANIFICATION_IMPORT)
             }
-            _uiState.value = result.fold(
-                onSuccess = { (track, stats) -> GpxImportUiState.Loaded(track, stats) },
-                onFailure = {
-                    Log.e("GpxImportViewModel", "Échec de l'import GPX", it)
-                    GpxImportUiState.Error("Trace incorrecte ou fichier illisible.")
-                },
-            )
-            persistCurrentState()
         }
+    }
+
+    /**
+     * RIC-158 : ce que l'utilisateur lit quand un import ou une duplication vers la Planification
+     * est refusé parce qu'une autre opération longue tourne. Même politique que
+     * JournalViewModel.exclusiveOperationRefusalMessage — voir ExclusiveOperations pour ce que ce
+     * verrou protège.
+     */
+    private fun exclusiveOperationRefusalMessage(): String {
+        val ongoing = ExclusiveOperations.current.value?.label ?: "une autre opération"
+        return "Impossible pour l'instant : $ongoing est en cours. Attends qu'elle se termine, puis recommence."
     }
 
     // Restores the trace saved from the previous session, if any — called once on a fresh start
@@ -509,11 +554,24 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     // its bivouac points. Never called from previewBivouacDrag, which fires on every drag frame —
     // only the drop (moveBivouacPoint) persists. This is the auto-save singleton, unrelated to the
     // banque de traces mechanism above.
+    //
+    // RIC-158 : ces écritures-là, routinières et très fréquentes (chaque déplacement de point), ne
+    // rejoignent PAS le registre d'exclusion — le geste voulu ici, c'est importGpx()/loadDuplicate()
+    // ci-dessus, où cette même écriture fait atterrir du contenu NOUVEAU dans gpx-planif/. Le
+    // registre les couvre déjà en attendant l'écriture de persistCurrentStateNow() qu'ils
+    // déclenchent directement (sans repasser par ce fire-and-forget, précisément pour pouvoir
+    // attendre sa fin dans leur propre finally). Geler l'édition d'un plan ouvert à chaque fois
+    // qu'une sauvegarde tourne serait une régression bien plus lourde que le risque résiduel — une
+    // écriture d'un seul petit fichier, quasi instantanée — que ça fermerait.
     private fun persistCurrentState() {
+        viewModelScope.launch { persistCurrentStateNow() }
+    }
+
+    private suspend fun persistCurrentStateNow() {
         val track = (_uiState.value as? GpxImportUiState.Loaded)?.track ?: return
         val points = _bivouacPoints.value
         val bankedId = _currentBankedId.value
-        viewModelScope.launch { withContext(Dispatchers.IO) { repository.save(track, points, bankedId) } }
+        withContext(Dispatchers.IO) { repository.save(track, points, bankedId) }
     }
 
     fun previewBivouacDrag(id: String, trackPointIndex: Int) {
