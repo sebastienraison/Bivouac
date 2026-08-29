@@ -21,6 +21,8 @@ import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
+import com.bivouac.app.data.operations.ExclusiveOperation
+import com.bivouac.app.data.operations.ExclusiveOperations
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
 import com.bivouac.app.data.photo.PhotoPickerScope
 import com.bivouac.app.data.prefs.MapLayerPreferences
@@ -681,6 +683,14 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      */
     fun saveDetails(tags: Set<String>, note: String, onFinished: () -> Unit = {}) {
         val entry = currentEntry() ?: return onFinished()
+        // RIC-156 : le verrou est pris avant tout le reste, et le refus ne consomme RIEN — ni les
+        // ajouts en transit, ni les suppressions en attente, et surtout pas [onFinished] : l'écran
+        // ne doit pas se fermer sur une sauvegarde qui n'a pas eu lieu. L'utilisateur retrouve son
+        // brouillon intact et peut réessayer une fois l'autre opération terminée.
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.PHOTO_COMMIT)) {
+            _photoError.value = exclusiveOperationRefusalMessage()
+            return
+        }
         val previousTags = _currentTags.value.toSet()
         val deletions = _pendingPhotoDeletions.value
         val additions = _pendingPhotoAdds.value
@@ -695,49 +705,65 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 PhotoOperationProgress(PhotoOperationPhase.COMMIT, done = 0, total = photoWork)
         }
         viewModelScope.launch {
-            val photoFailures = withContext(NonCancellable + Dispatchers.IO) {
-                (tags - previousTags).forEach { repository.addTag(entry.id, it) }
-                (previousTags - tags).forEach { repository.removeTag(entry.id, it) }
-                repository.updateNote(entry.id, note)
-                var failures = 0
-                if (photoWork > 0) {
-                    var done = 0
-                    val advance = {
-                        done++
-                        _photoOperationProgress.value =
-                            PhotoOperationProgress(PhotoOperationPhase.COMMIT, done, photoWork)
+            // RIC-156 : le verrou est levé dans un finally couvrant tout le corps — l'écriture est
+            // NonCancellable, mais la coroutine qui la suit ne l'est pas, et un verrou resté posé
+            // paralyserait sauvegarde et restauration jusqu'au prochain lancement de l'app.
+            try {
+                val photoFailures = withContext(NonCancellable + Dispatchers.IO) {
+                    (tags - previousTags).forEach { repository.addTag(entry.id, it) }
+                    (previousTags - tags).forEach { repository.removeTag(entry.id, it) }
+                    repository.updateNote(entry.id, note)
+                    var failures = 0
+                    if (photoWork > 0) {
+                        var done = 0
+                        val advance = {
+                            done++
+                            _photoOperationProgress.value =
+                                PhotoOperationProgress(PhotoOperationPhase.COMMIT, done, photoWork)
+                        }
+                        runCatching {
+                            repository.deletePhotos(deletions, onProgress = advance)
+                            failures = repository.commitPendingPhotos(entry.id, additions, onProgress = advance)
+                            _currentPhotos.value = repository.listPhotos(entry.id)
+                        }.onFailure {
+                            Log.e("JournalViewModel", "Échec de l'enregistrement des photos", it)
+                            failures = additions.size
+                        }
                     }
-                    runCatching {
-                        repository.deletePhotos(deletions, onProgress = advance)
-                        failures = repository.commitPendingPhotos(entry.id, additions, onProgress = advance)
-                        _currentPhotos.value = repository.listPhotos(entry.id)
-                    }.onFailure {
-                        Log.e("JournalViewModel", "Échec de l'enregistrement des photos", it)
-                        failures = additions.size
+                    failures
+                }
+                transitPathsBeingCommitted -= inFlightPaths.toSet()
+                _photoOperationProgress.value = null
+                // Vidées après l'écriture, jamais avant : les vignettes en transit tiennent
+                // l'affichage jusqu'à ce que la liste relue prenne le relais, sinon elles
+                // disparaîtraient le temps d'un aller-retour disque. Le doublon que ce recouvrement
+                // pourrait produire est écarté par empreinte dans currentPhotos.
+                _pendingPhotoDeletions.value = emptySet()
+                _pendingPhotoAdds.value = emptyList()
+                if (photoFailures > 0) {
+                    _photoError.value = if (photoFailures == 1) {
+                        "Une photo n'a pas pu être enregistrée."
+                    } else {
+                        "$photoFailures photos n'ont pas pu être enregistrées."
                     }
                 }
-                failures
+                _currentTags.value = tags.toList()
+                _tagsByTrackId.value = _tagsByTrackId.value + (entry.id to tags.toList())
+                refreshCurrentEntry(entry.id, note = note)
+                onFinished()
+            } finally {
+                ExclusiveOperations.finish(ExclusiveOperation.PHOTO_COMMIT)
             }
-            transitPathsBeingCommitted -= inFlightPaths.toSet()
-            _photoOperationProgress.value = null
-            // Vidées après l'écriture, jamais avant : les vignettes en transit tiennent l'affichage
-            // jusqu'à ce que la liste relue prenne le relais, sinon elles disparaîtraient le temps
-            // d'un aller-retour disque. Le doublon que ce recouvrement pourrait produire est écarté
-            // par empreinte dans currentPhotos.
-            _pendingPhotoDeletions.value = emptySet()
-            _pendingPhotoAdds.value = emptyList()
-            if (photoFailures > 0) {
-                _photoError.value = if (photoFailures == 1) {
-                    "Une photo n'a pas pu être enregistrée."
-                } else {
-                    "$photoFailures photos n'ont pas pu être enregistrées."
-                }
-            }
-            _currentTags.value = tags.toList()
-            _tagsByTrackId.value = _tagsByTrackId.value + (entry.id to tags.toList())
-            refreshCurrentEntry(entry.id, note = note)
-            onFinished()
         }
+    }
+
+    /**
+     * RIC-156 : ce que l'utilisateur lit quand un geste est refusé parce qu'une autre opération
+     * longue tourne. Voir ExclusiveOperations pour ce que ce verrou protège.
+     */
+    private fun exclusiveOperationRefusalMessage(): String {
+        val ongoing = ExclusiveOperations.current.value?.label ?: "une autre opération"
+        return "Impossible pour l'instant : $ongoing est en cours. Attends qu'elle se termine, puis recommence."
     }
 
     private fun currentEntry(): LoggedTrackEntity? = when (val state = _uiState.value) {
@@ -828,6 +854,13 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     fun addPhotos(uris: List<Uri>) {
         if (uris.isEmpty()) return
         val entry = currentEntry() ?: return
+        // RIC-156 : même exclusion mutuelle que l'enregistrement — un import recopie des fichiers
+        // dans photos/, répertoire qu'une restauration remplace en bloc et qu'une sauvegarde est en
+        // train de parcourir.
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.PHOTO_IMPORT)) {
+            _photoError.value = exclusiveOperationRefusalMessage()
+            return
+        }
         // Posé avant le launch, exactement comme dans saveDetails : le dialogue doit être à
         // l'écran du fait même du clic, sans dépendre du moment où la coroutine sera
         // ordonnancée. C'est aussi ce qui ferme la fenêtre pendant laquelle la croix serait
@@ -876,6 +909,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 // Le bilan de lot est posé avant : il s'ouvre donc en remplacement du dialogue
                 // bloquant, jamais derrière lui.
                 _photoOperationProgress.value = null
+                ExclusiveOperations.finish(ExclusiveOperation.PHOTO_IMPORT)
             }
         }
     }
