@@ -138,6 +138,8 @@ import com.bivouac.app.journal.JournalUiState
 import com.bivouac.app.journal.JournalViewModel
 import com.bivouac.app.journal.PhotoOperationPhase
 import com.bivouac.app.journal.SeparateImportReport
+import com.bivouac.app.ui.components.BlockingProgress
+import com.bivouac.app.ui.components.BlockingProgressDialog
 import com.bivouac.app.ui.components.ChoiceOptionCard
 import com.bivouac.app.ui.components.DrawerStop
 import com.bivouac.app.ui.components.DurationIconColor
@@ -694,30 +696,25 @@ fun JournalScreen(
     // Rendu ici, au niveau de l'écran, et non dans la vue détail : il couvre tous les chemins
     // (validation du sélecteur, disquette, bouton « Enregistrer » du dialogue de sortie) du seul
     // fait qu'il suit l'état du ViewModel, sans qu'aucun n'ait à y penser.
-    photoOperationProgress?.let { progress ->
-        AlertDialog(
-            onDismissRequest = {},
-            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-            title = {
-                Text(
-                    when (progress.phase) {
-                        PhotoOperationPhase.IMPORT -> "Import des photos"
-                        PhotoOperationPhase.COMMIT -> "Enregistrement des photos"
-                    },
-                )
-            },
-            text = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
-                    Text("${progress.done} sur ${progress.total}…")
-                }
-            },
-            confirmButton = {},
-        )
-    }
+    //
+    // RIC-156 : le dialogue lui-même est passé dans ui/components, partagé avec la sauvegarde et la
+    // restauration des Réglages, et gagne au passage l'anti-flash — un enregistrement ne portant
+    // que sur une photo ou deux se boucle en quelques dizaines de millisecondes (~43 ms mesurées en
+    // recette) et faisait apparaître puis disparaître ce dialogue dans la même respiration. Le
+    // drapeau qui verrouille l'écran (photoOperationInFlight plus haut) reste, lui, branché sur
+    // l'état brut : rien de ce qui protège les données ne passe par l'anti-flash.
+    BlockingProgressDialog(
+        progress = photoOperationProgress?.let { progress ->
+            BlockingProgress(
+                title = when (progress.phase) {
+                    PhotoOperationPhase.IMPORT -> "Import des photos"
+                    PhotoOperationPhase.COMMIT -> "Enregistrement des photos"
+                },
+                done = progress.done,
+                total = progress.total,
+            )
+        },
+    )
 
     // RIC-43 : échec d'une action photo (ajout, suppression, repositionnement, ouverture du
     // sélecteur filtré). Même traitement que importError ci-dessus : un dialogue à simple
