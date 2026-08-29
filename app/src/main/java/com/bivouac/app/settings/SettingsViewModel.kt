@@ -38,6 +38,10 @@ enum class DataOperationPhase(val title: String) {
     BACKUP("Sauvegarde en cours"),
     RESTORE_EXTRACTION("Lecture de la sauvegarde"),
     RESTORE_REPLACEMENT("Restauration en cours"),
+
+    // RIC-158 : la purge des photos peut porter sur des centaines de Mo — assez long pour mériter
+    // le même dialogue bloquant que la sauvegarde et la restauration, cohérence oblige.
+    PHOTO_PURGE("Purge des photos en cours"),
 }
 
 /** RIC-156 : où en est la sauvegarde ou la restauration. [total] est null quand le travail n'est pas dénombrable. */
@@ -104,6 +108,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     // moment du clic, pour que le dialogue chiffre exactement ce que le bouton annonçait.
     private val _photoPurgeConfirmation = MutableStateFlow<PhotoStorageSummary?>(null)
     val photoPurgeConfirmation: StateFlow<PhotoStorageSummary?> = _photoPurgeConfirmation.asStateFlow()
+
+    // RIC-158 : réservé au refus — inatteignable en pratique puisque le bouton de purge est grisé
+    // dès qu'une autre opération tourne (voir ongoingOperation), même politique défensive que
+    // backupError pour un chemin oublié.
+    private val _photoPurgeError = MutableStateFlow<String?>(null)
+    val photoPurgeError: StateFlow<String?> = _photoPurgeError.asStateFlow()
 
     val lastBackupAtMillis: StateFlow<Long?> = settingsPreferences.lastBackupAtMillis
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -214,12 +224,38 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _photoPurgeConfirmation.value = null
     }
 
+    /**
+     * RIC-158 : entre au registre d'exclusion comme la sauvegarde et la restauration — la purge
+     * supprime en masse des fichiers de photos/, exactement ce que la sauvegarde zippe et ce que la
+     * restauration remplace en bloc. Même discipline que backup()/restore() : verrou pris avant le
+     * launch, par le clic lui-même, et levé dans un finally.
+     */
     fun confirmPhotoPurge() {
+        val storage = _photoPurgeConfirmation.value
         _photoPurgeConfirmation.value = null
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.PHOTO_PURGE)) {
+            _photoPurgeError.value = refusalMessage()
+            return
+        }
+        _dataOperationProgress.value =
+            DataOperationProgress(DataOperationPhase.PHOTO_PURGE, done = 0, total = storage?.count)
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { loggedTrackRepository.purgeAllPhotos() }
+            try {
+                withContext(Dispatchers.IO) {
+                    loggedTrackRepository.purgeAllPhotos { done, total ->
+                        _dataOperationProgress.value = DataOperationProgress(DataOperationPhase.PHOTO_PURGE, done, total)
+                    }
+                }
+            } finally {
+                _dataOperationProgress.value = null
+                ExclusiveOperations.finish(ExclusiveOperation.PHOTO_PURGE)
+            }
             _photoStorageRefresh.value += 1
         }
+    }
+
+    fun dismissPhotoPurgeError() {
+        _photoPurgeError.value = null
     }
 
     /**

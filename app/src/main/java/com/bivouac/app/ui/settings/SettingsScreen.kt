@@ -115,6 +115,7 @@ fun SettingsScreen(
     val photosEnabled by viewModel.photosEnabled.collectAsStateWithLifecycle()
     val photoStorage by viewModel.photoStorage.collectAsStateWithLifecycle()
     val photoPurgeConfirmation by viewModel.photoPurgeConfirmation.collectAsStateWithLifecycle()
+    val photoPurgeError by viewModel.photoPurgeError.collectAsStateWithLifecycle()
     val lastBackupAtMillis by viewModel.lastBackupAtMillis.collectAsStateWithLifecycle()
     val dataOperationProgress by viewModel.dataOperationProgress.collectAsStateWithLifecycle()
     val ongoingOperation by viewModel.ongoingOperation.collectAsStateWithLifecycle()
@@ -174,6 +175,9 @@ fun SettingsScreen(
                 onToggle = viewModel::setPhotosEnabled,
                 storage = photoStorage,
                 onPurgeClick = viewModel::requestPhotoPurge,
+                // RIC-158 : même registre que Sauvegarder/Restaurer ci-dessous — un import Journal
+                // ou Planification en vol grise la purge aussi.
+                purgeLocked = ongoingOperation != null,
             )
             DataSection(
                 lastBackupAtMillis = lastBackupAtMillis,
@@ -238,6 +242,17 @@ fun SettingsScreen(
             title = { Text("Sauvegarde impossible") },
             text = { Text(message) },
             confirmButton = { TextButton(onClick = viewModel::dismissBackupError) { Text("OK") } },
+        )
+    }
+
+    // RIC-158 : censé être inatteignable, le bouton de purge étant grisé dès qu'une autre
+    // opération tourne — reste écrit pour la même raison défensive que backupError ci-dessus.
+    photoPurgeError?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPhotoPurgeError,
+            title = { Text("Purge impossible") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = viewModel::dismissPhotoPurgeError) { Text("OK") } },
         )
     }
 
@@ -752,6 +767,7 @@ private fun JournalPhotosSection(
     onToggle: (Boolean) -> Unit,
     storage: PhotoStorageSummary?,
     onPurgeClick: () -> Unit,
+    purgeLocked: Boolean,
 ) {
     SettingsSection(label = "Photos du Journal") {
         SettingsRow(
@@ -773,6 +789,9 @@ private fun JournalPhotosSection(
         if (!enabled && storage != null && storage.count > 0) {
             OutlinedButton(
                 onClick = onPurgeClick,
+                // RIC-158 : même grisage que Sauvegarder/Restaurer pendant qu'une autre opération
+                // longue tourne — la purge en est une elle aussi désormais.
+                enabled = !purgeLocked,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
             ) {
