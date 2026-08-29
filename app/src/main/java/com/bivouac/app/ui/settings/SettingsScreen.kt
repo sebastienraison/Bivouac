@@ -39,7 +39,6 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -78,6 +77,8 @@ import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.prefs.SpeedCalibrationMode
 import com.bivouac.app.settings.RestoreOutcome
 import com.bivouac.app.settings.SettingsViewModel
+import com.bivouac.app.ui.components.BlockingProgress
+import com.bivouac.app.ui.components.BlockingProgressDialog
 import com.bivouac.app.ui.components.formatDuration
 import com.bivouac.app.ui.nav.AppScreenHeader
 import com.bivouac.app.ui.nav.AppSection
@@ -115,8 +116,8 @@ fun SettingsScreen(
     val photoStorage by viewModel.photoStorage.collectAsStateWithLifecycle()
     val photoPurgeConfirmation by viewModel.photoPurgeConfirmation.collectAsStateWithLifecycle()
     val lastBackupAtMillis by viewModel.lastBackupAtMillis.collectAsStateWithLifecycle()
-    val backupInProgress by viewModel.backupInProgress.collectAsStateWithLifecycle()
-    val restoreInProgress by viewModel.restoreInProgress.collectAsStateWithLifecycle()
+    val dataOperationProgress by viewModel.dataOperationProgress.collectAsStateWithLifecycle()
+    val ongoingOperation by viewModel.ongoingOperation.collectAsStateWithLifecycle()
     val backupError by viewModel.backupError.collectAsStateWithLifecycle()
     val restoreOutcome by viewModel.restoreOutcome.collectAsStateWithLifecycle()
 
@@ -176,8 +177,9 @@ fun SettingsScreen(
             )
             DataSection(
                 lastBackupAtMillis = lastBackupAtMillis,
-                backupInProgress = backupInProgress,
-                restoreInProgress = restoreInProgress,
+                // RIC-156 : un seul drapeau pour les deux boutons, et il vient du registre commun
+                // au process — un import de photos en cours dans le Journal les grise aussi.
+                operationsLocked = ongoingOperation != null,
                 onBackupClick = { backupLauncher.launch(suggestedBackupFileName()) },
                 onRestoreClick = { restoreLauncher.launch(arrayOf("*/*")) },
             )
@@ -195,6 +197,17 @@ fun SettingsScreen(
             )
         }
     }
+
+    // RIC-156 : sauvegarde et restauration sont bloquantes, sur le même composant que les
+    // opérations photo du Journal. Ce qui manquait à l'incident d'origine : rien n'empêchait de
+    // lancer une restauration pendant qu'une sauvegarde s'écrivait, l'écran restant entièrement
+    // manipulable. Rendu au niveau de l'écran et non dans DataSection, pour couvrir tous les
+    // chemins du seul fait qu'il suit l'état du ViewModel.
+    BlockingProgressDialog(
+        progress = dataOperationProgress?.let {
+            BlockingProgress(title = it.phase.title, done = it.done, total = it.total)
+        },
+    )
 
     // RIC-152 : la seule suppression de photos en masse de l'app, donc une confirmation qui dit
     // exactement ce qui part et qu'on n'en revient pas. Le chiffre est repris du relevé fait au
@@ -792,8 +805,7 @@ internal fun formatBytes(bytes: Long): String = when {
 @Composable
 private fun DataSection(
     lastBackupAtMillis: Long?,
-    backupInProgress: Boolean,
-    restoreInProgress: Boolean,
+    operationsLocked: Boolean,
     onBackupClick: () -> Unit,
     onRestoreClick: () -> Unit,
 ) {
@@ -812,33 +824,30 @@ private fun DataSection(
             // wrapping onto two lines once squeezed into a half-width slot alongside its icon —
             // trimmed padding and a smaller icon/gap buy back just enough width.
             val buttonContentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
+            // RIC-156 : plus de tourniquet dans le bouton — le dialogue bloquant est désormais le
+            // seul indicateur d'avancement, et il applique l'anti-flash. Un tourniquet ici le
+            // court-circuiterait en clignotant sur les opérations très courtes, exactement le
+            // défaut qu'on corrige. Reste le grisage, qui est ce qui rend le chevauchement
+            // inatteignable plutôt que simplement refusé.
             Button(
                 onClick = onBackupClick,
-                enabled = !backupInProgress,
+                enabled = !operationsLocked,
                 contentPadding = buttonContentPadding,
                 modifier = Modifier.weight(1f),
             ) {
-                if (backupInProgress) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Sauvegarder", maxLines = 1)
-                }
+                Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Sauvegarder", maxLines = 1)
             }
             OutlinedButton(
                 onClick = onRestoreClick,
-                enabled = !restoreInProgress,
+                enabled = !operationsLocked,
                 contentPadding = buttonContentPadding,
                 modifier = Modifier.weight(1f),
             ) {
-                if (restoreInProgress) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Restaurer", maxLines = 1)
-                }
+                Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Restaurer", maxLines = 1)
             }
         }
     }

@@ -3,6 +3,8 @@ package com.bivouac.app.data.backup
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
+import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import com.bivouac.app.data.db.BivouacDatabase
 import com.bivouac.app.data.db.LoggedTrackGpxStore
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
@@ -12,9 +14,11 @@ import com.bivouac.app.data.prefs.SETTINGS_DATASTORE_NAME
 import com.bivouac.app.data.prefs.SettingsPreferences
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -23,6 +27,18 @@ sealed interface RestoreResult {
     data class VersionTooNew(val backupVersion: Int, val appVersion: Int) : RestoreResult
     data class Error(val message: String) : RestoreResult
 }
+
+/** RIC-156 : les deux temps d'une restauration, tels que le dialogue bloquant les annonce. */
+enum class RestorePhase {
+    /** Lecture de l'archive et extraction en zone temporaire. Dénombrable si l'archive a un manifeste. */
+    EXTRACTION,
+
+    /** Contrôle d'intégrité puis remplacement des fichiers en place. Non dénombrable, et bien plus court. */
+    REPLACEMENT,
+}
+
+/** RIC-156 : où en est une restauration. [total] est null quand l'archive ne dit pas ce qu'elle contient. */
+data class RestoreProgress(val phase: RestorePhase, val done: Int, val total: Int?)
 
 /**
  * Full-database backup/restore (BIV-66) — a raw copy of bivouac.db (plus its WAL/SHM sidecars, if
@@ -57,70 +73,219 @@ object BackupManager {
     private val DB_SIDECAR_SUFFIXES = listOf("", "-wal", "-shm")
     private val PREFS_FILE_NAMES = listOf("$MAP_LAYER_DATASTORE_NAME.preferences_pb", "$SETTINGS_DATASTORE_NAME.preferences_pb")
 
-    suspend fun backup(context: Context, destination: Uri): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            // Stamped into the settings file *before* it gets zipped, not after backup() returns —
-            // that way the backup is self-describing: restoring it later naturally shows the date
-            // it was taken as "Dernière sauvegarde", instead of whatever (or nothing) was live at
-            // restore time.
-            SettingsPreferences(context).setLastBackupAtMillis(System.currentTimeMillis())
+    /**
+     * RIC-156 : manifeste écrit en TÊTE de l'archive, avant la moindre donnée.
+     *
+     * Il porte le nombre d'entrées de données que l'archive est censée contenir. C'est ce qui rend
+     * une archive tronquée détectable : un zip est une suite d'en-têtes locaux suivis d'un annuaire
+     * central écrit à la fermeture, et [ZipInputStream] ne lit que les en-têtes locaux, séquentiellement.
+     * Une écriture interrompue pile sur une frontière d'entrée produit donc un fichier que rien, dans
+     * le format lui-même, ne distingue d'une archive complète — et comme bivouac.db est zippé en
+     * premier, cette archive amputée passait le contrôle d'intégrité SQLite (RIC-95) et restaurait
+     * une base saine sans ses photos ni ses GPX, en écrasant définitivement celles de l'appareil.
+     *
+     * Sert accessoirement de dénominateur à la progression de la restauration. Les archives
+     * antérieures à RIC-156 n'en ont pas : elles restent restaurables, sans ce contrôle et sans
+     * compteur (voir [extractZip]).
+     */
+    private const val MANIFEST_ENTRY_NAME = "manifest.properties"
+    private const val MANIFEST_FILE_COUNT_KEY = "fileCount"
 
-            // RIC-128 : synchronized(BivouacDatabase) partage le même moniteur que getInstance()/
-            // closeAndReset() (synchronized(this) dans leur companion object — Kotlin résout le
-            // nom de classe nu vers l'instance du companion). Sans ce verrou, un accès DB tiers
-            // pendant la boucle de copie ci-dessous rouvrait silencieusement la base via
-            // getInstance() : une écriture concurrente était alors commise en base mais pouvait
-            // être absente de l'archive déjà en cours de zip, sans que la sauvegarde le signale
-            // comme échouée. Verrou bloquant (pas de Mutex coroutine) volontairement : ce bloc ne
-            // contient aucun point de suspension réel (aucun des appels ci-dessous n'est un
-            // `suspend fun`), donc pas de risque de tenir le moniteur au travers d'un changement
-            // de thread — cohérent avec synchronized(this) déjà utilisé par ailleurs dans
-            // BivouacDatabase, appelé depuis ces mêmes contextes suspendus sans souci.
-            synchronized(BivouacDatabase) {
-                // Closing Room forces a WAL checkpoint and flushes any pending writes into
-                // bivouac.db itself, so the plain file copy below is consistent even without a
-                // filesystem-level transaction wrapping it.
-                BivouacDatabase.closeAndReset()
-                try {
-                    val dbFile = context.getDatabasePath(BivouacDatabase.DATABASE_NAME)
-                    val datastoreDir = File(context.filesDir, "datastore")
-                    val output = context.contentResolver.openOutputStream(destination)
-                        ?: throw IOException("Impossible d'ouvrir la destination sélectionnée.")
-                    ZipOutputStream(output).use { zip ->
-                        for (suffix in DB_SIDECAR_SUFFIXES) {
-                            val file = File(dbFile.parentFile, dbFile.name + suffix)
-                            if (file.exists()) writeEntry(zip, DB_ENTRY_PREFIX + file.name, file)
-                        }
-                        for (name in PREFS_FILE_NAMES) {
-                            val file = File(datastoreDir, name)
-                            if (file.exists()) writeEntry(zip, PREFS_ENTRY_PREFIX + file.name, file)
-                        }
-                        for (file in LoggedTrackGpxStore.dir(context).listFiles().orEmpty()) {
-                            if (file.isFile) writeEntry(zip, GPX_ENTRY_PREFIX + file.name, file)
-                        }
-                        for (file in PlanificationGpxStore.dir(context).listFiles().orEmpty()) {
-                            if (file.isFile) writeEntry(zip, GPX_PLANIF_ENTRY_PREFIX + file.name, file)
-                        }
-                        for (file in LoggedTrackPhotoStore.dir(context).listFiles().orEmpty()) {
-                            if (file.isFile) writeEntry(zip, PHOTOS_ENTRY_PREFIX + file.name, file)
-                        }
-                    }
-                } finally {
-                    // Re-primes the singleton right away rather than leaving it null until
-                    // whatever screen happens to touch the DB next — a backup shouldn't leave the
-                    // app in a half-initialized state if the user keeps using it right after.
-                    BivouacDatabase.getInstance(context)
-                }
-            }
+    suspend fun backup(
+        context: Context,
+        destination: Uri,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            writeBackup(context, destination, onProgress)
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            // RIC-156 : une sauvegarde annulée en cours de route (l'utilisateur quitte l'app, le
+            // process meurt proprement) ne doit pas laisser derrière elle un fichier d'apparence
+            // normale. Le nettoyage n'est pas suspendu, il s'exécute donc bien alors que la
+            // coroutine est déjà annulée.
+            discardPartialBackup(context, destination)
+            throw e
+        } catch (e: Exception) {
+            discardPartialBackup(context, destination)
+            Result.failure(e)
         }
     }
 
-    suspend fun restore(context: Context, source: Uri): RestoreResult = withContext(Dispatchers.IO) {
+    private suspend fun writeBackup(context: Context, destination: Uri, onProgress: (Int, Int) -> Unit) {
+        // Stamped into the settings file *before* it gets zipped, not after backup() returns —
+        // that way the backup is self-describing: restoring it later naturally shows the date
+        // it was taken as "Dernière sauvegarde", instead of whatever (or nothing) was live at
+        // restore time.
+        SettingsPreferences(context).setLastBackupAtMillis(System.currentTimeMillis())
+
+        // RIC-128 : synchronized(BivouacDatabase) partage le même moniteur que getInstance()/
+        // closeAndReset() (synchronized(this) dans leur companion object — Kotlin résout le
+        // nom de classe nu vers l'instance du companion). Sans ce verrou, un accès DB tiers
+        // pendant la boucle de copie ci-dessous rouvrait silencieusement la base via
+        // getInstance() : une écriture concurrente était alors commise en base mais pouvait
+        // être absente de l'archive déjà en cours de zip, sans que la sauvegarde le signale
+        // comme échouée. Verrou bloquant (pas de Mutex coroutine) volontairement : ce bloc ne
+        // contient aucun point de suspension réel (aucun des appels ci-dessous n'est un
+        // `suspend fun`), donc pas de risque de tenir le moniteur au travers d'un changement
+        // de thread — cohérent avec synchronized(this) déjà utilisé par ailleurs dans
+        // BivouacDatabase, appelé depuis ces mêmes contextes suspendus sans souci.
+        val bytesWritten = synchronized(BivouacDatabase) {
+            // Closing Room forces a WAL checkpoint and flushes any pending writes into
+            // bivouac.db itself, so the plain file copy below is consistent even without a
+            // filesystem-level transaction wrapping it.
+            BivouacDatabase.closeAndReset()
+            try {
+                // RIC-156 : le catalogue est arrêté AVANT d'ouvrir la destination — c'est ce qui
+                // donne son dénominateur à la progression, et le compte que le manifeste annonce.
+                val entries = collectBackupEntries(context)
+                val output = context.contentResolver.openOutputStream(destination)
+                    ?: throw IOException("Impossible d'ouvrir la destination sélectionnée.")
+                val counting = CountingOutputStream(output)
+                ZipOutputStream(counting).use { zip ->
+                    writeManifest(zip, entries.size)
+                    onProgress(0, entries.size)
+                    entries.forEachIndexed { index, (name, file) ->
+                        writeEntry(zip, name, file)
+                        onProgress(index + 1, entries.size)
+                    }
+                }
+                counting.bytesWritten
+            } finally {
+                // Re-primes the singleton right away rather than leaving it null until
+                // whatever screen happens to touch the DB next — a backup shouldn't leave the
+                // app in a half-initialized state if the user keeps using it right after.
+                BivouacDatabase.getInstance(context)
+            }
+        }
+        verifyWrittenSize(context, destination, bytesWritten)
+    }
+
+    /**
+     * RIC-156 : tout ce que l'archive doit contenir, nom d'entrée compris, arrêté en une fois.
+     *
+     * L'ordre est celui d'écriture historique (base, préférences, gpx/, gpx-planif/, photos/) : la
+     * base d'abord, pour qu'une archive lue par un humain commence par l'essentiel.
+     */
+    private fun collectBackupEntries(context: Context): List<Pair<String, File>> {
+        val dbFile = context.getDatabasePath(BivouacDatabase.DATABASE_NAME)
+        val datastoreDir = File(context.filesDir, "datastore")
+        val entries = mutableListOf<Pair<String, File>>()
+        for (suffix in DB_SIDECAR_SUFFIXES) {
+            val file = File(dbFile.parentFile, dbFile.name + suffix)
+            if (file.exists()) entries += (DB_ENTRY_PREFIX + file.name) to file
+        }
+        for (name in PREFS_FILE_NAMES) {
+            val file = File(datastoreDir, name)
+            if (file.exists()) entries += (PREFS_ENTRY_PREFIX + file.name) to file
+        }
+        for (file in LoggedTrackGpxStore.dir(context).listFiles().orEmpty()) {
+            if (file.isFile) entries += (GPX_ENTRY_PREFIX + file.name) to file
+        }
+        for (file in PlanificationGpxStore.dir(context).listFiles().orEmpty()) {
+            if (file.isFile) entries += (GPX_PLANIF_ENTRY_PREFIX + file.name) to file
+        }
+        for (file in LoggedTrackPhotoStore.dir(context).listFiles().orEmpty()) {
+            if (file.isFile) entries += (PHOTOS_ENTRY_PREFIX + file.name) to file
+        }
+        return entries
+    }
+
+    private fun writeManifest(zip: ZipOutputStream, fileCount: Int) {
+        zip.putNextEntry(ZipEntry(MANIFEST_ENTRY_NAME))
+        zip.write(
+            (
+                "# Sauvegarde Bivouac. Ne pas modifier : ce compte est ce qui permet de détecter\n" +
+                    "# une archive tronquée avant qu'elle ne remplace des données saines.\n" +
+                    "$MANIFEST_FILE_COUNT_KEY=$fileCount\n"
+                ).toByteArray(),
+        )
+        zip.closeEntry()
+    }
+
+    /**
+     * RIC-156 : la destination passe par SAF, on ne peut donc ni écrire à côté puis renommer, ni
+     * garantir l'atomicité de l'écriture — le document est créé par le sélecteur AVANT que quoi que
+     * ce soit y soit écrit, et le fournisseur peut être distant (Drive, Nextcloud).
+     *
+     * Le compromis retenu, faute de mieux, est en trois temps :
+     *  - le manifeste en tête rend toute troncature détectable à la RESTAURATION, donc avant que
+     *    l'archive douteuse ne puisse écraser quoi que ce soit ;
+     *  - cette vérification-ci compare, juste après fermeture, la taille annoncée par le
+     *    fournisseur au nombre d'octets réellement poussés — elle attrape le cas « le fournisseur
+     *    n'a pas tout gardé » (quota, coupure d'upload) tout de suite, et pas six mois plus tard ;
+     *  - un échec, quel qu'il soit, supprime le document (voir [discardPartialBackup]) : jamais de
+     *    zip partiel présenté à l'utilisateur comme une sauvegarde.
+     *
+     * Seule une taille STRICTEMENT inférieure est considérée comme un échec, et une taille inconnue
+     * est acceptée : certains fournisseurs ne renseignent pas la colonne, d'autres comptent autre
+     * chose que les octets du flux. Supprimer une sauvegarde correcte sur un doute coûterait
+     * infiniment plus cher que de laisser passer un cas exotique, que le manifeste rattrapera.
+     */
+    private fun verifyWrittenSize(context: Context, destination: Uri, bytesWritten: Long) {
+        val reported = runCatching {
+            context.contentResolver.query(destination, arrayOf(OpenableColumns.SIZE), null, null, null)
+                ?.use { cursor ->
+                    val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (index >= 0 && cursor.moveToFirst() && !cursor.isNull(index)) cursor.getLong(index) else null
+                }
+        }.getOrNull() ?: return
+        if (reported < bytesWritten) {
+            throw IOException(
+                "La sauvegarde n'a pas été écrite en entier ($reported octets sur $bytesWritten). " +
+                    "Vérifie l'espace disponible sur la destination, puis recommence.",
+            )
+        }
+    }
+
+    /**
+     * RIC-156 : supprime le document de destination après un échec ou une annulation.
+     *
+     * Sans ça, la moindre interruption laissait un .zip d'apparence normale, à la bonne date, dans
+     * le répertoire de sauvegardes de l'utilisateur — indiscernable d'une bonne archive au moment
+     * où il en aurait le plus besoin. Toute erreur de suppression est ignorée : on est déjà dans le
+     * chemin d'échec, et le manifeste reste le filet de sécurité à la restauration.
+     */
+    private fun discardPartialBackup(context: Context, destination: Uri) {
+        runCatching { DocumentsContract.deleteDocument(context.contentResolver, destination) }
+    }
+
+    /** Compte les octets réellement poussés vers la destination, pour [verifyWrittenSize]. */
+    private class CountingOutputStream(private val delegate: OutputStream) : OutputStream() {
+        var bytesWritten: Long = 0L
+            private set
+
+        override fun write(b: Int) {
+            delegate.write(b)
+            bytesWritten += 1
+        }
+
+        override fun write(b: ByteArray, off: Int, len: Int) {
+            delegate.write(b, off, len)
+            bytesWritten += len
+        }
+
+        override fun flush() = delegate.flush()
+
+        override fun close() = delegate.close()
+    }
+
+    suspend fun restore(
+        context: Context,
+        source: Uri,
+        onProgress: (RestoreProgress) -> Unit = {},
+    ): RestoreResult = withContext(Dispatchers.IO) {
         val tempDir = File(context.cacheDir, "restore-${System.nanoTime()}")
         try {
             tempDir.mkdirs()
-            extractZip(context, source, tempDir)
-                ?.let { return@withContext RestoreResult.Error(it) }
+            onProgress(RestoreProgress(RestorePhase.EXTRACTION, done = 0, total = null))
+            val extraction = extractZip(context, source, tempDir) { done, total ->
+                onProgress(RestoreProgress(RestorePhase.EXTRACTION, done, total))
+            }
+            if (extraction.errorMessage != null) {
+                return@withContext RestoreResult.Error(extraction.errorMessage)
+            }
+            onProgress(RestoreProgress(RestorePhase.REPLACEMENT, done = 0, total = null))
 
             val extractedDb = File(tempDir, BivouacDatabase.DATABASE_NAME)
             if (!extractedDb.exists()) {
@@ -332,19 +497,38 @@ object BackupManager {
         }
     }.getOrDefault(false)
 
+    /** RIC-156 : issue d'une extraction — [errorMessage] non nul si elle a échoué. */
+    private data class ExtractionResult(val errorMessage: String?)
+
     /** Returns an error message on failure, null on success. Flattens entries by basename — the
      * db/ and prefs/ zip prefixes exist only to make a manually-opened archive self-explanatory,
      * every real filename involved is already unique on its own. Exceptions (RIC-62, RIC-97) : les
      * entrées gpx/ et gpx-planif/ gardent leur sous-répertoire, replaceWithRollback remplaçant
-     * chacun de ces répertoires en bloc. */
-    private fun extractZip(context: Context, source: Uri, tempDir: File): String? {
+     * chacun de ces répertoires en bloc.
+     *
+     * RIC-156 : le manifeste ([MANIFEST_ENTRY_NAME]) est lu au passage, pas extrait. Il fournit le
+     * dénominateur de la progression dès la première entrée, puis le compte attendu que le nombre
+     * d'entrées réellement lues doit égaler. Une archive sans manifeste (antérieure à RIC-156) est
+     * extraite sans compteur ni contrôle : la refuser reviendrait à priver l'utilisateur de ses
+     * sauvegardes existantes pour une garantie qu'elles n'ont jamais eue. */
+    private fun extractZip(
+        context: Context,
+        source: Uri,
+        tempDir: File,
+        onProgress: (done: Int, total: Int?) -> Unit,
+    ): ExtractionResult {
         val input = context.contentResolver.openInputStream(source)
-            ?: return "Impossible de lire le fichier sélectionné."
+            ?: return ExtractionResult("Impossible de lire le fichier sélectionné.")
+        var expectedFileCount: Int? = null
+        var extracted = 0
         ZipInputStream(input).use { zip ->
             var entry: ZipEntry? = zip.nextEntry
             while (entry != null) {
                 val name = entry.name.substringAfterLast('/')
-                if (name.isNotBlank() && !entry.isDirectory) {
+                if (entry.name == MANIFEST_ENTRY_NAME) {
+                    expectedFileCount = readManifestFileCount(zip.readBytes())
+                    onProgress(0, expectedFileCount)
+                } else if (name.isNotBlank() && !entry.isDirectory) {
                     val targetDir = when {
                         entry.name.startsWith(GPX_ENTRY_PREFIX) ->
                             File(tempDir, LoggedTrackGpxStore.DIR_NAME).apply { mkdirs() }
@@ -355,13 +539,32 @@ object BackupManager {
                         else -> tempDir
                     }
                     File(targetDir, name).outputStream().use { out -> zip.copyTo(out) }
+                    extracted += 1
+                    onProgress(extracted, expectedFileCount)
                 }
                 zip.closeEntry()
                 entry = zip.nextEntry
             }
         }
-        return null
+        val expected = expectedFileCount
+        if (expected != null && extracted != expected) {
+            return ExtractionResult(
+                "Cette sauvegarde est incomplète : elle annonce $expected fichiers mais n'en contient " +
+                    "que $extracted. Elle a probablement été interrompue pendant sa création. " +
+                    "Restauration annulée, les données actuelles sont intactes.",
+            )
+        }
+        return ExtractionResult(null)
     }
+
+    /** Lecture tolérante du manifeste : tout ce qui n'est pas un compte exploitable vaut « absent ». */
+    private fun readManifestFileCount(bytes: ByteArray): Int? = bytes.decodeToString()
+        .lineSequence()
+        .map { it.trim() }
+        .firstOrNull { it.startsWith("$MANIFEST_FILE_COUNT_KEY=") }
+        ?.substringAfter('=')
+        ?.toIntOrNull()
+        ?.takeIf { it >= 0 }
 
     private fun writeEntry(zip: ZipOutputStream, name: String, file: File) {
         zip.putNextEntry(ZipEntry(name))
