@@ -12,12 +12,29 @@ import kotlinx.coroutines.flow.asStateFlow
  * tourne ; il est porté ici et non côté écran parce que le refus vient forcément d'un écran
  * différent de celui qui a lancé l'opération (Réglages refuse à cause du Journal, et
  * réciproquement).
+ *
+ * RIC-158 étend le registre à la purge des photos et à tout ce qui écrit dans gpx/ ou
+ * gpx-planif/ à l'occasion d'un import : mêmes fichiers, même risque de chevauchement avec une
+ * sauvegarde ou une restauration en cours.
  */
 enum class ExclusiveOperation(val label: String) {
     BACKUP("une sauvegarde"),
     RESTORE("une restauration"),
     PHOTO_IMPORT("un import de photos"),
     PHOTO_COMMIT("un enregistrement de photos"),
+
+    // RIC-158 : supprime en masse les fichiers de photos/ — aussi bien touché par une sauvegarde
+    // (qui les zippe) qu'une restauration (qui remplace le répertoire en bloc).
+    PHOTO_PURGE("une purge de photos"),
+
+    // RIC-158 : tout import du Journal qui écrit dans gpx/ — un seul fichier, un trek multi-jours
+    // (plusieurs fichiers pour une seule sortie) ou un lot de sorties séparées.
+    JOURNAL_IMPORT("un import du Journal"),
+
+    // RIC-158 : tout ce qui fait atterrir du contenu nouveau dans gpx-planif/ en dehors d'une
+    // édition ordinaire — l'import d'un fichier GPX externe et la duplication d'une sortie du
+    // Journal vers la Planification (RIC-40), qui écrit elle aussi dans ce répertoire.
+    PLANIFICATION_IMPORT("un import en Planification"),
 }
 
 /**

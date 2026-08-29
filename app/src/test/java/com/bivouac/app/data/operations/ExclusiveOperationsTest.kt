@@ -9,14 +9,15 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * RIC-156 : l'exclusion mutuelle entre les quatre opérations longues.
+ * RIC-156/RIC-158 : l'exclusion mutuelle entre les sept opérations longues du registre.
  *
  * Ce que ces tests figent vient d'un incident réel : une restauration d'une vieille archive a pu
  * être lancée depuis les Réglages pendant qu'une sauvegarde était en cours d'écriture, et la
  * sauvegarde a semblé être avortée. Les deux manipulent les mêmes fichiers (base, préférences,
- * gpx/, photos/) ; l'import et l'enregistrement de photos du Journal touchent aux mêmes photos/.
- * Aucune paire, quel que soit l'ordre, ne doit pouvoir se chevaucher — y compris deux instances
- * de la même opération.
+ * gpx/, gpx-planif/, photos/) ; l'import et l'enregistrement de photos du Journal touchent aux
+ * mêmes photos/, la purge de photos (RIC-158) aussi, et les imports Journal/Planification (RIC-158)
+ * touchent respectivement gpx/ et gpx-planif/. Aucune paire, quel que soit l'ordre, ne doit pouvoir
+ * se chevaucher — y compris deux instances de la même opération.
  */
 class ExclusiveOperationsTest {
 
@@ -32,7 +33,7 @@ class ExclusiveOperationsTest {
     }
 
     /**
-     * Toutes les paires ordonnées, les quatre paires « la même deux fois » comprises : deux imports
+     * Toutes les paires ordonnées, les paires « la même deux fois » comprises : deux imports
      * de photos simultanés se marcheraient dessus autant que deux opérations différentes.
      */
     @Test
