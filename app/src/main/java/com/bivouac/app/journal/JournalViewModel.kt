@@ -1116,9 +1116,20 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         importAsSingleTrack(uris)
     }
 
-    /** « Sorties séparées » : N entrées indépendantes du Journal, traitées une par une. */
+    /**
+     * « Sorties séparées » : N entrées indépendantes du Journal, traitées une par une.
+     *
+     * RIC-158 : verrou pris une seule fois pour tout le lot, et non fichier par fichier — laisser
+     * une sauvegarde s'intercaler entre deux fichiers du même lot la ferait courir sur un import
+     * à moitié écrit, incohérence que le registre existe justement pour fermer. Levé dans
+     * [finishSeparateImports], une fois le dernier fichier traité.
+     */
     fun chooseSeparateImports() {
         val uris = consumeImportChoice() ?: return
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.JOURNAL_IMPORT)) {
+            _importError.value = exclusiveOperationRefusalMessage()
+            return
+        }
         separateQueue = ArrayDeque(uris)
         separateTotal = uris.size
         separateImported = 0
@@ -1149,32 +1160,47 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * une sortie multi-jours amputée d'un jour, plus trompeuse qu'une absence d'import. C'est
      * exactement l'inverse du mode « sorties séparées » ci-dessous, où l'indépendance des
      * fichiers est justement ce qui a été demandé.
+     *
+     * RIC-158 : entre au registre d'exclusion — [LoggedTrackRepository.commitImport] écrit dans
+     * gpx/, exactement ce qu'une sauvegarde zippe et qu'une restauration remplace en bloc. Verrou
+     * pris avant le launch, comme les opérations photo (voir addPhotos), et levé dans un finally
+     * couvrant tout le corps. Sur un doublon probable, le verrou est relâché en attendant la
+     * décision de l'utilisateur (voir confirmImportAnyway) plutôt que tenu indéfiniment sur une
+     * question qui peut rester sans réponse arbitrairement longtemps.
      */
     private fun importAsSingleTrack(uris: List<Uri>) {
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.JOURNAL_IMPORT)) {
+            _importError.value = exclusiveOperationRefusalMessage()
+            return
+        }
         _importProgress.value = ImportProgress.Reading(done = 0, total = uris.size)
         viewModelScope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    val prepared = repository.prepareImport(contentResolver, uris, activeCalibration.value)
-                    prepared to repository.findDuplicate(prepared)
-                }
-            }.onSuccess { (prepared, duplicate) ->
-                when (duplicate) {
-                    is DuplicateMatch.Exact ->
-                        _importError.value = "« ${duplicate.existing.name} » est déjà dans le journal."
-                    is DuplicateMatch.Probable, is DuplicateMatch.SharedDay -> {
-                        pendingImport = prepared
-                        _duplicateWarning.value = duplicate
+            try {
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        val prepared = repository.prepareImport(contentResolver, uris, activeCalibration.value)
+                        prepared to repository.findDuplicate(prepared)
                     }
-                    null -> commit(prepared, openAfterCommit = true)
+                }.onSuccess { (prepared, duplicate) ->
+                    when (duplicate) {
+                        is DuplicateMatch.Exact ->
+                            _importError.value = "« ${duplicate.existing.name} » est déjà dans le journal."
+                        is DuplicateMatch.Probable, is DuplicateMatch.SharedDay -> {
+                            pendingImport = prepared
+                            _duplicateWarning.value = duplicate
+                        }
+                        null -> commit(prepared, openAfterCommit = true)
+                    }
+                }.onFailure {
+                    Log.e("JournalViewModel", "Échec de l'import GPX (Journal)", it)
+                    _importError.value = "Trace incorrecte ou fichier illisible."
                 }
-            }.onFailure {
-                Log.e("JournalViewModel", "Échec de l'import GPX (Journal)", it)
-                _importError.value = "Trace incorrecte ou fichier illisible."
+                // Après le commit et sa calibration, donc après l'opération entière : ce qui suit
+                // (avertissement de doublon, erreur, vue détail) est de nouveau manipulable.
+                _importProgress.value = null
+            } finally {
+                ExclusiveOperations.finish(ExclusiveOperation.JOURNAL_IMPORT)
             }
-            // Après le commit et sa calibration, donc après l'opération entière : ce qui suit
-            // (avertissement de doublon, erreur, vue détail) est de nouveau manipulable.
-            _importProgress.value = null
         }
     }
 
@@ -1244,11 +1270,17 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         // secondes, et afficher « Import terminé » par-dessus un traitement encore en cours
         // reviendrait à rendre l'écran manipulable au pire moment.
         viewModelScope.launch {
-            if (imported > 0) {
-                _importProgress.value = ImportProgress.Calibrating
-                withContext(Dispatchers.IO) { refreshAutoCalibration() }
+            try {
+                if (imported > 0) {
+                    _importProgress.value = ImportProgress.Calibrating
+                    withContext(Dispatchers.IO) { refreshAutoCalibration() }
+                }
+            } finally {
+                // RIC-158 : le verrou pris par chooseSeparateImports() couvre tout le lot, il se
+                // lève donc ici, une fois le dernier fichier traité — jamais plus tôt.
+                _importProgress.value = null
+                ExclusiveOperations.finish(ExclusiveOperation.JOURNAL_IMPORT)
             }
-            _importProgress.value = null
             _separateImportReport.value = report
         }
     }
@@ -1257,16 +1289,32 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _separateImportReport.value = null
     }
 
-    // L'avertissement de doublon probable ne concerne plus que l'import d'une sortie seule : une
-    // question pour un fichier ne coûte rien, et l'utilisateur a le contexte pour y répondre. Un
-    // lot de sorties séparées, lui, ne pose jamais la question (cf. processNextSeparateImport).
+    /**
+     * L'avertissement de doublon probable ne concerne plus que l'import d'une sortie seule : une
+     * question pour un fichier ne coûte rien, et l'utilisateur a le contexte pour y répondre. Un
+     * lot de sorties séparées, lui, ne pose jamais la question (cf. processNextSeparateImport).
+     *
+     * RIC-158 : ré-acquiert le verrou relâché par importAsSingleTrack() en attendant cette
+     * décision — le commit qui suit écrit dans gpx/ comme n'importe quel autre import. En cas de
+     * refus (une autre opération a démarré pendant l'attente), rien n'est consommé : l'avertissement
+     * de doublon reste affiché tel quel, l'utilisateur peut retenter une fois l'autre opération
+     * terminée plutôt que de perdre le fichier qu'il venait de choisir d'importer quand même.
+     */
     fun confirmImportAnyway() {
         val prepared = pendingImport ?: return
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.JOURNAL_IMPORT)) {
+            _importError.value = exclusiveOperationRefusalMessage()
+            return
+        }
         pendingImport = null
         _duplicateWarning.value = null
         viewModelScope.launch {
-            commit(prepared, openAfterCommit = true)
-            _importProgress.value = null
+            try {
+                commit(prepared, openAfterCommit = true)
+            } finally {
+                _importProgress.value = null
+                ExclusiveOperations.finish(ExclusiveOperation.JOURNAL_IMPORT)
+            }
         }
     }
 
