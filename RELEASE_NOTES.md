@@ -1,5 +1,36 @@
 # Bivouac — Notes de version
 
+## V2.2.0
+
+**Journal — photos (nouveau) :**
+
+- Associer des photos de la galerie du téléphone à une randonnée du Journal : positionnées
+  automatiquement sur la trace grâce à leurs données GPS, marqueurs sur la carte, carrousel à
+  balayage dans la bulle d'un marqueur (avec l'heure de prise de vue), galerie de la sortie et
+  visionneuse plein écran
+- Sélecteur de photos intégré à l'app plutôt que le sélecteur système d'Android : ce dernier
+  supprime la position GPS des photos qu'il transmet, ce qui rendrait leur placement sur la trace
+  impossible. D'où deux nouvelles permissions médias (lecture des images, accès à leur
+  localisation), demandées uniquement à la première utilisation de la fonctionnalité
+- Fonctionnalité entièrement débrayable dans les Réglages ; purge de toutes les photos importées
+  possible au même endroit
+- Le mode édition d'une randonnée (note, tags, photos) est désormais transactionnel : rien n'est
+  modifié tant qu'on n'enregistre pas, et quitter avec des modifications en attente demande
+  explicitement quoi en faire (enregistrer, abandonner, ou rester)
+
+**Sauvegarde / restauration :**
+
+- Progression affichée pendant la sauvegarde, la restauration et la purge des photos (dialogue
+  bloquant avec compteur) ; les opérations lourdes ne peuvent plus se chevaucher (sauvegarde,
+  restauration, imports GPX, import/purge de photos)
+- Détection des sauvegardes incomplètes : un fichier de sauvegarde tronqué (transfert interrompu,
+  espace insuffisant) est refusé à la restauration au lieu de passer inaperçu
+
+**Bugfixes :**
+
+- Le profil d'altitude d'une trace restait entièrement vide dès qu'un seul point du GPX n'avait
+  pas d'altitude — les trous sont désormais comblés par interpolation
+
 ## V2.1.0
 
 **Bilan (nouveau) :**

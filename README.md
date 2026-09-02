@@ -39,7 +39,7 @@ journaliers (distance, dénivelé, durée estimée) qui se met à jour automatiq
   </tr>
 </table>
 
-## Fonctionnalités (V2.1.0)
+## Fonctionnalités (V2.2.0)
 
 **Planification :**
 
@@ -58,6 +58,9 @@ journaliers (distance, dénivelé, durée estimée) qui se met à jour automatiq
 - Importer une ou plusieurs traces GPX déjà réalisées (fichiers multiples reconnus comme les jours
   d'une même sortie), liste chronologique par année, détail en lecture seule avec carte et profil
 - Note libre et tags par trace, filtrage par tag ; dupliquer une trace du Journal vers Planification
+- Photos associées à une randonnée : positionnées sur la trace grâce à leurs données GPS, marqueurs
+  sur la carte, carrousel dans la bulle, galerie de la sortie et visionneuse plein écran —
+  fonctionnalité débrayable dans les Réglages (voir la FAQ pour les permissions)
 
 **Bilan :**
 
@@ -69,7 +72,7 @@ journaliers (distance, dénivelé, durée estimée) qui se met à jour automatiq
 
 - Vitesse personnalisée pour l'estimation de durée (manuelle, automatique, ou par sélection de
   traces), sauvegarde et restauration complètes des données, activation/désactivation des
-  fonctionnalités non libres
+  fonctionnalités non libres et de la gestion des photos, purge des photos importées
 
 Détail complet des fonctionnalités par version, et limitations connues : [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
@@ -115,6 +118,18 @@ qui ajoute une provision de temps aux estimations, réglable manuellement ou mes
 sur le Journal/la sélection selon le mode choisi — sans lui, les estimations tendent à être
 optimistes, l'écart grandissant avec le nombre de pauses prévisibles.
 
+### Pourquoi l'app demande-t-elle l'accès aux photos ET à leur localisation ?
+
+Pour placer une photo sur la trace, Bivouac a besoin de la position GPS enregistrée dans la photo.
+Or le sélecteur de photos standard d'Android, pensé pour que les apps n'accèdent qu'au strict
+minimum, supprime justement cette position des photos qu'il transmet. Bivouac utilise donc son
+propre écran de sélection, ce qui demande deux permissions : la lecture des images (celle que
+demande toute app de galerie), et l'accès à la localisation des médias (celle qui préserve la
+position GPS). Les deux ne sont demandées qu'au premier usage de la fonctionnalité photos — jamais
+si tu ne t'en sers pas — et l'accès partiel d'Android 14+ ("autoriser seulement certaines photos")
+est géré. La fonctionnalité est entièrement désactivable dans les Réglages, et les photos ne
+quittent jamais l'appareil.
+
 ### Mes randonnées partent-elles dans une sauvegarde cloud Google ?
 
 Bivouac est 100 % local, modulo les sauvegardes du système : l'app elle-même n'envoie rien nulle
@@ -155,7 +170,7 @@ et si ça peut servir à quelqu'un d'autre, tant mieux. Indulgence et retours bi
 
 ## Statut
 
-V2.1.0 fonctionnelle. Développement actif.
+V2.2.0 fonctionnelle. Développement actif.
 
 ## Développement
 

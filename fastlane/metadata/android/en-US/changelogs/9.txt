@@ -1,0 +1,8 @@
+New: attach photos from your gallery to a Journal hike — placed on the track from their GPS
+data, with map markers, a swipeable carousel, a per-hike gallery and a full-screen viewer.
+Fully optional: can be disabled in Settings; the two media permissions are only requested when
+you first use it.
+
+Backup/restore: progress dialog, truncated-backup detection, operations can no longer overlap.
+
+Fix: elevation profile no longer empty when some GPX points lack elevation.
