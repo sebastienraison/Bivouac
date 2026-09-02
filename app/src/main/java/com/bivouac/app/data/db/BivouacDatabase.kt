@@ -524,11 +524,13 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Contrat induit (RIC-103) : personne ne doit capturer durablement l'instance ni un DAO —
         // les repositories résolvent le leur à chaque accès, précisément pour survivre à ce cycle.
         //
-        // Contrat induit (RIC-128) : ce synchronized(this) et celui de getInstance() ci-dessus
-        // partagent le même moniteur que BackupManager.backup() tient (synchronized(BivouacDatabase),
-        // qui résout vers cette même instance de companion object) pendant toute sa fenêtre de
-        // copie — sans quoi un appel concurrent ici rouvrirait silencieusement la base pendant que
-        // backup() la copie, avec le risque de perdre une écriture de l'archive sans le signaler.
+        // Contrat induit (RIC-128, étendu RIC-158) : ce synchronized(this) et celui de
+        // getInstance() ci-dessus partagent le même moniteur que BackupManager.backup() ET
+        // BackupManager.restore() tiennent chacun (synchronized(BivouacDatabase), qui résout vers
+        // cette même instance de companion object) pendant toute leur fenêtre de copie/remplacement
+        // — sans quoi un appel concurrent ici rouvrirait silencieusement la base pendant que l'un
+        // ou l'autre manipule ses fichiers, avec le risque de perdre une écriture (backup) ou de
+        // heurter un fichier en cours de remplacement (restore) sans que rien ne le signale.
         fun closeAndReset() {
             synchronized(this) {
                 instance?.close()

@@ -16,6 +16,7 @@ import com.bivouac.app.data.prefs.SpeedCalibrationMode
 import com.bivouac.app.ui.map.MapLayer
 import java.io.File
 import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -331,5 +332,168 @@ class BackupManagerTest {
         val gpxFile = LoggedTrackGpxStore.resolve(context, LoggedTrackGpxStore.relativePath("t1", 0))
         assertTrue(gpxFile.exists())
         assertEquals("<gpx><!-- contenu à préserver --></gpx>", gpxFile.readText())
+    }
+
+    /** Jeu d'essai commun aux cas RIC-156 : une trace, son GPX, deux photos. */
+    private suspend fun seedTrackWithPhotos() {
+        val dao = BivouacDatabase.getInstance(context).loggedTrackDao()
+        dao.insert(
+            LoggedTrackEntity(
+                id = "t1",
+                name = "Trace RIC-156",
+                startedAt = 0L,
+                contentHash = "hash1",
+                distanceMeters = 5000.0,
+                elevationGainMeters = 300.0,
+                elevationLossMeters = 300.0,
+                pointCount = 10,
+                estimatedDurationMinutes = 90,
+            ),
+            listOf(writeDay("t1", 0, "<gpx><!-- contenu RIC-156 --></gpx>")),
+        )
+        writePhoto("t1", byteArrayOf(0x01, 0x02, 0x03))
+        writePhoto("t1", byteArrayOf(0x04, 0x05, 0x06, 0x07))
+    }
+
+    /**
+     * RIC-156 : la sauvegarde rend compte fichier par fichier, avec un dénominateur connu dès le
+     * premier appel — c'est ce qui permet au dialogue bloquant d'afficher « x sur n » et non un
+     * tourniquet muet pendant plusieurs dizaines de secondes de photos.
+     */
+    @Test
+    fun backupReportsFileByFileProgress() = runBlocking {
+        seedTrackWithPhotos()
+
+        val reported = mutableListOf<Pair<Int, Int>>()
+        assertTrue(BackupManager.backup(context, Uri.fromFile(backupFile)) { done, total -> reported += done to total }.isSuccess)
+
+        assertTrue("la sauvegarde doit rendre compte", reported.isNotEmpty())
+        val total = reported.first().second
+        assertTrue("le total doit couvrir base, préférences, gpx et les 2 photos", total >= 4)
+        assertTrue("le total ne doit jamais changer en cours de route", reported.all { it.second == total })
+        assertEquals("le premier compte rendu part de zéro", 0, reported.first().first)
+        assertEquals("le dernier compte rendu doit être complet", total, reported.last().first)
+        assertEquals("le compteur ne doit jamais reculer ni sauter", (0..total).toList(), reported.map { it.first })
+    }
+
+    /**
+     * RIC-156 : la restauration rend compte elle aussi, en deux temps — l'extraction, dénombrable
+     * grâce au manifeste écrit par la sauvegarde, puis le remplacement, qui ne l'est pas.
+     */
+    @Test
+    fun restoreReportsExtractionProgressThenReplacement() = runBlocking {
+        seedTrackWithPhotos()
+        assertTrue(BackupManager.backup(context, Uri.fromFile(backupFile)).isSuccess)
+        BivouacDatabase.closeAndReset()
+
+        val reported = mutableListOf<RestoreProgress>()
+        val result = BackupManager.restore(context, Uri.fromFile(backupFile)) { reported += it }
+        assertEquals(RestoreResult.Success, result)
+
+        val extraction = reported.filter { it.phase == RestorePhase.EXTRACTION }
+        assertTrue("l'extraction doit rendre compte", extraction.isNotEmpty())
+        val total = extraction.mapNotNull { it.total }.distinct()
+        assertEquals("le manifeste doit fournir un dénominateur unique", 1, total.size)
+        assertEquals(
+            "toutes les entrées de données doivent être comptées",
+            total.single(),
+            extraction.last().done,
+        )
+        assertTrue(
+            "le remplacement doit être annoncé, et sans faux dénominateur",
+            reported.any { it.phase == RestorePhase.REPLACEMENT && it.total == null },
+        )
+    }
+
+    /**
+     * RIC-156, reproduction de l'incident : une sauvegarde interrompue pile sur une frontière
+     * d'entrée produit une archive que RIEN, dans le format zip, ne distingue d'une archive
+     * complète — [ZipInputStream] ne lit que les en-têtes locaux, séquentiellement, et l'annuaire
+     * central qu'il ignore est de toute façon le dernier écrit.
+     *
+     * Le piège est que bivouac.db est zippé en premier : l'archive amputée contient une base
+     * parfaitement saine, qui passait le contrôle d'intégrité de RIC-95 et se restaurait sans le
+     * moindre message — en emportant définitivement les photos et les GPX de l'appareil, puisque
+     * ces répertoires sont remplacés en bloc. Ce test vérifie les deux moitiés : que la base de
+     * l'archive tronquée est bien saine (donc que le contrôle existant ne pouvait pas la refuser),
+     * et que le manifeste, lui, la refuse.
+     */
+    @Test
+    fun restoreRefusesAnArchiveTruncatedOnAnEntryBoundary() = runBlocking {
+        seedTrackWithPhotos()
+        assertTrue(BackupManager.backup(context, Uri.fromFile(backupFile)).isSuccess)
+
+        val truncated = File(context.cacheDir, "truncated-${System.nanoTime()}.zip")
+        val keptDataEntries = copyArchivePrefix(backupFile, truncated, dataEntriesToKeep = 1)
+        assertEquals("l'archive tronquée ne doit garder que la base", 1, keptDataEntries)
+
+        // Première moitié : cette archive est structurellement irréprochable et sa base est saine.
+        val extractedDb = File(context.cacheDir, "truncated-db-${System.nanoTime()}")
+        ZipInputStream(truncated.inputStream()).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                if (entry.name.endsWith(BivouacDatabase.DATABASE_NAME)) {
+                    extractedDb.outputStream().use { out -> zip.copyTo(out) }
+                }
+                zip.closeEntry()
+                entry = zip.nextEntry
+            }
+        }
+        assertTrue("la base de l'archive tronquée doit exister", extractedDb.exists())
+        val integrity = SQLiteDatabase.openDatabase(extractedDb.path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+            db.rawQuery("PRAGMA integrity_check", null).use { cursor ->
+                cursor.moveToFirst() && cursor.getString(0).equals("ok", ignoreCase = true)
+            }
+        }
+        assertTrue("c'est tout le problème : cette base tronquée est saine, rien ne la trahissait", integrity)
+        extractedDb.delete()
+
+        // Seconde moitié : le manifeste refuse l'archive, et les données en place sont intactes.
+        BivouacDatabase.closeAndReset()
+        val result = BackupManager.restore(context, Uri.fromFile(truncated))
+        truncated.delete()
+        assertTrue("une archive incomplète doit être refusée", result is RestoreResult.Error)
+        assertTrue(
+            "le message doit dire pourquoi : ${(result as RestoreResult.Error).message}",
+            result.message.contains("incomplète"),
+        )
+        val photosAfterRefusal = BivouacDatabase.getInstance(context).loggedTrackDao().getPhotos("t1")
+        assertEquals("les photos en place doivent survivre au refus", 2, photosAfterRefusal.size)
+        photosAfterRefusal.forEach {
+            assertTrue(
+                "le fichier de ${it.filePath} doit survivre au refus",
+                LoggedTrackPhotoStore.resolve(context, it.filePath).exists(),
+            )
+        }
+    }
+
+    /**
+     * Recopie le début d'une archive vers [destination] : le manifeste, puis les [dataEntriesToKeep]
+     * premières entrées de données, et referme proprement. C'est la façon déterministe de fabriquer
+     * exactement le cas piège — une troncature alignée sur une frontière d'entrée, indétectable au
+     * niveau du format — là où couper le fichier à un nombre d'octets arbitraire ne produirait
+     * qu'une entrée corrompue, que le zip signale tout seul.
+     *
+     * @return le nombre d'entrées de données recopiées.
+     */
+    private fun copyArchivePrefix(source: File, destination: File, dataEntriesToKeep: Int): Int {
+        var kept = 0
+        ZipOutputStream(destination.outputStream()).use { out ->
+            ZipInputStream(source.inputStream()).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    val isManifest = !entry.name.contains('/')
+                    if (isManifest || kept < dataEntriesToKeep) {
+                        out.putNextEntry(ZipEntry(entry.name))
+                        zip.copyTo(out)
+                        out.closeEntry()
+                        if (!isManifest) kept += 1
+                    }
+                    zip.closeEntry()
+                    entry = zip.nextEntry
+                }
+            }
+        }
+        return kept
     }
 }

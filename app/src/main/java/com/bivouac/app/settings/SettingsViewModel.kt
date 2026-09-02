@@ -6,11 +6,14 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.bivouac.app.data.backup.AppRestart
 import com.bivouac.app.data.backup.BackupManager
+import com.bivouac.app.data.backup.RestorePhase
 import com.bivouac.app.data.backup.RestoreResult
 import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.db.PhotoStorageSummary
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
+import com.bivouac.app.data.operations.ExclusiveOperation
+import com.bivouac.app.data.operations.ExclusiveOperations
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.data.prefs.SpeedCalibrationMode
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +26,26 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * RIC-156 : les trois temps que le dialogue bloquant des Réglages sait annoncer.
+ *
+ * La restauration en a deux, et non un seul : l'extraction est la phase longue et dénombrable, le
+ * remplacement est court et ne l'est pas — les fondre donnerait un compteur qui se fige à la fin
+ * sans que rien n'explique pourquoi.
+ */
+enum class DataOperationPhase(val title: String) {
+    BACKUP("Sauvegarde en cours"),
+    RESTORE_EXTRACTION("Lecture de la sauvegarde"),
+    RESTORE_REPLACEMENT("Restauration en cours"),
+
+    // RIC-158 : la purge des photos peut porter sur des centaines de Mo — assez long pour mériter
+    // le même dialogue bloquant que la sauvegarde et la restauration, cohérence oblige.
+    PHOTO_PURGE("Purge des photos en cours"),
+}
+
+/** RIC-156 : où en est la sauvegarde ou la restauration. [total] est null quand le travail n'est pas dénombrable. */
+data class DataOperationProgress(val phase: DataOperationPhase, val done: Int, val total: Int?)
 
 /** Result of a completed restore, held until the user acknowledges the "app is about to restart" dialog. */
 sealed interface RestoreOutcome {
@@ -86,14 +109,30 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _photoPurgeConfirmation = MutableStateFlow<PhotoStorageSummary?>(null)
     val photoPurgeConfirmation: StateFlow<PhotoStorageSummary?> = _photoPurgeConfirmation.asStateFlow()
 
+    // RIC-158 : réservé au refus — inatteignable en pratique puisque le bouton de purge est grisé
+    // dès qu'une autre opération tourne (voir ongoingOperation), même politique défensive que
+    // backupError pour un chemin oublié.
+    private val _photoPurgeError = MutableStateFlow<String?>(null)
+    val photoPurgeError: StateFlow<String?> = _photoPurgeError.asStateFlow()
+
     val lastBackupAtMillis: StateFlow<Long?> = settingsPreferences.lastBackupAtMillis
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    private val _backupInProgress = MutableStateFlow(false)
-    val backupInProgress: StateFlow<Boolean> = _backupInProgress.asStateFlow()
+    /**
+     * RIC-156 : non nul tant qu'une sauvegarde ou une restauration est en vol. Alimente le dialogue
+     * bloquant de l'écran (voir BlockingProgressDialog), qui se charge seul de l'anti-flash.
+     */
+    private val _dataOperationProgress = MutableStateFlow<DataOperationProgress?>(null)
+    val dataOperationProgress: StateFlow<DataOperationProgress?> = _dataOperationProgress.asStateFlow()
 
-    private val _restoreInProgress = MutableStateFlow(false)
-    val restoreInProgress: StateFlow<Boolean> = _restoreInProgress.asStateFlow()
+    /**
+     * RIC-156 : l'opération longue en vol pour tout le process, photos du Journal comprises.
+     *
+     * Exposée telle quelle et non recopiée dans un état local : c'est ce qui garantit que les
+     * boutons Sauvegarder/Restaurer sont grisés pendant un import de photos lancé depuis un autre
+     * écran, cas que ce ViewModel ne peut pas connaître autrement.
+     */
+    val ongoingOperation: StateFlow<ExclusiveOperation?> = ExclusiveOperations.current
 
     private val _backupError = MutableStateFlow<String?>(null)
     val backupError: StateFlow<String?> = _backupError.asStateFlow()
@@ -185,21 +224,68 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _photoPurgeConfirmation.value = null
     }
 
+    /**
+     * RIC-158 : entre au registre d'exclusion comme la sauvegarde et la restauration — la purge
+     * supprime en masse des fichiers de photos/, exactement ce que la sauvegarde zippe et ce que la
+     * restauration remplace en bloc. Même discipline que backup()/restore() : verrou pris avant le
+     * launch, par le clic lui-même, et levé dans un finally.
+     */
     fun confirmPhotoPurge() {
+        val storage = _photoPurgeConfirmation.value
         _photoPurgeConfirmation.value = null
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.PHOTO_PURGE)) {
+            _photoPurgeError.value = refusalMessage()
+            return
+        }
+        _dataOperationProgress.value =
+            DataOperationProgress(DataOperationPhase.PHOTO_PURGE, done = 0, total = storage?.count)
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { loggedTrackRepository.purgeAllPhotos() }
+            try {
+                withContext(Dispatchers.IO) {
+                    loggedTrackRepository.purgeAllPhotos { done, total ->
+                        _dataOperationProgress.value = DataOperationProgress(DataOperationPhase.PHOTO_PURGE, done, total)
+                    }
+                }
+            } finally {
+                _dataOperationProgress.value = null
+                ExclusiveOperations.finish(ExclusiveOperation.PHOTO_PURGE)
+            }
             _photoStorageRefresh.value += 1
         }
     }
 
+    fun dismissPhotoPurgeError() {
+        _photoPurgeError.value = null
+    }
+
+    /**
+     * RIC-156 : le verrou est pris AVANT le launch, comme pour les opérations photo (RIC-149) — un
+     * verrou posé dans la coroutine dépendrait du moment où elle est ordonnancée, et laisserait
+     * exactement la fenêtre qu'il est censé fermer. Même raison pour la progression initiale : le
+     * dialogue doit exister du fait du clic, pas d'un aller-retour d'ordonnanceur.
+     */
     fun backup(uri: Uri) {
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.BACKUP)) {
+            _backupError.value = refusalMessage()
+            return
+        }
+        _dataOperationProgress.value = DataOperationProgress(DataOperationPhase.BACKUP, done = 0, total = null)
         viewModelScope.launch {
-            _backupInProgress.value = true
-            // BackupManager stamps lastBackupAtMillis itself, before zipping — lastBackupAtMillis
-            // above picks it up reactively once the write lands, no need to set it again here.
-            val result = BackupManager.backup(getApplication(), uri)
-            _backupInProgress.value = false
+            val result = try {
+                // BackupManager stamps lastBackupAtMillis itself, before zipping — lastBackupAtMillis
+                // above picks it up reactively once the write lands, no need to set it again here.
+                BackupManager.backup(getApplication(), uri) { done, total ->
+                    _dataOperationProgress.value = DataOperationProgress(DataOperationPhase.BACKUP, done, total)
+                }
+            } finally {
+                // Dans un finally, et pas à la suite du corps : une annulation du viewModelScope
+                // (écran détruit) libère le verrou au lieu de le laisser posé pour toujours.
+                _dataOperationProgress.value = null
+                ExclusiveOperations.finish(ExclusiveOperation.BACKUP)
+            }
+            // Après la levée du dialogue bloquant, jamais avant : posé pendant, le message
+            // d'erreur s'ouvrirait derrière lui. Il reste une fenêtre résiduelle, le temps que la
+            // durée minimale d'affichage s'écoule, mais le dialogue posé en dernier passe devant.
             result.onFailure {
                 _backupError.value = it.message ?: "Échec de la sauvegarde."
             }
@@ -207,16 +293,43 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun restore(uri: Uri) {
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.RESTORE)) {
+            _restoreOutcome.value = RestoreOutcome.Error(refusalMessage())
+            return
+        }
+        _dataOperationProgress.value =
+            DataOperationProgress(DataOperationPhase.RESTORE_EXTRACTION, done = 0, total = null)
         viewModelScope.launch {
-            _restoreInProgress.value = true
-            val result = BackupManager.restore(getApplication(), uri)
-            _restoreInProgress.value = false
+            val result = try {
+                BackupManager.restore(getApplication(), uri) { progress ->
+                    val phase = when (progress.phase) {
+                        RestorePhase.EXTRACTION -> DataOperationPhase.RESTORE_EXTRACTION
+                        RestorePhase.REPLACEMENT -> DataOperationPhase.RESTORE_REPLACEMENT
+                    }
+                    _dataOperationProgress.value = DataOperationProgress(phase, progress.done, progress.total)
+                }
+            } finally {
+                _dataOperationProgress.value = null
+                ExclusiveOperations.finish(ExclusiveOperation.RESTORE)
+            }
+            // Même raison que pour la sauvegarde : le bilan ne doit pas être posé pendant que le
+            // dialogue bloquant est encore en place, sous peine de s'ouvrir derrière lui.
             _restoreOutcome.value = when (result) {
                 is RestoreResult.Success -> RestoreOutcome.PendingRestart
                 is RestoreResult.VersionTooNew -> RestoreOutcome.VersionTooNew(result.backupVersion, result.appVersion)
                 is RestoreResult.Error -> RestoreOutcome.Error(result.message)
             }
         }
+    }
+
+    /**
+     * RIC-156 : le refus est censé être inatteignable — les boutons sont grisés dès qu'une
+     * opération tourne. Il reste écrit, et nommé, parce qu'un chemin oublié doit refuser proprement
+     * plutôt que de laisser deux écritures se croiser sur les mêmes fichiers.
+     */
+    private fun refusalMessage(): String {
+        val ongoing = ExclusiveOperations.current.value?.label ?: "une autre opération"
+        return "Impossible pour l'instant : $ongoing est en cours. Attends qu'elle se termine, puis recommence."
     }
 
     fun dismissRestoreOutcome() {

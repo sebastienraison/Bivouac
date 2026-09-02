@@ -21,6 +21,8 @@ import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
+import com.bivouac.app.data.operations.ExclusiveOperation
+import com.bivouac.app.data.operations.ExclusiveOperations
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
 import com.bivouac.app.data.photo.PhotoPickerScope
 import com.bivouac.app.data.prefs.MapLayerPreferences
@@ -681,6 +683,14 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      */
     fun saveDetails(tags: Set<String>, note: String, onFinished: () -> Unit = {}) {
         val entry = currentEntry() ?: return onFinished()
+        // RIC-156 : le verrou est pris avant tout le reste, et le refus ne consomme RIEN — ni les
+        // ajouts en transit, ni les suppressions en attente, et surtout pas [onFinished] : l'écran
+        // ne doit pas se fermer sur une sauvegarde qui n'a pas eu lieu. L'utilisateur retrouve son
+        // brouillon intact et peut réessayer une fois l'autre opération terminée.
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.PHOTO_COMMIT)) {
+            _photoError.value = exclusiveOperationRefusalMessage()
+            return
+        }
         val previousTags = _currentTags.value.toSet()
         val deletions = _pendingPhotoDeletions.value
         val additions = _pendingPhotoAdds.value
@@ -695,49 +705,65 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 PhotoOperationProgress(PhotoOperationPhase.COMMIT, done = 0, total = photoWork)
         }
         viewModelScope.launch {
-            val photoFailures = withContext(NonCancellable + Dispatchers.IO) {
-                (tags - previousTags).forEach { repository.addTag(entry.id, it) }
-                (previousTags - tags).forEach { repository.removeTag(entry.id, it) }
-                repository.updateNote(entry.id, note)
-                var failures = 0
-                if (photoWork > 0) {
-                    var done = 0
-                    val advance = {
-                        done++
-                        _photoOperationProgress.value =
-                            PhotoOperationProgress(PhotoOperationPhase.COMMIT, done, photoWork)
+            // RIC-156 : le verrou est levé dans un finally couvrant tout le corps — l'écriture est
+            // NonCancellable, mais la coroutine qui la suit ne l'est pas, et un verrou resté posé
+            // paralyserait sauvegarde et restauration jusqu'au prochain lancement de l'app.
+            try {
+                val photoFailures = withContext(NonCancellable + Dispatchers.IO) {
+                    (tags - previousTags).forEach { repository.addTag(entry.id, it) }
+                    (previousTags - tags).forEach { repository.removeTag(entry.id, it) }
+                    repository.updateNote(entry.id, note)
+                    var failures = 0
+                    if (photoWork > 0) {
+                        var done = 0
+                        val advance = {
+                            done++
+                            _photoOperationProgress.value =
+                                PhotoOperationProgress(PhotoOperationPhase.COMMIT, done, photoWork)
+                        }
+                        runCatching {
+                            repository.deletePhotos(deletions, onProgress = advance)
+                            failures = repository.commitPendingPhotos(entry.id, additions, onProgress = advance)
+                            _currentPhotos.value = repository.listPhotos(entry.id)
+                        }.onFailure {
+                            Log.e("JournalViewModel", "Échec de l'enregistrement des photos", it)
+                            failures = additions.size
+                        }
                     }
-                    runCatching {
-                        repository.deletePhotos(deletions, onProgress = advance)
-                        failures = repository.commitPendingPhotos(entry.id, additions, onProgress = advance)
-                        _currentPhotos.value = repository.listPhotos(entry.id)
-                    }.onFailure {
-                        Log.e("JournalViewModel", "Échec de l'enregistrement des photos", it)
-                        failures = additions.size
+                    failures
+                }
+                transitPathsBeingCommitted -= inFlightPaths.toSet()
+                _photoOperationProgress.value = null
+                // Vidées après l'écriture, jamais avant : les vignettes en transit tiennent
+                // l'affichage jusqu'à ce que la liste relue prenne le relais, sinon elles
+                // disparaîtraient le temps d'un aller-retour disque. Le doublon que ce recouvrement
+                // pourrait produire est écarté par empreinte dans currentPhotos.
+                _pendingPhotoDeletions.value = emptySet()
+                _pendingPhotoAdds.value = emptyList()
+                if (photoFailures > 0) {
+                    _photoError.value = if (photoFailures == 1) {
+                        "Une photo n'a pas pu être enregistrée."
+                    } else {
+                        "$photoFailures photos n'ont pas pu être enregistrées."
                     }
                 }
-                failures
+                _currentTags.value = tags.toList()
+                _tagsByTrackId.value = _tagsByTrackId.value + (entry.id to tags.toList())
+                refreshCurrentEntry(entry.id, note = note)
+                onFinished()
+            } finally {
+                ExclusiveOperations.finish(ExclusiveOperation.PHOTO_COMMIT)
             }
-            transitPathsBeingCommitted -= inFlightPaths.toSet()
-            _photoOperationProgress.value = null
-            // Vidées après l'écriture, jamais avant : les vignettes en transit tiennent l'affichage
-            // jusqu'à ce que la liste relue prenne le relais, sinon elles disparaîtraient le temps
-            // d'un aller-retour disque. Le doublon que ce recouvrement pourrait produire est écarté
-            // par empreinte dans currentPhotos.
-            _pendingPhotoDeletions.value = emptySet()
-            _pendingPhotoAdds.value = emptyList()
-            if (photoFailures > 0) {
-                _photoError.value = if (photoFailures == 1) {
-                    "Une photo n'a pas pu être enregistrée."
-                } else {
-                    "$photoFailures photos n'ont pas pu être enregistrées."
-                }
-            }
-            _currentTags.value = tags.toList()
-            _tagsByTrackId.value = _tagsByTrackId.value + (entry.id to tags.toList())
-            refreshCurrentEntry(entry.id, note = note)
-            onFinished()
         }
+    }
+
+    /**
+     * RIC-156 : ce que l'utilisateur lit quand un geste est refusé parce qu'une autre opération
+     * longue tourne. Voir ExclusiveOperations pour ce que ce verrou protège.
+     */
+    private fun exclusiveOperationRefusalMessage(): String {
+        val ongoing = ExclusiveOperations.current.value?.label ?: "une autre opération"
+        return "Impossible pour l'instant : $ongoing est en cours. Attends qu'elle se termine, puis recommence."
     }
 
     private fun currentEntry(): LoggedTrackEntity? = when (val state = _uiState.value) {
@@ -828,6 +854,13 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     fun addPhotos(uris: List<Uri>) {
         if (uris.isEmpty()) return
         val entry = currentEntry() ?: return
+        // RIC-156 : même exclusion mutuelle que l'enregistrement — un import recopie des fichiers
+        // dans photos/, répertoire qu'une restauration remplace en bloc et qu'une sauvegarde est en
+        // train de parcourir.
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.PHOTO_IMPORT)) {
+            _photoError.value = exclusiveOperationRefusalMessage()
+            return
+        }
         // Posé avant le launch, exactement comme dans saveDetails : le dialogue doit être à
         // l'écran du fait même du clic, sans dépendre du moment où la coroutine sera
         // ordonnancée. C'est aussi ce qui ferme la fenêtre pendant laquelle la croix serait
@@ -876,6 +909,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 // Le bilan de lot est posé avant : il s'ouvre donc en remplacement du dialogue
                 // bloquant, jamais derrière lui.
                 _photoOperationProgress.value = null
+                ExclusiveOperations.finish(ExclusiveOperation.PHOTO_IMPORT)
             }
         }
     }
@@ -1082,9 +1116,20 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         importAsSingleTrack(uris)
     }
 
-    /** « Sorties séparées » : N entrées indépendantes du Journal, traitées une par une. */
+    /**
+     * « Sorties séparées » : N entrées indépendantes du Journal, traitées une par une.
+     *
+     * RIC-158 : verrou pris une seule fois pour tout le lot, et non fichier par fichier — laisser
+     * une sauvegarde s'intercaler entre deux fichiers du même lot la ferait courir sur un import
+     * à moitié écrit, incohérence que le registre existe justement pour fermer. Levé dans
+     * [finishSeparateImports], une fois le dernier fichier traité.
+     */
     fun chooseSeparateImports() {
         val uris = consumeImportChoice() ?: return
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.JOURNAL_IMPORT)) {
+            _importError.value = exclusiveOperationRefusalMessage()
+            return
+        }
         separateQueue = ArrayDeque(uris)
         separateTotal = uris.size
         separateImported = 0
@@ -1115,32 +1160,47 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * une sortie multi-jours amputée d'un jour, plus trompeuse qu'une absence d'import. C'est
      * exactement l'inverse du mode « sorties séparées » ci-dessous, où l'indépendance des
      * fichiers est justement ce qui a été demandé.
+     *
+     * RIC-158 : entre au registre d'exclusion — [LoggedTrackRepository.commitImport] écrit dans
+     * gpx/, exactement ce qu'une sauvegarde zippe et qu'une restauration remplace en bloc. Verrou
+     * pris avant le launch, comme les opérations photo (voir addPhotos), et levé dans un finally
+     * couvrant tout le corps. Sur un doublon probable, le verrou est relâché en attendant la
+     * décision de l'utilisateur (voir confirmImportAnyway) plutôt que tenu indéfiniment sur une
+     * question qui peut rester sans réponse arbitrairement longtemps.
      */
     private fun importAsSingleTrack(uris: List<Uri>) {
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.JOURNAL_IMPORT)) {
+            _importError.value = exclusiveOperationRefusalMessage()
+            return
+        }
         _importProgress.value = ImportProgress.Reading(done = 0, total = uris.size)
         viewModelScope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    val prepared = repository.prepareImport(contentResolver, uris, activeCalibration.value)
-                    prepared to repository.findDuplicate(prepared)
-                }
-            }.onSuccess { (prepared, duplicate) ->
-                when (duplicate) {
-                    is DuplicateMatch.Exact ->
-                        _importError.value = "« ${duplicate.existing.name} » est déjà dans le journal."
-                    is DuplicateMatch.Probable, is DuplicateMatch.SharedDay -> {
-                        pendingImport = prepared
-                        _duplicateWarning.value = duplicate
+            try {
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        val prepared = repository.prepareImport(contentResolver, uris, activeCalibration.value)
+                        prepared to repository.findDuplicate(prepared)
                     }
-                    null -> commit(prepared, openAfterCommit = true)
+                }.onSuccess { (prepared, duplicate) ->
+                    when (duplicate) {
+                        is DuplicateMatch.Exact ->
+                            _importError.value = "« ${duplicate.existing.name} » est déjà dans le journal."
+                        is DuplicateMatch.Probable, is DuplicateMatch.SharedDay -> {
+                            pendingImport = prepared
+                            _duplicateWarning.value = duplicate
+                        }
+                        null -> commit(prepared, openAfterCommit = true)
+                    }
+                }.onFailure {
+                    Log.e("JournalViewModel", "Échec de l'import GPX (Journal)", it)
+                    _importError.value = "Trace incorrecte ou fichier illisible."
                 }
-            }.onFailure {
-                Log.e("JournalViewModel", "Échec de l'import GPX (Journal)", it)
-                _importError.value = "Trace incorrecte ou fichier illisible."
+                // Après le commit et sa calibration, donc après l'opération entière : ce qui suit
+                // (avertissement de doublon, erreur, vue détail) est de nouveau manipulable.
+                _importProgress.value = null
+            } finally {
+                ExclusiveOperations.finish(ExclusiveOperation.JOURNAL_IMPORT)
             }
-            // Après le commit et sa calibration, donc après l'opération entière : ce qui suit
-            // (avertissement de doublon, erreur, vue détail) est de nouveau manipulable.
-            _importProgress.value = null
         }
     }
 
@@ -1210,11 +1270,17 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         // secondes, et afficher « Import terminé » par-dessus un traitement encore en cours
         // reviendrait à rendre l'écran manipulable au pire moment.
         viewModelScope.launch {
-            if (imported > 0) {
-                _importProgress.value = ImportProgress.Calibrating
-                withContext(Dispatchers.IO) { refreshAutoCalibration() }
+            try {
+                if (imported > 0) {
+                    _importProgress.value = ImportProgress.Calibrating
+                    withContext(Dispatchers.IO) { refreshAutoCalibration() }
+                }
+            } finally {
+                // RIC-158 : le verrou pris par chooseSeparateImports() couvre tout le lot, il se
+                // lève donc ici, une fois le dernier fichier traité — jamais plus tôt.
+                _importProgress.value = null
+                ExclusiveOperations.finish(ExclusiveOperation.JOURNAL_IMPORT)
             }
-            _importProgress.value = null
             _separateImportReport.value = report
         }
     }
@@ -1223,16 +1289,32 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _separateImportReport.value = null
     }
 
-    // L'avertissement de doublon probable ne concerne plus que l'import d'une sortie seule : une
-    // question pour un fichier ne coûte rien, et l'utilisateur a le contexte pour y répondre. Un
-    // lot de sorties séparées, lui, ne pose jamais la question (cf. processNextSeparateImport).
+    /**
+     * L'avertissement de doublon probable ne concerne plus que l'import d'une sortie seule : une
+     * question pour un fichier ne coûte rien, et l'utilisateur a le contexte pour y répondre. Un
+     * lot de sorties séparées, lui, ne pose jamais la question (cf. processNextSeparateImport).
+     *
+     * RIC-158 : ré-acquiert le verrou relâché par importAsSingleTrack() en attendant cette
+     * décision — le commit qui suit écrit dans gpx/ comme n'importe quel autre import. En cas de
+     * refus (une autre opération a démarré pendant l'attente), rien n'est consommé : l'avertissement
+     * de doublon reste affiché tel quel, l'utilisateur peut retenter une fois l'autre opération
+     * terminée plutôt que de perdre le fichier qu'il venait de choisir d'importer quand même.
+     */
     fun confirmImportAnyway() {
         val prepared = pendingImport ?: return
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.JOURNAL_IMPORT)) {
+            _importError.value = exclusiveOperationRefusalMessage()
+            return
+        }
         pendingImport = null
         _duplicateWarning.value = null
         viewModelScope.launch {
-            commit(prepared, openAfterCommit = true)
-            _importProgress.value = null
+            try {
+                commit(prepared, openAfterCommit = true)
+            } finally {
+                _importProgress.value = null
+                ExclusiveOperations.finish(ExclusiveOperation.JOURNAL_IMPORT)
+            }
         }
     }
 

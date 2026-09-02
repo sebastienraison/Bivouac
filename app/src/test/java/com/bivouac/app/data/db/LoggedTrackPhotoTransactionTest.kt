@@ -329,4 +329,32 @@ class LoggedTrackPhotoTransactionTest {
         // La trace, elle, survit : la purge ne touche que les photos.
         assertEquals(1, repository.list().size)
     }
+
+    /**
+     * RIC-158 : la purge passe désormais sous le dialogue bloquant partagé, qui a besoin d'une
+     * vraie progression (fichier par fichier) et non d'un unique avant/après — une purge peut
+     * porter sur des centaines de Mo, assez long pour que « toujours à 0 sur N » ne dise rien.
+     */
+    @Test
+    fun purgeAllPhotos_reportsProgressForEveryFileInOrder() = runBlocking {
+        createTrack()
+        repository.commitPendingPhotos(
+            trackId,
+            stage(
+                registerPhoto("a", ByteArray(1_000)),
+                registerPhoto("b", ByteArray(2_000)),
+                registerPhoto("c", ByteArray(3_000)),
+            ),
+        )
+
+        val reported = mutableListOf<Pair<Int, Int>>()
+        repository.purgeAllPhotos { done, total -> reported += done to total }
+
+        assertEquals(
+            "un relevé initial à 0, puis un par fichier retiré, jamais dans le désordre",
+            listOf(0 to 3, 1 to 3, 2 to 3, 3 to 3),
+            reported,
+        )
+        assertEquals(emptyList<String>(), storedFiles())
+    }
 }

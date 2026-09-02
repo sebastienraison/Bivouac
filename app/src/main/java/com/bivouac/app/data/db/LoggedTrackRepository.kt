@@ -676,10 +676,23 @@ class LoggedTrackRepository(context: Context) {
      * fonctionnalité continue de tout conserver. Il n'y a qu'un seul chemin vers ici, un bouton
      * explicite doublé d'une confirmation.
      *
-     * Le dossier est retiré en entier plutôt que fichier par fichier : à ce stade plus aucune ligne
-     * ne le référence, donc ce qui y resterait serait par définition orphelin.
+     * RIC-158 : [onProgress] est appelé après chaque fichier, pour alimenter le dialogue bloquant
+     * partagé — une purge peut porter sur des centaines de Mo, donc plusieurs secondes, et rester
+     * inatteignable ne dispensait pas de dire où elle en est. Les fichiers sont donc retirés un par
+     * un plutôt qu'en un seul `deleteRecursively()`, mais celui-ci reste fait en dernier : à ce
+     * stade plus aucune ligne ne référence le dossier, donc ce qui y resterait (fichier orphelin
+     * jamais rattaché à une ligne, échec isolé du retrait individuel ci-dessus) est par définition
+     * à jeter, et ce balayage final le garantit sans faire dépendre la purge de la réussite de
+     * chaque suppression individuelle.
      */
-    suspend fun purgeAllPhotos() {
+    suspend fun purgeAllPhotos(onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }) {
+        val paths = dao.getAllPhotoFilePaths()
+        val total = paths.size
+        onProgress(0, total)
+        paths.forEachIndexed { index, path ->
+            runCatching { LoggedTrackPhotoStore.resolve(appContext, path).delete() }
+            onProgress(index + 1, total)
+        }
         dao.deleteAllPhotos()
         LoggedTrackPhotoStore.dir(appContext).deleteRecursively()
     }
