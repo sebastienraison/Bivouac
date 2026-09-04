@@ -110,6 +110,17 @@ android {
                     // configuration cesserait de fonctionner à la prochaine montée d'AGP.
                     testedAbi = "x86_64"
                 }
+                // RIC-163 : le seul appareil de test (ci-dessus, API 34) masquait un bug présent
+                // sur tout le reste du parc minSdk 26-33 — jpx 3.2.1 appelle en interne
+                // Stream.toList() (Java 16), absent de la libcore Android avant API 34. Ce device
+                // couvre le rapport F-Droid d'origine (Android 13 / API 33) et comble l'angle mort ;
+                // il reste dans la config à demeure, pas seulement pour la repro de ce ticket.
+                create("pixel6Api33") {
+                    device = "Pixel 6"
+                    apiLevel = 33
+                    systemImageSource = "aosp"
+                    testedAbi = "x86_64"
+                }
             }
         }
     }
