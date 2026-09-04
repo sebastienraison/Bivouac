@@ -16,6 +16,11 @@ datastore = "1.2.1"
 navigationCompose = "2.8.9"
 exifinterface = "1.3.7"
 coil = "2.7.0"
+# RIC-163 : 2.1.5 est la première version à couvrir Stream.toList() (JDK 16), ajoutée le
+# 2025-02-14 (CHANGELOG google/desugar_jdk_libs) ; c'est aussi la dernière version publiée au
+# 2026-09-04 (maven-metadata.xml de dl.google.com), donc pas de choix à arbitrer entre plusieurs
+# versions valides.
+desugarJdkLibs = "2.1.5"
 
 [libraries]
 core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -45,6 +50,7 @@ datastore-preferences = { group = "androidx.datastore", name = "datastore-prefer
 navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
