@@ -19,10 +19,10 @@ import org.robolectric.RobolectricTestRunner
 /**
  * RIC-109 : LoggedTrackBackfill étendu pour calculer les sept sommes de segments (voir
  * DaySegmentAggregate) dans la même passe que contentHash/startedAtMillis/elapsedSeconds
- * (RIC-98/99), plutôt que dans un second rattrapage séparé — voir la kdoc de LoggedTrackBackfill
+ * (RIC-98/99), plutôt que dans un second rattrapage séparé : voir la kdoc de LoggedTrackBackfill
  * pour ce choix. Sans test fonctionnel dédié préexistant pour ce backfill (seule sa forme au
  * niveau schéma est couverte par BivouacDatabaseMigrationTest.migrate8To9) : celui-ci verrouille
- * son comportement, avant et après RIC-109, dont le point le plus important — une ligne déjà
+ * son comportement, avant et après RIC-109, dont le point le plus important : une ligne déjà
  * rattrapée par RIC-98/99 (contentHash non nul) doit quand même repasser par le rattrapage pour
  * recevoir les colonnes de segments, voir [LoggedTrackDao.getDaysNeedingBackfill].
  */
@@ -128,7 +128,7 @@ class LoggedTrackBackfillTest {
         val day = dao.getDays("track-old").single()
         val expected = expectedAggregateFor(flatGpx())
         // backfillOne recalcule contentHash à chaque passage (idempotent, coût négligeable face à
-        // parser tout le fichier) plutôt que de faire confiance à une valeur déjà en base — donc
+        // parser tout le fichier) plutôt que de faire confiance à une valeur déjà en base : donc
         // le placeholder inséré par insertLegacyDay ne survit pas, seul importe qu'un vrai hash
         // remplace la valeur d'origine.
         assertNotNull(day.contentHash)
@@ -177,7 +177,7 @@ class LoggedTrackBackfillTest {
 
     // Garde-fou RIC-109 (voir LoggedTrackRepository.calibrationSamples) : une trace dont un seul
     // jour n'est pas encore rattrapé ne doit contribuer AUCUNE somme à l'agrégat, même si son autre
-    // jour l'est déjà — mélanger une somme partielle avec un jour ignoré donnerait une calibration
+    // jour l'est déjà : mélanger une somme partielle avec un jour ignoré donnerait une calibration
     // silencieusement fausse.
     @Test
     fun calibrationSamplesExcludesATrackWithOnePartiallyBackfilledDay() = runBlocking {
@@ -202,7 +202,7 @@ class LoggedTrackBackfillTest {
                     steepCount = 0, steepDistanceMeters = 0.0, steepGainMeters = 0.0, steepHours = 0.0,
                 ),
                 // Jour 1 : pas encore rattrapé (flatCount null), même si son GPX est parfaitement
-                // lisible — c'est un jour "en attente", pas un jour illisible.
+                // lisible : c'est un jour "en attente", pas un jour illisible.
                 LoggedTrackDayEntity(trackId = "trek", dayIndex = 1, rawGpxFilePath = path1),
             ),
         )
@@ -279,7 +279,7 @@ class LoggedTrackBackfillTest {
         assertEquals(firstPass, secondPass)
     }
 
-    // RIC-19 : ce rattrapage ne partage pas son marqueur avec celui de RIC-109 (flatCount) — une
+    // RIC-19 : ce rattrapage ne partage pas son marqueur avec celui de RIC-109 (flatCount) : une
     // ligne déjà entièrement traitée par l'ancien rattrapage doit quand même être reprise ici.
     @Test
     fun runElevationRevisitsARowAlreadyBackfilledUnderRic109() = runBlocking {

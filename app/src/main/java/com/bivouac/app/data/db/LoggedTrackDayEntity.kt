@@ -5,13 +5,13 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-// One raw, untouched GPX file belonging to a logged_track — a separate row per day rather than a
+// One raw, untouched GPX file belonging to a logged_track: a separate row per day rather than a
 // single blob, so a multi-day hike (several device exports, one per day) can be represented
 // without ever concatenating or otherwise altering the original files. Unlike banked_track's
 // gpxContent (re-serialized, extensions stripped), the raw content is stored byte-for-byte as
 // imported: the Journal's whole point is to keep everything, even data the app doesn't use yet.
 // RIC-62 : le contenu lui-même vit dans un fichier sous le stockage interne (voir
-// LoggedTrackGpxStore), la ligne ne porte que son chemin relatif — une trace volumineuse ne
+// LoggedTrackGpxStore), la ligne ne porte que son chemin relatif : une trace volumineuse ne
 // passe plus par un Cursor Room, donc plus de plafond CursorWindow possible à la lecture.
 @Entity(
     tableName = "logged_track_day",
@@ -49,7 +49,7 @@ data class LoggedTrackDayEntity(
     // pour qu'une nuit passée dehors ne compte pas comme du temps de marche.
     val elapsedSeconds: Long? = null,
     // RIC-109 : les sept sommes dont la calibration vitesse/pénalité D+ par segments a besoin (voir
-    // TrackSegmenter et DaySegmentAggregate) — calculées une fois à l'import à partir des segments
+    // TrackSegmenter et DaySegmentAggregate), calculées une fois à l'import à partir des segments
     // de 200 m de ce jour, jamais recalculées à la volée. Comme pour contentHash ci-dessus,
     // flatCount vaut null si et seulement si ce jour n'a pas encore été rattrapé pour ces colonnes
     // (voir LoggedTrackBackfill) ; une fois rattrapé, il vaut 0 (pas null) si la trace n'a aucun
@@ -64,20 +64,20 @@ data class LoggedTrackDayEntity(
     val steepGainMeters: Double? = null,
     val steepHours: Double? = null,
     // RIC-115 : heures cumulées des segments à l'arrêt de ce jour (voir DaySegmentAggregate.
-    // stoppedHours), rattrapées dans la même passe que les sept colonnes ci-dessus — même
+    // stoppedHours), rattrapées dans la même passe que les sept colonnes ci-dessus, même
     // convention que flatCount : null tant que ce jour n'est pas rattrapé, 0.0 (pas null) si le
     // jour n'a aucun segment à l'arrêt une fois rattrapé.
     val stoppedHours: Double? = null,
     // RIC-19 : altitude du jour, reparsée depuis rawGpxFilePath au même titre que les colonnes
     // ci-dessus. Contrairement à flatCount, ni l'une ni l'autre ne peut servir de marqueur "pas
     // encore rattrapé" : une altitude de 0 m est une valeur réelle possible (rando en bord de mer),
-    // et l'absence d'altitude exploitable dans le GPX est elle aussi un cas réel et définitif — les
+    // et l'absence d'altitude exploitable dans le GPX est elle aussi un cas réel et définitif : les
     // deux collisionneraient avec "pas encore traité" si l'une d'elles servait de marqueur. D'où
     // elevationBackfilled, un marqueur dédié qui ne porte aucune autre information.
     //
     // maxElevationMeters : altitude max atteinte ce jour-là (record "altitude max atteinte").
     val maxElevationMeters: Double? = null,
-    // lastPointElevationMeters : altitude du DERNIER point du jour — convention retenue pour le
+    // lastPointElevationMeters : altitude du DERNIER point du jour, convention retenue pour le
     // record "bivouac le plus haut" (RIC-19 §3). Ce n'est un bivouac que si ce jour n'est pas le
     // dernier de sa trace (bivouacCount = dayCount - 1, voir JournalDayInfo) : c'est à l'appelant
     // de l'exclure pour le dernier jour de chaque trace, cette colonne ne fait aucune distinction.
