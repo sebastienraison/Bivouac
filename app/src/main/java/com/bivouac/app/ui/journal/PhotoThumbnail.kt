@@ -34,7 +34,7 @@ import com.bivouac.app.data.db.LoggedTrackPhotoEntity
  * tap.
  *
  * RIC-43 : le menu se réduit à « Supprimer ». Les entrées « Repositionner » et « Placer sur la
- * trace » partent avec le flux de placement sur la trace, différé à un lot ultérieur — un menu à
+ * trace » partent avec le flux de placement sur la trace, différé à un lot ultérieur : un menu à
  * une seule entrée vaut mieux qu'une entrée qui promet une mécanique inachevée.
  */
 @OptIn(ExperimentalFoundationApi::class)

@@ -4,7 +4,7 @@ import com.bivouac.app.data.gpx.GeoMath
 
 /**
  * RIC-40 : où tomber les points de bivouac quand une trace multi-jours du Journal est dupliquée
- * vers la Planification. Aucune heuristique n'est nécessaire — la coupure entre deux fichiers
+ * vers la Planification. Aucune heuristique n'est nécessaire : la coupure entre deux fichiers
  * importés *est* la nuit passée dehors, donc chaque jonction devient un bivouac.
  *
  * L'index retenu est le dernier point du jour qui se termine, et non le premier du jour suivant :

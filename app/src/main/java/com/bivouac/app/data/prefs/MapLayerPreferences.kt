@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.map
 internal const val MAP_LAYER_DATASTORE_NAME = "map_layer_prefs"
 private val Context.mapLayerDataStore by preferencesDataStore(name = MAP_LAYER_DATASTORE_NAME)
 
-// Randonnée (OpenTopoMap) stays the fallback default when nothing is stored yet — matches the
+// Randonnée (OpenTopoMap) stays the fallback default when nothing is stored yet: matches the
 // V1.1 choice of the more useful default for hiking, before this preference existed.
 class MapLayerPreferences(private val context: Context) {
     private val key = stringPreferencesKey("selected_map_layer")

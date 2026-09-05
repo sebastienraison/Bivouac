@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.Color
 // fond de primaryContainer, la carte Bilan de secondaryContainer).
 //
 // Les rôles sont donc tous renseignés, y compris ceux que le code n'appelle jamais directement mais
-// que les composants Material vont chercher seuls — surfaceContainerHigh porte le fond des
+// que les composants Material vont chercher seuls : surfaceContainerHigh porte le fond des
 // AlertDialog, secondaryContainer celui d'un FilterChip sélectionné. En laisser un seul au baseline
 // suffit à réintroduire du violet à l'écran.
 //

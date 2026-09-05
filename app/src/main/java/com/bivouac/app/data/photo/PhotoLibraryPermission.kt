@@ -41,7 +41,7 @@ object PhotoLibraryPermission {
         }.toTypedArray()
 
     // Accordée au sens large : accès complet (READ_MEDIA_IMAGES/READ_EXTERNAL_STORAGE), ou accès
-    // partiel Android 14+ (READ_MEDIA_VISUAL_USER_SELECTED, « Sélectionner des photos ») — dans
+    // partiel Android 14+ (READ_MEDIA_VISUAL_USER_SELECTED, « Sélectionner des photos ») : dans
     // les deux cas MediaStore répond, avec un périmètre juste plus restreint pour le second.
     fun isGranted(context: Context): Boolean {
         if (granted(context, manifestPermission)) return true

@@ -3,7 +3,7 @@ package com.bivouac.app.data.db
 import android.content.Context
 import java.io.File
 
-// RIC-97 : même principe que LoggedTrackGpxStore (RIC-62) pour le GPX de Planification — la banque
+// RIC-97 : même principe que LoggedTrackGpxStore (RIC-62) pour le GPX de Planification : la banque
 // de traces (banked_track) et le filet de session en cours (saved_track, singleton). Répertoire
 // distinct de gpx/ (Journal) plutôt que partagé : les deux domaines n'ont rien à voir l'un avec
 // l'autre, et BackupManager copie/restaure chaque répertoire en bloc, séparément.

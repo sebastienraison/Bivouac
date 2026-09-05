@@ -25,7 +25,7 @@ import com.bivouac.app.R
  * Trigger + dropdown for switching between the app's top-level sections. The trigger shows the
  * active section's own icon rather than a generic menu glyph, so it doubles as a permanent
  * "you are here" indicator without needing a persistent nav bar (which would eat into the map's
- * height — a real constraint on this app, see BIV-31). The bivouac orange is reserved for this
+ * height, a real constraint on this app, see BIV-31). The bivouac orange is reserved for this
  * button and the app logo, not reused elsewhere (e.g. the map layer button stays neutral).
  */
 @Composable

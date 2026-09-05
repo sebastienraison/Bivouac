@@ -6,7 +6,7 @@ import android.content.Intent
 /**
  * After a restore (BIV-66), every ViewModel already alive (Planification, Journal, Réglages) is
  * holding StateFlows, repositories and DAOs built against the *previous* database/DataStore
- * files — `Activity.recreate()` alone wouldn't help, since its ViewModelStore survives recreation
+ * files: `Activity.recreate()` alone wouldn't help, since its ViewModelStore survives recreation
  * by design (that's the whole point of ViewModel) and would just hand the same stale instances
  * back. A full process restart sidesteps having to hunt down and manually invalidate every one of
  * them: everything below the launcher Activity is guaranteed to be rebuilt from scratch.

@@ -54,7 +54,7 @@ desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", ver
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-# RIC-111 : org.jetbrains.kotlin.android retiré — AGP 9.x active par défaut son support Kotlin
+# RIC-111 : org.jetbrains.kotlin.android retiré : AGP 9.x active par défaut son support Kotlin
 # intégré ("built-in Kotlin") et son nouveau DSL, structurellement incompatible avec le plugin
 # Kotlin externe (voir commit AGP pour le détail). kotlin-compose reste piloté par `kotlin` : ce
 # plugin compilateur Compose est indépendant du built-in Kotlin et doit rester en phase avec la

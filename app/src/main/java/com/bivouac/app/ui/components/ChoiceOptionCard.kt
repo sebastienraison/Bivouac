@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.dp
 /**
  * Une branche d'un choix posé à l'utilisateur, sous forme de carte : icône, intitulé, et la phrase
  * qui dit ce que l'option fait vraiment. Partagé entre le choix d'univers (RIC-104) et le choix de
- * lecture d'un lot de fichiers (RIC-41) — ces deux dialogues posent la même sorte de question, et
+ * lecture d'un lot de fichiers (RIC-41) : ces deux dialogues posent la même sorte de question, et
  * les voir dans deux habillages différents était exactement le mélange de styles à éviter.
  *
  * Un bouton ordinaire ne convenait pas : ces options ont besoin d'une ligne d'explication sous leur

@@ -5,7 +5,7 @@ import java.time.Instant
 /**
  * RIC-41 : dans quel ordre les fichiers d'un import multi-jours deviennent les jours 1..N.
  *
- * L'ordre de sélection n'est pas fiable — plusieurs sélecteurs système Android ne conservent pas
+ * L'ordre de sélection n'est pas fiable : plusieurs sélecteurs système Android ne conservent pas
  * l'ordre des taps (certains rendent la liste triée alphabétiquement), donc s'y fier revient à
  * numéroter les jours au hasard. La référence est donc l'horodatage du premier point GPX de
  * chaque fichier.

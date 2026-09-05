@@ -4,7 +4,7 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    // RIC-111 : plus de plugin kotlin-android — Kotlin intégré à AGP 9.x (built-in Kotlin),
+    // RIC-111 : plus de plugin kotlin-android : Kotlin intégré à AGP 9.x (built-in Kotlin),
     // activé par défaut. android.kotlinOptions {} est supprimé (plus supporté avec le Kotlin
     // intégré) ; jvmTarget hérite désormais de compileOptions.targetCompatibility ci-dessous,
     // toujours 17, donc pas besoin d'un bloc kotlin { compilerOptions { ... } } explicite.
@@ -13,7 +13,7 @@ plugins {
 }
 
 // Optional local override, same pattern as sdk.dir: a developer who has generated a personal
-// Esri API key (see BIV-56 — free anonymous tile access is otherwise rate/volume-limited) can
+// Esri API key (see BIV-56, free anonymous tile access is otherwise rate/volume-limited) can
 // drop `esri.apiKey=...` in local.properties. Never committed; absent by default, in which case
 // EsriWorldImagery falls back to the current unauthenticated public endpoint.
 val localProperties = Properties().apply {
@@ -33,10 +33,10 @@ val buildDate: String = SimpleDateFormat("dd/MM/yyyy").format(Date())
 android {
     namespace = "com.bivouac.app"
     // RIC-111 : Compose BOM 2026.08.00 (Compose 1.12) exige compileSdk >= 37 pour plusieurs
-    // artefacts (androidx.compose.ui, material3, core-ktx, lifecycle-compose...) — confirmé par
+    // artefacts (androidx.compose.ui, material3, core-ktx, lifecycle-compose...) : confirmé par
     // les erreurs AGP au premier essai avec compileSdk=34, qui recommandaient explicitement 37.
     // targetSdk volontairement laissé inchangé (34) : ne change que la surface de compilation
-    // (rétrocompatible par construction), pas le comportement runtime de l'app — un bump de
+    // (rétrocompatible par construction), pas le comportement runtime de l'app : un bump de
     // targetSdk revient à opter dans des changements de comportement par version d'Android, ce
     // qui mérite sa propre vérification visuelle sur device, jamais faite depuis (RIC-116).
     compileSdk = 37
@@ -57,7 +57,7 @@ android {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Choix assumé, pas un oubli : F-Droid compile et signe lui-même le binaire depuis
-            // les sources (sa propre clé, jamais la nôtre) — la signature de ce buildType n'a
+            // les sources (sa propre clé, jamais la nôtre) : la signature de ce buildType n'a
             // donc aucune incidence sur ce qui est réellement distribué. Elle ne sert qu'au
             // mainteneur, pour pouvoir tester un build "release-shaped" en local sans se
             // fabriquer un keystore de prod pour un usage qui ne le nécessite pas. Réutilise la
@@ -70,7 +70,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
         // RIC-163 : jpx 3.2.1 appelle en interne Stream.toList() (java.util.stream, ajouté en
-        // JDK 16), absent de la libcore Android en dessous d'API 34 — provoquait un
+        // JDK 16), absent de la libcore Android en dessous d'API 34 : provoquait un
         // NoSuchMethodError sur tout import GPX pour l'essentiel du parc minSdk 26-33 (voir
         // GpxParserInstrumentedTest, qui reproduit l'échec sans cette ligne). Le desugaring de
         // bibliothèque réécrit les appels à ces API récentes vers une implémentation embarquée
@@ -118,7 +118,7 @@ android {
                     testedAbi = "x86_64"
                 }
                 // RIC-163 : le seul appareil de test (ci-dessus, API 34) masquait un bug présent
-                // sur tout le reste du parc minSdk 26-33 — jpx 3.2.1 appelle en interne
+                // sur tout le reste du parc minSdk 26-33 : jpx 3.2.1 appelle en interne
                 // Stream.toList() (Java 16), absent de la libcore Android avant API 34. Ce device
                 // couvre le rapport F-Droid d'origine (Android 13 / API 33) et comble l'angle mort ;
                 // il reste dans la config à demeure, pas seulement pour la repro de ce ticket.
