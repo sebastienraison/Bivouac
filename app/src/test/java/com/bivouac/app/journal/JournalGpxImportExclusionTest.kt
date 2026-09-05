@@ -29,7 +29,7 @@ import org.robolectric.Shadows.shadowOf
 
 /**
  * RIC-158 : l'import Journal (mono-fichier, multi-fichiers « sorties séparées », et la reprise
- * après avertissement de doublon) entre au registre d'exclusion mutuelle — jusqu'ici seules les
+ * après avertissement de doublon) entre au registre d'exclusion mutuelle : jusqu'ici seules les
  * opérations photo et la sauvegarde/restauration (RIC-156) en faisaient partie, alors que l'import
  * Journal écrit dans gpx/ comme les deux : même risque de chevauchement avec une sauvegarde en
  * cours de zip ou une restauration qui remplace le répertoire en bloc.
@@ -68,7 +68,7 @@ class JournalGpxImportExclusionTest {
 
     /**
      * Le refus doit être propre et ne rien consommer : aucune ligne, aucun fichier écrit, et le
-     * verrou de l'opération déjà en vol reste tel quel — un refus tardif d'une coroutine ne doit
+     * verrou de l'opération déjà en vol reste tel quel : un refus tardif d'une coroutine ne doit
      * jamais libérer le verrou de quelqu'un d'autre (même garantie que ExclusiveOperationsTest,
      * exercée ici depuis un vrai point d'entrée d'écran).
      */
@@ -108,7 +108,7 @@ class JournalGpxImportExclusionTest {
 
     /**
      * RIC-158 : le verrou du lot « sorties séparées » est pris une seule fois pour tout le lot
-     * (chooseSeparateImports), pas fichier par fichier — un refus à l'entrée doit donc laisser le
+     * (chooseSeparateImports), pas fichier par fichier : un refus à l'entrée doit donc laisser le
      * lot entier de côté, rien de partiel.
      */
     @Test

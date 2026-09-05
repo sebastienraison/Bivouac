@@ -14,7 +14,7 @@ import java.time.format.TextStyle
 import java.util.Locale
 
 // RIC-19 : mise en forme d'affichage, volontairement séparée de BilanStatsCalculator (qui ne
-// manipule que des nombres et des millis) — même partition que le reste de l'app entre calculateurs
+// manipule que des nombres et des millis) : même partition que le reste de l'app entre calculateurs
 // purs (TrackStatsCalculator...) et formatage propre à l'écran (StatsRows.formatDuration...).
 //
 // formatKm1/formatGroupedInt : RIC-136 les a fait migrer vers ui.components.NumberFormatting,
@@ -65,7 +65,7 @@ internal fun recordValueText(record: BilanRecord): String = when (record.kind) {
 
 // RIC-19 (revu) : nom et date chacun sur leur ligne (plutôt que "nom · date" concaténé), et pour
 // BIGGEST_TREK (seul kind à porter extraDistanceKm/extraGainMeters) une troisième ligne à part
-// pour le km/D+ du trek — un nom de sortie déjà long ne les repoussait plus qu'à la coupure,
+// pour le km/D+ du trek : un nom de sortie déjà long ne les repoussait plus qu'à la coupure,
 // tantôt sur une ligne, tantôt sur deux, sans mise en page prévisible.
 internal fun recordMetaLines(record: BilanRecord): List<String> {
     val distance = record.extraDistanceKm
@@ -87,7 +87,7 @@ internal fun recordColor(kind: BilanRecordKind): Color = when (kind) {
     BilanRecordKind.BIGGEST_TREK -> DurationIconColor
 }
 
-// RIC-19 §2 : "Tu sors surtout en juillet (12 sorties cumulées depuis 2021)" — formulation exacte
+// RIC-19 §2 : "Tu sors surtout en juillet (12 sorties cumulées depuis 2021)" : formulation exacte
 // de la maquette.
 internal fun formatInsight(insight: MostActiveMonthInsight): String {
     val monthName = Month.of(insight.monthOfYear).getDisplayName(TextStyle.FULL, Locale.FRENCH)

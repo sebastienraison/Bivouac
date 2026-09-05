@@ -19,7 +19,7 @@ private fun decodeEntities(text: String): String =
     Html.fromHtml(text, Html.FROM_HTML_MODE_LEGACY).toString()
 
 // jpx's lenient reader skips vendor <extensions> blocks (Garmin heart rate/cadence/temperature,
-// etc.) via an internal javax.xml.transform.stax.StAXSource copy — a class Android's JDK subset
+// etc.) via an internal javax.xml.transform.stax.StAXSource copy: a class Android's JDK subset
 // doesn't provide, so any real-world GPX with such extensions crashes with a NoClassDefFoundError
 // instead of being skipped. None of that data is used here, so the blocks are stripped from the
 // raw XML before jpx ever sees them.
@@ -35,7 +35,7 @@ internal fun stripExtensionsBlocks(xml: String): String {
     val out = StringBuilder(xml.length)
     var i = 0
     // Une fois constaté qu'aucun closeTag n'existe plus loin, inutile de re-balayer la fin du
-    // document pour chaque ouverture suivante — c'est ce re-balayage qui rendait le pire cas
+    // document pour chaque ouverture suivante : c'est ce re-balayage qui rendait le pire cas
     // quadratique.
     var closerMayExist = true
     while (true) {
@@ -74,7 +74,7 @@ internal fun stripExtensionsBlocks(xml: String): String {
  * Parses a GPX file into a flat, ordered [HikeTrack].
  *
  * All tracks and segments found in the file are concatenated in document order into a single
- * point list. Day boundaries are not derived from the GPX structure itself — they come later
+ * point list. Day boundaries are not derived from the GPX structure itself: they come later
  * from where the user places bivouac points along this track.
  */
 object GpxParser {

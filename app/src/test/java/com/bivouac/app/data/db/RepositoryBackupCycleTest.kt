@@ -24,13 +24,13 @@ import org.robolectric.RobolectricTestRunner
  * RIC-103 : BackupManager.backup() ferme puis rouvre la base (closeAndReset, pour un checkpoint
  * WAL propre avant la copie du fichier) pendant que les ViewModels vivants gardent leurs
  * repositories. Ceux-ci doivent résoudre une connexion vivante à chaque accès, pas celle qu'ils
- * ont vue à leur construction — sinon toute lecture qui suit une sauvegarde échoue jusqu'au
+ * ont vue à leur construction : sinon toute lecture qui suit une sauvegarde échoue jusqu'au
  * redémarrage du process, sur les trois écrans à la fois : Journal (LoggedTrackRepository),
  * Planification (BankedTrackRepository et SavedTrackRepository) et Réglages, qui lit le Journal
  * par la même classe LoggedTrackRepository.
  *
  * Limite connue : backup() écrit aussi dans le DataStore de SettingsPreferences, un singleton de
- * process qu'aucun tearDown ne peut réinitialiser — il reste lié au sandbox Robolectric de la
+ * process qu'aucun tearDown ne peut réinitialiser : il reste lié au sandbox Robolectric de la
  * première classe de test qui l'a touché. Sans conséquence ici, mais une future classe de test
  * qui voudrait ASSERTER sur le contenu du DataStore devra en tenir compte.
  */
@@ -86,7 +86,7 @@ class RepositoryBackupCycleTest {
         )
         val database = BivouacDatabase.getInstance(context)
         // RIC-97 : gpxContent vit maintenant dans un fichier sous PlanificationGpxStore, pas dans
-        // la colonne — écrit ici directement, comme le ferait BankedTrackRepository.save()/
+        // la colonne : écrit ici directement, comme le ferait BankedTrackRepository.save()/
         // SavedTrackRepository.save(), puisque ce test insère les lignes en passant par le DAO nu.
         PlanificationGpxStore.dir(context).mkdirs()
         val bankedRelativePath = PlanificationGpxStore.bankedRelativePath("ric103-banked")

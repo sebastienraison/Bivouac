@@ -6,7 +6,7 @@ import org.junit.Test
 
 /**
  * RIC-43 : la règle d'affichage de la pastille « positionnement approximatif », telle que la revue
- * de conception l'a arrêtée — un seul des quatre chemins de positionnement la mérite.
+ * de conception l'a arrêtée : un seul des quatre chemins de positionnement la mérite.
  *
  * Test sur l'entité seule, sans base ni Android : positionUncertain est une lecture de deux
  * colonnes, et c'est justement cette lecture qui doit rester stable, quel que soit le chemin qui a
@@ -45,7 +45,7 @@ class PhotoPositionUncertaintyTest {
     }
 
     // Cas 3 : le seul qui mérite la pastille. Corrélation temporelle sur un horodatage dont le
-    // fuseau est supposé être celui du téléphone au moment de l'ajout — hypothèse fausse dès que
+    // fuseau est supposé être celui du téléphone au moment de l'ajout : hypothèse fausse dès que
     // la photo vient d'un voyage lointain, et rien dans le fichier ne permet de le voir.
     @Test
     fun timeCorrelationWithAnAssumedZone_isUncertain() {
@@ -61,7 +61,7 @@ class PhotoPositionUncertaintyTest {
 
     // Lignes d'avant la migration 15 -> 16 : le fuseau n'était pas relevé, la colonne vaut null.
     // « Inconnu » se comporte comme « pas certain », soit exactement l'affichage qu'elles avaient
-    // avant la migration — jamais une position qu'on présenterait comme plus sûre qu'elle ne l'est.
+    // avant la migration : jamais une position qu'on présenterait comme plus sûre qu'elle ne l'est.
     @Test
     fun legacyRowWithoutTheZoneColumn_staysUncertainWhenItWasTimeCorrelated() {
         assertTrue(photo(positionApproximate = true, takenAtZoneCertain = null).positionUncertain)
