@@ -20,13 +20,13 @@ import androidx.compose.ui.unit.dp
 import com.bivouac.app.data.gpx.TrackStats
 
 // Shared between the open-trace toolbar (Planification), the banked-trace list rows, and the
-// Journal — same color roles wherever a distance/duration/D+/D- readout appears.
+// Journal: same color roles wherever a distance/duration/D+/D- readout appears.
 val DistanceIconColor = Color(0xFF3C7A5D)
 val DurationIconColor = Color(0xFF6FA8CC)
 val GainIconColor = Color(0xFFD98E48)
 val LossIconColor = Color(0xFFD4B94E)
 
-// RIC-19 : reprend exactement marker_bivouac (res/values/colors.xml) — délibérément pas la couleur
+// RIC-19 : reprend exactement marker_bivouac (res/values/colors.xml), délibérément pas la couleur
 // secondary du thème Material, utilisée par erreur pour ce thème dans les explorations de maquette
 // qui ont précédé le ticket. Un Color hardcodé plutôt qu'un colorResource() ici, par cohérence avec
 // les quatre constantes ci-dessus (déjà des valeurs fixes, pas des lookups de thème).

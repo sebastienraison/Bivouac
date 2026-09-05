@@ -5,7 +5,7 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 
-// Purely cosmetic — the underlying stored text is untouched plain text, never Markdown. A line
+// Purely cosmetic: the underlying stored text is untouched plain text, never Markdown. A line
 // starting with "-" (any amount of whitespace before or after the dash, including none) displays
 // as " • " instead, so "-Texte", "- Texte" and "  -   Texte" all render identically. Unlike a
 // one-to-one char swap, normalizing the whitespace changes the visible length, so this needs a
@@ -65,7 +65,7 @@ private class BulletOffsetMapping(
 private val IntRange.length: Int get() = last - first + 1
 
 // For each line, the span from the line start through any leading whitespace, the "-", and any
-// whitespace right after it — this whole span gets collapsed into a single " • ".
+// whitespace right after it: this whole span gets collapsed into a single " • ".
 private fun findBulletPrefixes(text: String): List<IntRange> {
     val matches = mutableListOf<IntRange>()
     var lineStart = 0

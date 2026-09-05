@@ -27,7 +27,7 @@ import org.robolectric.Shadows.shadowOf
 
 /**
  * RIC-158 : l'import d'un fichier GPX en Planification, et la duplication d'une sortie du Journal
- * vers la Planification (RIC-40), entrent au registre d'exclusion mutuelle — l'un et l'autre font
+ * vers la Planification (RIC-40), entrent au registre d'exclusion mutuelle : l'un et l'autre font
  * atterrir du contenu dans gpx-planif/, exactement ce qu'une sauvegarde zippe et qu'une
  * restauration remplace en bloc.
  *
@@ -145,7 +145,7 @@ class GpxImportExclusionTest {
         PlanificationGpxStore.dir(application).listFiles().orEmpty().filter { it.isFile }.map { it.name }
 
     // Le verrou n'est levé qu'à la toute fin du finally (après persistCurrentStateNow(), une
-    // écriture IO réelle) — attendre seulement qu'uiState quitte Loading serait prématuré pour les
+    // écriture IO réelle), attendre seulement qu'uiState quitte Loading serait prématuré pour les
     // cas de succès, l'écriture pouvant encore être en vol à ce moment-là. Pour un refus, le
     // verrou de PLANIFICATION_IMPORT n'a jamais été posé (tryStart échoue avant tout), donc cette
     // condition est déjà vraie dès le retour synchrone de l'appel.

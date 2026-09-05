@@ -31,7 +31,7 @@ import com.bivouac.app.data.db.LoggedTrackPhotoStore
 import com.bivouac.app.data.db.positionUncertain
 
 /**
- * RIC-43 : le rendu commun d'une photo du Journal partout où elle apparaît en petit — bandeau de la
+ * RIC-43 : le rendu commun d'une photo du Journal partout où elle apparaît en petit : bandeau de la
  * vue détail comme galerie plate. Factorisé pour que l'état d'une photo (position approximative,
  * fichier absent) se raconte de la même façon aux deux endroits, plutôt que d'être réécrit deux
  * fois.
@@ -106,7 +106,7 @@ private fun MissingPhotoPlaceholder(modifier: Modifier = Modifier) {
 
 /**
  * RIC-43 : « positionnement approximatif », c'est-à-dire une position déduite de l'horodatage
- * alors que le fuseau de cet horodatage n'était pas connu du fichier — voir
+ * alors que le fuseau de cet horodatage n'était pas connu du fichier : voir
  * LoggedTrackPhotoEntity.positionUncertain pour les trois autres chemins, tous fiables et donc
  * sans pastille.
  *

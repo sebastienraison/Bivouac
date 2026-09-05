@@ -13,14 +13,14 @@ private val Context.appSectionDataStore by preferencesDataStore(name = APP_SECTI
 
 /**
  * RIC-106 : le dernier univers (Journal ou Planification) consulté, pour rouvrir dessus au
- * démarrage à froid plutôt que de figer un défaut — l'usage réel évolue et ne se laisse pas
+ * démarrage à froid plutôt que de figer un défaut : l'usage réel évolue et ne se laisse pas
  * deviner. Réglages n'est jamais persisté ici : ce n'est pas un univers d'accueil, seulement
  * atteignable via le sélecteur de section (voir AppSection).
  */
 class AppSectionPreferences(private val context: Context) {
     private val key = stringPreferencesKey("last_visited_section")
 
-    // Défaut à Planification quand rien n'a encore été visité (première installation) — même
+    // Défaut à Planification quand rien n'a encore été visité (première installation), même
     // défaut que le comportement historique, avant que ce choix ne devienne dynamique.
     val lastVisitedSection: Flow<AppSection> = context.appSectionDataStore.data.map { prefs ->
         prefs[key]?.let { name -> runCatching { AppSection.valueOf(name) }.getOrNull() } ?: AppSection.PLANIFICATION

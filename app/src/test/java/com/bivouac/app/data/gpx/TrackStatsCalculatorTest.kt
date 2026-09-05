@@ -15,7 +15,7 @@ import org.junit.Test
  */
 class TrackStatsCalculatorTest {
 
-    // Degrés de latitude par mètre, même dérivation exacte que TrackSegmenterTest — deux points à
+    // Degrés de latitude par mètre, même dérivation exacte que TrackSegmenterTest : deux points à
     // même longitude, la formule haversine se réduit à R * radians(deltaLat).
     private val degPerMeter = Math.toDegrees(1.0 / 6_371_000.0)
 
@@ -107,7 +107,7 @@ class TrackStatsCalculatorTest {
     @Test
     fun applyPauseProvisionCoercesAnUnsafeFractionInsteadOfDividingByZeroOrNegative() {
         // Défense en profondeur : une valeur DataStore corrompue (>= 100 %) ne doit jamais produire
-        // une division par zéro ou négative — coercée à 90 % avant division (voir la kdoc de la
+        // une division par zéro ou négative : coercée à 90 % avant division (voir la kdoc de la
         // fonction), donc un résultat fini, positif, et strictement supérieur à l'entrée.
         val result = TrackStatsCalculator.applyPauseProvision(100.0, 150.0)
 

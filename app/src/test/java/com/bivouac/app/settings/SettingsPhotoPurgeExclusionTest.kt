@@ -31,7 +31,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 
 /**
- * RIC-158 : la purge des photos (Réglages) entre au registre d'exclusion mutuelle — elle supprime
+ * RIC-158 : la purge des photos (Réglages) entre au registre d'exclusion mutuelle : elle supprime
  * en masse des fichiers de photos/, exactement ce qu'une sauvegarde zippe et qu'une restauration
  * remplace en bloc.
  *
@@ -103,7 +103,7 @@ class SettingsPhotoPurgeExclusionTest {
 
         viewModel.confirmPhotoPurge()
 
-        // Publié par le clic lui-même, avant tout aller-retour de coroutine — même exigence que
+        // Publié par le clic lui-même, avant tout aller-retour de coroutine : même exigence que
         // backup()/restore() (RIC-156).
         assertEquals(DataOperationPhase.PHOTO_PURGE, viewModel.dataOperationProgress.value?.phase)
 

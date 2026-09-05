@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.dp
 
 /**
  * Rien à faire de plus qu'une seule action : le Journal avant sa toute première trace, la
- * Planification avant sa toute première trace bankée. Partagé plutôt que recopié — une
+ * Planification avant sa toute première trace bankée. Partagé plutôt que recopié : une
  * duplication à la main est ce qui a laissé l'en-tête de Réglages diverger silencieusement du
  * Journal, voir AppScreenHeader.
  */
@@ -59,7 +59,7 @@ fun FullScreenEmptyState(
         Spacer(Modifier.height(18.dp))
         // Couleur explicite et non ambiante : ce composant est hébergé tantôt dans un Scaffold
         // (Journal, dont le Surface interne résout LocalContentColor correctement), tantôt dans
-        // une simple Box (Planification, sans ce Surface) — un Text sans couleur y retombe sur le
+        // une simple Box (Planification, sans ce Surface), un Text sans couleur y retombe sur le
         // noir par défaut de Compose, invisible en thème sombre. Même défaut que le titre de
         // Réglages plus tôt dans cette recette, cette fois corrigé à la source plutôt que par le
         // conteneur qui l'héberge, pour qu'il ne puisse pas se reproduire dans un troisième hôte.

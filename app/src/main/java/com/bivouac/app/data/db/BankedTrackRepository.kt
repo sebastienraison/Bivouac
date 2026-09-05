@@ -13,7 +13,7 @@ class BankedTrackRepository(context: Context) {
     private val appContext = context.applicationContext
 
     // RIC-103 : résolu à chaque accès et non figé à la construction, pour survivre au cycle
-    // fermeture/réouverture d'une sauvegarde — voir LoggedTrackRepository.
+    // fermeture/réouverture d'une sauvegarde : voir LoggedTrackRepository.
     private val dao get() = BivouacDatabase.getInstance(appContext).bankedTrackDao()
 
     suspend fun list(): List<BankedTrackEntity> = dao.list()
@@ -71,7 +71,7 @@ class BankedTrackRepository(context: Context) {
     }
 
     suspend fun delete(id: String) {
-        // Chemin relevé avant le DELETE, ligne supprimée avant son fichier, jamais l'inverse — même
+        // Chemin relevé avant le DELETE, ligne supprimée avant son fichier, jamais l'inverse : même
         // ordre que LoggedTrackRepository.delete(), pour ne pas perdre la référence si la
         // suppression du fichier échoue.
         val entity = dao.get(id) ?: return
