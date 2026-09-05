@@ -52,10 +52,10 @@ sealed interface JournalUiState {
     data object Overview : JournalUiState
     data object Loading : JournalUiState
     // daySegments (RIC-41) : la trace redécoupée par jour importé, pour la ventilation
-    // « Total » + « Jour N » — voir LoggedTrackRepository.openDetail.
+    // « Total » + « Jour N » : voir LoggedTrackRepository.openDetail.
     //
     // initialCursorIndex (RIC-19) : non nul quand l'ouverture vient d'un record du Bilan portant
-    // sur un jour précis d'un trek multi-jours (trek le plus long, bivouac le plus haut) — voir
+    // sur un jour précis d'un trek multi-jours (trek le plus long, bivouac le plus haut) : voir
     // openTrackById. Réutilise le curseur déjà affiché sur l'ElevationProfile (BIV-52) plutôt que
     // de construire une nouvelle navigation day-level, comme demandé par le ticket.
     data class Detail(
@@ -64,19 +64,19 @@ sealed interface JournalUiState {
         val daySegments: List<Segment>,
         val initialCursorIndex: Int? = null,
     ) : JournalUiState
-    // BIV-48: a contemplative overview of several traces at once — entries in the order they
+    // BIV-48: a contemplative overview of several traces at once, entries in the order they
     // should get their (rotating) legend color, each paired with its parsed track.
     data class MultiTrack(val entries: List<Pair<LoggedTrackEntity, HikeTrack>>) : JournalUiState
     data class Error(val message: String) : JournalUiState
 }
 
 // RIC-65 écran 3 : le sélecteur a renvoyé plusieurs fichiers, et rien ne permet de deviner s'il
-// s'agit d'un trek en plusieurs jours ou de plusieurs sorties indépendantes — l'utilisateur
+// s'agit d'un trek en plusieurs jours ou de plusieurs sorties indépendantes : l'utilisateur
 // tranche explicitement à chaque fois, sans heuristique de date ni de proximité.
 data class MultiFileImportChoice(val fileCount: Int)
 
 // Bilan d'un import « sorties séparées » : chaque fichier est traité indépendamment, donc l'échec
-// ou le doublon de l'un n'empêche pas les autres d'entrer — d'où ce compte rendu de fin de lot,
+// ou le doublon de l'un n'empêche pas les autres d'entrer, d'où ce compte rendu de fin de lot,
 // là où un import d'une seule sortie se contente d'ouvrir la trace importée.
 // probableDuplicateNames : les traces importées malgré une ressemblance avec une sortie déjà
 // présente (cf. processNextSeparateImport). Nommées, et pas seulement comptées : « 3 doublons
@@ -113,7 +113,7 @@ data class JournalDayInfo(val dayCount: Int, val dates: List<LocalDate>) {
 }
 
 // RIC-40 : tout ce dont la Planification a besoin pour ouvrir cette trace du Journal comme un
-// nouveau plan éditable — construit ici, et pas dans GpxImportViewModel, parce que seul le côté
+// nouveau plan éditable : construit ici, et pas dans GpxImportViewModel, parce que seul le côté
 // Journal connaît les frontières entre jours. La trace du Journal, elle, n'est jamais touchée :
 // elle est immuable une fois importée. bivouacPoints porte déjà un point par jonction de fichiers
 // (vide pour une trace d'un seul jour) ; l'écran d'arrivée le charge comme n'importe quelle autre
@@ -169,7 +169,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     private val _tracks = MutableStateFlow<List<LoggedTrackEntity>>(emptyList())
     // RIC-65 : liste non filtrée, pour distinguer « aucune trace jamais importée » (écran 1, CTA
-    // plein écran) d'un « filtre à zéro résultat » (écran 3, la banque n'est pas vide) — filteredTracks
+    // plein écran) d'un « filtre à zéro résultat » (écran 3, la banque n'est pas vide) : filteredTracks
     // seul ne permet pas cette distinction une fois un filtre actif.
     val tracks: StateFlow<List<LoggedTrackEntity>> = _tracks.asStateFlow()
 
@@ -183,18 +183,18 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _tracksLoaded = MutableStateFlow(false)
     val tracksLoaded: StateFlow<Boolean> = _tracksLoaded.asStateFlow()
 
-    // trackId -> its tags, for every track that has at least one — drives both the filter chips
+    // trackId -> its tags, for every track that has at least one; drives both the filter chips
     // (distinct values across all tracks) and which entries a filter selection keeps.
     private val _tagsByTrackId = MutableStateFlow<Map<String, List<String>>>(emptyMap())
     val tagsByTrackId: StateFlow<Map<String, List<String>>> = _tagsByTrackId.asStateFlow()
 
     // Le brut, jamais exposé : une sélection peut porter sur un tag libre qui disparaît ensuite
-    // (dernière trace qui le portait démarquée) sans que rien ici ne le sache spontanément — voir
+    // (dernière trace qui le portait démarquée) sans que rien ici ne le sache spontanément : voir
     // selectedFilterTags plus bas, qui recale contre les tags encore réellement présents.
     private val _selectedFilterTags = MutableStateFlow<Set<String>>(emptySet())
 
     // Recalée contre les tags qui existent encore quelque part (système, toujours offerts, ou
-    // portés par au moins une trace) — sans ça, démarquer la dernière trace d'un tag libre filtré
+    // portés par au moins une trace) : sans ça, démarquer la dernière trace d'un tag libre filtré
     // faisait disparaître ce tag de la rangée de chips tout en laissant la liste filtrée dessus,
     // donc vide sans aucun chip actif ne l'expliquant. Seul un aller-retour sur l'écran (qui
     // recrée le ViewModel) remettait les pendules à l'heure.
@@ -210,7 +210,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _dayInfoByTrackId = MutableStateFlow<Map<String, JournalDayInfo>>(emptyMap())
     val dayInfoByTrackId: StateFlow<Map<String, JournalDayInfo>> = _dayInfoByTrackId.asStateFlow()
 
-    // OR semantics: a track matching any one selected tag is kept — narrows what's browsable,
+    // OR semantics: a track matching any one selected tag is kept; narrows what's browsable,
     // doesn't require an exact combination match. Sur selectedFilterTags (déjà recalée) et non sur
     // le brut, pour que ce que la liste montre et ce que les chips montrent racontent la même chose.
     val filteredTracks: StateFlow<List<LoggedTrackEntity>> =
@@ -225,12 +225,12 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _uiState = MutableStateFlow<JournalUiState>(JournalUiState.Overview)
     val uiState: StateFlow<JournalUiState> = _uiState.asStateFlow()
 
-    // Tags of whichever track is currently open — kept separate from
+    // Tags of whichever track is currently open, kept separate from
     // tagsByTrackId's bulk map so editing one track doesn't need re-querying every track's tags.
     private val _currentTags = MutableStateFlow<List<String>>(emptyList())
     val currentTags: StateFlow<List<String>> = _currentTags.asStateFlow()
 
-    // RIC-43 : photos de la trace actuellement ouverte, telles qu'elles sont en base — même raison
+    // RIC-43 : photos de la trace actuellement ouverte, telles qu'elles sont en base : même raison
     // d'être séparée que currentTags ci-dessus.
     //
     // RIC-149 : ce flux ne bouge plus qu'aux sauvegardes. Ce que l'écran affiche pendant une
@@ -247,12 +247,12 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     /**
      * RIC-149 : les photos que l'utilisateur a demandé à supprimer pendant l'édition en cours.
      * Elles disparaissent immédiatement de l'affichage, mais leur ligne et leur fichier ne sont
-     * touchés qu'à la sauvegarde — abandonner l'édition les rend telles qu'elles étaient.
+     * touchés qu'à la sauvegarde : abandonner l'édition les rend telles qu'elles étaient.
      */
     private val _pendingPhotoDeletions = MutableStateFlow<Set<Long>>(emptySet())
 
     // RIC-152 : le débrayage est appliqué ici, à la source, et pas seulement en cachant le bandeau
-    // côté écran. Tout ce qui montre des photos part de ce flux — bandeau, galerie, marqueurs de
+    // côté écran. Tout ce qui montre des photos part de ce flux : bandeau, galerie, marqueurs de
     // la carte, bulle du curseur, visionneuse : le rendre vide quand la fonctionnalité est
     // désactivée est ce qui garantit qu'il n'en reste nulle part, sans avoir à se souvenir de
     // poser une condition à chaque point d'affichage.
@@ -266,7 +266,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     // Ils étaient concaténés en fin de liste, dans l'ordre où ils avaient été choisis, en pariant
     // que personne n'attend d'une photo qu'on vient d'ajouter qu'elle se glisse ailleurs sous ses
     // yeux. La recette a tranché l'inverse : une photo du matin ajoutée en fin d'édition se posait
-    // en bout de bandeau, puis sautait à sa place chronologique à la sauvegarde — le bandeau
+    // en bout de bandeau, puis sautait à sa place chronologique à la sauvegarde : le bandeau
     // racontait deux histoires différentes à quelques secondes d'écart. La liste combinée est donc
     // triée exactement comme la requête DAO l'aurait rendue, voir PhotoDisplayOrder.
     val currentPhotos: StateFlow<List<LoggedTrackPhotoEntity>> =
@@ -283,7 +283,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 // Un ajout dont l'empreinte est déjà en base vient d'être enregistré : la liste
                 // relue le porte désormais, la version en transit ferait double emploi. C'est ce
                 // qui permet à la sauvegarde de publier la nouvelle liste AVANT de vider les
-                // attentes, donc sans que les vignettes clignotent — l'ordre inverse les ferait
+                // attentes, donc sans que les vignettes clignotent : l'ordre inverse les ferait
                 // disparaître le temps d'un aller-retour disque.
                 val savedHashes = kept.mapTo(mutableSetOf()) { it.contentHash }
                 (kept + pendingAdds.filterNot { it.contentHash in savedHashes }.map { it.toDisplayEntity() })
@@ -301,7 +301,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     /**
      * RIC-149 : y a-t-il, côté photos, quelque chose que la disquette enregistrerait ? L'écran
      * l'agrège avec ses propres brouillons (tags, note) pour décider de l'icône de sauvegarde et de
-     * l'avertissement de sortie — voir ThreeStopJournalDetail.
+     * l'avertissement de sortie : voir ThreeStopJournalDetail.
      */
     val photosDirty: StateFlow<Boolean> =
         combine(_pendingPhotoAdds, _pendingPhotoDeletions) { adds, deletions ->
@@ -317,7 +317,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     // currentPhotos plutôt que recalculé dans chacune des cinq fonctions qui l'écrivent, et
     // recalculé sur Dispatchers.IO parce que c'est un stat par photo. La carte s'en sert pour ne
     // pas planter de marqueur sur une photo qu'elle ne peut pas montrer, les vignettes pour
-    // afficher « photo absente » — la ligne, elle, n'est jamais supprimée (voir
+    // afficher « photo absente » : la ligne, elle, n'est jamais supprimée (voir
     // LoggedTrackRepository.missingPhotoFileIds).
     val missingPhotoIds: StateFlow<Set<Long>> = _currentPhotos
         .map { photos -> withContext(Dispatchers.IO) { repository.missingPhotoFileIds(photos) } }
@@ -326,17 +326,17 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     // RIC-43 : erreur d'une action photo, exposée à l'UI sur le modèle de _importError plus bas.
     // Toutes les actions photo touchent des Uri de sélecteur et des fichiers : une Uri révoquée
     // entre la sélection et l'ajout, une permission retirée pendant qu'on lit MediaStore, un
-    // fichier disparu — autant de cas réels qui remontaient jusqu'ici hors de viewModelScope,
+    // fichier disparu : autant de cas réels qui remontaient jusqu'ici hors de viewModelScope,
     // donc en crash de l'app.
     private val _photoError = MutableStateFlow<String?>(null)
     val photoError: StateFlow<String?> = _photoError.asStateFlow()
 
-    // Non nul quand un lot d'ajout s'est terminé avec quelque chose à signaler — voir addPhotos
+    // Non nul quand un lot d'ajout s'est terminé avec quelque chose à signaler : voir addPhotos
     // pour ce qui compte comme tel.
     private val _photoAddReport = MutableStateFlow<PhotoAddReport?>(null)
     val photoAddReport: StateFlow<PhotoAddReport?> = _photoAddReport.asStateFlow()
 
-    // Confirmation par dialogue avant suppression d'une photo (décidé en séance de conception) —
+    // Confirmation par dialogue avant suppression d'une photo (décidé en séance de conception) :
     // même mécanique que _deleteTarget pour une trace entière, plus bas.
     private val _photoDeleteTarget = MutableStateFlow<LoggedTrackPhotoEntity?>(null)
     val photoDeleteTarget: StateFlow<LoggedTrackPhotoEntity?> = _photoDeleteTarget.asStateFlow()
@@ -357,7 +357,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _photoPickerScope = MutableStateFlow(PhotoPickerScope.TRACK_DATES)
     val photoPickerScope: StateFlow<PhotoPickerScope> = _photoPickerScope.asStateFlow()
 
-    // Shared with Planification — one "which map style" preference for the whole app, not a
+    // Shared with Planification: one "which map style" preference for the whole app, not a
     // per-screen setting. Satellite falls back to the free default while non-free features are
     // disabled (BIV-16), same as Planification's own selectedLayer.
     val selectedLayer: StateFlow<MapLayer> = combine(
@@ -385,7 +385,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private var pendingImport: PreparedImport? = null
 
     // RIC-65 écran 3 : non nul tant que l'utilisateur n'a pas tranché entre trek multi-jours et
-    // sorties séparées. Aucun fichier n'est lu avant ce choix — « Abandonner » ne peut donc pas
+    // sorties séparées. Aucun fichier n'est lu avant ce choix : « Abandonner » ne peut donc pas
     // laisser d'import partiel derrière lui.
     private val _multiFileImportChoice = MutableStateFlow<MultiFileImportChoice?>(null)
     val multiFileImportChoice: StateFlow<MultiFileImportChoice?> = _multiFileImportChoice.asStateFlow()
@@ -484,7 +484,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     fun openTrack(entry: LoggedTrackEntity) = openTrackInternal(entry, dayIndex = null)
 
     /**
-     * RIC-19 §6 : point d'entrée depuis un record du Bilan (autre écran, autre ViewModel — même
+     * RIC-19 §6 : point d'entrée depuis un record du Bilan (autre écran, autre ViewModel), même
      * boîte aux lettres que [onDuplicateToPlanification][com.bivouac.app.journal.DuplicatePlanRequest]
      * portée par MainActivity, voir BilanScreen/MainActivity). [dayIndex] non nul positionne le
      * curseur au premier point du jour correspondant une fois la trace chargée ; laissé nul pour
@@ -501,7 +501,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     private fun openTrackInternal(entry: LoggedTrackEntity, dayIndex: Int?) {
         // RIC-149 : ouvrir une autre trace abandonne ce qui n'a pas été enregistré sur la
-        // précédente — l'écran ne laisse pas partir une édition sale sans le demander (voir
+        // précédente : l'écran ne laisse pas partir une édition sale sans le demander (voir
         // ThreeStopJournalDetail.requestExit), mais l'état des photos ne doit dépendre d'aucune
         // promesse tenue ailleurs.
         discardPhotoEdits()
@@ -536,7 +536,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     /**
      * RIC-40 : null quand il n'y a rien à dupliquer (on n'est pas sur la vue détail). Les points
-     * de bivouac tombent aux jonctions entre jours, voir [DayJunctions] — liste vide pour une
+     * de bivouac tombent aux jonctions entre jours, voir [DayJunctions] : liste vide pour une
      * trace d'un seul jour, que la Planification ouvre alors comme n'importe quelle trace sans
      * bivouac. Rien n'est écrit ici : la trace du Journal reste telle qu'elle a été importée.
      */
@@ -551,7 +551,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun closeTrack() {
-        // RIC-149 : même filet qu'à l'ouverture d'une autre trace — quitter la vue détail ne peut
+        // RIC-149 : même filet qu'à l'ouverture d'une autre trace : quitter la vue détail ne peut
         // pas laisser un transit vivant derrière lui.
         discardPhotoEdits()
         _uiState.value = JournalUiState.Overview
@@ -576,13 +576,13 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch { _selectedTrackIds.value = settingsPreferences.selectedTrackIds.first() }
     }
 
-    // The caller (JournalScreen) navigates back to Réglages immediately after calling this —
+    // The caller (JournalScreen) navigates back to Réglages immediately after calling this:
     // that pops this screen's NavBackStackEntry, which clears this ViewModel and cancels
     // viewModelScope. Without NonCancellable, that race routinely won the race against the write
     // below (calibrationSamples() parses GPX, never instant), so the confirmed selection just
-    // never made it to disk — this is why "Confirmer la sélection (N)" wasn't reliably updating
+    // never made it to disk; this is why "Confirmer la sélection (N)" wasn't reliably updating
     // Réglages' count. NonCancellable keeps this specific write alive past that cancellation.
-    // JournalListContent already disables the confirm button below this — guarded again here in
+    // JournalListContent already disables the confirm button below this: guarded again here in
     // case that ever gets bypassed, since a 1-trace Sélection can't be told apart from a genuine
     // 2+ fit (see SpeedCalibrationCalculator's MIN_TRACKS_FOR_CALIBRATION).
     fun confirmCalibrationSelection() {
@@ -602,7 +602,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _selectedTrackIds.value = _selectedTrackIds.value.let { if (id in it) it - id else it + id }
     }
 
-    // Standard "select all if not all selected yet, else clear" checkbox behavior — no partial
+    // Standard "select all if not all selected yet, else clear" checkbox behavior, no partial
     // (indeterminate) visual state, just a plain toggle.
     fun toggleYearSelection(ids: List<String>) {
         _selectedTrackIds.value = if (_selectedTrackIds.value.containsAll(ids)) {
@@ -620,7 +620,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         exitSelectionMode()
         _uiState.value = JournalUiState.Loading
         viewModelScope.launch {
-            // RIC-127 : même filet que openTrack — un GPX illisible parmi la sélection ne doit
+            // RIC-127 : même filet que openTrack : un GPX illisible parmi la sélection ne doit
             // pas crasher l'app. Tout-ou-rien pour l'instant (comme openTrack), pas un skip
             // silencieux des traces en échec : à revoir si ça s'avère trop strict à l'usage.
             runCatching {
@@ -654,7 +654,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * Commits a whole edit-mode draft at once (tags + note together) — nothing is written while
+     * Commits a whole edit-mode draft at once (tags + note together): nothing is written while
      * the user is merely toggling chips or typing; editing this "détails" data isn't a frequent
      * operation, so it gets an explicit save/discard step rather than writing through on every tap
      * like the rest of the app does for more routine actions.
@@ -683,7 +683,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      */
     fun saveDetails(tags: Set<String>, note: String, onFinished: () -> Unit = {}) {
         val entry = currentEntry() ?: return onFinished()
-        // RIC-156 : le verrou est pris avant tout le reste, et le refus ne consomme RIEN — ni les
+        // RIC-156 : le verrou est pris avant tout le reste, et le refus ne consomme RIEN : ni les
         // ajouts en transit, ni les suppressions en attente, et surtout pas [onFinished] : l'écran
         // ne doit pas se fermer sur une sauvegarde qui n'a pas eu lieu. L'utilisateur retrouve son
         // brouillon intact et peut réessayer une fois l'autre opération terminée.
@@ -705,7 +705,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 PhotoOperationProgress(PhotoOperationPhase.COMMIT, done = 0, total = photoWork)
         }
         viewModelScope.launch {
-            // RIC-156 : le verrou est levé dans un finally couvrant tout le corps — l'écriture est
+            // RIC-156 : le verrou est levé dans un finally couvrant tout le corps : l'écriture est
             // NonCancellable, mais la coroutine qui la suit ne l'est pas, et un verrou resté posé
             // paralyserait sauvegarde et restauration jusqu'au prochain lancement de l'app.
             try {
@@ -840,8 +840,8 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * bilan d'import de sorties séparées, qui est toujours montré parce que son résultat n'est
      * visible nulle part ailleurs.
      *
-     * Son moment ne bouge pas — il reste celui de la sélection, seul instant où l'on sait qu'une
-     * photo était un doublon ou illisible — mais son libellé, si : « ajoutées » sous-entendrait
+     * Son moment ne bouge pas : il reste celui de la sélection, seul instant où l'on sait qu'une
+     * photo était un doublon ou illisible ; mais son libellé, si : « ajoutées » sous-entendrait
      * enregistrées. Voir formatPhotoAddReport côté écran.
      *
      * C'est la phase longue du cycle photo : par image, une lecture complète des octets pour
@@ -854,7 +854,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     fun addPhotos(uris: List<Uri>) {
         if (uris.isEmpty()) return
         val entry = currentEntry() ?: return
-        // RIC-156 : même exclusion mutuelle que l'enregistrement — un import recopie des fichiers
+        // RIC-156 : même exclusion mutuelle que l'enregistrement : un import recopie des fichiers
         // dans photos/, répertoire qu'une restauration remplace en bloc et qu'une sauvegarde est en
         // train de parcourir.
         if (!ExclusiveOperations.tryStart(ExclusiveOperation.PHOTO_IMPORT)) {
@@ -920,7 +920,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * RIC-149 : l'abandon d'une édition, côté photos — les ajouts en transit sont effacés du disque,
+     * RIC-149 : l'abandon d'une édition, côté photos : les ajouts en transit sont effacés du disque,
      * les suppressions en attente sont simplement oubliées, donc les photos concernées reviennent.
      *
      * Appelé aussi bien quand l'utilisateur choisit « Ne pas enregistrer » qu'à la fermeture de
@@ -967,7 +967,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * RIC-43 : ouvre le sélecteur interne — appelé seulement après vérification de la permission
+     * RIC-43 : ouvre le sélecteur interne : appelé seulement après vérification de la permission
      * galerie côté écran (voir PhotoLibraryPermission), jamais avant, et jamais du tout quand la
      * fonctionnalité photos est désactivée.
      */
@@ -1010,7 +1010,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         }
         // Avant le launch, pas dedans : c'est ce drapeau qui ouvre le dialogue (voir JournalScreen),
         // et l'ouvrir seulement une fois la coroutine ordonnancée, c'est ne rien montrer pendant
-        // la requête MediaStore — soit exactement la seconde ou deux qu'il s'agit de couvrir. Le
+        // la requête MediaStore, soit exactement la seconde ou deux qu'il s'agit de couvrir. Le
         // CircularProgressIndicator du dialogue n'était jamais atteint pour cette raison.
         _photoPickerLoading.value = true
         photoPickerJob?.cancel()
@@ -1073,7 +1073,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     /**
      * RIC-149 : la suppression est enregistrée comme une intention, pas exécutée. La photo quitte
      * l'affichage tout de suite (c'est ce que l'utilisateur demande), mais sa ligne et son fichier
-     * ne bougent qu'à la sauvegarde — et reviennent intacts si l'édition est abandonnée.
+     * ne bougent qu'à la sauvegarde, et reviennent intacts si l'édition est abandonnée.
      *
      * Une photo encore en transit (ajoutée dans la même édition, jamais enregistrée) n'a rien à
      * marquer : elle est simplement retirée du lot en attente, et ses octets partent avec elle.
@@ -1119,7 +1119,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     /**
      * « Sorties séparées » : N entrées indépendantes du Journal, traitées une par une.
      *
-     * RIC-158 : verrou pris une seule fois pour tout le lot, et non fichier par fichier — laisser
+     * RIC-158 : verrou pris une seule fois pour tout le lot, et non fichier par fichier : laisser
      * une sauvegarde s'intercaler entre deux fichiers du même lot la ferait courir sur un import
      * à moitié écrit, incohérence que le registre existe justement pour fermer. Levé dans
      * [finishSeparateImports], une fois le dernier fichier traité.
@@ -1153,7 +1153,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     /**
      * RIC-41 : plusieurs fichiers ici forment une seule sortie de plusieurs jours (un fichier =
-     * un jour) — c'est [LoggedTrackRepository.prepareImport] qui ordonne les jours et agrège les
+     * un jour) : c'est [LoggedTrackRepository.prepareImport] qui ordonne les jours et agrège les
      * statistiques.
      *
      * Import tout-ou-rien : un fichier illisible fait échouer le lot entier plutôt que de laisser
@@ -1161,7 +1161,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * exactement l'inverse du mode « sorties séparées » ci-dessous, où l'indépendance des
      * fichiers est justement ce qui a été demandé.
      *
-     * RIC-158 : entre au registre d'exclusion — [LoggedTrackRepository.commitImport] écrit dans
+     * RIC-158 : entre au registre d'exclusion : [LoggedTrackRepository.commitImport] écrit dans
      * gpx/, exactement ce qu'une sauvegarde zippe et qu'une restauration remplace en bloc. Verrou
      * pris avant le launch, comme les opérations photo (voir addPhotos), et levé dans un finally
      * couvrant tout le corps. Sur un doublon probable, le verrou est relâché en attendant la
@@ -1277,7 +1277,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 }
             } finally {
                 // RIC-158 : le verrou pris par chooseSeparateImports() couvre tout le lot, il se
-                // lève donc ici, une fois le dernier fichier traité — jamais plus tôt.
+                // lève donc ici, une fois le dernier fichier traité, jamais plus tôt.
                 _importProgress.value = null
                 ExclusiveOperations.finish(ExclusiveOperation.JOURNAL_IMPORT)
             }
@@ -1295,7 +1295,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * lot de sorties séparées, lui, ne pose jamais la question (cf. processNextSeparateImport).
      *
      * RIC-158 : ré-acquiert le verrou relâché par importAsSingleTrack() en attendant cette
-     * décision — le commit qui suit écrit dans gpx/ comme n'importe quel autre import. En cas de
+     * décision : le commit qui suit écrit dans gpx/ comme n'importe quel autre import. En cas de
      * refus (une autre opération a démarré pendant l'attente), rien n'est consommé : l'avertissement
      * de doublon reste affiché tel quel, l'utilisateur peut retenter une fois l'autre opération
      * terminée plutôt que de perdre le fichier qu'il venait de choisir d'importer quand même.
@@ -1341,7 +1341,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         // Mirrors Planification's "open a track" behavior: a just-imported trace should land
         // straight on its detail view, not merely appear in the list waiting to be tapped. Un lot
         // de sorties séparées y échappe : en ouvrir une seule, arbitrairement, ne dirait rien du
-        // reste du lot — c'est le bilan de fin qui tient ce rôle.
+        // reste du lot : c'est le bilan de fin qui tient ce rôle.
         if (openAfterCommit) openTrack(prepared.entity)
     }
 

@@ -21,11 +21,11 @@ import org.robolectric.RobolectricTestRunner
 
 /**
  * RIC-43 : couvre le vrai chemin EXIF (lecture par ExifInterface), pas seulement la corrélation en
- * aval — c'est précisément ce que PhotoPositionCorrelatorTest ne voit pas, puisqu'il fabrique des
+ * aval : c'est précisément ce que PhotoPositionCorrelatorTest ne voit pas, puisqu'il fabrique des
  * Instant directement.
  *
  * Les fixtures sont des JPEG minimaux (SOI + EOI, quatre octets) auxquels ExifInterface écrit
- * lui-même les tags voulus : aucune donnée d'image, aucune fausse « photo de rando » — juste la
+ * lui-même les tags voulus : aucune donnée d'image, aucune fausse « photo de rando », juste la
  * structure de conteneur qu'il faut pour que la lib accepte d'écrire puis de relire un bloc EXIF.
  * Robolectric parce qu'ExifInterface s'appuie sur le runtime Android (android.util.Log,
  * android.system.Os), comme RepositoryBackupCycleTest le fait déjà pour Room.
@@ -73,7 +73,7 @@ class PhotoExifReaderTest {
     }
 
     // Le défaut que corrige RIC-43 : sans le correctif, l'heure murale était rendue telle quelle
-    // comme de l'UTC, soit 2 h d'écart avec la trace — donc systématiquement hors de la tolérance
+    // comme de l'UTC, soit 2 h d'écart avec la trace, donc systématiquement hors de la tolérance
     // de PhotoPositionCorrelator, et aucune position retenue, en silence.
     @Test
     fun dateTimeOriginalWithoutOffsetTag_isNotTheNaiveUtcReading() {
@@ -184,7 +184,7 @@ class PhotoExifReaderTest {
     }
 
     // SOI + EOI : le plus petit conteneur JPEG qu'ExifInterface accepte de parser et de réécrire.
-    // Aucune donnée d'image — c'est le bloc EXIF qui est sous test, pas le décodage.
+    // Aucune donnée d'image : c'est le bloc EXIF qui est sous test, pas le décodage.
     private val MINIMAL_JPEG = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xD9.toByte())
 
     private var fixtureCount = 0

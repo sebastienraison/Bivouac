@@ -8,7 +8,7 @@ import org.junit.runner.RunWith
 // RIC-163 : GpxParser.parse() n'était jusqu'ici exercé que par des tests JVM (Robolectric, voir
 // LoggedTrackBackfillTest), qui tournent sur le JDK hôte et ne peuvent donc pas reproduire un
 // NoSuchMethodError propre au runtime ART. Seul un test réellement instrumenté (Gradle Managed
-// Device) engage jpx 3.2.1 contre la libcore d'un appareil donné — ici le point qui manquait pour
+// Device) engage jpx 3.2.1 contre la libcore d'un appareil donné : ici le point qui manquait pour
 // couvrir le rapport F-Droid (Redmi Note 8T, Android 13 / API 33) : jpx appelle en interne
 // Stream.toList() (Java 16), absent de la libcore avant API 34, d'où le plantage sur tout import
 // en dessous de ce niveau malgré un minSdk de 26.

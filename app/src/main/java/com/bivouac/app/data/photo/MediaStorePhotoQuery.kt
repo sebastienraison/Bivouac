@@ -8,7 +8,7 @@ import android.provider.MediaStore
 
 /**
  * RIC-43 : ce que MediaStore sait de la photo d'origine au moment de l'ajout, relevé une fois puis
- * dénormalisé dans LoggedTrackPhotoEntity — voir ses colonnes source* pour l'usage prévu
+ * dénormalisé dans LoggedTrackPhotoEntity : voir ses colonnes source* pour l'usage prévu
  * (re-acquisition depuis la galerie, RIC-151).
  *
  * Tout est nullable et ne l'est pas par prudence de façade : le fournisseur ne garantit aucune de
@@ -38,7 +38,7 @@ data class PhotoSourceMetadata(
 enum class PhotoPickerScope { TRACK_DATES, WHOLE_GALLERY }
 
 // RIC-43 : ce que le sélecteur interne interroge. Ne s'exécute jamais sans permission galerie
-// accordée au préalable — pas de repli automatique ici, c'est à l'appelant de décider quoi faire
+// accordée au préalable : pas de repli automatique ici, c'est à l'appelant de décider quoi faire
 // d'un refus (voir JournalScreen, qui l'explique plutôt que de contourner).
 object MediaStorePhotoQuery {
 
@@ -94,7 +94,7 @@ object MediaStorePhotoQuery {
      * a été choisie (voir [PhotoPickerScope]).
      *
      * Tout échec (colonne absente, fournisseur qui ne répond pas, permission révoquée entre-temps) rend
-     * [PhotoSourceMetadata.EMPTY] plutôt qu'une exception — ces colonnes sont un bonus pour plus
+     * [PhotoSourceMetadata.EMPTY] plutôt qu'une exception : ces colonnes sont un bonus pour plus
      * tard, jamais une condition de l'ajout de la photo.
      */
     fun readSource(resolver: ContentResolver, uri: Uri): PhotoSourceMetadata = runCatching {

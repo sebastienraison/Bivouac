@@ -27,13 +27,13 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 
-// A parsed-and-ready-to-store import that hasn't been written to the DB yet — lets the caller
+// A parsed-and-ready-to-store import that hasn't been written to the DB yet: lets the caller
 // check for duplicates (findDuplicate) before committing (commitImport), without re-reading or
 // re-parsing the file. Carries the raw content itself (one entry per day, in day order): the
 // backing file only gets written at commit time, so a discarded duplicate leaves no orphan.
 data class PreparedImport(val entity: LoggedTrackEntity, val days: List<PreparedDay>)
 
-// Un jour d'un import en attente, avec ce qui a été relevé pendant le parsing — le fichier est
+// Un jour d'un import en attente, avec ce qui a été relevé pendant le parsing : le fichier est
 // déjà lu et parsé à ce moment-là, donc dénormaliser ne coûte rien de plus ici, alors que le
 // relire ensuite coûte une passe complète. Voir LoggedTrackDayEntity pour le sens des champs.
 data class PreparedDay(
@@ -42,12 +42,12 @@ data class PreparedDay(
     val startedAtMillis: Long?,
     val elapsedSeconds: Long?,
     // RIC-109 : les sept sommes de segments de ce jour, calculées ici pendant que track.points est
-    // déjà parsé — voir DaySegmentAggregate. DaySegmentAggregate.EMPTY (pas de segment exploitable,
+    // déjà parsé : voir DaySegmentAggregate. DaySegmentAggregate.EMPTY (pas de segment exploitable,
     // ex. GPX sans altitude ou trop court) plutôt qu'un type nullable : un jour fraîchement importé
     // n'a jamais besoin de rattrapage, contrairement à une ligne héritée d'avant cette migration.
     val segmentAggregate: DaySegmentAggregate,
     // RIC-19 : calculées ici pendant que track.points est déjà parsé, même raisonnement que
-    // segmentAggregate ci-dessus — un jour fraîchement importé n'a jamais besoin du rattrapage
+    // segmentAggregate ci-dessus : un jour fraîchement importé n'a jamais besoin du rattrapage
     // d'altitude, voir LoggedTrackDayEntity.elevationBackfilled. Défaut à null (et pas de valeur
     // obligatoire comme segmentAggregate) : un appelant qui les omet obtient un jour "sans altitude
     // connue", un état déjà légitime par ailleurs, plutôt qu'une erreur de compilation pour des
@@ -68,7 +68,7 @@ data class LoggedTrackDetail(val track: HikeTrack, val daySegments: List<Segment
 data class DaySummary(val dayCount: Int, val startMillis: List<Long>)
 
 /**
- * RIC-43 : issue d'un lot d'ajout de photos, photo par photo — voir [LoggedTrackRepository.addPhotosFromPicker].
+ * RIC-43 : issue d'un lot d'ajout de photos, photo par photo : voir [LoggedTrackRepository.addPhotosFromPicker].
  *
  * Même raison d'être que [SeparateImportReport][com.bivouac.app.journal.SeparateImportReport] côté
  * import GPX : chaque photo est traitée indépendamment, donc l'échec de l'une ne doit pas empêcher
@@ -84,7 +84,7 @@ data class PhotoAddReport(val added: Int, val duplicatesSkipped: Int, val failed
  * Tout le travail coûteux (empreinte, lecture EXIF, corrélation avec la trace, copie des octets) est
  * fait au moment de la sélection, pas à la sauvegarde : la disquette ne fait plus qu'un déplacement
  * de fichier et un insert, donc elle répond tout de suite, et le bandeau montre les vignettes dès la
- * validation du sélecteur — c'est-à-dire au moment où l'utilisateur s'attend à les voir.
+ * validation du sélecteur, c'est-à-dire au moment où l'utilisateur s'attend à les voir.
  *
  * [displayId] est négatif, et n'existe que dans la mémoire du process : il sert de clé de liste et
  * de cible de suppression tant que la photo n'a pas de vrai id. Négatif justement pour qu'il ne
@@ -93,7 +93,7 @@ data class PhotoAddReport(val added: Int, val duplicatesSkipped: Int, val failed
 data class PendingPhotoAdd(
     val displayId: Long,
     // Chemin préfixé « transit: », résolu par LoggedTrackPhotoStore.resolve comme n'importe quel
-    // autre chemin de photo — c'est ce qui permet à l'UI d'afficher un ajout en attente sans rien
+    // autre chemin de photo : c'est ce qui permet à l'UI d'afficher un ajout en attente sans rien
     // savoir de son statut.
     val transitPath: String,
     val contentHash: String,
@@ -115,7 +115,7 @@ data class PendingPhotoAdd(
 /** Ce que rend un passage du sélecteur : ce qui est entré en transit, et le bilan du lot. */
 data class StagedPhotoBatch(val staged: List<PendingPhotoAdd>, val report: PhotoAddReport)
 
-/** RIC-152 : ce que « Purger les photos » annonce avant d'agir — voir [LoggedTrackRepository.photoStorageSummary]. */
+/** RIC-152 : ce que « Purger les photos » annonce avant d'agir : voir [LoggedTrackRepository.photoStorageSummary]. */
 data class PhotoStorageSummary(val count: Int, val totalBytes: Long)
 
 // Identifiants d'affichage des ajouts en attente : uniques pour la durée du process, et toujours
@@ -170,7 +170,7 @@ class LoggedTrackRepository(context: Context) {
 
     /**
      * RIC-19 : rattrapage de maxElevationMeters/lastPointElevationMeters, bloquant côté appelant
-     * (voir ElevationBackfillGate) — contrairement à [backfillDenormalizedFields] ci-dessus,
+     * (voir ElevationBackfillGate), contrairement à [backfillDenormalizedFields] ci-dessus,
      * délibérément pas fire-and-forget. Sans effet une fois la banque à jour.
      */
     suspend fun backfillElevationFields(onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }) =
@@ -197,7 +197,7 @@ class LoggedTrackRepository(context: Context) {
 
     /**
      * RIC-19 : ce dont [com.bivouac.app.bilan.BilanStatsCalculator] a besoin pour les records de
-     * granularité "jour" (VAM, altitude, bivouac le plus haut, distance/D+ max journée) — les jours
+     * granularité "jour" (VAM, altitude, bivouac le plus haut, distance/D+ max journée) : les jours
      * de chaque trace, triés, sans ouvrir le moindre fichier (colonnes dénormalisées uniquement).
      */
     suspend fun allDaysByTrackId(): Map<String, List<LoggedTrackDayEntity>> =
@@ -205,7 +205,7 @@ class LoggedTrackRepository(context: Context) {
 
     /**
      * Reads, parses and hashes one or more raw GPX files into a single logged track (RIC-41 : un
-     * fichier = un jour d'une même sortie), without writing anything to the DB yet — the raw
+     * fichier = un jour d'une même sortie), without writing anything to the DB yet: the raw
      * content itself is only used transiently here (via [GpxParser]) to compute the denormalized
      * stats and the hike's start date; it's stored untouched separately (see LoggedTrackDayEntity).
      *
@@ -274,10 +274,10 @@ class LoggedTrackRepository(context: Context) {
     /**
      * Two-tier check: an identical content hash means the exact same file was already imported
      * (re-exporting the same hike from a different tool won't hash the same, so this alone isn't
-     * enough) — [DuplicateMatch.Exact], meant to hard-block. Failing that, a start time within an
-     * hour and a distance within 5% of an existing entry is treated as a probable duplicate — two
+     * enough): [DuplicateMatch.Exact], meant to hard-block. Failing that, a start time within an
+     * hour and a distance within 5% of an existing entry is treated as a probable duplicate: two
      * different hikes of similar length can happen on the same day, but not within the same hour
-     * — [DuplicateMatch.Probable], meant as a "import anyway?" warning rather than a block.
+     * ([DuplicateMatch.Probable], meant as a "import anyway?" warning rather than a block).
      */
     suspend fun findDuplicate(prepared: PreparedImport): DuplicateMatch? {
         val all = dao.list()
@@ -314,7 +314,7 @@ class LoggedTrackRepository(context: Context) {
     }
 
     // Fichiers d'abord, lignes ensuite : si l'insert échoue, les fichiers tout juste écrits sont
-    // retirés ; si une écriture de fichier échoue, rien n'a touché la base — dans les deux cas
+    // retirés ; si une écriture de fichier échoue, rien n'a touché la base : dans les deux cas
     // aucune ligne ne peut pointer vers un fichier absent.
     suspend fun commitImport(prepared: PreparedImport): String {
         LoggedTrackGpxStore.dir(appContext).mkdirs()
@@ -411,13 +411,13 @@ class LoggedTrackRepository(context: Context) {
         dao.deleteTag(trackId, tag)
     }
 
-    // L'extension du fichier local, déduite du type MIME annoncé par le fournisseur — « jpg » par
+    // L'extension du fichier local, déduite du type MIME annoncé par le fournisseur : « jpg » par
     // défaut, faute de mieux : rien ici ne décode l'image, l'extension n'est qu'une commodité.
     private fun extensionFor(resolver: ContentResolver, uri: Uri): String =
         resolver.getType(uri)?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) } ?: "jpg"
 
     /**
-     * RIC-43/149 : ce que l'écran appelle après une sélection dans le sélecteur interne — lit l'EXIF
+     * RIC-43/149 : ce que l'écran appelle après une sélection dans le sélecteur interne : lit l'EXIF
      * de chaque [uris], corrèle avec la trace (voir PhotoPositionCorrelator) puis copie les octets
      * en **zone de transit**, sans rien écrire en base. La trace n'est ouverte qu'une fois pour tout
      * le lot, pas par photo.
@@ -450,7 +450,7 @@ class LoggedTrackRepository(context: Context) {
         // sort (copiée, écartée en doublon, illisible) : c'est ce qui alimente le compteur du
         // dialogue bloquant (voir JournalViewModel.addPhotos). Compter les seules photos retenues
         // ferait stagner l'affichage sur une sélection pleine de doublons, alors que le travail,
-        // lui, avance bel et bien — c'est l'empreinte qui coûte, et elle est calculée avant de
+        // lui, avance bel et bien : c'est l'empreinte qui coûte, et elle est calculée avant de
         // savoir si la photo sera gardée.
         onProgress: (done: Int) -> Unit = {},
     ): StagedPhotoBatch {
@@ -511,7 +511,7 @@ class LoggedTrackRepository(context: Context) {
     }
 
     /**
-     * RIC-149 : la sauvegarde du mode édition, côté ajouts — chaque fichier de transit rejoint
+     * RIC-149 : la sauvegarde du mode édition, côté ajouts : chaque fichier de transit rejoint
      * filesDir/photos/ et sa ligne entre en base, dans cet ordre (« fichier d'abord, ligne
      * ensuite », comme [addPhoto] et [commitImport]).
      *
@@ -576,7 +576,7 @@ class LoggedTrackRepository(context: Context) {
     }
 
     /**
-     * RIC-149 : l'abandon du mode édition, côté ajouts — les octets copiés en transit n'ont jamais
+     * RIC-149 : l'abandon du mode édition, côté ajouts : les octets copiés en transit n'ont jamais
      * eu de ligne, il n'y a donc que des fichiers à retirer.
      */
     fun discardPendingPhotos(pending: List<PendingPhotoAdd>) {
@@ -605,7 +605,7 @@ class LoggedTrackRepository(context: Context) {
     suspend fun listPhotos(trackId: String): List<LoggedTrackPhotoEntity> = dao.getPhotos(trackId)
 
     /**
-     * RIC-43 : parmi [photos], celles dont la copie locale a disparu — restauration d'une
+     * RIC-43 : parmi [photos], celles dont la copie locale a disparu : restauration d'une
      * sauvegarde antérieure à leur ajout, nettoyage manuel du stockage de l'app, ou tout simplement
      * une écriture qui n'a jamais abouti.
      *
@@ -621,10 +621,10 @@ class LoggedTrackRepository(context: Context) {
             .mapTo(mutableSetOf()) { it.id }
 
     // Suppression d'une seule photo (RIC-43) : jamais une cascade ici, contrairement à delete(id)
-    // ci-dessus — c'est la ligne elle-même qui disparaît, donc son chemin doit être lu avant.
+    // ci-dessus : c'est la ligne elle-même qui disparaît, donc son chemin doit être lu avant.
     //
     // RIC-149 : appelée à la sauvegarde du mode édition, jamais au moment où l'utilisateur tape
-    // « Supprimer » — d'ici là la suppression n'est qu'une intention, portée par le ViewModel.
+    // « Supprimer » : d'ici là la suppression n'est qu'une intention, portée par le ViewModel.
     suspend fun deletePhoto(id: Long) {
         val photo = dao.getPhoto(id) ?: return
         dao.deletePhoto(id)
@@ -645,7 +645,7 @@ class LoggedTrackRepository(context: Context) {
     }
 
     // "Repositionner" (RIC-43) : toujours positionApproximate = false, qu'il s'agisse de corriger
-    // une position déduite par horodatage ou de déplacer une position déjà certaine — un
+    // une position déduite par horodatage ou de déplacer une position déjà certaine : un
     // repositionnement manuel vaut confirmation explicite dans les deux cas.
     //
     // Plus atteignable depuis l'UI : le menu d'appui long d'une vignette ne garde que
@@ -656,7 +656,7 @@ class LoggedTrackRepository(context: Context) {
     }
 
     /**
-     * RIC-152 : ce que le bouton « Purger les photos » affiche avant d'agir — le nombre de photos
+     * RIC-152 : ce que le bouton « Purger les photos » affiche avant d'agir : le nombre de photos
      * en base et la place que prennent leurs fichiers.
      *
      * L'espace est mesuré sur les fichiers réellement pointés par les lignes, pas sur le dossier
@@ -677,7 +677,7 @@ class LoggedTrackRepository(context: Context) {
      * explicite doublé d'une confirmation.
      *
      * RIC-158 : [onProgress] est appelé après chaque fichier, pour alimenter le dialogue bloquant
-     * partagé — une purge peut porter sur des centaines de Mo, donc plusieurs secondes, et rester
+     * partagé : une purge peut porter sur des centaines de Mo, donc plusieurs secondes, et rester
      * inatteignable ne dispensait pas de dire où elle en est. Les fichiers sont donc retirés un par
      * un plutôt qu'en un seul `deleteRecursively()`, mais celui-ci reste fait en dernier : à ce
      * stade plus aucune ligne ne référence le dossier, donc ce qui y resterait (fichier orphelin
@@ -699,7 +699,7 @@ class LoggedTrackRepository(context: Context) {
 
     /**
      * RIC-109 : ce que [SpeedCalibrationCalculator.compute] a besoin de voir de la banque (ou du
-     * sous-ensemble [ids]) pour calibrer par segments — voir la kdoc de `compute` pour ce que porte
+     * sous-ensemble [ids]) pour calibrer par segments : voir la kdoc de `compute` pour ce que porte
      * chaque champ et pourquoi ils viennent de deux chemins différents.
      */
     data class SegmentCalibrationInput(
@@ -715,13 +715,13 @@ class LoggedTrackRepository(context: Context) {
      * déjà les colonnes de segments (stoppedHours non nul, RIC-115 : implique déjà flatCount non
      * nul, voir LoggedTrackDao) : une trace dont un seul jour n'est pas encore rattrapé (RIC-109,
      * migration 10->11 ; RIC-115, migration 11->12) est purement et simplement absente de cette
-     * somme plutôt que d'y contribuer une somme partielle — mélanger une somme partielle avec des
+     * somme plutôt que d'y contribuer une somme partielle : mélanger une somme partielle avec des
      * jours ignorés donnerait une calibration silencieusement fausse (même risque, même traitement
      * que le garde-fou RIC-98/99 qui protégeait déjà startedAtMillis/elapsedSeconds). Contrairement
      * à ce garde-fou historique, il n'y a délibérément *pas* de repli qui reparserait les GPX pour
      * calculer les segments manquants à la volée : ça réintroduirait exactement le coût que
      * RIC-62/98/99 a supprimé. La banque encore partiellement rattrapée contribue simplement moins
-     * de segments jusqu'à ce que [LoggedTrackBackfill] la rattrape — en pratique quelques secondes.
+     * de segments jusqu'à ce que [LoggedTrackBackfill] la rattrape, en pratique quelques secondes.
      *
      * [SegmentCalibrationInput.fallbackSamples] reste construit exactement comme avant RIC-109 (une
      * ligne par rando, distance/D+/durée), pour le repli à une seule inconnue de
@@ -780,12 +780,12 @@ class LoggedTrackRepository(context: Context) {
     )
 
     // Elapsed time is summed per day (not first-to-last across the whole track) so an overnight
-    // gap on a multi-day hike never gets counted as "elapsed walking time" — see
+    // gap on a multi-day hike never gets counted as "elapsed walking time"; see
     // SpeedCalibrationCalculator's kdoc for why a real elapsed duration matters here.
     //
-    // Le plafond CursorWindow qui faisait planter ici (BIV-16 recette) est levé depuis RIC-62 —
+    // Le plafond CursorWindow qui faisait planter ici (BIV-16 recette) est levé depuis RIC-62 :
     // le contenu vient d'un fichier, plus d'un Cursor. Le runCatching reste : un fichier manquant
-    // ou un GPX corrompu ne doit pas couler la calibration des autres traces — même traitement
+    // ou un GPX corrompu ne doit pas couler la calibration des autres traces, même traitement
     // "silently skipped" qu'une trace sans horodatages exploitables.
     private suspend fun calibrationSample(entry: LoggedTrackEntity): SpeedCalibrationCalculator.Sample? {
         val elapsedHours = runCatching {
@@ -819,7 +819,7 @@ class LoggedTrackRepository(context: Context) {
         MessageDigest.getInstance("SHA-256").digest(text.toByteArray(StandardCharsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
 
-    // RIC-43 : par flux plutôt que text.toByteArray() — une photo (quelques Mo) n'a pas à
+    // RIC-43 : par flux plutôt que text.toByteArray() : une photo (quelques Mo) n'a pas à
     // transiter par une String intermédiaire comme le fait la variante GPX ci-dessus.
     private fun sha256(input: InputStream): String {
         val digest = MessageDigest.getInstance("SHA-256")

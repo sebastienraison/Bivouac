@@ -12,7 +12,7 @@ class PhotoPositionCorrelatorTest {
 
     private val baseTime = Instant.parse("2026-06-12T08:00:00Z")
 
-    // Cinq points espacés de 5 minutes chacun, longitude fixe pour simplifier — seule la
+    // Cinq points espacés de 5 minutes chacun, longitude fixe pour simplifier : seule la
     // corrélation temporelle est sous test ici, pas la distance géographique.
     private val points = (0 until 5).map { i ->
         TrackPoint(

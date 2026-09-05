@@ -14,7 +14,7 @@ import com.bivouac.app.ui.components.ChoiceOptionCard
 
 /**
  * RIC-104 : un fichier reçu de l'extérieur (SEND/VIEW) ne dit pas de lui-même s'il s'agit d'une
- * rando déjà faite (Journal) ou d'une trace à préparer (Planification) — ce que les deux FAB
+ * rando déjà faite (Journal) ou d'une trace à préparer (Planification) : ce que les deux FAB
  * internes savent par construction (voir RIC-65 et le bouton de Planification), pas ce chemin.
  * Composant partagé plutôt que dupliqué : les deux univers y renvoient le même choix.
  *

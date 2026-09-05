@@ -98,7 +98,7 @@ fun GpxImportScreen(
     modifier: Modifier = Modifier,
     incomingGpxUri: Uri? = null,
     // RIC-104 : un fichier reçu de l'extérieur attend encore le choix d'univers (dialogue affiché
-    // par MainActivity) — le repli « restaurer la dernière trace » doit patienter jusque-là, sans
+    // par MainActivity) : le repli « restaurer la dernière trace » doit patienter jusque-là, sans
     // quoi il se déclenche avant que incomingGpxUri n'ait eu la chance d'être renseigné.
     hasPendingExternalChoice: Boolean = false,
     currentSection: AppSection,
@@ -131,19 +131,19 @@ fun GpxImportScreen(
     var recenterSignal by remember { mutableIntStateOf(0) }
 
     // Recentering should fit the track into whatever the sheet doesn't currently cover, not the
-    // full (partly hidden) map view — osmdroid has no asymmetric-fit API, so this is done by
+    // full (partly hidden) map view: osmdroid has no asymmetric-fit API, so this is done by
     // measuring both the map's and the sheet's actual on-screen position and re-centering
     // manually afterwards (see fitToTrack). Float.MAX_VALUE sentinel = not measured yet / no sheet
     // overlap known, meaning "behave as before".
     var mapBoxTopPx by remember { mutableFloatStateOf(0f) }
-    // RIC-96 : ce screen bascule entre deux tiroirs de nature différente selon l'état — le tiroir
+    // RIC-96 : ce screen bascule entre deux tiroirs de nature différente selon l'état : le tiroir
     // "liste" (TrackSheetContent, Idle/Loading/Error, peek height fixe et petit) et le tiroir de
-    // détail (ThreeStopPlanificationDetail, Loaded, nettement plus haut) — sans jamais démonter
+    // détail (ThreeStopPlanificationDetail, Loaded, nettement plus haut), sans jamais démonter
     // l'un pour l'autre au même endroit : ce sont deux branches if/else distinctes de ce composable,
     // donc deux instances de HikeMapView différentes, chacune avec son propre mécanisme de
     // correction de fit (pendingHeightCorrection). Tant que sheetTopPx reste un seul remember
     // partagé entre les deux, la valeur mesurée par l'ancien tiroir survit à la bascule : au premier
-    // fit du nouveau tiroir, visibleMapHeightPx n'est pas la sentinelle Int.MAX_VALUE — c'est une
+    // fit du nouveau tiroir, visibleMapHeightPx n'est pas la sentinelle Int.MAX_VALUE : c'est une
     // valeur obsolète, plus grande que la vraie hauteur visible une fois le tiroir de détail
     // effectivement mesuré. Le mécanisme correctif de HikeMapView ne s'arme donc jamais, et le fit
     // initial cadre la trace en sous-estimant l'occultation réelle du tiroir. Clé de remember sur
@@ -155,11 +155,11 @@ fun GpxImportScreen(
     val visibleMapHeightPx = (sheetTopPx - mapBoxTopPx).let { if (it.isFinite() && it > 0) it.toInt() else Int.MAX_VALUE }
 
     // RIC-40 : se déclenche une fois par demande entrante (identité de la requête en clé, remise à
-    // null par l'appelant juste après) — c'est openDuplicateFromLoggedTrack qui décide s'il peut
+    // null par l'appelant juste après) : c'est openDuplicateFromLoggedTrack qui décide s'il peut
     // charger tout de suite ou s'il doit d'abord passer par la confirmation de fermeture.
     //
     // RIC-131 : la requête arrive dans le même geste que la navigation NavHost qui affiche cet
-    // écran (voir MainActivity.onDuplicateToPlanification) — poser le dialogue de nom pendant que
+    // écran (voir MainActivity.onDuplicateToPlanification) : poser le dialogue de nom pendant que
     // la transition de destination est encore en cours lui fait recevoir un onDismissRequest
     // spontané, il disparaît sans que l'utilisateur ait cliqué. Attendre RESUMED avant d'appeler
     // openDuplicateFromLoggedTrack (qui pose ce dialogue) évite la course.
@@ -171,7 +171,7 @@ fun GpxImportScreen(
     }
 
     // A rotation destroys and recreates the Activity, so onCreate re-evaluates the incoming
-    // intent's URI and this effect fires again with the same (non-null) value — only guarding on
+    // intent's URI and this effect fires again with the same (non-null) value: only guarding on
     // Idle stops that replay from re-importing (and wiping bivouac points) on every rotation. An
     // explicit incoming GPX (opened from another app) always wins over whatever was saved from
     // the previous session; otherwise, restore that previous trace so a restart doesn't lose it.
@@ -202,7 +202,7 @@ fun GpxImportScreen(
     // maintenant le tiroir a besoin de lire ces deux états pour savoir s'il doit être étendu ou
     // replié. Les deux sont nécessaires : sheetScrollState seul ne suffit pas, parce que
     // BottomSheetScaffold consomme d'abord tout le geste de défilement pour tirer le tiroir de
-    // son repli vers son plein déploiement (nested scroll) — tant que le tiroir n'a pas fini de
+    // son repli vers son plein déploiement (nested scroll) : tant que le tiroir n'a pas fini de
     // se déployer, le Column interne reste à scrollState.value == 0, quel que soit l'ampleur du
     // geste. C'est ce qui donnait l'impression que le FAB ne se repliait qu'« au bout du tiroir » :
     // en pratique il attendait que le tiroir ait fini de se tirer avant même de commencer à
@@ -212,12 +212,12 @@ fun GpxImportScreen(
     val bottomSheetScaffoldState = rememberBottomSheetScaffoldState()
 
     val loaded = uiState as? GpxImportUiState.Loaded
-    // RIC-105 (revu) : la banque vide n'a plus de carte du tout, plein écran dédié — même
+    // RIC-105 (revu) : la banque vide n'a plus de carte du tout, plein écran dédié : même
     // traitement que le tout premier lancement du Journal, confirmé en revue. La carte ne
     // redevient pertinente qu'à partir du moment où il y a quelque chose à y montrer ou à y
     // préparer.
     //
-    // bankedTracesLoaded : sans lui, ce plein écran flashait au tout premier lancement — le temps
+    // bankedTracesLoaded : sans lui, ce plein écran flashait au tout premier lancement : le temps
     // que la lecture Room de la banque ET restoreLastTrack aboutissent, uiState valait encore Idle
     // et bankedTraces encore emptyList() par construction, alors qu'une session précédente était
     // bel et bien sur le point d'être restaurée (voir GpxImportViewModel.bankedTracesLoaded).
@@ -232,7 +232,7 @@ fun GpxImportScreen(
                 modifier = Modifier.fillMaxSize(),
             )
             // La carte est le seul endroit où ce bouton flottait jusqu'ici (voir les deux autres
-            // branches ci-dessous) — sans elle, il lui fallait un nouveau point d'ancrage. Reste
+            // branches ci-dessous), sans elle, il lui fallait un nouveau point d'ancrage. Reste
             // en haut à droite, comme partout ailleurs dans Planification : pas de barre de titre
             // introduite pour ce seul état, ça n'aurait fait diverger que lui du reste de l'écran.
             SectionMenuButton(
@@ -295,11 +295,11 @@ fun GpxImportScreen(
                     }
                 }
             }
-            // Ancre fixe, identique à celle du Journal — posé sur le tiroir plutôt que suspendu
+            // Ancre fixe, identique à celle du Journal : posé sur le tiroir plutôt que suspendu
             // au-dessus (composé après le BottomSheetScaffold, donc dessiné par-dessus lui, y
             // compris par-dessus son contenu). Une seule trace bankée : le padding bas du tiroir
             // absorbe le FAB sans toucher la ligne. À partir de deux, le FAB en recouvre
-            // naturellement le haut, jusqu'au premier défilement — même compromis que le Journal
+            // naturellement le haut, jusqu'au premier défilement, même compromis que le Journal
             // fait déjà avec sa propre liste, pas un cas particulier à coder ici.
             if (uiState is GpxImportUiState.Idle && bankedTraces.isNotEmpty()) {
                 val expanded by remember {
@@ -335,7 +335,7 @@ fun GpxImportScreen(
                 track = loaded.track,
                 bivouacPoints = bivouacPoints,
                 // RIC-126 : une trace multi-jours dupliquée depuis le Journal (RIC-40) place un
-                // bivouac à chaque jonction de jour d'origine — sans ça, un jour dont
+                // bivouac à chaque jonction de jour d'origine : sans ça, un jour dont
                 // l'enregistrement s'est arrêté loin du camp fait mentir le tracé (trait continu
                 // plutôt que pointillé) comme RIC-120 l'a déjà corrigé côté Journal. Le seuil de
                 // 50 m dans DayJunctions.recordingGaps filtre naturellement les bivouacs posés à la
@@ -367,7 +367,7 @@ fun GpxImportScreen(
             }
             ThreeStopPlanificationDetail(
                 track = loaded.track,
-                // loaded.stats is a snapshot from whenever the trace was opened/imported — distance
+                // loaded.stats is a snapshot from whenever the trace was opened/imported: distance
                 // and elevation don't change, but the duration needs to track the *current*
                 // calibration for a trace that's still open while it's changed in Réglages (BIV-16
                 // recette: this was already handled for segments below, missed here).
@@ -464,7 +464,7 @@ fun GpxImportScreen(
         )
     }
 
-    // RIC-127 (suite) : popup plutôt qu'écran plein — voir la kdoc de bankOpenError.
+    // RIC-127 (suite) : popup plutôt qu'écran plein : voir la kdoc de bankOpenError.
     bankOpenError?.let { message ->
         AlertDialog(
             onDismissRequest = viewModel::dismissBankOpenError,
@@ -476,7 +476,7 @@ fun GpxImportScreen(
 }
 
 // Only Idle/Loading/Error: the Loaded state has its own three-stop drawer (BIV-57), see
-// ThreeStopPlanificationDetail — GpxImportScreen switches away from this BottomSheetScaffold
+// ThreeStopPlanificationDetail: GpxImportScreen switches away from this BottomSheetScaffold
 // entirely once a track is loaded, so this sheet never needs to represent that state.
 @Composable
 private fun TrackSheetContent(
@@ -525,7 +525,7 @@ private fun TrackSheetContent(
                 Text(text = uiState.message, color = MaterialTheme.colorScheme.error)
                 Spacer(modifier = Modifier.height(8.dp))
                 // Même libellé que la FAB "Ouvrir une trace" de l'état Idle (au-dessus de ce
-                // tiroir côté GpxImportScreen) — un Button nu, sans icône, tranchait avec elle.
+                // tiroir côté GpxImportScreen) : un Button nu, sans icône, tranchait avec elle.
                 Button(onClick = onOpenClick, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
@@ -601,7 +601,7 @@ private fun BankedTrackRow(
     }
 }
 
-// "aujourd'hui à 14:32" when saved today (the realistic case for several saves the same day —
+// "aujourd'hui à 14:32" when saved today (the realistic case for several saves the same day:
 // disambiguates them without cluttering older entries with a time nobody needs), otherwise just
 // the date ("3 août").
 private fun formatSavedAt(epochMillis: Long): String {

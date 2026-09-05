@@ -5,7 +5,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-// One tag on a logged_track — system tags (see SystemTag) and free-form tags share this same
+// One tag on a logged_track: system tags (see SystemTag) and free-form tags share this same
 // table and column; a fixed value set isn't enforced at the DB level, only by which values the UI
 // offers as toggleable chips versus free text.
 @Entity(

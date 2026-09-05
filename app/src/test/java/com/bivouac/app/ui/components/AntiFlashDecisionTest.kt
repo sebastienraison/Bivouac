@@ -67,7 +67,7 @@ class AntiFlashDecisionTest {
 
     /**
      * Le piège que le seul seuil d'apparition ne couvre pas : 210 ms d'opération, le dialogue
-     * apparaît puis devrait disparaître 10 ms plus tard — soit exactement le clignotement visé.
+     * apparaît puis devrait disparaître 10 ms plus tard, soit exactement le clignotement visé.
      */
     @Test
     fun leDialogueApparuResteAuMoinsLaDureeMinimale() {

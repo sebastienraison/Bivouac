@@ -17,7 +17,7 @@ import org.robolectric.RobolectricTestRunner
 /**
  * RIC-135 : bankedId doit survivre au cycle save/loadLast de l'auto-save, sans quoi
  * restoreLastTrack ne peut jamais savoir si la session qu'il restaure est déjà liée à une entrée
- * de la banque — voir GpxImportViewModel.restoreLastTrack.
+ * de la banque : voir GpxImportViewModel.restoreLastTrack.
  */
 @RunWith(RobolectricTestRunner::class)
 class SavedTrackRepositoryTest {

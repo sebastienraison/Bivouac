@@ -20,7 +20,7 @@ class TrackSegmenterTest {
 
     // Pas de 30 m par point. Volontairement pas un diviseur de 200 (200 / 30 n'est pas entier) :
     // avec ce pas, la fermeture d'un segment (accumulatedDistance >= 200) tombe toujours à 7 sauts
-    // (210 m), avec 10 m de marge au-dessus du seuil — bien au-delà de l'imprécision flottante du
+    // (210 m), avec 10 m de marge au-dessus du seuil, bien au-delà de l'imprécision flottante du
     // haversine (< 1e-9 m sur ce pas). Un pas de 20 m (multiple exact de 200) mettrait la fermeture
     // pile sur le seuil, où la moindre imprécision ferait basculer le compte de segments d'un côté
     // ou de l'autre selon l'exécution.
@@ -30,7 +30,7 @@ class TrackSegmenterTest {
     // pour deux points à même longitude, elle se réduit à R * radians(deltaLat), sans aucune
     // approximation d'angle. Utiliser l'inverse exact ici (plutôt qu'une conversion approchée du
     // type 111 320 m/degré) fait tomber chaque saut consécutif pile sur stepMeters, à moins de
-    // 1e-9 m près — vérifié séparément en Python avant d'écrire ce test.
+    // 1e-9 m près, vérifié séparément en Python avant d'écrire ce test.
     private val degPerMeter = Math.toDegrees(1.0 / 6_371_000.0)
 
     private fun points(

@@ -30,7 +30,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * RIC-19 §5 : rattrapage des colonnes d'altitude (maxElevationMeters/lastPointElevationMeters),
- * lancé au tout premier composable de l'appli plutôt que depuis JournalViewModel — préférence
+ * lancé au tout premier composable de l'appli plutôt que depuis JournalViewModel : préférence
  * utilisateur documentée, délibérément à l'opposé du patron fire-and-forget de
  * [LoggedTrackRepository.backfillDenormalizedFields] (annulable en quittant le Journal, RIC-132) :
  * ici, rien n'est navigable tant que ce n'est pas terminé (voir [ElevationBackfillGate]).
@@ -71,10 +71,10 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
 /**
  * [content] (le reste de l'appli, NavHost compris) n'est composé qu'une fois le rattrapage terminé
  * ou constaté inutile. Tant que ce n'est pas le cas, la navigation est bloquée par construction
- * (le NavHost lui-même n'est pas encore monté) — mais le dialogue ne s'affiche, lui, que pendant
+ * (le NavHost lui-même n'est pas encore monté), mais le dialogue ne s'affiche, lui, que pendant
  * [ElevationBackfillViewModel.State.Running], jamais pendant [ElevationBackfillViewModel.State.
  * Checking] : ce dernier n'est qu'une requête COUNT (quasi instantanée, y compris sur une grosse
- * banque), et l'immense majorité des lancements n'ont rien à rattraper — un dialogue qui
+ * banque), et l'immense majorité des lancements n'ont rien à rattraper : un dialogue qui
  * apparaîtrait puis disparaîtrait aussitôt à CHAQUE lancement de l'app serait plus gênant qu'utile.
  * Checking se contente donc du même fond neutre que Running, sans le popup par-dessus.
  */

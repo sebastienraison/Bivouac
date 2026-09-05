@@ -26,7 +26,7 @@ import org.robolectric.Shadows.shadowOf
  *
  * Les octets « photo » sont des suites d'octets quelconques : rien ici ne décode d'image, ni le
  * repository (copie brute) ni la déduplication (SHA-256 des octets). Une vraie photo n'apporterait
- * que du bruit — la vérification sur de vraies photos se fait en session device.
+ * que du bruit : la vérification sur de vraies photos se fait en session device.
  */
 @RunWith(RobolectricTestRunner::class)
 class LoggedTrackPhotoRepositoryTest {
@@ -110,7 +110,7 @@ class LoggedTrackPhotoRepositoryTest {
         LoggedTrackPhotoStore.dir(context).listFiles().orEmpty().filter { it.isFile }.map { it.name }.sorted()
 
     /**
-     * RIC-149 : le cycle complet « sélection puis sauvegarde », en un appel — ce que fait le mode
+     * RIC-149 : le cycle complet « sélection puis sauvegarde », en un appel : ce que fait le mode
      * édition quand l'utilisateur ajoute des photos puis tape la disquette. Les tests ci-dessous
      * portent sur le résultat de ce cycle ; les étapes séparées (transit, abandon, restauration)
      * ont leur propre suite, LoggedTrackPhotoTransactionTest.
@@ -247,7 +247,7 @@ class LoggedTrackPhotoRepositoryTest {
         assertEquals(emptySet<Long>(), repository.missingPhotoFileIds(listOf(photo)))
     }
 
-    // La FK CASCADE emporte les lignes ; les fichiers, eux, ne se suppriment pas tout seuls — c'est
+    // La FK CASCADE emporte les lignes ; les fichiers, eux, ne se suppriment pas tout seuls : c'est
     // delete() qui relève les chemins AVANT le DELETE pour pouvoir le faire.
     @Test
     fun deletingATrackAlsoDeletesItsPhotoFiles() = runBlocking {

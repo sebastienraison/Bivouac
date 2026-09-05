@@ -24,7 +24,7 @@ import kotlinx.coroutines.delay
  *
  * [done] et [total] sont nullables ensemble : tous les flux ne savent pas dénombrer leur travail à
  * l'avance (voir la restauration d'une archive sans manifeste, BackupManager). Dans ce cas le
- * dialogue montre le tourniquet seul, sans compteur — assumé, plutôt qu'un faux dénominateur.
+ * dialogue montre le tourniquet seul, sans compteur, assumé, plutôt qu'un faux dénominateur.
  */
 data class BlockingProgress(
     val title: String,
@@ -36,7 +36,7 @@ data class BlockingProgress(
  * RIC-156 : seuil d'apparition. En dessous, l'opération se termine sans que rien ne soit affiché.
  *
  * Mesuré en recette : l'enregistrement des détails d'une trace sans photo prend ~43 ms, et le
- * dialogue y apparaissait puis disparaissait dans la même respiration — perçu comme un défaut
+ * dialogue y apparaissait puis disparaissait dans la même respiration, perçu comme un défaut
  * d'affichage, pas comme une information. 200 ms est le seuil courant en deçà duquel une attente
  * est ressentie comme instantanée : rien à signaler à l'utilisateur.
  */
@@ -67,12 +67,12 @@ data class AntiFlashDecision(
 )
 
 /**
- * RIC-156 : toute la logique anti-flash, sans horloge ni Compose — le temps est fourni par
+ * RIC-156 : toute la logique anti-flash, sans horloge ni Compose : le temps est fourni par
  * l'appelant, ce qui la rend testable en unitaire pur (voir AntiFlashDecisionTest).
  *
  * CAPITAL : cette fonction ne décide que du VISUEL. L'état « opération en vol » qui alimente les
  * gardes (sortie de l'écran des photos, exclusion mutuelle via ExclusiveOperations) est posé au
- * geste et levé à la fin réelle, sans le moindre différé — sinon le seuil d'apparition ouvrirait
+ * geste et levé à la fin réelle, sans le moindre différé : sinon le seuil d'apparition ouvrirait
  * une fenêtre de 200 ms pendant laquelle rien ne protège quoi que ce soit.
  *
  * @param operationStartedAtMillis instant où l'opération courante est entrée en vol, null si
@@ -88,7 +88,7 @@ fun antiFlashDecision(
 ): AntiFlashDecision {
     if (operationStartedAtMillis != null) {
         // Déjà visible : on y reste tant que l'opération dure. Une opération qui démarre pendant
-        // le maintien minimal d'une précédente passe aussi par ici — le dialogue enchaîne sans se
+        // le maintien minimal d'une précédente passe aussi par ici : le dialogue enchaîne sans se
         // fermer entre les deux, ce qui est exactement le comportement voulu.
         if (shownAtMillis != null) return AntiFlashDecision(true, shownAtMillis, null)
         val remaining = appearanceDelayMillis - (nowMillis - operationStartedAtMillis)
@@ -110,7 +110,7 @@ fun antiFlashDecision(
 }
 
 /**
- * RIC-156 : le dialogue bloquant partagé — tourniquet, compteur, aucune porte de sortie.
+ * RIC-156 : le dialogue bloquant partagé : tourniquet, compteur, aucune porte de sortie.
  *
  * Extrait de JournalScreen (RIC-149), où il ne servait que les opérations photo, pour que la
  * sauvegarde et la restauration s'appuient dessus au lieu d'en recopier une variante. Il n'ouvre

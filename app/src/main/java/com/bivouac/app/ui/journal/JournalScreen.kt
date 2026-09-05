@@ -175,21 +175,21 @@ fun JournalScreen(
     currentSection: AppSection,
     onSectionSelected: (AppSection) -> Unit,
     // BIV-16: opened from Réglages ("Choisir les traces") instead of normally, to pick the
-    // Sélection calibration's tracks — pre-checks the current choice and swaps the usual
+    // Sélection calibration's tracks: pre-checks the current choice and swaps the usual
     // "afficher sur la carte" action for a confirm/cancel pair that returns to Réglages.
     calibrationSelectionMode: Boolean = false,
     onCalibrationSelectionDone: () -> Unit = {},
     // RIC-40 : reçoit une demande prête à charger, construite depuis la trace ouverte en vue
-    // détail — c'est l'appelant (MainActivity) qui prend en charge le passage vers la
+    // détail : c'est l'appelant (MainActivity) qui prend en charge le passage vers la
     // Planification, seul endroit où les ViewModels des deux écrans sont atteignables ensemble.
     onDuplicateToPlanification: (DuplicatePlanRequest) -> Unit = {},
     // RIC-104 : même boîte aux lettres que onDuplicateToPlanification ci-dessus, pour les fichiers
-    // reçus de l'extérieur une fois « Journal » choisi dans le dialogue d'univers — MainActivity
+    // reçus de l'extérieur une fois « Journal » choisi dans le dialogue d'univers : MainActivity
     // ne peut pas appeler ce ViewModel directement, lui non plus.
     pendingImportUris: List<Uri>? = null,
     onPendingImportUrisConsumed: () -> Unit = {},
     // RIC-19 : même boîte aux lettres que pendingImportUris ci-dessus, pour un clic sur un record
-    // du Bilan (autre écran, autre ViewModel) — voir JournalOpenRequest et MainActivity.
+    // du Bilan (autre écran, autre ViewModel) : voir JournalOpenRequest et MainActivity.
     pendingOpenRequest: JournalOpenRequest? = null,
     onPendingOpenRequestConsumed: () -> Unit = {},
     viewModel: JournalViewModel = viewModel(),
@@ -245,7 +245,7 @@ fun JournalScreen(
     var recenterSignal by remember { mutableIntStateOf(0) }
     var mapBoxTopPx by remember { mutableIntStateOf(0) }
     // RIC-102 : hissés ici plutôt que dans JournalPopulatedList, qui se démonte et se remonte à
-    // chaque ouverture/fermeture d'une rando (branche « detail != null » ci-dessous) — cette
+    // chaque ouverture/fermeture d'une rando (branche « detail != null » ci-dessous) : cette
     // racine, elle, reste composée tant qu'on ne quitte pas l'onglet Journal, donc ces deux états
     // survivent à l'aller-retour vers une trace que RIC-102 rapportait perdu.
     var journalListExpandedYears by remember { mutableStateOf<Set<Int>?>(null) }
@@ -253,7 +253,7 @@ fun JournalScreen(
     val detail = uiState as? JournalUiState.Detail
     val multiTrack = uiState as? JournalUiState.MultiTrack
     // Overview list, multi-track view and single-track detail each report their own sheet's top
-    // through onSheetTopMeasured into this single shared value — keyed on which of the three is
+    // through onSheetTopMeasured into this single shared value, keyed on which of the three is
     // currently showing (and, for detail, which track) so switching between them starts the
     // height fresh at "unknown" instead of leaking the previous sheet's already-measured
     // position into the newly opened one's very first fit (that stale value being smaller than
@@ -267,7 +267,7 @@ fun JournalScreen(
     val visibleMapHeightPx = (sheetTopPx - mapBoxTopPx).let { if (it > 0) it else Int.MAX_VALUE }
     // RIC-41 : sélection multiple autorisée. Ce qu'un lot de plusieurs fichiers signifie (un trek
     // en plusieurs jours ou plusieurs sorties) n'est pas deviné ici, c'est le dialogue de choix
-    // plus bas qui tranche — voir JournalViewModel.importTracks.
+    // plus bas qui tranche : voir JournalViewModel.importTracks.
     val pickGpxLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         viewModel.importTracks(uris)
     }
@@ -360,14 +360,14 @@ fun JournalScreen(
     // configChanges au manifest) : la mort du process en arrière-plan, elle, reste possible, et
     // c'est le même filet. La visionneuse doit tourner avec le téléphone, pas se refermer.
     var viewedPhotoIndex by rememberSaveable { mutableStateOf<Int?>(null) }
-    // RIC-19 : seedé depuis detail.initialCursorIndex plutôt que toujours null — une ouverture
+    // RIC-19 : seedé depuis detail.initialCursorIndex plutôt que toujours null : une ouverture
     // venue d'un record du Bilan sur un jour précis arrive avec son curseur déjà positionné.
     var cursorIndex by remember(detail?.entry?.id) { mutableStateOf(detail?.initialCursorIndex) }
     when {
         detail != null -> {
             // Constat E : sur une sortie de plusieurs jours, chaque coupure entre deux fichiers est
             // une nuit passée dehors. La donnée existait déjà, elle ne servait qu'à la duplication
-            // vers la Planification (RIC-40) — la carte et le profil recevaient une liste vide.
+            // vers la Planification (RIC-40) : la carte et le profil recevaient une liste vide.
             //
             // Identifiants dérivés du rang et non tirés au hasard : rien ici n'est enregistré, et un
             // identifiant stable évite de recréer les marqueurs à chaque recomposition.
@@ -393,7 +393,7 @@ fun JournalScreen(
                     cursorIndex = cursorIndex,
                     onCursorChanged = { cursorIndex = it },
                     // RIC-43 : la croix de la bulle retire le curseur lui-même, pas seulement la
-                    // bulle — c'est le curseur qui la fait exister, une bulle fermée sur un curseur
+                    // bulle : c'est le curseur qui la fait exister, une bulle fermée sur un curseur
                     // resté planté reviendrait au moindre déplacement de la carte.
                     onCursorCleared = { cursorIndex = null },
                     photos = currentPhotos,
@@ -440,7 +440,7 @@ fun JournalScreen(
             }
         }
         // RIC-65 : la vue « plusieurs traces sur la carte » (BIV-48) et le chargement qui y mène ou
-        // qui mène au détail restent sur le patron carte + tiroir — seul l'accueil liste (branche
+        // qui mène au détail restent sur le patron carte + tiroir : seul l'accueil liste (branche
         // else ci-dessous) quitte ce patron, la carte n'a jamais quitté son rôle ici.
         multiTrack != null || uiState is JournalUiState.Loading -> {
             BottomSheetScaffold(
@@ -448,7 +448,7 @@ fun JournalScreen(
                 sheetPeekHeight = PEEK_HEIGHT_EMPTY.coerceAtMost(LocalConfiguration.current.screenHeightDp.dp * 0.5f),
                 sheetContent = {
                     // Loading est émis par openTrack() comme par showOnMap() : sans ce rendu, taper
-                    // une trace ne donnait aucun retour visuel le temps du parsing (RIC-95) — et une
+                    // une trace ne donnait aucun retour visuel le temps du parsing (RIC-95), et une
                     // trace illisible semblait juste ne rien faire (l'état Error est rendu en dialogue
                     // plus bas, la liste restant visible derrière).
                     if (uiState is JournalUiState.Loading) {
@@ -638,7 +638,7 @@ fun JournalScreen(
     }
 
     // RIC-43 : confirmation par dialogue plutôt qu'un simple snackbar (décidé en séance de
-    // conception) — jamais un lot de plus de quelques photos à la fois, la friction reste
+    // conception) : jamais un lot de plus de quelques photos à la fois, la friction reste
     // acceptable. Ne touche jamais l'original côté galerie système, seulement la copie locale.
     photoDeleteTarget?.let {
         AlertDialog(
@@ -698,7 +698,7 @@ fun JournalScreen(
     // fait qu'il suit l'état du ViewModel, sans qu'aucun n'ait à y penser.
     //
     // RIC-156 : le dialogue lui-même est passé dans ui/components, partagé avec la sauvegarde et la
-    // restauration des Réglages, et gagne au passage l'anti-flash — un enregistrement ne portant
+    // restauration des Réglages, et gagne au passage l'anti-flash : un enregistrement ne portant
     // que sur une photo ou deux se boucle en quelques dizaines de millisecondes (~43 ms mesurées en
     // recette) et faisait apparaître puis disparaître ce dialogue dans la même respiration. Le
     // drapeau qui verrouille l'écran (photoOperationInFlight plus haut) reste, lui, branché sur
@@ -784,7 +784,7 @@ fun JournalScreen(
 private fun formatPhotoAddReport(report: PhotoAddReport): String {
     val lines = mutableListOf<String>()
     lines += when (report.added) {
-        // RIC-149 : « en attente d'enregistrement » et non « ajoutée » tout court — à ce stade les
+        // RIC-149 : « en attente d'enregistrement » et non « ajoutée » tout court : à ce stade les
         // photos sont en transit, visibles dans le bandeau mais pas encore dans le Journal. Le
         // bilan reste rendu au moment de la sélection, seul instant où l'on sait ce qui a été
         // écarté ou n'a pas pu être lu ; le décaler à la sauvegarde reviendrait à annoncer un
@@ -812,7 +812,7 @@ private fun formatPhotoAddReport(report: PhotoAddReport): String {
 
 /**
  * RIC-65 écran 4 : dès que le sélecteur renvoie plus d'un fichier. Les deux interprétations
- * possibles sont proposées telles quelles, sans détection automatique — « Un seul trek » est mis
+ * possibles sont proposées telles quelles, sans détection automatique : « Un seul trek » est mis
  * en avant comme cas jugé le plus fréquent, « Abandonner » reste une porte de sortie explicite
  * quand le lot est un mélange des deux.
  *
@@ -1022,14 +1022,14 @@ private fun JournalMap(
             )
         }
         // RIC-43 : la bannière « Fais glisser le repère sur la carte » vivait ici. Elle part avec le
-        // flux de repositionnement, différé à un lot ultérieur — le menu d'appui long d'une vignette
+        // flux de repositionnement, différé à un lot ultérieur : le menu d'appui long d'une vignette
         // ne garde que « Supprimer ». Conséquence assumée : une photo sans position reste non
         // placée, visible en galerie et dans le bandeau, absente de la carte.
     }
 }
 
 /**
- * RIC-65 : accueil du Journal, écran plein natif (Scaffold + FAB) — plus de tiroir ni de carte
+ * RIC-65 : accueil du Journal, écran plein natif (Scaffold + FAB) : plus de tiroir ni de carte
  * ici, la carte reste réservée à la vue trois crans d'une rando ouverte. Deux contenus possibles
  * selon qu'une trace a *déjà* été importée un jour ou non : [neverImported] est le seul cas qui
  * garde un CTA plein écran, un filtre à zéro résultat retombe sur le FAB comme l'état peuplé.
@@ -1040,7 +1040,7 @@ private fun JournalHomeScreen(
     modifier: Modifier = Modifier,
     tracks: List<LoggedTrackEntity>,
     // Distinct de tracks.isEmpty() : tant que la toute première lecture de la base n'a pas abouti,
-    // tracks vaut emptyList() par construction — sans ce drapeau, un démarrage à froid sur le
+    // tracks vaut emptyList() par construction : sans ce drapeau, un démarrage à froid sur le
     // Journal avec une base bien remplie affichait une bouffée de l'écran vide avant la liste
     // réelle. Voir JournalViewModel.tracksLoaded.
     tracksLoaded: Boolean,
@@ -1064,7 +1064,7 @@ private fun JournalHomeScreen(
     currentSection: AppSection,
     onSectionSelected: (AppSection) -> Unit,
     // RIC-102 : hissés par l'appelant (JournalScreen), qui seul reste composé pendant l'aller-retour
-    // vers une rando ouverte — voir le commentaire là-bas.
+    // vers une rando ouverte : voir le commentaire là-bas.
     expandedYears: Set<Int>?,
     onExpandedYearsChanged: (Set<Int>?) -> Unit,
     listScrollState: ScrollState,
@@ -1077,11 +1077,11 @@ private fun JournalHomeScreen(
         floatingActionButton = {
             // Le CTA plein écran de l'état vraiment vide (ci-dessous) est la seule action possible
             // de cet écran : un FAB par-dessus ferait doublon. Masqué aussi tant que le chargement
-            // n'a pas abouti — pas d'action tant qu'on ne sait pas encore laquelle est de mise.
+            // n'a pas abouti : pas d'action tant qu'on ne sait pas encore laquelle est de mise.
             if (tracksLoaded && !neverImported) {
                 // Patron Material : le FAB étendu se replie en carré arrondi quand le contenu
                 // prend le dessus. Déclenché par la position de défilement et non par la longueur
-                // de la liste — c'est ce que documente M3, et ça garde le libellé tant qu'il y a
+                // de la liste : c'est ce que documente M3, et ça garde le libellé tant qu'il y a
                 // la place de le lire. derivedStateOf pour ne recomposer qu'au basculement, pas à
                 // chaque pixel défilé.
                 val expanded by remember(listScrollState) {
@@ -1105,7 +1105,7 @@ private fun JournalHomeScreen(
     ) { paddingValues ->
         if (!tracksLoaded) {
             // Fenêtre habituellement très courte (lecture Room locale) mais bien réelle sur une
-            // base conséquente ou un appareil lent — un indicateur plutôt qu'un écran blanc, sans
+            // base conséquente ou un appareil lent : un indicateur plutôt qu'un écran blanc, sans
             // se prononcer sur vide ou peuplé avant de le savoir vraiment.
             Box(
                 modifier = Modifier.padding(paddingValues).fillMaxSize(),
@@ -1152,10 +1152,10 @@ private fun JournalHomeScreen(
 }
 
 /**
- * RIC-65 écran 2 : résumé global, non couplé aux filtres/chips actifs — les croisements par
+ * RIC-65 écran 2 : résumé global, non couplé aux filtres/chips actifs : les croisements par
  * filtre relèvent de l'écran Bilan lui-même (RIC-19), pas de cette carte.
  *
- * RIC-19 : fine enveloppe autour de [TotalsCapsule], désormais partagé avec l'écran Bilan — voir sa
+ * RIC-19 : fine enveloppe autour de [TotalsCapsule], désormais partagé avec l'écran Bilan : voir sa
  * kdoc pour le design (fond neutre, grille d'icônes colorées) qui remplace l'ancien fond
  * `secondaryContainer` plein propre à cette carte. [onClick] ouvre l'écran Bilan complet.
  */
@@ -1177,7 +1177,7 @@ private fun JournalBilanCard(
 }
 
 /**
- * RIC-65 écrans 2 et 3 : la liste peuplée, avec le Bilan et les chips toujours affichés — un
+ * RIC-65 écrans 2 et 3 : la liste peuplée, avec le Bilan et les chips toujours affichés : un
  * filtre à zéro résultat (écran 3) n'en masque que le contenu de la liste, pas ces deux-là.
  */
 @Composable
@@ -1201,9 +1201,9 @@ private fun JournalPopulatedList(
     onConfirmCalibrationSelection: () -> Unit,
     onOpenBilan: () -> Unit,
     // RIC-102 : hissés par l'appelant (JournalScreen) pour survivre à l'aller-retour vers une
-    // rando ouverte, ce composable-ci se démontant et se remontant à chaque fois — voir le
+    // rando ouverte, ce composable-ci se démontant et se remontant à chaque fois : voir le
     // commentaire sur JournalScreen. null (et non un set vide) veut dire « aucun choix manuel
-    // encore » — c'est seulement dans ce cas que l'année la plus récente s'ouvre par défaut.
+    // encore » : c'est seulement dans ce cas que l'année la plus récente s'ouvre par défaut.
     expandedYears: Set<Int>?,
     onExpandedYearsChanged: (Set<Int>?) -> Unit,
     scrollState: ScrollState,
@@ -1215,7 +1215,7 @@ private fun JournalPopulatedList(
     // rien (RIC-65 écran 3).
     val bilanStats = remember(tracks, activeCalibration) { aggregateStats(tracks, activeCalibration) }
     // RIC-19 : bivouacCount découle de dayCount, toujours connu (contrairement aux dates, qui
-    // dépendent d'un horodatage GPX exploitable) — voir JournalDayInfo.bivouacCount.
+    // dépendent d'un horodatage GPX exploitable) : voir JournalDayInfo.bivouacCount.
     val bilanBivouacCount = remember(tracks, dayInfoByTrackId) {
         tracks.sumOf { dayInfoByTrackId[it.id]?.bivouacCount ?: 0 }
     }
@@ -1252,7 +1252,7 @@ private fun JournalPopulatedList(
             }
         }
         if (filteredTracks.isEmpty()) {
-            // RIC-65 écran 3 : les traces existent, seul le filtre actif n'en retient aucune —
+            // RIC-65 écran 3 : les traces existent, seul le filtre actif n'en retient aucune :
             // registre visuel proche de l'écran 1 mais sans CTA, rien à importer ici.
             Box(modifier = Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1274,7 +1274,7 @@ private fun JournalPopulatedList(
             }
             return@Column
         }
-        // RIC-113 : plus de "tout afficher" sans rien choisir — sur un grand Journal (des
+        // RIC-113 : plus de "tout afficher" sans rien choisir : sur un grand Journal (des
         // dizaines de traces) ça revenait à reparser et superposer tout le Journal d'un coup,
         // lent et illisible. La ligne n'existe donc plus dans ce cas, pas juste désactivée
         // ("libérer l'espace"). Elle reste pour une sélection manuelle d'au moins 2 traces
@@ -1293,7 +1293,7 @@ private fun JournalPopulatedList(
             ) {
                 OutlinedButton(
                     onClick = if (calibrationSelectionActive) onConfirmCalibrationSelection else onShowOnMap,
-                    // A calibration fit needs at least 2 traces (see MIN_TRACKS_FOR_CALIBRATION) — the
+                    // A calibration fit needs at least 2 traces (see MIN_TRACKS_FOR_CALIBRATION); the
                     // ordinary "show on map" action has no such floor, 0 or 1 is a perfectly normal
                     // selection there.
                     enabled = !calibrationSelectionActive ||
@@ -1375,10 +1375,10 @@ private data class YearGroup(
 )
 
 // Duration is recomputed from the aggregate distance/gain under the *current* calibration rather
-// than summed from each entry's own stored estimate — those were frozen at whatever calibration
+// than summed from each entry's own stored estimate: those were frozen at whatever calibration
 // was active when each hike was imported, so summing them would mix calibrations together instead
 // of reflecting the one currently active (BIV-16 feedback: the Planification list had the same
-// staleness, fixed the same way — see TrackStatsCalculator.recomputeDuration).
+// staleness, fixed the same way; see TrackStatsCalculator.recomputeDuration).
 //
 // Partagé entre les en-têtes d'année et la carte Bilan (RIC-65) : le total de l'écran et la somme
 // de ses sections doivent tomber juste l'un par rapport à l'autre, ce que deux calculs séparés ne
@@ -1409,7 +1409,7 @@ private fun groupByYear(tracks: List<LoggedTrackEntity>, activeCalibration: Spee
 }
 
 // Muted, like Planification's own "Total" row once a trace has several segments (StatsRows with
-// muted = true there too) — color is reserved for a single hike's own stats, not a roll-up of
+// muted = true there too): color is reserved for a single hike's own stats, not a roll-up of
 // several, so the two read as visually distinct levels rather than blurring together.
 @Composable
 private fun YearHeader(
@@ -1428,7 +1428,7 @@ private fun YearHeader(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             // A dedicated checkbox rather than making the whole header row selectable (unlike
-            // individual entries below) — the header already owns the expand/collapse tap zone.
+            // individual entries below): the header already owns the expand/collapse tap zone.
             // Tri-state: some-but-not-all of the year's entries selected shows as indeterminate,
             // rather than snapping to either extreme.
             if (selectionModeActive) {
@@ -1489,7 +1489,7 @@ private fun JournalTrackRow(
             //
             // Le nombre de nuits et son badge reprennent trait pour trait la ligne de la liste de
             // Planification (BankedTrackRow), pour que la même information se lise pareil des deux
-            // côtés — même si ici elle se déduit du nombre de jours.
+            // côtés, même si ici elle se déduit du nombre de jours.
             val bivouacCount = dayInfo?.bivouacCount ?: 0
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
@@ -1512,7 +1512,7 @@ private fun JournalTrackRow(
     }
 }
 
-// BIV-48: rotates per *selection* (first picked = first color), not hashed like tag colors —
+// BIV-48: rotates per *selection* (first picked = first color), not hashed like tag colors:
 // a trace has no fixed identity color here, it just gets "the next one" among whatever else is
 // shown alongside it this time. Deliberately a separate palette from tags (see tagColor below):
 // tag colors must stay stable across views, these don't need to and shouldn't imply one.
@@ -1521,7 +1521,7 @@ private val MultiTracePalette = listOf(
     Color(0xFF8A6A4B), Color(0xFF00838F), Color(0xFF7E57C2), Color(0xFFD84315),
 )
 
-// Matches marker_tail_neutral (colors.xml) — same "no per-item meaning" neutral used once there
+// Matches marker_tail_neutral (colors.xml): same "no per-item meaning" neutral used once there
 // are too many traces for a legend to stay readable.
 private val MultiTraceNeutralColor = Color(0xFF616161)
 
@@ -1592,7 +1592,7 @@ private fun JournalMultiTrackContent(
             }
         } else {
             Text(
-                text = "Trop de traces pour une légende détaillée — affichage uniforme.",
+                text = "Trop de traces pour une légende détaillée : affichage uniforme.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),
@@ -1650,10 +1650,10 @@ private fun ReadOnlyBivouacRow(arrival: TrackPoint?, departure: TrackPoint?) {
 internal fun ThreeStopJournalDetail(
     entry: LoggedTrackEntity,
     track: HikeTrack,
-    // RIC-41 : un élément par jour importé, dans l'ordre — la ventilation ne s'affiche qu'au-delà
+    // RIC-41 : un élément par jour importé, dans l'ordre : la ventilation ne s'affiche qu'au-delà
     // d'un jour, même convention que les segments de Planification.
     daySegments: List<Segment> = emptyList(),
-    // Constat E : un point par jonction entre deux jours, en lecture seule — le profil les trace
+    // Constat E : un point par jonction entre deux jours, en lecture seule : le profil les trace
     // comme la Planification, mais rien ici ne se déplace ni ne se supprime.
     bivouacPoints: List<BivouacPoint> = emptyList(),
     activeCalibration: SpeedCalibration = SpeedCalibration.DEFAULT,
@@ -1690,7 +1690,7 @@ internal fun ThreeStopJournalDetail(
     photosEnabled: Boolean = true,
     photoPermissionDenied: Boolean = false,
     onOpenAppSettingsClick: () -> Unit = {},
-    // Index dans currentPhotos — le tap peut venir du bandeau ou de la galerie plate, les deux
+    // Index dans currentPhotos : le tap peut venir du bandeau ou de la galerie plate, les deux
     // ouvrent la même visionneuse hissée au niveau de l'écran (voir plus bas), pas ici.
     onPhotoClick: (Int) -> Unit = {},
 ) {
@@ -1737,7 +1737,7 @@ internal fun ThreeStopJournalDetail(
         // RIC-149 : l'abandon des photos est appelé explicitement sur chaque sortie qui n'enregistre
         // pas, et non sur un effet observant isEditing comme le faisait le repositionnement. Un
         // effet se déclencherait aussi sur la sortie par la disquette, en concurrence avec
-        // l'enregistrement qu'elle vient de lancer — course perdue d'avance sur des fichiers.
+        // l'enregistrement qu'elle vient de lancer : course perdue d'avance sur des fichiers.
         fun abandonEditing() {
             isEditing = false
             onDiscardPhotoEdits()
@@ -1747,7 +1747,7 @@ internal fun ThreeStopJournalDetail(
         // le dialogue « modifications non enregistrées » qu'elles ouvrent le cas échéant.
         fun requestExit(exit: () -> Unit) {
             // RIC-149 : une opération photo en vol interdit la sortie, y compris la sortie
-            // « propre » qui abandonnerait le brouillon — abandonEditing efface les fichiers de
+            // « propre » qui abandonnerait le brouillon : abandonEditing efface les fichiers de
             // transit, et les effacer pendant qu'on est en train de les écrire est exactement la
             // perte de photos que ce lot ferme. Rien n'est proposé à la place (pas de dialogue,
             // pas de message) : l'attente dure quelques secondes et le dialogue bloquant la
@@ -1889,7 +1889,7 @@ internal fun ThreeStopJournalDetail(
                     }
                     // Sur une sortie de plusieurs jours, la ligne agrégée devient un « Total » en
                     // retrait : c'est la ventilation par jour, au cran Détails, qui porte
-                    // l'information utile — même hiérarchie visuelle qu'en Planification.
+                    // l'information utile, même hiérarchie visuelle qu'en Planification.
                     if (daySegments.size > 1) {
                         Text(
                             text = "Total",
@@ -1937,7 +1937,7 @@ internal fun ThreeStopJournalDetail(
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    // RIC-41 : uniquement pour un import de plusieurs jours — sur un seul jour, la
+                    // RIC-41 : uniquement pour un import de plusieurs jours : sur un seul jour, la
                     // ligne « Total » ci-dessus dit déjà tout, une ventilation à une entrée ne
                     // serait que du bruit.
                     if (daySegments.size > 1) {
@@ -1948,7 +1948,7 @@ internal fun ThreeStopJournalDetail(
                                 Column(modifier = Modifier.padding(vertical = 10.dp)) {
                                     // RIC-112 : jour de semaine + quantième réels plutôt qu'un ordinal,
                                     // tirés du même horodatage GPX que dayStartDates ci-dessus. Repli sur
-                                    // "Jour N" si ce jour précis n'a pas d'horodatage exploitable — un
+                                    // "Jour N" si ce jour précis n'a pas d'horodatage exploitable : un
                                     // trou isolé ne doit pas casser la ventilation des autres jours.
                                     val dayLabel = segment.points.firstOrNull()?.time
                                         ?.let { formatDayLabel(it) }
@@ -1959,7 +1959,7 @@ internal fun ThreeStopJournalDetail(
                                 // La nuit s'intercale entre deux jours, exactement comme la
                                 // Planification l'intercale entre deux segments : c'est la même
                                 // lecture d'un même itinéraire, seulement figée. Sans action
-                                // possible ici, ni suppression ni météo — la trace est immuable et
+                                // possible ici, ni suppression ni météo : la trace est immuable et
                                 // la nuit a déjà eu lieu.
                                 val bivouac = bivouacPoints.getOrNull(index)
                                 if (bivouac != null) {
@@ -2093,7 +2093,7 @@ internal fun ThreeStopJournalDetail(
                     }
                     // RIC-152 : tout le bandeau Photos, d'un bloc. Débrayée, la
                     // fonctionnalité ne laisse rien derrière elle ici, pas même un titre de
-                    // section vide — et la carte n'a pas non plus de marqueur ni de bulle
+                    // section vide, et la carte n'a pas non plus de marqueur ni de bulle
                     // photo, currentPhotos étant déjà vide en amont (voir JournalViewModel).
                     if (photosEnabled) {
                         // RIC-149 : le séparateur qui marquait ici la frontière entre deux régimes
@@ -2102,7 +2102,7 @@ internal fun ThreeStopJournalDetail(
                         // c'était un pansement sur une incohérence, pas un élément de mise en page.
                         //
                         // rememberSaveable, pas remember : même filet que viewedPhotoIndex plus
-                        // haut, pour la galerie ouverte — la rotation ne recrée plus l'Activity
+                        // haut, pour la galerie ouverte : la rotation ne recrée plus l'Activity
                         // (voir configChanges au manifest), la mort du process en arrière-plan
                         // reste possible.
                         var galleryOpen by rememberSaveable { mutableStateOf(false) }
@@ -2134,7 +2134,7 @@ internal fun ThreeStopJournalDetail(
                             // pendant un import a été retiré, le dialogue bloquant le remplace.
                             // Il ne disait que « quelque chose tourne », sans dire quoi ni
                             // combien il en restait, et il était en marge d'un écran qui, lui,
-                            // restait entièrement manipulable — croix comprise.
+                            // restait entièrement manipulable, croix comprise.
                             if (isEditing) {
                                 TextButton(onClick = onAddPhotosClick) { Text("Ajouter") }
                             }
@@ -2246,7 +2246,7 @@ internal fun ThreeStopJournalDetail(
             AlertDialog(
                 onDismissRequest = { pendingExit = null },
                 title = { Text("Modifications non enregistrées") },
-                // RIC-149 : les photos sont citées avec les tags et la note — depuis qu'elles
+                // RIC-149 : les photos sont citées avec les tags et la note : depuis qu'elles
                 // obéissent au même mode édition, « ne pas enregistrer » jette aussi les photos
                 // ajoutées et rend celles qu'on venait de supprimer.
                 text = { Text("Les modifications en cours (tags, note, photos) ne seront pas conservées.") },
@@ -2317,7 +2317,7 @@ internal fun addPhotosOutcome(
 
 /**
  * RIC-43 : la page « informations sur l'application » du système, seul endroit où se défait un
- * refus de permission devenu définitif — Android ne réaffiche plus d'invite à ce stade, et rien
+ * refus de permission devenu définitif : Android ne réaffiche plus d'invite à ce stade, et rien
  * dans l'app ne peut la rouvrir.
  *
  * runCatching parce qu'un Context sans activité pour l'accueillir (constructeur ROM exotique,

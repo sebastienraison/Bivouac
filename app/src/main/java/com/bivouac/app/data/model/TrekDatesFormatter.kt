@@ -9,7 +9,7 @@ import java.util.Locale
  * 1er et 2 avril 2026 ». Jusqu'ici une sortie de trois jours s'y affichait comme une sortie d'un
  * jour, avec la seule date de départ, et rien ne la distinguait.
  *
- * Objet pur, sans dépendance Android, pour être testable hors appareil — même raison que
+ * Objet pur, sans dépendance Android, pour être testable hors appareil : même raison que
  * [com.bivouac.app.data.db.ImportDayOrdering] et [DayJunctions].
  */
 object TrekDatesFormatter {
@@ -26,7 +26,7 @@ object TrekDatesFormatter {
      * l'horodatage est inconnu (GPX sans date) sont absents de la liste : mieux vaut afficher les
      * dates connues que d'inventer les autres.
      *
-     * Renvoie null quand il n'y a rien d'utile à dire, c'est-à-dire aucune date ou une seule — la
+     * Renvoie null quand il n'y a rien d'utile à dire, c'est-à-dire aucune date ou une seule : la
      * date de départ seule est déjà affichée par ailleurs, la répéter n'apprendrait rien.
      *
      * Deux jours se citent (« 12 et 13 mai 2025 »), au-delà on encadre (« du 3 au 6 mars 2026 »).

@@ -26,7 +26,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 
-// RIC-43 : galerie plate en complément du placement sur la trace — pour qui veut juste feuilleter
+// RIC-43 : galerie plate en complément du placement sur la trace : pour qui veut juste feuilleter
 // sans passer par la carte. Tap sur une vignette ouvre la visionneuse plein écran au bon index.
 @Composable
 internal fun PhotoGalleryDialog(

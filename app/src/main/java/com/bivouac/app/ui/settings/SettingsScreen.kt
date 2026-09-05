@@ -93,7 +93,7 @@ private const val BIVOUAC_GITHUB_URL = "https://github.com/sebastienraison/Bivou
 /**
  * Réglages (BIV-16): Vitesse personnalisée, fonctions non libres, sauvegarde/restauration
  * (BIV-66) et crédits. Itinéraires (BIV-23, future clé API OpenRouteService) has a reserved slot
- * in the ticket but no UI yet — nothing to render until a feature actually consumes it.
+ * in the ticket but no UI yet: nothing to render until a feature actually consumes it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -125,7 +125,7 @@ fun SettingsScreen(
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
         uri?.let { viewModel.backup(it) }
     }
-    // Picking a file only stages it — restoring overwrites the current database, so it still
+    // Picking a file only stages it: restoring overwrites the current database, so it still
     // needs an explicit confirmation below before viewModel.restore() actually runs.
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
     // "*/*" rather than a strict zip mimeType: several file pickers/providers don't tag a .zip
@@ -136,7 +136,7 @@ fun SettingsScreen(
 
     // Même en-tête que l'accueil du Journal (RIC-65), via le composant partagé AppScreenHeader :
     // une première version recopiée à la main avait laissé le titre sur la couleur de texte par
-    // défaut (noire), faute d'être posée dans un Surface/Scaffold comme celle du Journal — invisible
+    // défaut (noire), faute d'être posée dans un Surface/Scaffold comme celle du Journal : invisible
     // en thème clair par coïncidence, noir sur noir en thème sombre. Scaffold fournit ce Surface.
     Scaffold(
         modifier = modifier,
@@ -175,14 +175,14 @@ fun SettingsScreen(
                 onToggle = viewModel::setPhotosEnabled,
                 storage = photoStorage,
                 onPurgeClick = viewModel::requestPhotoPurge,
-                // RIC-158 : même registre que Sauvegarder/Restaurer ci-dessous — un import Journal
+                // RIC-158 : même registre que Sauvegarder/Restaurer ci-dessous : un import Journal
                 // ou Planification en vol grise la purge aussi.
                 purgeLocked = ongoingOperation != null,
             )
             DataSection(
                 lastBackupAtMillis = lastBackupAtMillis,
                 // RIC-156 : un seul drapeau pour les deux boutons, et il vient du registre commun
-                // au process — un import de photos en cours dans le Journal les grise aussi.
+                // au process : un import de photos en cours dans le Journal les grise aussi.
                 operationsLocked = ongoingOperation != null,
                 onBackupClick = { backupLauncher.launch(suggestedBackupFileName()) },
                 onRestoreClick = { restoreLauncher.launch(arrayOf("*/*")) },
@@ -246,7 +246,7 @@ fun SettingsScreen(
     }
 
     // RIC-158 : censé être inatteignable, le bouton de purge étant grisé dès qu'une autre
-    // opération tourne — reste écrit pour la même raison défensive que backupError ci-dessus.
+    // opération tourne, reste écrit pour la même raison défensive que backupError ci-dessus.
     photoPurgeError?.let { message ->
         AlertDialog(
             onDismissRequest = viewModel::dismissPhotoPurgeError,
@@ -379,10 +379,10 @@ private fun SpeedCalibrationSection(
     onChooseTracksClick: () -> Unit,
 ) {
     // Auto (whole Journal) and Sélection (a subset of it) both need at least
-    // MIN_TRACKS_FOR_CALIBRATION hikes to ever compute more than the default — gated on the
+    // MIN_TRACKS_FOR_CALIBRATION hikes to ever compute more than the default: gated on the
     // Journal's total rather than on Sélection's own confirmed count, since that's the real
     // ceiling either mode can reach (BIV-16 recette). Whichever mode is already active stays
-    // reachable even if the Journal has since shrunk below that floor — see the note below.
+    // reachable even if the Journal has since shrunk below that floor; see the note below.
     val calibrationModesUsable = journalTrackCount >= SpeedCalibrationCalculator.MIN_TRACKS_FOR_CALIBRATION
     SettingsSection(label = "Vitesse personnalisée") {
         SettingsRow(
@@ -398,7 +398,7 @@ private fun SpeedCalibrationSection(
                     selected = candidate == mode,
                     onClick = { onModeSelected(candidate) },
                     // Never locks the user OUT of their own current mode just because the Journal
-                    // shrank after the fact — only blocks switching INTO Auto/Sélection from
+                    // shrank after the fact: only blocks switching INTO Auto/Sélection from
                     // somewhere else when there isn't enough data for either to mean anything.
                     enabled = candidate == SpeedCalibrationMode.MANUAL || candidate == mode || calibrationModesUsable,
                     shape = SegmentedButtonDefaults.itemShape(index = index, count = SpeedCalibrationMode.entries.size),
@@ -437,15 +437,15 @@ private fun SpeedCalibrationSection(
                 SpeedCalibrationMode.SELECTION -> {
                     Text(
                         when (selectedTrackCount) {
-                            0 -> "Aucune trace choisie pour l'instant — calibration par défaut en attendant."
+                            0 -> "Aucune trace choisie pour l'instant : calibration par défaut en attendant."
                             // A single hike can't separate two unknowns (vitesse et pénalité D+)
-                            // from one another — the maths behind CalibrationStatGrid genuinely
+                            // from one another: the maths behind CalibrationStatGrid genuinely
                             // has no way to isolate D+ from just one data point, so it's kept at
                             // sa valeur par défaut rather than showing a number that looks computed
                             // but isn't. Same reasoning applies with more traces if their profil
                             // (rapport dénivelé/distance) est trop similaire d'une trace à l'autre.
                             1 -> "Calculée à partir d'une seule trace : la vitesse s'ajuste, mais la " +
-                                "pénalité D+ ne peut pas être isolée avec un seul point de mesure — " +
+                                "pénalité D+ ne peut pas être isolée avec un seul point de mesure, " +
                                 "elle reste à sa valeur par défaut. Choisis au moins 2 randonnées de " +
                                 "profils différents (plate et pentue) pour l'affiner aussi."
                             else -> "Calculées à partir de $selectedTrackCount traces choisies dans le Journal."
@@ -461,7 +461,7 @@ private fun SpeedCalibrationSection(
                 }
             }
 
-            // RIC-115 : provision de pause — aucune séparation visuelle avec le bloc
+            // RIC-115 : provision de pause : aucune séparation visuelle avec le bloc
             // vitesse/pénalité ci-dessus, même carte, même niveau hiérarchique. Visible dans les
             // 3 modes (contrairement aux champs de saisie/capsules ci-dessus, qui divergent selon
             // le mode), à partir de la calibration effectivement active pour le mode courant.
@@ -484,12 +484,12 @@ private fun SpeedCalibrationSection(
     }
 }
 
-// Rando type purement illustrative (RIC-115) — codée en dur, ne dépend d'aucune trace réelle. Sert
+// Rando type purement illustrative (RIC-115), codée en dur, ne dépend d'aucune trace réelle. Sert
 // à rendre lisible la pénalité D+ (m/km), un chiffre autrement abstrait, dans les 3 modes.
 private const val TYPICAL_HIKE_DISTANCE_METERS = 15_000.0
 private const val TYPICAL_HIKE_GAIN_METERS = 600.0
 
-// Base de l'aperçu de provision de pause (RIC-115) — 6h de marche pure, également codées en dur.
+// Base de l'aperçu de provision de pause (RIC-115) : 6h de marche pure, également codées en dur.
 private const val PAUSE_PREVIEW_WALKING_MINUTES = 360.0
 
 @Composable
@@ -538,7 +538,7 @@ private fun PausePreviewRow(pauseFractionPercent: Double) {
     }
 }
 
-// RIC-115 : bornes du curseur — 0 à 35 %, trois libellés qualitatifs répartis sur la plage, pas de
+// RIC-115 : bornes du curseur : 0 à 35 %, trois libellés qualitatifs répartis sur la plage, pas de
 // graduation numérique visible à côté des libellés (voir la maquette biv16-reglages-mockup.html).
 // 35 % et non 15-20 % : la médiane réelle mesurée est 12,9 %, le p90 à 26,6 % (CR_RIC115...).
 private const val PAUSE_SLIDER_MAX_PERCENT = 35f
@@ -553,7 +553,7 @@ private fun PauseStatCard(
         modifier = Modifier
             .fillMaxWidth()
             // Le remplissage gris plein (surfaceVariant) est ce qui fait lire cette capsule comme
-            // désactivée, quel que soit l'état du texte/slider dedans — c'est le même traitement
+            // désactivée, quel que soit l'état du texte/slider dedans : c'est le même traitement
             // que les capsules vitesse/D+ en lecture seule (StatBox). En Manuel, elles n'utilisent
             // plus StatBox du tout mais un OutlinedTextField (contour, pas de fond) ; un simple
             // contour ici plutôt qu'un remplissage retrouve ce même signal "éditable".
@@ -571,7 +571,7 @@ private fun PauseStatCard(
             "${pauseFractionPercent.roundToInt()} %",
             style = MaterialTheme.typography.titleMedium,
             // RIC-115 : cette capsule reste la même en Manuel qu'en Auto/Sélection (seul le
-            // slider ci-dessous bascule enabled/disabled) — contrairement à vitesse/D+, qui
+            // slider ci-dessous bascule enabled/disabled), contrairement à vitesse/D+, qui
             // passent d'une capsule grise en lecture seule à un OutlinedTextField noir en édition.
             // Sans ce contraste, la capsule pause a l'air désactivée même quand elle est éditable.
             color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -616,7 +616,7 @@ private fun SpeedCalibrationMode.label(): String = when (this) {
 }
 
 // Keeps its own draft text rather than binding directly to the persisted value, so typing "3." or
-// briefly clearing the field doesn't fight DataStore's async round trip — a keystroke only commits
+// briefly clearing the field doesn't fight DataStore's async round trip: a keystroke only commits
 // once it parses to a plausible positive number; anything else (empty, a bare "-") is left as
 // local, uncommitted editing state.
 @Composable
@@ -627,8 +627,8 @@ private fun ManualCalibrationFields(manual: SpeedCalibration, onSpeedChanged: (D
             unit = "km/h",
             value = manual.walkingSpeedKmh,
             valueRange = 0.1..20.0,
-            // Caps at "20,0" / "19,9" (4 chars) — the longest a valid value in this range can be
-            // with one decimal digit — so typing past it is blocked the same way as Pénalité D+,
+            // Caps at "20,0" / "19,9" (4 chars), the longest a valid value in this range can be
+            // with one decimal digit, so typing past it is blocked the same way as Pénalité D+,
             // not silently rejected only at parse/commit time.
             maxLength = 4,
             onValueCommitted = onSpeedChanged,
@@ -638,7 +638,7 @@ private fun ManualCalibrationFields(manual: SpeedCalibration, onSpeedChanged: (D
             label = "Pénalité D+",
             unit = "m",
             // "+1 km / " prefix mirrors how Auto/Sélection show this same value read-only
-            // (CalibrationStatGrid: "+1 km / 100 m") — a bare "100 m/km" needed translating in
+            // (CalibrationStatGrid: "+1 km / 100 m"): a bare "100 m/km" needed translating in
             // your head to line up with that phrasing every time you switched modes.
             prefix = "+1 km / ",
             value = manual.elevationGainPenaltyMetersPerKm,
@@ -651,7 +651,7 @@ private fun ManualCalibrationFields(manual: SpeedCalibration, onSpeedChanged: (D
     }
 }
 
-// The unit sits in a trailing suffix rather than inside the label — "Vitesse à plat (km/h)" was
+// The unit sits in a trailing suffix rather than inside the label: "Vitesse à plat (km/h)" was
 // wide enough to wrap onto two lines in a half-width field, and the other two modes already show
 // the unit next to the value (CalibrationStatGrid) rather than folded into a label.
 @Composable
@@ -663,10 +663,10 @@ private fun NumberField(
     onValueCommitted: (Double) -> Unit,
     modifier: Modifier = Modifier,
     prefix: String? = null,
-    // No limit by default — only Pénalité D+ needs one, to stop a 4th digit from ever appearing
+    // No limit by default: only Pénalité D+ needs one, to stop a 4th digit from ever appearing
     // rather than letting it show then get silently rejected at parse time.
     maxLength: Int = Int.MAX_VALUE,
-    // Pénalité D+ is entiers-only (confirmed) — rejects the comma outright rather than letting it
+    // Pénalité D+ is entiers-only (confirmed): rejects the comma outright rather than letting it
     // through and relying on valueRange/parsing to catch it after the fact.
     digitsOnly: Boolean = false,
 ) {
@@ -674,7 +674,7 @@ private fun NumberField(
     OutlinedTextField(
         value = draft,
         onValueChange = { text ->
-            // Shrinking is always allowed, even past maxLength — otherwise a field pre-filled with
+            // Shrinking is always allowed, even past maxLength: otherwise a field pre-filled with
             // a value longer than the cap (old data, or one entered before this limit existed)
             // could never be edited at all, not even to delete a character.
             val underLimit = text.length <= maxLength || text.length < draft.length
@@ -690,7 +690,7 @@ private fun NumberField(
         textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End),
         keyboardOptions = KeyboardOptions(keyboardType = if (digitsOnly) KeyboardType.Number else KeyboardType.Decimal),
         // Typing a value that parses but sits outside valueRange is allowed to show as-is while
-        // the user is still typing (never committed — see onValueChange above) but must not
+        // the user is still typing (never committed, see onValueChange above) but must not
         // survive once they're done editing: revert to the last valid committed value on blur.
         // Also catches a draft that starts out invalid for reasons typing alone can't produce,
         // e.g. a value restored from an old backup that predates this field's constraints.
@@ -705,7 +705,7 @@ private fun NumberField(
     )
 }
 
-// French convention (comma) to match every other number shown on this screen — accepting a typed
+// French convention (comma) to match every other number shown on this screen: accepting a typed
 // "." in onValueChange above is purely an input convenience, not what gets displayed back.
 private fun formatNumber(value: Double): String =
     if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString().replace('.', ',')
@@ -790,7 +790,7 @@ private fun JournalPhotosSection(
             OutlinedButton(
                 onClick = onPurgeClick,
                 // RIC-158 : même grisage que Sauvegarder/Restaurer pendant qu'une autre opération
-                // longue tourne — la purge en est une elle aussi désormais.
+                // longue tourne : la purge en est une elle aussi désormais.
                 enabled = !purgeLocked,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
@@ -803,7 +803,7 @@ private fun JournalPhotosSection(
     }
 }
 
-/** RIC-152 : « 12 photos, 34,5 Mo » — ce que la purge va retirer, lignes et fichiers. */
+/** RIC-152 : « 12 photos, 34,5 Mo » : ce que la purge va retirer, lignes et fichiers. */
 internal fun formatPhotoStorage(storage: PhotoStorageSummary): String {
     val photos = if (storage.count == 1) "1 photo" else "${storage.count} photos"
     return "$photos, ${formatBytes(storage.totalBytes)}"
@@ -811,7 +811,7 @@ internal fun formatPhotoStorage(storage: PhotoStorageSummary): String {
 
 /**
  * Taille lisible en unités décimales (Mo = 10^6 octets), comme les fabricants et les Réglages
- * d'Android l'affichent — et non en Mio, qui donnerait un chiffre différent de celui que le système
+ * d'Android l'affichent, et non en Mio, qui donnerait un chiffre différent de celui que le système
  * annonce pour la même app, sans que personne puisse expliquer l'écart.
  */
 internal fun formatBytes(bytes: Long): String = when {
@@ -840,10 +840,10 @@ private fun DataSection(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             // Default Button/OutlinedButton content padding (24dp horizontal) left "Sauvegarder"
-            // wrapping onto two lines once squeezed into a half-width slot alongside its icon —
+            // wrapping onto two lines once squeezed into a half-width slot alongside its icon:
             // trimmed padding and a smaller icon/gap buy back just enough width.
             val buttonContentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
-            // RIC-156 : plus de tourniquet dans le bouton — le dialogue bloquant est désormais le
+            // RIC-156 : plus de tourniquet dans le bouton : le dialogue bloquant est désormais le
             // seul indicateur d'avancement, et il applique l'anti-flash. Un tourniquet ici le
             // court-circuiterait en clignotant sur les opérations très courtes, exactement le
             // défaut qu'on corrige. Reste le grisage, qui est ce qui rend le chevauchement
@@ -880,7 +880,7 @@ private fun formatBackupTimestamp(epochMillis: Long): String =
 private data class CreditLink(val label: String, val url: String)
 
 // stax-api rides alongside aalto-xml (see the comment on the aalto-xml/stax-api dependencies in
-// app/build.gradle.kts) to make GPX parsing work at all on Android — a real bundled third-party
+// app/build.gradle.kts) to make GPX parsing work at all on Android: a real bundled third-party
 // library, not just an internal implementation detail, so it earns its own credit here too.
 private val MAP_LAYER_CREDITS = listOf(
     CreditLink("Esri", "https://www.esri.com"),

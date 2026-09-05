@@ -17,7 +17,7 @@ import org.junit.Test
  * gpx/, gpx-planif/, photos/) ; l'import et l'enregistrement de photos du Journal touchent aux
  * mêmes photos/, la purge de photos (RIC-158) aussi, et les imports Journal/Planification (RIC-158)
  * touchent respectivement gpx/ et gpx-planif/. Aucune paire, quel que soit l'ordre, ne doit pouvoir
- * se chevaucher — y compris deux instances de la même opération.
+ * se chevaucher : y compris deux instances de la même opération.
  */
 class ExclusiveOperationsTest {
 

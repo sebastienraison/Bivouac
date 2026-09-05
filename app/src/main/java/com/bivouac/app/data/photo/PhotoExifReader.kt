@@ -14,7 +14,7 @@ import java.util.Locale
 
 // Ce qu'on retient d'une photo à l'ajout (RIC-43) : takenAtMillis/latitude/longitude alimentent
 // LoggedTrackPhotoEntity et le placement sur la trace (voir PhotoPositionCorrelator). Tout est
-// nullable — beaucoup de photos (capture d'écran, image envoyée par un tiers, appareil sans GPS)
+// nullable : beaucoup de photos (capture d'écran, image envoyée par un tiers, appareil sans GPS)
 // n'ont ni l'un ni l'autre, cas déjà prévu par la spec ("rien n'est perdu, juste moins bien
 // situé").
 //
@@ -48,7 +48,7 @@ object PhotoExifReader {
      * Repli explicite sur l'Uri ordinaire à la moindre difficulté : setRequireOriginal ne
      * s'applique qu'aux Uri MediaStore, et l'ouverture peut lever une SecurityException si la
      * permission a été retirée entre la vérification et la lecture. On lit alors sans GPS, ce qui
-     * est exactement le comportement d'avant — dégradé, jamais bloqué.
+     * est exactement le comportement d'avant, dégradé, jamais bloqué.
      */
     fun read(resolver: ContentResolver, uri: Uri, requireOriginal: Boolean = false): PhotoExifData {
         if (requireOriginal && Build.VERSION.SDK_INT >= 29) {
@@ -65,7 +65,7 @@ object PhotoExifReader {
 
     /**
      * Surcharge par flux, séparée de la lecture d'Uri ci-dessus pour que la logique EXIF soit
-     * testable sans ContentResolver ni appareil — voir PhotoExifReaderTest, qui lui passe une
+     * testable sans ContentResolver ni appareil : voir PhotoExifReaderTest, qui lui passe une
      * fixture JPEG minimale écrite par ExifInterface lui-même.
      */
     fun read(input: InputStream): PhotoExifData {
@@ -85,7 +85,7 @@ object PhotoExifReader {
         )
     }
 
-    // L'horodatage de prise de vue reconstitué, et la façon dont son fuseau a été obtenu — les
+    // L'horodatage de prise de vue reconstitué, et la façon dont son fuseau a été obtenu : les
     // deux sont indissociables, d'où un porteur plutôt qu'un simple Long? rendu.
     private data class OriginalDateTime(val millis: Long, val zoneCertain: Boolean)
 
@@ -96,7 +96,7 @@ object PhotoExifReader {
      * Pourquoi ne pas simplement appeler `ExifInterface.getDateTimeOriginal()` : exifinterface
      * 1.3.7 parse cette date avec un SimpleDateFormat dont le TimeZone est forcé à UTC (vérifié
      * dans le bytecode de la lib) et n'applique un décalage que si le tag d'offset est présent.
-     * Sans ce tag — le cas de la grande majorité des appareils — l'heure murale de la prise de vue
+     * Sans ce tag (le cas de la grande majorité des appareils), l'heure murale de la prise de vue
      * est donc rendue comme de l'UTC, alors que les points d'une trace GPX portent du vrai UTC. En
      * France l'été, l'écart systématique est de 2 h, très au-delà de la tolérance de
      * [PhotoPositionCorrelator] : la corrélation par horodatage renvoyait « aucune position » sans

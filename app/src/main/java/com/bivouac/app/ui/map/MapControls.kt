@@ -30,7 +30,7 @@ fun MapControls(
     onRecenterClick: () -> Unit,
     modifier: Modifier = Modifier,
     // BIV-16: Satellite (Esri) is one of the two features cut by "Désactiver les fonctions non
-    // libres" — removed from the picker entirely rather than shown disabled, since the ViewModels
+    // libres": removed from the picker entirely rather than shown disabled, since the ViewModels
     // already fall the active layer back off it the moment this is true.
     nonFreeFeaturesDisabled: Boolean = false,
 ) {
@@ -38,7 +38,7 @@ fun MapControls(
     val availableLayers = MapLayer.entries.filterNot { nonFreeFeaturesDisabled && it == MapLayer.SATELLITE }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        // The dropdown must live inside its own Box, scoped to just this button — as a direct
+        // The dropdown must live inside its own Box, scoped to just this button: as a direct
         // Column child (a sibling of the recenter button) its expand/collapse animation briefly
         // reports a non-zero measured height, which the Column's spacedBy() picks up and uses to
         // shove the recenter button down and back up.

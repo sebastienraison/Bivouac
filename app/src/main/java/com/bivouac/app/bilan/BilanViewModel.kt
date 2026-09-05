@@ -14,12 +14,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * RIC-19 : écran Bilan, prolongement du Journal — pas de filtre/sélection ici, contrairement au
+ * RIC-19 : écran Bilan, prolongement du Journal : pas de filtre/sélection ici, contrairement au
  * Journal (RIC-65 écran 3), le Bilan reste toujours sur l'intégralité de la banque.
  *
  * Recalculé au complet à chaque [refresh] plutôt que via des Flow combinés comme JournalViewModel :
  * BilanStatsCalculator.compute() est un calcul en mémoire pur sur des colonnes déjà dénormalisées
- * (aucun reparsing de GPX), donc bon marché même sur une banque fournie — plus simple à lire qu'un
+ * (aucun reparsing de GPX), donc bon marché même sur une banque fournie, plus simple à lire qu'un
  * graphe de `combine` pour un écran qui n'a, par construction, qu'un seul état à recalculer.
  */
 class BilanViewModel(application: Application) : AndroidViewModel(application) {

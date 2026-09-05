@@ -28,14 +28,14 @@ abstract class BivouacDatabase : RoomDatabase() {
 
     companion object {
         // Single source of truth for both the @Database version above and the BIV-66
-        // restore-time check ("this backup is newer than the app can open") — a real filename,
+        // restore-time check ("this backup is newer than the app can open"): a real filename,
         // not a comment reference, so the two can never silently drift apart.
         const val SCHEMA_VERSION = 16
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
 
-        // v1.2.0 (schema v1) is tagged and pinned in the F-Droid MR — real installs may still be
+        // v1.2.0 (schema v1) is tagged and pinned in the F-Droid MR: real installs may still be
         // on it. Adds banked_track (BIV-15, "banque de traces"), verbatim from schemas/2.json.
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -50,7 +50,7 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
-        // v1.3.0 (schema v2) is likewise tagged. Versions 3-4 never existed — the schema number
+        // v1.3.0 (schema v2) is likewise tagged. Versions 3-4 never existed: the schema number
         // jumped straight to 5 in an unreleased Journal dev commit, so v2 is the only other real
         // starting point. Adds logged_track and logged_track_day, verbatim from schemas/5.json.
         val MIGRATION_2_5 = object : Migration(2, 5) {
@@ -135,7 +135,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         //
         // Lecture par tranches via substr(), jamais la colonne entière : un db.query() dans une
         // migration passe par un SQLiteCursor ordinaire adossé à la même CursorWindow (~2 Mo/ligne)
-        // que le reste de l'app — lire rawGpxContent d'un coup reproduirait exactement le
+        // que le reste de l'app : lire rawGpxContent d'un coup reproduirait exactement le
         // SQLiteBlobTooBigException que cette migration répare (vérifié empiriquement par
         // BivouacDatabaseMigrationTest sur un contenu > 2 Mo). Android n'exposant pas l'API blob
         // incrémentale de SQLite, substr() est le canal de lecture bornée disponible ; il compte en
@@ -204,7 +204,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Trois ALTER TABLE ADD COLUMN et rien d'autre, délibérément : ni recréation de table, ni
         // copie, ni remplissage. Le rattrapage des lignes existantes a besoin de lire et de parser
         // tous les fichiers de la banque, ce qui se compte en secondes sur une archive un peu
-        // fournie — le faire ici figerait l'app à la première ouverture d'après mise à jour, sans
+        // fournie : le faire ici figerait l'app à la première ouverture d'après mise à jour, sans
         // le moindre retour à l'écran. Il se fait donc en arrière-plan, une fois la base ouverte
         // (voir LoggedTrackBackfill), et les lecteurs savent retomber sur l'ancien chemin tant
         // qu'une ligne n'est pas rattrapée.
@@ -220,16 +220,16 @@ abstract class BivouacDatabase : RoomDatabase() {
         }
 
         // RIC-97 : même traitement que migration7To8 (RIC-62), pour banked_track.gpxContent et
-        // saved_track.gpxContent cette fois — pas de crash constaté à ce jour sur ces deux tables
+        // saved_track.gpxContent cette fois : pas de crash constaté à ce jour sur ces deux tables
         // (mesure prod : ≈500 Ko max), mais aucune borne structurelle ne les protège de la limite
         // CursorWindow (~2 Mo/ligne) : un import GPS dense (≈1 point/s) sur une seule journée, ou
         // une trace dupliquée depuis un trek multi-jours du Journal (RIC-40, qui concatène tous les
-        // jours en un seul HikeTrack avant réécriture), l'atteint déjà en ordre de grandeur — voir
+        // jours en un seul HikeTrack avant réécriture), l'atteint déjà en ordre de grandeur : voir
         // CR_RIC97 pour le calcul complet.
         //
         // pointCount de banked_track part dans le même mouvement : colonne écrite mais jamais lue
         // (vérifié par grep, zéro usage de `.pointCount` sur du BankedTrack*), et la table est de
-        // toute façon recréée pour sortir gpxContent — pas de migration à part rien que pour ça.
+        // toute façon recréée pour sortir gpxContent, pas de migration à part rien que pour ça.
         //
         // Même schéma recréer-copier-basculer et lecture par tranches (substr()) que migration7To8
         // (cible : schemas/10.json). saved_track est un singleton (au plus une ligne, id fixe) mais
@@ -316,10 +316,10 @@ abstract class BivouacDatabase : RoomDatabase() {
 
         // RIC-109 : sept sommes par segment de 200 m (voir TrackSegmenter/DaySegmentAggregate), qui
         // remplacent le calcul par ligne-rando de SpeedCalibrationCalculator par un calcul par
-        // segments à l'intérieur de chaque rando — stable même sur un petit Journal (voir
+        // segments à l'intérieur de chaque rando : stable même sur un petit Journal (voir
         // CR_CALIBRATION_SEGMENTS.md). Même schéma que MIGRATION_8_9 : sept ALTER TABLE ADD COLUMN,
         // colonnes nullables, aucune recréation de table. Le rattrapage des lignes déjà rattrapées
-        // par RIC-98/99 (contentHash non nul) doit repasser une fois de plus — voir
+        // par RIC-98/99 (contentHash non nul) doit repasser une fois de plus : voir
         // LoggedTrackBackfill, dont la requête de sélection change de contentHash IS NULL à
         // flatCount IS NULL pour cette raison précise.
         val MIGRATION_10_11 = object : Migration(10, 11) {
@@ -341,7 +341,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // nullable, aucune recréation de table. Même relais de marqueur que RIC-109 avait déjà
         // appliqué (contentHash -> flatCount) : le rattrapage repasse une fois de plus sur les
         // lignes déjà rattrapées jusqu'à RIC-109 (flatCount non nul, stoppedHours encore nul après
-        // ce simple ADD COLUMN) — voir LoggedTrackDao, dont la requête de sélection change de
+        // ce simple ADD COLUMN) : voir LoggedTrackDao, dont la requête de sélection change de
         // flatCount IS NULL à stoppedHours IS NULL pour cette raison précise.
         val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -349,12 +349,12 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
-        // RIC-19 : même patron que MIGRATION_8_9 et MIGRATION_10_11 — trois ALTER TABLE ADD COLUMN,
+        // RIC-19 : même patron que MIGRATION_8_9 et MIGRATION_10_11 : trois ALTER TABLE ADD COLUMN,
         // colonnes nullables (ou par défaut pour le marqueur), aucune recréation de table, aucun
         // rattrapage ici. Cible : schemas/13.json.
         //
         // Différence avec les rattrapages précédents : celui-ci (LoggedTrackBackfill.runElevation)
-        // n'est PAS lancé en tâche de fond silencieuse depuis JournalViewModel comme les autres —
+        // n'est PAS lancé en tâche de fond silencieuse depuis JournalViewModel comme les autres :
         // préférence utilisateur documentée (RIC-132 : le rattrapage fire-and-forget existant est
         // annulable si l'utilisateur quitte l'écran Journal, jugé inadapté ici). Voir
         // ElevationBackfillGate côté UI : popup bloquant + spinner au premier lancement post-
@@ -370,7 +370,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         }
 
         // RIC-135 : saved_track (l'unique ligne d'auto-save de Planification) ne retenait pas à
-        // quelle entrée de la banque, le cas échéant, la session appartenait — restoreLastTrack la
+        // quelle entrée de la banque, le cas échéant, la session appartenait : restoreLastTrack la
         // traitait donc toujours comme "jamais sauvegardée" après un redémarrage, avec un risque de
         // duplication si l'utilisateur sauvegardait à cette invite. Un seul ALTER TABLE, colonne
         // nullable, aucun rattrapage : les lignes existantes (au plus une, ce singleton n'en a
@@ -382,14 +382,14 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
-        // RIC-43 : table du socle données pour les photos associées à une sortie du Journal —
+        // RIC-43 : table du socle données pour les photos associées à une sortie du Journal :
         // voir LoggedTrackPhotoEntity. Même schéma que MIGRATION_5_6 (logged_track_tag) : table
         // neuve, FK CASCADE, aucune donnée existante à migrer. Cible : schemas/15.json.
         //
         // Table créée d'emblée avec contentHash (déduplication) et les trois colonnes de
         // métadonnées d'origine : le développement de RIC-43 les avait ajoutées au fil de l'eau,
         // en migrations séparées, mais aucune version intermédiaire n'a jamais été publiée
-        // (versionCode 8 / 2.1.0 est en v14) — une seule migration vers une table complète vaut
+        // (versionCode 8 / 2.1.0 est en v14) : une seule migration vers une table complète vaut
         // mieux qu'un empilement d'ALTER TABLE qu'aucune base réelle n'aura jamais traversé.
         // Corollaire voulu : il n'existe aucune ligne « d'avant contentHash » à rattraper.
         val MIGRATION_14_15 = object : Migration(14, 15) {
@@ -463,7 +463,7 @@ abstract class BivouacDatabase : RoomDatabase() {
 
         // RIC-97 : même lecture par tranches que writeRawGpxInChunks ci-dessus, généralisée sur la
         // table/colonne id puisque banked_track et saved_track partagent le même nom de colonne
-        // (gpxContent) — table et idColumn sont toujours des littéraux fixes de ce fichier, jamais
+        // (gpxContent) : table et idColumn sont toujours des littéraux fixes de ce fichier, jamais
         // une entrée externe, donc l'interpolation directe dans le SQL est sans risque ici.
         private fun writeGpxContentInChunks(
             db: SupportSQLiteDatabase,
@@ -517,18 +517,18 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
 
         // BIV-66: backup/restore needs the on-disk file quiescent (no open connection) while it's
-        // copied or replaced — closes the current instance and drops the singleton so the next
+        // copied or replaced: closes the current instance and drops the singleton so the next
         // getInstance() transparently reopens it (running the migration chain above against
         // whatever schema version a just-restored file has, same as a normal app update would).
         //
-        // Contrat induit (RIC-103) : personne ne doit capturer durablement l'instance ni un DAO —
+        // Contrat induit (RIC-103) : personne ne doit capturer durablement l'instance ni un DAO :
         // les repositories résolvent le leur à chaque accès, précisément pour survivre à ce cycle.
         //
         // Contrat induit (RIC-128, étendu RIC-158) : ce synchronized(this) et celui de
         // getInstance() ci-dessus partagent le même moniteur que BackupManager.backup() ET
         // BackupManager.restore() tiennent chacun (synchronized(BivouacDatabase), qui résout vers
         // cette même instance de companion object) pendant toute leur fenêtre de copie/remplacement
-        // — sans quoi un appel concurrent ici rouvrirait silencieusement la base pendant que l'un
+        // sans quoi un appel concurrent ici rouvrirait silencieusement la base pendant que l'un
         // ou l'autre manipule ses fichiers, avec le risque de perdre une écriture (backup) ou de
         // heurter un fichier en cours de remplacement (restore) sans que rien ne le signale.
         fun closeAndReset() {

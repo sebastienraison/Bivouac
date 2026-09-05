@@ -31,15 +31,15 @@ import java.util.Locale
 
 /**
  * RIC-19 §1 : capsule de totaux partagée entre le Journal (`JournalBilanCard`, en tête de liste) et
- * l'écran Bilan (en tête d'écran) — un seul composant plutôt que deux implémentations à
+ * l'écran Bilan (en tête d'écran) : un seul composant plutôt que deux implémentations à
  * resynchroniser à la main à chaque évolution du design. Contenu iso avec l'ancienne
  * `JournalBilanCard` sauf un remplacement : D- disparaît au profit du nombre de bivouacs, thème
  * central de l'app (au même titre que la distance ou le D+, une nuit dehors n'est pas qu'un
  * sous-produit du calcul d'itinéraire).
  *
  * Design repris de la maquette Bilan (référence partagée désormais, y compris pour le Journal) :
- * fond neutre `surfaceContainerHigh` — pas `secondaryContainer` orange comme l'ancienne carte du
- * Journal — et grille compacte de 4 icônes 30dp colorées, une couleur par statistique plutôt qu'une
+ * fond neutre `surfaceContainerHigh` (pas `secondaryContainer` orange comme l'ancienne carte du
+ * Journal) et grille compacte de 4 icônes 30dp colorées, une couleur par statistique plutôt qu'une
  * seule couleur de fond plein. Les 4 couleurs sont celles de [StatsRows] (distance/D+/durée) et
  * [BivouacIconColor] (`marker_bivouac`, pas `secondary` du thème Material comme utilisé par erreur
  * dans les premières explorations de cette maquette).

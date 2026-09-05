@@ -31,7 +31,7 @@ import kotlinx.coroutines.withContext
  * RIC-156 : les trois temps que le dialogue bloquant des Réglages sait annoncer.
  *
  * La restauration en a deux, et non un seul : l'extraction est la phase longue et dénombrable, le
- * remplacement est court et ne l'est pas — les fondre donnerait un compteur qui se fige à la fin
+ * remplacement est court et ne l'est pas : les fondre donnerait un compteur qui se fige à la fin
  * sans que rien n'explique pourquoi.
  */
 enum class DataOperationPhase(val title: String) {
@@ -39,7 +39,7 @@ enum class DataOperationPhase(val title: String) {
     RESTORE_EXTRACTION("Lecture de la sauvegarde"),
     RESTORE_REPLACEMENT("Restauration en cours"),
 
-    // RIC-158 : la purge des photos peut porter sur des centaines de Mo — assez long pour mériter
+    // RIC-158 : la purge des photos peut porter sur des centaines de Mo, assez long pour mériter
     // le même dialogue bloquant que la sauvegarde et la restauration, cohérence oblige.
     PHOTO_PURGE("Purge des photos en cours"),
 }
@@ -78,7 +78,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val nonFreeFeaturesDisabled: StateFlow<Boolean> = settingsPreferences.nonFreeFeaturesDisabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    // RIC-152 : activée par défaut, y compris comme valeur initiale du StateFlow — un faux
+    // RIC-152 : activée par défaut, y compris comme valeur initiale du StateFlow : un faux
     // "désactivé" le temps de la première lecture du DataStore ferait clignoter tout le bandeau
     // Photos à chaque ouverture des Réglages.
     val photosEnabled: StateFlow<Boolean> = settingsPreferences.photosEnabled
@@ -90,7 +90,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     /**
      * RIC-152 : ce que les photos occupent réellement, relevé seulement quand la fonctionnalité est
-     * désactivée — c'est le seul cas où le bouton de purge existe, et il n'y a aucune raison de
+     * désactivée : c'est le seul cas où le bouton de purge existe, et il n'y a aucune raison de
      * compter des fichiers pour ne rien en faire.
      *
      * Recalculé à chaque bascule et non une fois à l'ouverture de l'écran : désactiver puis voir
@@ -104,12 +104,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    // Non nul pendant que le dialogue de confirmation est ouvert — il porte le relevé montré au
+    // Non nul pendant que le dialogue de confirmation est ouvert : il porte le relevé montré au
     // moment du clic, pour que le dialogue chiffre exactement ce que le bouton annonçait.
     private val _photoPurgeConfirmation = MutableStateFlow<PhotoStorageSummary?>(null)
     val photoPurgeConfirmation: StateFlow<PhotoStorageSummary?> = _photoPurgeConfirmation.asStateFlow()
 
-    // RIC-158 : réservé au refus — inatteignable en pratique puisque le bouton de purge est grisé
+    // RIC-158 : réservé au refus, inatteignable en pratique puisque le bouton de purge est grisé
     // dès qu'une autre opération tourne (voir ongoingOperation), même politique défensive que
     // backupError pour un chemin oublié.
     private val _photoPurgeError = MutableStateFlow<String?>(null)
@@ -141,10 +141,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val restoreOutcome: StateFlow<RestoreOutcome?> = _restoreOutcome.asStateFlow()
 
     // Gates Auto/Sélection in the segmented control: below MIN_JOURNAL_TRACKS_FOR_CALIBRATION,
-    // neither mode has enough data to ever compute anything but the default — see
+    // neither mode has enough data to ever compute anything but the default: see
     // SpeedCalibrationCalculator's kdoc on why one data point can't separate speed from D+ penalty.
     // Snapshotted once per Settings-screen open (same refresh cadence as refreshAutoCalibration
-    // below), not observed live — consistent with the rest of this screen, and with why deleting
+    // below), not observed live: consistent with the rest of this screen, and with why deleting
     // a track elsewhere doesn't retroactively grey anything out until Réglages is reopened.
     private val _journalTrackCount = MutableStateFlow(0)
     val journalTrackCount: StateFlow<Int> = _journalTrackCount.asStateFlow()
@@ -191,7 +191,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     // RIC-115 : curseur "Pauses pendant la marche", actif en mode Manuel seulement (grisé en
-    // Auto/Sélection, voir SettingsScreen) — même politique que setManualSpeed/setManualPenalty.
+    // Auto/Sélection, voir SettingsScreen), même politique que setManualSpeed/setManualPenalty.
     fun setManualPause(pauseFractionPercent: Double) {
         viewModelScope.launch {
             settingsPreferences.setManualCalibration(
@@ -211,7 +211,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * RIC-152 : la purge est demandée, pas encore faite — le dialogue de confirmation s'ouvre.
+     * RIC-152 : la purge est demandée, pas encore faite : le dialogue de confirmation s'ouvre.
      *
      * Rien n'est jamais purgé automatiquement : désactiver la fonctionnalité continue de tout
      * conserver, et ce bouton est le seul chemin vers la suppression des photos en masse.
@@ -225,7 +225,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * RIC-158 : entre au registre d'exclusion comme la sauvegarde et la restauration — la purge
+     * RIC-158 : entre au registre d'exclusion comme la sauvegarde et la restauration : la purge
      * supprime en masse des fichiers de photos/, exactement ce que la sauvegarde zippe et ce que la
      * restauration remplace en bloc. Même discipline que backup()/restore() : verrou pris avant le
      * launch, par le clic lui-même, et levé dans un finally.
@@ -259,7 +259,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * RIC-156 : le verrou est pris AVANT le launch, comme pour les opérations photo (RIC-149) — un
+     * RIC-156 : le verrou est pris AVANT le launch, comme pour les opérations photo (RIC-149) : un
      * verrou posé dans la coroutine dépendrait du moment où elle est ordonnancée, et laisserait
      * exactement la fenêtre qu'il est censé fermer. Même raison pour la progression initiale : le
      * dialogue doit exister du fait du clic, pas d'un aller-retour d'ordonnanceur.
@@ -272,7 +272,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _dataOperationProgress.value = DataOperationProgress(DataOperationPhase.BACKUP, done = 0, total = null)
         viewModelScope.launch {
             val result = try {
-                // BackupManager stamps lastBackupAtMillis itself, before zipping — lastBackupAtMillis
+                // BackupManager stamps lastBackupAtMillis itself, before zipping: lastBackupAtMillis
                 // above picks it up reactively once the write lands, no need to set it again here.
                 BackupManager.backup(getApplication(), uri) { done, total ->
                     _dataOperationProgress.value = DataOperationProgress(DataOperationPhase.BACKUP, done, total)
@@ -323,7 +323,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * RIC-156 : le refus est censé être inatteignable — les boutons sont grisés dès qu'une
+     * RIC-156 : le refus est censé être inatteignable : les boutons sont grisés dès qu'une
      * opération tourne. Il reste écrit, et nommé, parce qu'un chemin oublié doit refuser proprement
      * plutôt que de laisser deux écritures se croiser sur les mêmes fichiers.
      */
@@ -340,7 +340,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _backupError.value = null
     }
 
-    // Only reached from the PendingRestart dialog's confirm button — see AppRestart's kdoc for
+    // Only reached from the PendingRestart dialog's confirm button: see AppRestart's kdoc for
     // why nothing short of a full process restart can safely pick up a just-restored database.
     fun confirmRestartAfterRestore() {
         AppRestart.restart(getApplication())

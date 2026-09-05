@@ -13,7 +13,7 @@ import androidx.compose.ui.unit.dp
 
 /**
  * En-tête commun aux écrans plein natif (Journal, Réglages) : titre à gauche, sélecteur de
- * section à droite. Partagé plutôt que recopié — une première duplication, entre Journal et
+ * section à droite. Partagé plutôt que recopié : une première duplication, entre Journal et
  * Réglages, avait déjà divergé en pratique : le titre de Réglages restait sur la couleur de texte
  * par défaut (noire) faute d'être posé dans un `Surface`/`Scaffold` comme celui du Journal, et
  * passait au noir sur fond noir en thème sombre. Un seul composant, appelé dans le topBar d'un

@@ -23,16 +23,16 @@ enum class ExclusiveOperation(val label: String) {
     PHOTO_IMPORT("un import de photos"),
     PHOTO_COMMIT("un enregistrement de photos"),
 
-    // RIC-158 : supprime en masse les fichiers de photos/ — aussi bien touché par une sauvegarde
+    // RIC-158 : supprime en masse les fichiers de photos/ : aussi bien touché par une sauvegarde
     // (qui les zippe) qu'une restauration (qui remplace le répertoire en bloc).
     PHOTO_PURGE("une purge de photos"),
 
-    // RIC-158 : tout import du Journal qui écrit dans gpx/ — un seul fichier, un trek multi-jours
+    // RIC-158 : tout import du Journal qui écrit dans gpx/ : un seul fichier, un trek multi-jours
     // (plusieurs fichiers pour une seule sortie) ou un lot de sorties séparées.
     JOURNAL_IMPORT("un import du Journal"),
 
     // RIC-158 : tout ce qui fait atterrir du contenu nouveau dans gpx-planif/ en dehors d'une
-    // édition ordinaire — l'import d'un fichier GPX externe et la duplication d'une sortie du
+    // édition ordinaire : l'import d'un fichier GPX externe et la duplication d'une sortie du
     // Journal vers la Planification (RIC-40), qui écrit elle aussi dans ce répertoire.
     PLANIFICATION_IMPORT("un import en Planification"),
 }
@@ -48,12 +48,12 @@ enum class ExclusiveOperation(val label: String) {
  * chacun ne connaît que son propre état.
  *
  * Volontairement un `object` et non une dépendance injectée : ce verrou porte sur des fichiers du
- * process, pas sur une instance de quoi que ce soit — deux registres coexistant ne protégeraient
+ * process, pas sur une instance de quoi que ce soit : deux registres coexistant ne protégeraient
  * plus rien. Les ViewModels étant recréés à chaque rotation, un état porté par l'un d'eux ne
  * survivrait de toute façon pas à l'opération qu'il est censé garder.
  *
  * `synchronized` et non un Mutex de coroutine : [tryStart] doit pouvoir être appelé depuis un
- * gestionnaire de clic, donc hors contexte suspendu — c'est même essentiel, le verrou doit être
+ * gestionnaire de clic, donc hors contexte suspendu : c'est même essentiel, le verrou doit être
  * posé par le geste lui-même et non au moment où la coroutine sera ordonnancée (même raisonnement
  * que RIC-149 pour le dialogue bloquant des photos). La section critique ne contient que deux
  * lectures/écritures de champ.
@@ -68,7 +68,7 @@ object ExclusiveOperations {
     /**
      * Pose [operation] si et seulement si aucune autre n'est en vol.
      *
-     * @return false si une opération tourne déjà — l'appelant doit alors renoncer proprement, sans
+     * @return false si une opération tourne déjà : l'appelant doit alors renoncer proprement, sans
      *   rien entamer. Une même opération demandée deux fois est refusée elle aussi : deux imports
      *   de photos simultanés se marcheraient dessus autant que deux opérations différentes.
      */

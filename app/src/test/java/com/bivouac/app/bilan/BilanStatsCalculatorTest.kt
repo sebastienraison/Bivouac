@@ -14,7 +14,7 @@ import org.junit.Test
 
 /**
  * RIC-19 : calculateur pur (voir BilanStatsCalculator), testé comme TrackStatsCalculator/
- * SpeedCalibrationCalculator — pas de Robolectric nécessaire, aucune dépendance Android.
+ * SpeedCalibrationCalculator : pas de Robolectric nécessaire, aucune dépendance Android.
  */
 class BilanStatsCalculatorTest {
 

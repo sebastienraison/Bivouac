@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
         val incomingGpxUris = intent.extractGpxUris()
         setContent {
             BivouacTheme {
-                // RIC-19 §5 : rattrapage bloquant des colonnes d'altitude, avant toute navigation —
+                // RIC-19 §5 : rattrapage bloquant des colonnes d'altitude, avant toute navigation :
                 // englobe BivouacApp entier (NavHost compris) plutôt que d'être posé à l'intérieur,
                 // pour qu'aucune section ne soit ne serait-ce que composée pendant le rattrapage.
                 ElevationBackfillGate(modifier = Modifier.fillMaxSize()) {
@@ -65,23 +65,23 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
     val navController = rememberNavController()
 
     // RIC-40 : une boîte aux lettres entre les ViewModels du Journal et de la Planification, qui
-    // ne se voient jamais autrement — ce composable est le seul endroit où les deux écrans sont
+    // ne se voient jamais autrement : ce composable est le seul endroit où les deux écrans sont
     // atteignables à la fois. Ici plutôt que dans l'un des deux ViewModels, ou dans un dépôt
     // partagé : une duplication est un passage de relais ponctuel, pas un état que l'un des deux
     // écrans possède durablement.
     var pendingDuplicate by remember { mutableStateOf<DuplicatePlanRequest?>(null) }
 
-    // RIC-19 : même patron que pendingDuplicate ci-dessus — un clic sur un record du Bilan doit
+    // RIC-19 : même patron que pendingDuplicate ci-dessus : un clic sur un record du Bilan doit
     // ouvrir une trace précise du Journal, et ces deux écrans ne se voient jamais autrement que par
     // MainActivity (chacun son ViewModel).
     var pendingJournalOpenRequest by remember { mutableStateOf<JournalOpenRequest?>(null) }
 
     // RIC-104 : tant que ce choix n'est pas tranché, ni la Planification ni le Journal ne savent
-    // quoi faire du fichier — voir UniverseChoiceDialog.
+    // quoi faire du fichier : voir UniverseChoiceDialog.
     //
     // rememberSaveable, et un drapeau plutôt que la liste elle-même : une rotation ou un passage en
-    // mode sombre détruit et recrée l'Activity, onCreate relit l'intent de lancement — que le
-    // système conserve — et en retire les mêmes Uri. Un simple remember repartirait donc de zéro et
+    // mode sombre détruit et recrée l'Activity, onCreate relit l'intent de lancement, que le
+    // système conserve, et en retire les mêmes Uri. Un simple remember repartirait donc de zéro et
     // rouvrirait le dialogue par-dessus l'écran, alors même que l'utilisateur vient d'y répondre.
     // C'est le même piège que celui déjà désamorcé côté Planification pour l'import (voir le
     // LaunchedEffect de GpxImportScreen), qui se rejoue ici un cran plus haut.
@@ -93,11 +93,11 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
     var incomingJournalUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
     // RIC-106 : dernier univers consulté, lu une seule fois au démarrage via .first() plutôt que
-    // collectAsStateWithLifecycle — un onSectionSelected réécrit cette préférence à chaque
+    // collectAsStateWithLifecycle : un onSectionSelected réécrit cette préférence à chaque
     // changement d'onglet (voir plus bas), et une collecte continue ferait retomber
     // resolvedStartSection sur la nouvelle valeur quelques dizaines de ms après coup. RIC-19 a mis
     // ça en évidence : NavHost, lui, ne « fige » pas silencieusement son startDestination face à
-    // ça comme le commentaire précédent le supposait — un resolvedStartSection qui change en cours
+    // ça comme le commentaire précédent le supposait : un resolvedStartSection qui change en cours
     // de route reconstruit le graphe, ce qui recrée une NavBackStackEntry (donc un ViewModel) tout
     // neuf pour la destination qu'on vient d'atteindre, coupant au passage toute coroutine encore
     // en vol dessus (un openTrackById déclenché par pendingOpenRequest, notamment). Tant que cette
@@ -111,7 +111,7 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
 
     // Standard top-level-destination navigation: pop back to the graph's start so switching
     // sections never piles up a back stack, but save/restore each section's own state (scroll
-    // position, and — via the ViewModel's own store — the trace currently open in Planification)
+    // position, and (via the ViewModel's own store) the trace currently open in Planification)
     // across switches.
     fun onSectionSelected(section: AppSection) {
         navController.navigate(section.route) {
@@ -119,7 +119,7 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
             launchSingleTop = true
             restoreState = true
         }
-        // RIC-106 : Réglages n'est jamais un univers d'accueil, voir AppSectionPreferences —
+        // RIC-106 : Réglages n'est jamais un univers d'accueil, voir AppSectionPreferences :
         // le no-op y est géré côté préférences plutôt que dupliqué ici à chaque appelant.
         coroutineScope.launch { appSectionPreferences.setLastVisitedSection(section) }
     }
@@ -182,7 +182,7 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
             )
         }
         // Not an AppSection: only reachable from Réglages' "Choisir les traces" (BIV-16), never
-        // from the section menu — reuses JournalScreen wholesale rather than a second screen.
+        // from the section menu: reuses JournalScreen wholesale rather than a second screen.
         composable(JOURNAL_CALIBRATION_ROUTE) {
             JournalScreen(
                 modifier = Modifier.fillMaxSize(),
@@ -194,7 +194,7 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
         }
     }
 
-    // RIC-104 : seule l'entrée externe pose cette question — les FAB internes du Journal et de
+    // RIC-104 : seule l'entrée externe pose cette question : les FAB internes du Journal et de
     // Planification connaissent déjà leur univers par construction, voir UniverseChoiceDialog.
     universeChoicePending?.let { uris ->
         UniverseChoiceDialog(
@@ -206,7 +206,7 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
             onPlanificationChosen = {
                 universeChoiceResolved = true
                 // Planification n'a jamais su ouvrir qu'un seul fichier à la fois (voir son propre
-                // sélecteur, OpenDocument et non OpenMultipleDocuments) — un lot externe choisi
+                // sélecteur, OpenDocument et non OpenMultipleDocuments) : un lot externe choisi
                 // pour cet univers perd donc silencieusement tout fichier au-delà du premier.
                 // Comportement non tranché par RIC-104, signalé au pilotage plutôt que deviné plus
                 // loin (agrandir Planification au multi-fichiers, ou désactiver ce choix au-delà
@@ -221,7 +221,7 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
 
 /**
  * Uri(s) d'un ou plusieurs fichiers GPX reçus depuis une autre application, via ouverture directe
- * (VIEW, toujours un seul fichier), partage simple (SEND) ou partage groupé (SEND_MULTIPLE) — cf.
+ * (VIEW, toujours un seul fichier), partage simple (SEND) ou partage groupé (SEND_MULTIPLE) : cf.
  * les intent-filters déclarés dans le manifeste.
  */
 @Suppress("DEPRECATION")

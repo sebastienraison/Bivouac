@@ -34,7 +34,7 @@ import kotlin.math.floor
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
-// RIC-136 : élargi de 26 à 32dp — "999" tenait tout juste, mais une altitude groupée à 4 chiffres
+// RIC-136 : élargi de 26 à 32dp : "999" tenait tout juste, mais une altitude groupée à 4 chiffres
 // ("1 234", espace fine insécable comprise) déborderait sinon en montagne (>1000 m, terrain courant
 // pour cette app).
 private val LEFT_LABEL_WIDTH = 32.dp
@@ -55,7 +55,7 @@ private val COLLISION_MARGIN = 20.dp
 
 /**
  * Intermediate gridlines between [min] and [max] (exclusive), evenly spaced first and rounded
- * second — rather than picking round multiples of a fixed step and keeping whichever fall in
+ * second: rather than picking round multiples of a fixed step and keeping whichever fall in
  * range, which leaves the two edge gaps (min-to-first-mark, last-mark-to-max) an arbitrary size
  * next to the even spacing between the marks themselves. Picks as many marks as fit without going
  * below [minSpacing], capped at [maxCount], and rounds each to whichever unit in [roundingUnits]
@@ -63,7 +63,7 @@ private val COLLISION_MARGIN = 20.dp
  * position, while still landing on a value that reads as round).
  *
  * [reserveEdgeMargin] additionally keeps a full spare mark-to-mark gap between the outermost
- * marks and min/max — worth it on the altitude axis, where vertical room for labels is tight, but
+ * marks and min/max: worth it on the altitude axis, where vertical room for labels is tight, but
  * needlessly conservative on the much wider distance axis (confirmed by eye: a track's edge gap
  * can safely run a bit tighter than the interior spacing there without looking cramped).
  */
@@ -100,13 +100,13 @@ private fun formatKm(km: Double): String {
 /**
  * Elevation profile of the whole track, with a dot for each bivouac point at its actual altitude,
  * and altitude/distance rulers. RIC-138 : un export GPX réel a parfois quelques points sans
- * altitude, épars dans le fichier — [TrackStatsCalculator.smoothedElevationSeries] les interpole
+ * altitude, épars dans le fichier : [TrackStatsCalculator.smoothedElevationSeries] les interpole
  * plutôt que d'abandonner toute la série ; ce composant ne rend donc rien seulement si AUCUN point
  * de la trace n'a d'altitude.
  *
  * [cursorIndex] (Journal-only, BIV-52) draws a synced marker at that point; tapping or
  * horizontally dragging anywhere on the plot reports the nearest point's index via
- * [onCursorDragged] — height doesn't matter, only horizontal position.
+ * [onCursorDragged]: height doesn't matter, only horizontal position.
  */
 @Composable
 fun ElevationProfile(
@@ -194,8 +194,8 @@ fun ElevationProfile(
         val leftPad = LEFT_LABEL_WIDTH.toPx()
         val plotWidth = size.width - leftPad
         val plotHeight = size.height - BOTTOM_AXIS_HEIGHT.toPx()
-        // A transient layout pass — an ancestor's height still catching up to newly measured
-        // content, for instance — can hand this Canvas less space than its own .height(...)
+        // A transient layout pass (an ancestor's height still catching up to newly measured
+        // content, for instance) can hand this Canvas less space than its own .height(...)
         // modifier above asks for. Skip that one frame rather than feed a zero/negative extent
         // into the coerceIn calls below (crashes: "maximum X is less than minimum 0"); it
         // self-corrects on the next layout pass once the ancestor catches up.
@@ -267,8 +267,8 @@ fun ElevationProfile(
             )
         }
 
-        // Bivouac markers: dot on the curve, drop line down to the axis, and — since that line
-        // already marks the spot — its exact distance labelled right there on the axis.
+        // Bivouac markers: dot on the curve, drop line down to the axis, and (since that line
+        // already marks the spot) its exact distance labelled right there on the axis.
         val bivouacXs = bivouacPoints.map { bivouac ->
             val index = bivouac.trackPointIndex.coerceIn(0, elevations.lastIndex)
             val x = xFor(cumulativeDistances[index])
@@ -287,7 +287,7 @@ fun ElevationProfile(
         }
 
         // Cursor (BIV-52): a solid line (vs. bivouacs' dashed ones) so it reads as "live" rather
-        // than a fixed waypoint — distance labelled the same way a bivouac's is, for consistency.
+        // than a fixed waypoint: distance labelled the same way a bivouac's is, for consistency.
         if (cursorIndex != null) {
             val index = cursorIndex.coerceIn(0, elevations.lastIndex)
             val x = xFor(cumulativeDistances[index])

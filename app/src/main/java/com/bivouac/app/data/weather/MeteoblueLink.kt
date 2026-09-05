@@ -4,7 +4,7 @@ import java.util.Locale
 import kotlin.math.abs
 
 /**
- * Deep link to a meteoblue forecast centered on raw coordinates, no geocoding needed — meteoblue
+ * Deep link to a meteoblue forecast centered on raw coordinates, no geocoding needed: meteoblue
  * (unlike Météo France) resolves a plain lat/lon URL directly.
  */
 object MeteoblueLink {

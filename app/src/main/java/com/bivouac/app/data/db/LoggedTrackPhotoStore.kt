@@ -5,11 +5,11 @@ import java.io.File
 import java.util.UUID
 
 // RIC-43 : les photos d'une sortie du Journal vivent sous filesDir/photos/, même logique que
-// LoggedTrackGpxStore pour le GPX — la base ne garde qu'un chemin relatif, jamais le contenu.
+// LoggedTrackGpxStore pour le GPX : la base ne garde qu'un chemin relatif, jamais le contenu.
 //
 // RIC-149 : s'y ajoute une zone de transit sous cacheDir, où atterrissent les photos ajoutées
 // pendant le mode édition tant que la sauvegarde n'a pas eu lieu. cacheDir et non filesDir : c'est
-// exactement l'endroit prévu pour un état transitoire — exclu des sauvegardes du système, et
+// exactement l'endroit prévu pour un état transitoire : exclu des sauvegardes du système, et
 // purgeable par Android quand le stockage se remplit, ce qui est acceptable pour un ajout non
 // encore validé et ne l'aurait jamais été pour une photo enregistrée.
 object LoggedTrackPhotoStore {

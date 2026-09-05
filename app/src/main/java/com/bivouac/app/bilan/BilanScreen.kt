@@ -51,11 +51,11 @@ import com.bivouac.app.ui.nav.AppScreenHeader
 import com.bivouac.app.ui.nav.AppSection
 
 /**
- * RIC-19 : écran "Bilan", prolongement du Journal — pas un tableau de bord fitness autonome (voir
+ * RIC-19 : écran "Bilan", prolongement du Journal : pas un tableau de bord fitness autonome (voir
  * l'esprit produit du ticket). Structure fixe, top to bottom : capsule de totaux (§1), graphique
  * Progression + insight (§2), records vedettes en grille 2×2 (§3), records secondaires en liste
  * (§4). Chaque record ouvre la sortie réelle qui le porte dans le Journal (§6), via
- * [onOpenJournalEntry] — même boîte aux lettres que RIC-40/104, portée par MainActivity puisque
+ * [onOpenJournalEntry], même boîte aux lettres que RIC-40/104, portée par MainActivity puisque
  * Bilan et Journal ont chacun leur propre ViewModel qui ne se voient jamais autrement.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -219,7 +219,7 @@ private fun MetricSelector(selected: ProgressionMetric, onSelected: (Progression
 }
 
 // RIC-19 §3 : grille 2×2 fixe, un record manquant (garde-fou VAM, ou aucun trek multi-jours pour le
-// bivouac le plus haut) retire simplement sa case plutôt que d'afficher un chiffre inventé — cohérent
+// bivouac le plus haut) retire simplement sa case plutôt que d'afficher un chiffre inventé, cohérent
 // avec "chaque chiffre affiché doit pouvoir ramener à une sortie réelle".
 @Composable
 private fun HeroRecordsSection(stats: BilanStats, onOpenJournalEntry: (JournalOpenRequest) -> Unit) {

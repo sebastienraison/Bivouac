@@ -19,8 +19,8 @@ import org.junit.runner.RunWith
  * secondes sur un lot réel), la croix de l'en-tête fermait tout sans un mot, emportant un travail
  * en cours sur des fichiers.
  *
- * Le dialogue bloquant de JournalScreen couvre ce cas par construction — c'est une fenêtre par-
- * dessus l'écran entier, la croix n'est plus atteignable — mais cette garantie-là repose sur la
+ * Le dialogue bloquant de JournalScreen couvre ce cas par construction : c'est une fenêtre par-
+ * dessus l'écran entier, la croix n'est plus atteignable, mais cette garantie-là repose sur la
  * seule présence d'une fenêtre. Ce test porte sur le second verrou, celui qui tient même si un
  * chemin échappait au dialogue : la sortie elle-même refuse de partir.
  */

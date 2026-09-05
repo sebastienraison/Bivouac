@@ -32,18 +32,18 @@ private val CHART_HEIGHT = 80.dp
 private val AXIS_WIDTH = 34.dp
 
 /**
- * RIC-19 §2 : barres pour les 4 métriques cumulatives, ligne pour Vitesse (moyenne, pas une somme —
+ * RIC-19 §2 : barres pour les 4 métriques cumulatives, ligne pour Vitesse (moyenne, pas une somme,
  * voir [ProgressionMetric.isLine]). Défilement horizontal sur tout l'historique réel, ouvert sur les
  * mois les plus récents (comme la maquette) plutôt que sur le tout premier mois du Journal.
  *
  * Trois Row en horizontalScroll partageant le même [rememberScrollState] : seule celle du haut
  * (barres/ligne) accepte le geste, les deux du bas (labels mois, labels année) se contentent de
- * suivre le même décalage — évite deux gestes concurrents sur une seule zone de défilement
+ * suivre le même décalage, évite deux gestes concurrents sur une seule zone de défilement
  * visuelle. Mois et année sur deux lignes séparées plutôt qu'une bascule mois/année dans la même
  * colonne : un millésime à 4 chiffres ne tient pas sur une largeur de colonne (20dp) pensée pour
  * une seule lettre de mois, il y retombait sur deux lignes.
  *
- * Graduation min/milieu/max à gauche (colonne [AXIS_WIDTH], fixe — elle ne défile pas avec les
+ * Graduation min/milieu/max à gauche (colonne [AXIS_WIDTH], fixe : elle ne défile pas avec les
  * barres) : sans elle, la hauteur des barres n'était comparable qu'entre elles, pas lisible en
  * valeur absolue. min/max calculés une seule fois ici et transmis à BarChart/LineChart plutôt que
  * recalculés dans chacun, pour que le graphique et sa graduation restent toujours d'accord.
@@ -88,7 +88,7 @@ internal fun ProgressionChart(series: ProgressionSeries, color: Color, modifier:
                     Box(modifier = Modifier.width(COLUMN_WIDTH), contentAlignment = Alignment.Center) {
                         if (isYearBoundary) {
                             // wrapContentWidth(unbounded = true) : "2023" (4 chiffres) dépasse
-                            // légèrement les 20dp d'une colonne mois — pensée pour une seule lettre —
+                            // légèrement les 20dp d'une colonne mois (pensée pour une seule lettre),
                             // le label déborde donc visuellement de part et d'autre plutôt que de
                             // retomber sur deux lignes, sans élargir la colonne elle-même (les trois
                             // Row doivent garder exactement la même largeur totale pour rester

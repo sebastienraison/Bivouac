@@ -1,11 +1,11 @@
 package com.bivouac.app.data.gpx
 
 /**
- * Derives a [SpeedCalibration] from real hikes instead of asking the user to type numbers in —
+ * Derives a [SpeedCalibration] from real hikes instead of asking the user to type numbers in:
  * the "Auto"/"Sélection" modes of BIV-16's Vitesse personnalisée.
  *
  * RIC-109 : remplace le calcul par ligne-rando (système 2x2 sur une ligne par rando, où distance et
- * D+ sont confondus par construction — une rando longue est aussi une rando qui monte beaucoup) par
+ * D+ sont confondus par construction : une rando longue est aussi une rando qui monte beaucoup) par
  * un calcul par segments de 200 m qui sépare les deux effets à l'INTÉRIEUR de chaque rando. Sur le
  * Journal réel de l'utilisateur, le facteur d'inflation de variance de l'ancien calcul valait 11 à
  * 14 (retirer une seule rando d'un Journal de dix déplaçait la vitesse de 1 km/h) ; en segments, ce
@@ -17,10 +17,10 @@ package com.bivouac.app.data.gpx
  * * vitesse). Aucun terme de descente n'est introduit (voir CR section 12 : un modèle non linéaire
  * en pente a été testé et écarté, aucun gain démontré).
  *
- *   Phase 1 — la vitesse à plat est mesurée sur les segments de pente nette < 2 %, en écartant ceux
+ *   Phase 1 : la vitesse à plat est mesurée sur les segments de pente nette < 2 %, en écartant ceux
  *             passés à l'arrêt (< 1 km/h). Sans cette exclusion la méthode est PIRE que l'ancien
  *             calcul (CR section 6.1) : ce n'est pas un raffinement optionnel.
- *   Phase 2 — sur les segments de pente >= 2 % (montée comme descente), le temps qui dépasse ce que
+ *   Phase 2 : sur les segments de pente >= 2 % (montée comme descente), le temps qui dépasse ce que
  *             la marche à plat expliquerait est attribué au D+ cumulé de ces segments. Les segments
  *             de descente y participent sans apporter de D+ : leur surcoût est absorbé par la
  *             pénalité, exactement comme le fait déjà le modèle de production faute de terme D-.
@@ -29,7 +29,7 @@ object SpeedCalibrationCalculator {
 
     data class Sample(val distanceMeters: Double, val elevationGainMeters: Double, val elapsedHours: Double)
 
-    /** Ce que l'estimateur a réellement pu faire — utile pour ce que l'IHM raconte à l'utilisateur
+    /** Ce que l'estimateur a réellement pu faire : utile pour ce que l'IHM raconte à l'utilisateur
      * (point ouvert pour le pilotage, voir CR_RIC109_IMPLEMENTATION.md : généraliser à tous les cas
      * de repli le message que SettingsScreen affiche déjà pour selectedTrackCount == 1). */
     data class Result(val calibration: SpeedCalibration, val fittedPenalty: Boolean, val note: String = "")
@@ -45,7 +45,7 @@ object SpeedCalibrationCalculator {
     private const val MIN_FLAT_SEGMENTS = 10
 
     // internal (pas private) : RIC-19 réutilise ces deux seuils tels quels pour le garde-fou du
-    // record "meilleure VAM" (BilanStatsCalculator) — une sortie trop courte ou trop plate pour
+    // record "meilleure VAM" (BilanStatsCalculator) : une sortie trop courte ou trop plate pour
     // calibrer une pénalité D+ n'a pas plus de sens comme record VAM que comme calibration.
     internal const val MIN_STEEP_SEGMENTS = 10
     internal const val MIN_TOTAL_GAIN_METERS = 300.0
@@ -101,7 +101,7 @@ object SpeedCalibrationCalculator {
      * voir [com.bivouac.app.data.db.LoggedTrackRepository.calibrationSamples]) utilisés uniquement
      * quand [aggregate] n'a pas assez de plat pour mesurer une vitesse : le prototype Python
      * (`_speed_only`) somme alors sur *tous* les segments utilisables de la sélection, mais cette
-     * somme n'est pas de la forme agrégée à 7 nombres — la reconstituer exigerait de re-parser les
+     * somme n'est pas de la forme agrégée à 7 nombres : la reconstituer exigerait de re-parser les
      * GPX, ce que RIC-62/98/99 a précisément supprimé. [fallbackSamples] est l'équivalent déjà
      * dénormalisé au niveau de la rando entière (pas du segment) : distance et D+ totaux de la
      * rando, durée réelle. Numériquement très proche de la somme "usable" du prototype (l'écart
@@ -148,7 +148,7 @@ object SpeedCalibrationCalculator {
     /**
      * RIC-115 : part du temps passée à l'arrêt, mesurée sur TOUS les segments du pool (flat +
      * steep + stopped, indépendamment du fait que la vitesse et/ou la pénalité aient pu être
-     * fittées) — voir la kdoc de [DaySegmentAggregate.stoppedHours]. 0.0 si le pool n'a aucune
+     * fittées) : voir la kdoc de [DaySegmentAggregate.stoppedHours]. 0.0 si le pool n'a aucune
      * heure exploitable (pas de division par zéro).
      */
     private fun pauseFractionPercent(aggregate: DaySegmentAggregate): Double {

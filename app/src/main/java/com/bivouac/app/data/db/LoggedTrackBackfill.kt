@@ -16,7 +16,7 @@ import java.time.Duration
  * avant la migration 8 vers 9 (contentHash/startedAtMillis/elapsedSeconds, RIC-98/99), les sept
  * sommes de segments introduites par la migration 10 vers 11 (RIC-109 : flatCount et consorts) et
  * la huitième introduite par la migration 11 vers 12 (RIC-115 : stoppedHours, voir
- * [com.bivouac.app.data.gpx.DaySegmentAggregate]) — étendu plutôt que dupliqué en un second
+ * [com.bivouac.app.data.gpx.DaySegmentAggregate]), étendu plutôt que dupliqué en un second
  * rattrapage séparé : le GPX est de toute façon déjà lu et parsé ici pour les trois premières
  * colonnes, calculer les segments à ce même endroit coûte une passe de plus sur des points déjà en
  * mémoire, alors qu'un second rattrapage indépendant relirait tous les fichiers depuis zéro. Voir
@@ -25,7 +25,7 @@ import java.time.Duration
  * Pourquoi ici et pas dans la migration : le rattrapage lit et parse tous les fichiers de la
  * banque, ce qui se compte en secondes sur une archive un peu fournie. Le faire pendant la
  * migration figerait l'app à la première ouverture d'après mise à jour, sans le moindre retour à
- * l'écran, et rendrait cette migration capable d'échouer sur un fichier corrompu — alors qu'un
+ * l'écran, et rendrait cette migration capable d'échouer sur un fichier corrompu, alors qu'un
  * simple ALTER TABLE ne peut rien perdre.
  *
  * Le rattrapage est donc facultatif par construction : tant qu'une ligne n'est pas traitée, les
@@ -34,7 +34,7 @@ import java.time.Duration
  * contenu brut, pour ne pas la reprendre indéfiniment à chaque lancement.
  *
  * RIC-109 : le marqueur "pas encore traité" était devenu flatCount IS NULL, pas contentHash IS
- * NULL — une ligne déjà rattrapée par RIC-98/99 (donc avec un contentHash) repassait une fois de
+ * NULL : une ligne déjà rattrapée par RIC-98/99 (donc avec un contentHash) repassait une fois de
  * plus ici pour recevoir les sommes de segments. RIC-115 relaie ce même marqueur une fois de plus,
  * à stoppedHours IS NULL (voir [LoggedTrackDao.getDaysNeedingBackfill]) : une ligne déjà rattrapée
  * jusqu'à RIC-109 (donc avec un flatCount) repasse à son tour ici pour recevoir stoppedHours, que
@@ -127,16 +127,16 @@ object LoggedTrackBackfill {
 
     /**
      * RIC-19 : rattrapage de maxElevationMeters/lastPointElevationMeters, séparé de [run] ci-dessus
-     * plutôt que fusionné dans la même passe — deux raisons :
+     * plutôt que fusionné dans la même passe : deux raisons :
      *
      * 1. Déclenchement différent : [run] est fire-and-forget depuis JournalViewModel.init,
      *    annulable si l'utilisateur quitte l'écran Journal (RIC-132). Celui-ci est appelé depuis
      *    une porte bloquante au niveau de l'appli (voir ElevationBackfillGate), avant toute
-     *    navigation — les fusionner forcerait l'un des deux appelants à connaître les contraintes
+     *    navigation : les fusionner forcerait l'un des deux appelants à connaître les contraintes
      *    de l'autre.
      * 2. Sur une banque déjà à jour pour RIC-109 (l'immense majorité des installations réelles,
      *    l'app étant sortie depuis un moment), [run] est un no-op immédiat et ce rattrapage-ci est
-     *    le seul à lire quoi que ce soit — les fusionner n'aurait fait gagner qu'un util marginal
+     *    le seul à lire quoi que ce soit : les fusionner n'aurait fait gagner qu'un util marginal
      *    (une seule lecture de fichier au lieu de deux) pour le cas, de plus en plus rare, d'une
      *    mise à jour directe depuis une version antérieure à RIC-98/99.
      *
@@ -176,7 +176,7 @@ object LoggedTrackBackfill {
                 .use { GpxParser.parse(it) }.points
         }.getOrElse {
             // Fichier absent ou illisible : rien à mesurer, mais la ligne doit sortir de la file
-            // d'attente au même titre que dans [run] — un rattrapage silencieux mais sans fin
+            // d'attente au même titre que dans [run] : un rattrapage silencieux mais sans fin
             // n'apporterait rien de plus qu'un blocage éternel de la porte d'accueil.
             Log.w(TAG, "Jour ${day.id} illisible pour l'altitude, marqué traité sans donnée", it)
             dao.updateDayElevationFields(day.id, maxElevationMeters = null, lastPointElevationMeters = null)
