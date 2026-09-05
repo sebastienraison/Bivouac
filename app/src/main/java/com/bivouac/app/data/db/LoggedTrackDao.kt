@@ -21,11 +21,11 @@ interface LoggedTrackDao {
     @Query("SELECT * FROM logged_track_day ORDER BY trackId, dayIndex")
     suspend fun getAllDays(): List<LoggedTrackDayEntity>
 
-    // RIC-115 : stoppedHours IS NULL, pas flatCount IS NULL — même relais qu'avait fait RIC-109 en
+    // RIC-115 : stoppedHours IS NULL, pas flatCount IS NULL : même relais qu'avait fait RIC-109 en
     // passant de contentHash IS NULL à flatCount IS NULL (voir l'historique de ce commentaire).
     // stoppedHours est arrivé après flatCount et consorts (migration 11->12) : sur une banque déjà
     // entièrement rattrapée à RIC-109, flatCount n'est plus jamais nul nulle part, alors que
-    // stoppedHours l'est partout — filtrer sur flatCount laisserait cette colonne vide pour
+    // stoppedHours l'est partout : filtrer sur flatCount laisserait cette colonne vide pour
     // toujours. stoppedHours seul suffit comme marqueur : backfillOne écrit toutes les colonnes
     // dénormalisées ensemble, jamais les unes sans les autres (voir LoggedTrackBackfill), donc
     // stoppedHours non nul implique déjà flatCount et contentHash non nuls.
@@ -57,7 +57,7 @@ interface LoggedTrackDao {
         stoppedHours: Double,
     )
 
-    // RIC-19 : marqueur dédié (elevationBackfilled), pas flatCount IS NULL — ce rattrapage porte des
+    // RIC-19 : marqueur dédié (elevationBackfilled), pas flatCount IS NULL : ce rattrapage porte des
     // colonnes différentes de celui de RIC-109 et une ligne peut avoir l'un sans l'autre dans les
     // deux sens (voir LoggedTrackDayEntity.elevationBackfilled).
     @Query(
@@ -115,7 +115,7 @@ interface LoggedTrackDao {
     @Query("SELECT * FROM logged_track_photo WHERE id = :id")
     suspend fun getPhoto(id: Long): LoggedTrackPhotoEntity?
 
-    // RIC-43 : les chemins seuls, toutes traces confondues — ce dont le balayage des orphelins de
+    // RIC-43 : les chemins seuls, toutes traces confondues : ce dont le balayage des orphelins de
     // BackupManager a besoin, sans charger les lignes entières.
     @Query("SELECT filePath FROM logged_track_photo")
     suspend fun getAllPhotoFilePaths(): List<String>
@@ -127,7 +127,7 @@ interface LoggedTrackDao {
     suspend fun deletePhoto(id: Long)
 
     // RIC-152 : « Purger les photos », le seul endroit de l'app qui vide la table d'un bloc. Jamais
-    // appelé automatiquement — voir LoggedTrackRepository.purgeAllPhotos.
+    // appelé automatiquement : voir LoggedTrackRepository.purgeAllPhotos.
     @Query("DELETE FROM logged_track_photo")
     suspend fun deleteAllPhotos()
 

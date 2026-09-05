@@ -12,17 +12,17 @@ import org.junit.Test
 /**
  * RIC-109 : portage fidèle de
  * docs/pilotage/prototype-calibration-segments/test_prototype.py, qui teste
- * docs/pilotage/prototype-calibration-segments/prototype_calibration.py — la référence exécutable
+ * docs/pilotage/prototype-calibration-segments/prototype_calibration.py : la référence exécutable
  * et validée de l'algorithme (voir CR_CALIBRATION_SEGMENTS.md).
  *
  * Chaque test ci-dessous a un équivalent nommé dans test_prototype.py, sauf le dernier bloc
  * ("repli par échantillons seuls"), qui documente le pont vers [SpeedCalibrationCalculator.Sample]
- * — nécessaire en production quand l'agrégat de segments d'une sélection est vide (Journal pas
+ * (nécessaire en production quand l'agrégat de segments d'une sélection est vide, Journal pas
  * encore rattrapé, voir LoggedTrackRepository.calibrationSamples), et qui n'a pas d'équivalent côté
  * prototype puisque celui-ci n'a jamais eu de dénormalisation ligne-rando à préserver.
  *
  * Non porté : "5. Non-régression sur les VRAIES traces du Journal" du prototype, qui a besoin de
- * l'export de sauvegarde réel de l'utilisateur (103 randos) — absent de ce dépôt et jamais copié
+ * l'export de sauvegarde réel de l'utilisateur (103 randos), absent de ce dépôt et jamais copié
  * dedans (voir CR section 2). Point ouvert documenté dans CR_RIC109_IMPLEMENTATION.md.
  */
 class SpeedCalibrationCalculatorTest {
@@ -60,7 +60,7 @@ class SpeedCalibrationCalculatorTest {
     }
 
     // 2. Reste stable quand on ajoute du bruit réaliste (ce qu'un test sur données exactes ne peut
-    // pas voir — voir CR section 4, "angle mort du test confirmé").
+    // pas voir, voir CR section 4, "angle mort du test confirmé").
     @Test
     fun staysStableWithRealisticNoiseAcrossManyDraws() {
         val slopes = doubleArrayOf(0.0, 0.0, 3.0, 8.0, 14.0, -8.0, -14.0)
@@ -139,7 +139,7 @@ class SpeedCalibrationCalculatorTest {
 
     // 5. RIC-130 : le plafond de pénalité est adaptatif au D+ cumulé des segments pentus (300 au
     // seuil MIN_TOTAL_GAIN_METERS, 450 à partir de 20 000 m, interpolation linéaire clampée entre
-    // les deux — voir la kdoc de maxPenaltyFor). Le plafond est observé au travers de compute() :
+    // les deux, voir la kdoc de maxPenaltyFor). Le plafond est observé au travers de compute() :
     // des segments pentus parcourus PLUS VITE que le plat n'ont aucun surcoût attribuable au D+, la
     // branche "aucun surcoût de dénivelé mesurable" renvoie alors exactement le plafond.
 

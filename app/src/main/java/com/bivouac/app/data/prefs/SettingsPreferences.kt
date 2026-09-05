@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 
-// Backup filename (BIV-66) — the whole point of this file being the single DataStore for the
+// Backup filename (BIV-66): the whole point of this file being the single DataStore for the
 // Réglages screen is that a backup only has to embed this one preferences file alongside
 // map_layer_prefs, not enumerate every DataStore the app happens to have.
 internal const val SETTINGS_DATASTORE_NAME = "bivouac_settings"
@@ -46,7 +46,7 @@ class SettingsPreferences(private val context: Context) {
     // RIC-115 : contrairement à AUTO_PAUSE/SELECTION_PAUSE (repli sur SpeedCalibration.DEFAULT.
     // pauseFractionPercent = 0.0, valeur neutre "jamais réglé, aucune provision"), la toute
     // première fois que le mode Manuel est actif sans que l'utilisateur ait touché le curseur, la
-    // provision doit valoir 15 % — légèrement au-dessus de la médiane réelle mesurée (12,9 %),
+    // provision doit valoir 15 %, légèrement au-dessus de la médiane réelle mesurée (12,9 %),
     // choix délibérément prudent tranché par le pilotage (mieux vaut surestimer un peu la pause
     // par défaut que sous-estimer une durée de rando avec bivouac à la clé). Rien n'est écrit
     // proactivement : ce repli suffit à produire l'effet voulu dès la première lecture, exactement
@@ -119,11 +119,11 @@ class SettingsPreferences(private val context: Context) {
         context.settingsDataStore.edit { it[Keys.MODE] = mode.name }
     }
 
-    // RIC-115 : pauseFractionPercent est un paramètre à part entière, pas un défaut — un défaut
+    // RIC-115 : pauseFractionPercent est un paramètre à part entière, pas un défaut : un défaut
     // écraserait silencieusement la provision de pause persistée à chaque appel de
     // setManualSpeed/setManualPenalty (SettingsViewModel), qui n'ont eux-mêmes que speed/penalty à
     // faire varier. Les trois appelants (setManualSpeed, setManualPenalty, setManualPause) passent
-    // donc chacun les trois valeurs, en ne faisant varier que celle qui les concerne — même
+    // donc chacun les trois valeurs, en ne faisant varier que celle qui les concerne, même
     // discipline que manualCalibration.value déjà utilisé pour recomposer les deux champs existants.
     suspend fun setManualCalibration(walkingSpeedKmh: Double, elevationGainPenaltyMetersPerKm: Double, pauseFractionPercent: Double) {
         context.settingsDataStore.edit {
@@ -141,7 +141,7 @@ class SettingsPreferences(private val context: Context) {
         }
     }
 
-    // Selection ids are persisted together with their resulting calibration — they're only ever
+    // Selection ids are persisted together with their resulting calibration: they're only ever
     // written back together (see JournalViewModel.confirmCalibrationSelection), so there's no
     // window where one could be stale relative to the other.
     suspend fun setSelectionCalibration(calibration: SpeedCalibration, trackIds: Set<String>) {
