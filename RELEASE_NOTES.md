@@ -1,5 +1,15 @@
 # Bivouac — Notes de version
 
+## V2.2.1
+
+**Bugfix critique :**
+
+- Sur Android 8 à 13, l'import d'une trace GPX échouait systématiquement ("Trace incorrecte ou
+  fichier illisible"), rendant l'app inutilisable sur ces versions — l'app ne fonctionnait
+  en pratique que sur Android 14+. Corrigé (bibliothèque de lecture GPX s'appuyant sur une API
+  Java absente des Android antérieurs, désormais fournie par l'app elle-même). Merci au testeur
+  bénévole de la revue F-Droid qui a découvert et documenté le problème.
+
 ## V2.2.0
 
 **Journal — photos (nouveau) :**

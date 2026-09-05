@@ -1,5 +1,7 @@
 Bivouac helps you plan multi-day hikes with wild-camping (bivouac) stops, and keep a log of the hikes you've already done.
 
+Note: the app's interface is currently French-only (an English translation is on the roadmap). This description is in English for the store listing only.
+
 Planning: import a multi-day GPX track, view it on an OpenStreetMap-based map, and place your bivouac points directly on the route. A daily segment table (distance, elevation gain/loss, estimated duration) updates automatically as you adjust your plan. Save several planned tracks to a bank you can reopen, rename or duplicate later.
 
 Journal: import one or more already-hiked GPX tracks (several files selected together are recognized as the days of a single multi-day hike), browse a chronological list grouped by year, and view a read-only detail with map and elevation profile. Add a free-text note and tags to each hike, and filter the list by tag. Duplicate a logged hike into Planning to reuse its route.

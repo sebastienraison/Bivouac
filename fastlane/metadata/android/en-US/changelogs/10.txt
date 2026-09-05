@@ -1,0 +1,4 @@
+Critical fix: on Android 8-13, every GPX import failed ("unreadable file"), making the app
+unusable below Android 14 (the GPX library relied on a Java API missing from older Android
+versions; it is now bundled with the app). Thanks to the volunteer F-Droid reviewer who found
+and documented the issue.

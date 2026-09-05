@@ -23,8 +23,18 @@ journaliers (distance, dénivelé, durée estimée) qui se met à jour automatiq
       <sub>Journal — liste chronologique par année</sub>
     </td>
     <td width="50%" align="center">
-      <img src="screenshots/04_journal_detail.jpg" width="100%" alt="Journal : détail d'une trace, tags et note"><br>
-      <sub>Journal — détail d'une trace, tags et note</sub>
+      <img src="screenshots/04_journal_detail.jpg" width="100%" alt="Journal : détail d'une trace, photos, tags et note"><br>
+      <sub>Journal — détail d'une trace : photos, tags et note</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="screenshots/07_journal_photos_carte.jpg" width="100%" alt="Journal : photos positionnées sur la trace, marqueurs sur la carte"><br>
+      <sub>Journal — photos positionnées sur la trace</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="screenshots/08_journal_photo_bulle.jpg" width="100%" alt="Journal : bulle photo avec distance, altitude et position sur le profil"><br>
+      <sub>Journal — bulle photo, position reportée sur le profil</sub>
     </td>
   </tr>
   <tr>
@@ -33,13 +43,13 @@ journaliers (distance, dénivelé, durée estimée) qui se met à jour automatiq
       <sub>Bilan — totaux, progression et records</sub>
     </td>
     <td width="50%" align="center">
-      <img src="screenshots/06_reglages.jpg" width="100%" alt="Réglages : vitesse personnalisée et sauvegarde"><br>
-      <sub>Réglages — vitesse personnalisée et sauvegarde</sub>
+      <img src="screenshots/06_reglages.jpg" width="100%" alt="Réglages : photos du Journal, sauvegarde et crédits"><br>
+      <sub>Réglages — photos du Journal, sauvegarde, crédits</sub>
     </td>
   </tr>
 </table>
 
-## Fonctionnalités (V2.2.0)
+## Fonctionnalités (V2.2.1)
 
 **Planification :**
 
@@ -170,7 +180,7 @@ et si ça peut servir à quelqu'un d'autre, tant mieux. Indulgence et retours bi
 
 ## Statut
 
-V2.2.0 fonctionnelle. Développement actif.
+V2.2.1 fonctionnelle. Développement actif.
 
 ## Développement
 
