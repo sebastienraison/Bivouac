@@ -69,6 +69,13 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // RIC-163 : jpx 3.2.1 appelle en interne Stream.toList() (java.util.stream, ajouté en
+        // JDK 16), absent de la libcore Android en dessous d'API 34 — provoquait un
+        // NoSuchMethodError sur tout import GPX pour l'essentiel du parc minSdk 26-33 (voir
+        // GpxParserInstrumentedTest, qui reproduit l'échec sans cette ligne). Le desugaring de
+        // bibliothèque réécrit les appels à ces API récentes vers une implémentation embarquée
+        // dans l'APK, sans changer minSdk = 26.
+        isCoreLibraryDesugaringEnabled = true
     }
     buildFeatures {
         compose = true
@@ -108,6 +115,17 @@ android {
                     // Explicite parce que le défaut change en AGP 10 (x86_64 -> arm64-v8a) et que
                     // l'image aosp ne sait pas traduire l'ARM : sans cette ligne, la même
                     // configuration cesserait de fonctionner à la prochaine montée d'AGP.
+                    testedAbi = "x86_64"
+                }
+                // RIC-163 : le seul appareil de test (ci-dessus, API 34) masquait un bug présent
+                // sur tout le reste du parc minSdk 26-33 — jpx 3.2.1 appelle en interne
+                // Stream.toList() (Java 16), absent de la libcore Android avant API 34. Ce device
+                // couvre le rapport F-Droid d'origine (Android 13 / API 33) et comble l'angle mort ;
+                // il reste dans la config à demeure, pas seulement pour la repro de ce ticket.
+                create("pixel6Api33") {
+                    device = "Pixel 6"
+                    apiLevel = 33
+                    systemImageSource = "aosp"
                     testedAbi = "x86_64"
                 }
             }
@@ -169,6 +187,7 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.16")
     testImplementation("androidx.test:core:1.6.1")
     debugImplementation(libs.ui.tooling)
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     androidTestImplementation("junit:junit:4.13.2")
     androidTestImplementation(libs.room.testing)
     androidTestImplementation("androidx.test:runner:1.6.2")
