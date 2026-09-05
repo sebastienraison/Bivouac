@@ -27,7 +27,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
-// Exercises the actual mechanism behind BIV-66's "sauvegarder violemment, restaurer" safety net —
+// Exercises the actual mechanism behind BIV-66's "sauvegarder violemment, restaurer" safety net:
 // with synthetic data only (no real hike data available in this repository/worktree), on the
 // instrumentation target context. Never run against a physical device with real Journal data; see
 // docs/DEVICE_TESTS.md.
@@ -55,7 +55,7 @@ class BackupManagerTest {
         LoggedTrackPhotoStore.dir(context).deleteRecursively()
     }
 
-    // RIC-62 : le contenu GPX vit dans un fichier, la ligne n'en porte que le chemin — l'insertion
+    // RIC-62 : le contenu GPX vit dans un fichier, la ligne n'en porte que le chemin : l'insertion
     // de test reproduit le couple fichier + ligne tel que LoggedTrackRepository.commitImport l'écrit.
     private fun writeDay(trackId: String, dayIndex: Int, rawGpx: String): LoggedTrackDayEntity {
         val relativePath = LoggedTrackGpxStore.relativePath(trackId, dayIndex)
@@ -65,7 +65,7 @@ class BackupManagerTest {
     }
 
     // RIC-43 : même couple fichier + ligne que LoggedTrackRepository.addPhoto écrit, avec un
-    // contenu binaire quelconque — ce qui est sauvegardé et restauré est une suite d'octets, la
+    // contenu binaire quelconque : ce qui est sauvegardé et restauré est une suite d'octets, la
     // sauvegarde ne décode aucune image.
     private suspend fun writePhoto(trackId: String, bytes: ByteArray): LoggedTrackPhotoEntity {
         val relativePath = LoggedTrackPhotoStore.relativePath(trackId, "jpg")
@@ -108,13 +108,13 @@ class BackupManagerTest {
         assertTrue(backupResult.isSuccess)
         assertTrue(backupFile.length() > 0)
 
-        // DataStore's delegate is a process-wide singleton per file — once opened (as it just was
+        // DataStore's delegate is a process-wide singleton per file: once opened (as it just was
         // above), it never re-reads from disk on its own, restore or no restore; only a fresh
         // process picks up a swapped file (see AppRestart's kdoc, and why the real UI flow forces
         // a restart after a successful restore). So preference correctness here is checked at the
-        // file level — the layer this in-process test *can* actually observe — snapshotting the
+        // file level (the layer this in-process test *can* actually observe), snapshotting the
         // exact bytes DataStore holds right after backup() (which itself stamps lastBackupAtMillis
-        // before zipping, so this snapshot already includes it — the whole point being verified).
+        // before zipping, so this snapshot already includes it: the whole point being verified).
         val datastoreDir = File(context.filesDir, "datastore")
         val mapPrefsFile = File(datastoreDir, "map_layer_prefs.preferences_pb")
         val settingsPrefsFile = File(datastoreDir, "bivouac_settings.preferences_pb")
@@ -124,7 +124,7 @@ class BackupManagerTest {
         assertTrue(lastBackupAtBackupTime != null)
 
         // Wipe everything, as if a fresh install (or an aggressive test session) had just erased
-        // the app's data — the whole scenario this feature exists for.
+        // the app's data: the whole scenario this feature exists for.
         BivouacDatabase.closeAndReset()
         context.deleteDatabase(BivouacDatabase.DATABASE_NAME)
         LoggedTrackGpxStore.dir(context).deleteRecursively()
@@ -138,7 +138,7 @@ class BackupManagerTest {
         val restoredTracks = BivouacDatabase.getInstance(context).loggedTrackDao().list()
         assertEquals(1, restoredTracks.size)
         assertEquals("Trace test backup", restoredTracks.first().name)
-        // RIC-62 : l'archive doit ramener le fichier GPX avec la base — une ligne restaurée qui
+        // RIC-62 : l'archive doit ramener le fichier GPX avec la base : une ligne restaurée qui
         // pointerait vers un fichier absent serait une trace vide.
         val restoredDays = BivouacDatabase.getInstance(context).loggedTrackDao().getDays("t1")
         assertEquals(1, restoredDays.size)
@@ -195,7 +195,7 @@ class BackupManagerTest {
      * RIC-43, les deux moitiés de la cohérence après restauration, sur le même cycle :
      *
      * - un fichier de photos/ que plus aucune ligne ne référence est supprimé par le balayage
-     *   post-restauration — sinon il resterait sur le stockage pour toujours, sans que rien ne
+     *   post-restauration : sinon il resterait sur le stockage pour toujours, sans que rien ne
      *   puisse plus le nommer ;
      * - une ligne dont le fichier manque survit, elle. Ses métadonnées d'origine sont ce qui
      *   permettra de re-acquérir la photo depuis la galerie (RIC-151) : les supprimer perdrait la
@@ -267,7 +267,7 @@ class BackupManagerTest {
 
         // Simulates a backup produced by a future app version: a copy of the real Room file, with
         // PRAGMA user_version bumped past what BivouacDatabase.SCHEMA_VERSION currently knows.
-        // Bumped on a *copy* — mutating the live db file in place would leave the app's own
+        // Bumped on a *copy*: mutating the live db file in place would leave the app's own
         // database at a version its compiled schema can no longer open, unrelated to what this
         // test is actually trying to exercise.
         val dbFile = context.getDatabasePath(BivouacDatabase.DATABASE_NAME)
@@ -290,13 +290,13 @@ class BackupManagerTest {
         assertEquals(BivouacDatabase.SCHEMA_VERSION + 1, versionTooNew.backupVersion)
         assertEquals(BivouacDatabase.SCHEMA_VERSION, versionTooNew.appVersion)
 
-        // Nothing should have been touched by a blocked restore — the pre-existing data survives.
+        // Nothing should have been touched by a blocked restore: the pre-existing data survives.
         val tracksAfterBlockedRestore = BivouacDatabase.getInstance(context).loggedTrackDao().list()
         assertEquals(1, tracksAfterBlockedRestore.size)
     }
 
     // RIC-95 : une archive dont le bivouac.db n'est pas une base SQLite saine doit être refusée
-    // par le PRAGMA integrity_check AVANT tout remplacement — les données en place survivent.
+    // par le PRAGMA integrity_check AVANT tout remplacement : les données en place survivent.
     @Test
     fun restoreRejectsCorruptedArchiveAndKeepsCurrentData() = runBlocking {
         val dao = BivouacDatabase.getInstance(context).loggedTrackDao()
@@ -357,7 +357,7 @@ class BackupManagerTest {
 
     /**
      * RIC-156 : la sauvegarde rend compte fichier par fichier, avec un dénominateur connu dès le
-     * premier appel — c'est ce qui permet au dialogue bloquant d'afficher « x sur n » et non un
+     * premier appel : c'est ce qui permet au dialogue bloquant d'afficher « x sur n » et non un
      * tourniquet muet pendant plusieurs dizaines de secondes de photos.
      */
     @Test
@@ -377,7 +377,7 @@ class BackupManagerTest {
     }
 
     /**
-     * RIC-156 : la restauration rend compte elle aussi, en deux temps — l'extraction, dénombrable
+     * RIC-156 : la restauration rend compte elle aussi, en deux temps : l'extraction, dénombrable
      * grâce au manifeste écrit par la sauvegarde, puis le remplacement, qui ne l'est pas.
      */
     @Test
@@ -408,12 +408,12 @@ class BackupManagerTest {
     /**
      * RIC-156, reproduction de l'incident : une sauvegarde interrompue pile sur une frontière
      * d'entrée produit une archive que RIEN, dans le format zip, ne distingue d'une archive
-     * complète — [ZipInputStream] ne lit que les en-têtes locaux, séquentiellement, et l'annuaire
+     * complète : [ZipInputStream] ne lit que les en-têtes locaux, séquentiellement, et l'annuaire
      * central qu'il ignore est de toute façon le dernier écrit.
      *
      * Le piège est que bivouac.db est zippé en premier : l'archive amputée contient une base
      * parfaitement saine, qui passait le contrôle d'intégrité de RIC-95 et se restaurait sans le
-     * moindre message — en emportant définitivement les photos et les GPX de l'appareil, puisque
+     * moindre message, en emportant définitivement les photos et les GPX de l'appareil, puisque
      * ces répertoires sont remplacés en bloc. Ce test vérifie les deux moitiés : que la base de
      * l'archive tronquée est bien saine (donc que le contrôle existant ne pouvait pas la refuser),
      * et que le manifeste, lui, la refuse.
@@ -470,8 +470,8 @@ class BackupManagerTest {
     /**
      * Recopie le début d'une archive vers [destination] : le manifeste, puis les [dataEntriesToKeep]
      * premières entrées de données, et referme proprement. C'est la façon déterministe de fabriquer
-     * exactement le cas piège — une troncature alignée sur une frontière d'entrée, indétectable au
-     * niveau du format — là où couper le fichier à un nombre d'octets arbitraire ne produirait
+     * exactement le cas piège : une troncature alignée sur une frontière d'entrée, indétectable au
+     * niveau du format, là où couper le fichier à un nombre d'octets arbitraire ne produirait
      * qu'une entrée corrompue, que le zip signale tout seul.
      *
      * @return le nombre d'entrées de données recopiées.

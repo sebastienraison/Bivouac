@@ -43,7 +43,7 @@ sealed interface GpxImportUiState {
 
 enum class NameDialogPurpose { FIRST_SAVE, RENAME, RENAME_FROM_LIST, DUPLICATE, SAVE_THEN_CLOSE }
 
-// RIC-27: pourquoi la fermeture est bloquée — modifications non enregistrées sur une trace déjà
+// RIC-27: pourquoi la fermeture est bloquée : modifications non enregistrées sur une trace déjà
 // banquée, ou trace jamais banquée du tout (même sans modification depuis son ouverture).
 enum class CloseConfirmationReason { DIRTY, NEVER_SAVED }
 
@@ -65,7 +65,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     private val settingsPreferences = SettingsPreferences(application)
 
     // Satellite falls back to the free default the instant non-free features get disabled, even
-    // though the stored preference is left untouched — re-enabling later restores the user's
+    // though the stored preference is left untouched: re-enabling later restores the user's
     // actual choice instead of having silently overwritten it.
     val selectedLayer: StateFlow<MapLayer> = combine(
         mapLayerPreferences.selectedLayer,
@@ -97,7 +97,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     // HikeMapView: that would tear down and recreate the marker mid-gesture and break the drag.
     private val _dragPreview = MutableStateFlow<Pair<String, Int>?>(null)
 
-    // Bivouac points with the currently dragged one (if any) at its live preview position —
+    // Bivouac points with the currently dragged one (if any) at its live preview position,
     // shared by the segments table and the elevation profile marker, both of which should track
     // the gesture in real time rather than only jump on release.
     val effectiveBivouacPoints: StateFlow<List<BivouacPoint>> = combine(_bivouacPoints, _dragPreview) { points, preview ->
@@ -113,7 +113,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     // --- Banque de traces ---
     // The auto-save above (repository / SavedTrackEntity) is an invisible safety net against a
     // crash or restart. This section is the deliberate, named collection the user explicitly
-    // saves to — a separate table and a separate mechanism, on purpose (see CONCEPTION notes).
+    // saves to: a separate table and a separate mechanism, on purpose (see CONCEPTION notes).
 
     private val _dirty = MutableStateFlow(false)
     val dirty: StateFlow<Boolean> = _dirty.asStateFlow()
@@ -127,7 +127,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     // Même motif que JournalViewModel.tracksLoaded : tant que la toute première lecture Room n'a
     // pas abouti, bankedTraces vaut encore emptyList() par construction, indiscernable d'une
     // banque vraiment vide. Sans ce drapeau, l'écran "Aucune trace en préparation" flashait au
-    // tout premier lancement — le temps de cette lecture ET de restoreLastTrack, alors qu'une
+    // tout premier lancement : le temps de cette lecture ET de restoreLastTrack, alors qu'une
     // session précédente était bel et bien sur le point d'être restaurée.
     private val _bankedTracesLoaded = MutableStateFlow(false)
     val bankedTracesLoaded: StateFlow<Boolean> = _bankedTracesLoaded.asStateFlow()
@@ -142,7 +142,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     val deleteTarget: StateFlow<DeleteTarget?> = _deleteTarget.asStateFlow()
 
     // RIC-127 (suite) : un GPX illisible dans la banque échoue en restant sur la liste (Idle),
-    // avec ce message en popup par-dessus — même patron que RestoreOutcome.Error côté Réglages.
+    // avec ce message en popup par-dessus : même patron que RestoreOutcome.Error côté Réglages.
     // GpxImportUiState.Error écrase tout l'écran, ce qui convient à restoreLastTrack (rien à
     // perdre au démarrage) mais pas ici : la liste contient d'autres traces valides, un
     // remplacement complet les ferait disparaître pour rien.
@@ -165,7 +165,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // Silent update if already banked or the track already has a name (e.g. from the GPX itself);
-    // otherwise prompts for one — matches the "ask a name only if it doesn't have one yet" rule.
+    // otherwise prompts for one: matches the "ask a name only if it doesn't have one yet" rule.
     fun requestSave() {
         val state = _uiState.value as? GpxImportUiState.Loaded ?: return
         val name = state.track.name
@@ -176,7 +176,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    // Only meaningful once the trace is actually banked — renaming something never saved is just
+    // Only meaningful once the trace is actually banked: renaming something never saved is just
     // editing the name before that first save, already covered by the FIRST_SAVE prompt.
     fun requestRename() {
         val state = _uiState.value as? GpxImportUiState.Loaded ?: return
@@ -191,7 +191,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // Same convention as the open-trace toolbar, applied to a list row: renames that specific
-    // bank entry directly, independent of whatever (if anything) is currently open — the home
+    // bank entry directly, independent of whatever (if anything) is currently open: the home
     // screen list and an open trace are never shown at once, so there's no id collision to worry
     // about between this and requestRename().
     fun requestRenameFromList(id: String, currentName: String) {
@@ -203,7 +203,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         _nameDialogRequest.value = null
         val trimmed = name.trim().ifBlank { "Trace" }
         when (request.purpose) {
-            // A rename is just a save under the existing id with a new name — no separate
+            // A rename is just a save under the existing id with a new name: no separate
             // persistence path needed.
             NameDialogPurpose.FIRST_SAVE, NameDialogPurpose.RENAME -> saveToBank(trimmed)
             NameDialogPurpose.RENAME_FROM_LIST -> renameInBank(request.targetId ?: return, trimmed)
@@ -219,7 +219,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
             // cette fonction peut s'exécuter pendant qu'une AUTRE trace est ouverte à l'écran
             // (rename depuis la liste de la banque), écraser tout l'écran pour un échec sur une
             // entrée différente serait pire que l'absence de retour visuel. Juste empêcher le
-            // crash pour l'instant — un vrai retour utilisateur (snackbar ?) reste à définir, voir
+            // crash pour l'instant : un vrai retour utilisateur (snackbar ?) reste à définir, voir
             // RIC-127 pour la discussion.
             runCatching { withContext(Dispatchers.IO) { bankRepository.rename(id, name) } }
                 .onFailure { Log.e("GpxImportViewModel", "Échec du renommage d'une trace de la banque", it) }
@@ -244,7 +244,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
             _uiState.value = state.copy(track = renamedTrack)
             _dirty.value = false
             // RIC-135 : synchronise l'auto-save avec ce lien tout de suite, sans attendre une
-            // prochaine modif — sinon un kill de l'app juste après cette sauvegarde restaure une
+            // prochaine modif : sinon un kill de l'app juste après cette sauvegarde restaure une
             // session encore "détachée" au prochain lancement.
             persistCurrentState()
             refreshBankedTraces()
@@ -334,7 +334,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    // Null quand fermer ne fait rien perdre — parce que rien n'est ouvert, ou parce que ce qui
+    // Null quand fermer ne fait rien perdre : parce que rien n'est ouvert, ou parce que ce qui
     // l'est est déjà banqué et intact.
     private fun closeConfirmationReasonForCurrentTrack(): CloseConfirmationReason? = when {
         _uiState.value !is GpxImportUiState.Loaded -> null
@@ -345,7 +345,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun dismissCloseConfirmation() {
         _closeConfirmationReason.value = null
-        // L'utilisateur a choisi de garder ce qui est ouvert plutôt que de le lâcher — une
+        // L'utilisateur a choisi de garder ce qui est ouvert plutôt que de le lâcher : une
         // duplication en attente (voir openDuplicateFromLoggedTrack) n'attendait que cette même
         // confirmation, elle doit donc être abandonnée aussi, pas rejouée en douce.
         pendingDuplicateLoad = null
@@ -375,7 +375,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch { withContext(Dispatchers.IO) { repository.clear() } }
         // Chaque appel à performClose() (abandon, enregistrer-puis-fermer, supprimer-puis-fermer)
         // est un moment valide pour appliquer une duplication qui n'attendait que la fermeture de
-        // la trace en cours — voir openDuplicateFromLoggedTrack.
+        // la trace en cours : voir openDuplicateFromLoggedTrack.
         pendingDuplicateLoad?.let { loadDuplicate(it) }
         pendingDuplicateLoad = null
     }
@@ -391,11 +391,11 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     )
 
     /**
-     * Charge une trace dupliquée depuis le Journal (immuable là-bas — on ne fait que la lire) en
+     * Charge une trace dupliquée depuis le Journal (immuable là-bas : on ne fait que la lire) en
      * tant que nouveau plan éditable, avec un point de bivouac déjà posé à chaque jonction de
      * fichiers (voir JournalViewModel.buildDuplicateForPlanification). Le reste emprunte le flux
-     * « Dupliquer » déjà en place — même dialogue de nom, même chemin
-     * [NameDialogPurpose.DUPLICATE] vers une nouvelle entrée de la banque — plutôt que
+     * « Dupliquer » déjà en place : même dialogue de nom, même chemin
+     * [NameDialogPurpose.DUPLICATE] vers une nouvelle entrée de la banque, plutôt que
      * d'inventer une seconde façon de faire atterrir un plan.
      *
      * Si une trace est déjà ouverte ici et que la fermer poserait question, ça ne l'écrase pas en
@@ -415,7 +415,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * RIC-158 : entre au registre d'exclusion — l'écriture qui suit atterrit dans gpx-planif/,
+     * RIC-158 : entre au registre d'exclusion : l'écriture qui suit atterrit dans gpx-planif/,
      * exactement ce qu'une sauvegarde zippe et qu'une restauration remplace en bloc. loadDuplicate()
      * n'est jamais appelée qu'à un moment où [_uiState] vaut Idle (soit rien n'était ouvert, soit
      * performClose() vient de l'y remettre juste avant) : un refus peut donc toujours s'exprimer en
@@ -446,10 +446,10 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     // --- Import / restauration ---
 
     /**
-     * RIC-158 : même registre que loadDuplicate() ci-dessus — l'auto-save de fin d'import écrit
+     * RIC-158 : même registre que loadDuplicate() ci-dessus : l'auto-save de fin d'import écrit
      * dans gpx-planif/. Le bouton « Ouvrir une trace » qui appelle cette fonction n'existe que
      * lorsque [_uiState] vaut déjà Idle ou Error (voir GpxImportScreen), donc un refus, comme pour
-     * loadDuplicate(), ne peut jamais écraser une trace en cours d'édition — d'où le verrou pris
+     * loadDuplicate(), ne peut jamais écraser une trace en cours d'édition : d'où le verrou pris
      * AVANT de rien remettre à zéro.
      */
     fun importGpx(resolver: ContentResolver, uri: Uri) {
@@ -487,7 +487,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     /**
      * RIC-158 : ce que l'utilisateur lit quand un import ou une duplication vers la Planification
      * est refusé parce qu'une autre opération longue tourne. Même politique que
-     * JournalViewModel.exclusiveOperationRefusalMessage — voir ExclusiveOperations pour ce que ce
+     * JournalViewModel.exclusiveOperationRefusalMessage : voir ExclusiveOperations pour ce que ce
      * verrou protège.
      */
     private fun exclusiveOperationRefusalMessage(): String {
@@ -495,16 +495,16 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         return "Impossible pour l'instant : $ongoing est en cours. Attends qu'elle se termine, puis recommence."
     }
 
-    // Restores the trace saved from the previous session, if any — called once on a fresh start
+    // Restores the trace saved from the previous session, if any: called once on a fresh start
     // (not after an incoming-GPX import already handled it), so a restart doesn't lose the plan.
     // RIC-135 : restored.bankedId (persisted alongside the auto-save since the same commit that
-    // added this note) tells us whether that session is already linked to a bank entry — without
+    // added this note) tells us whether that session is already linked to a bank entry: without
     // it, every restored session used to look "never saved" (currentBankedId forced to null),
     // wrongly triggering the close confirmation and, worse, duplicating the entry on save.
     fun restoreLastTrack() {
         _uiState.value = GpxImportUiState.Loading
         viewModelScope.launch {
-            // RIC-127 : exécuté à chaque démarrage à froid — sans ce filet, une session
+            // RIC-127 : exécuté à chaque démarrage à froid : sans ce filet, une session
             // auto-sauvegardée devenue illisible bloquerait le lancement de l'app. Distinct de
             // "rien à restaurer" (restored == null sans exception, cas normal -> Idle).
             val result = runCatching { withContext(Dispatchers.IO) { repository.loadLast() } }
@@ -551,18 +551,18 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // Fire-and-forget: called after every settled (non-transient) change to the loaded track or
-    // its bivouac points. Never called from previewBivouacDrag, which fires on every drag frame —
+    // its bivouac points. Never called from previewBivouacDrag, which fires on every drag frame:
     // only the drop (moveBivouacPoint) persists. This is the auto-save singleton, unrelated to the
     // banque de traces mechanism above.
     //
     // RIC-158 : ces écritures-là, routinières et très fréquentes (chaque déplacement de point), ne
-    // rejoignent PAS le registre d'exclusion — le geste voulu ici, c'est importGpx()/loadDuplicate()
+    // rejoignent PAS le registre d'exclusion : le geste voulu ici, c'est importGpx()/loadDuplicate()
     // ci-dessus, où cette même écriture fait atterrir du contenu NOUVEAU dans gpx-planif/. Le
     // registre les couvre déjà en attendant l'écriture de persistCurrentStateNow() qu'ils
     // déclenchent directement (sans repasser par ce fire-and-forget, précisément pour pouvoir
     // attendre sa fin dans leur propre finally). Geler l'édition d'un plan ouvert à chaque fois
-    // qu'une sauvegarde tourne serait une régression bien plus lourde que le risque résiduel — une
-    // écriture d'un seul petit fichier, quasi instantanée — que ça fermerait.
+    // qu'une sauvegarde tourne serait une régression bien plus lourde que le risque résiduel : une
+    // écriture d'un seul petit fichier, quasi instantanée, que ça fermerait.
     private fun persistCurrentState() {
         viewModelScope.launch { persistCurrentStateNow() }
     }
