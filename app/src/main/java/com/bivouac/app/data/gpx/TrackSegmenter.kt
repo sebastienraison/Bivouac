@@ -38,7 +38,7 @@ object TrackSegmenter {
 
     // |pente nette| en deçà de laquelle un segment compte comme plat (CR section 5.2 : le seuil
     // n'est pas critique, 1 à 5 % donnent des résultats équivalents, mais 2 % est très supérieur à
-    // l'incertitude de pente sur 200 m — 0,3 % en Garmin, 1,3 % en Geo Tracker — et laisse le D+
+    // l'incertitude de pente sur 200 m (0,3 % en Garmin, 1,3 % en Geo Tracker) et laisse le D+
     // résiduel des segments retenus rester du bruit).
     const val FLAT_SLOPE_PERCENT = 2.0
 
@@ -54,11 +54,11 @@ object TrackSegmenter {
      * reliquat de fin de trace est conservé s'il atteint la moitié de cette longueur, sinon
      * abandonné (trop court pour que sa pente ait un sens).
      *
-     * Seuls les points porteurs à la fois d'une altitude et d'un horodatage sont pris en compte —
+     * Seuls les points porteurs à la fois d'une altitude et d'un horodatage sont pris en compte :
      * les deux sont nécessaires (altitude pour le dénivelé, horodatage pour la durée d'un
      * segment). RIC-138 : [TrackStatsCalculator.smoothedElevationSeries] sait désormais interpoler
      * les trous d'altitude, mais on préfère ici ne classer un segment plat/pentu que sur des
-     * altitudes réellement mesurées — une valeur interpolée n'apporte aucune pente réelle, autant
+     * altitudes réellement mesurées : une valeur interpolée n'apporte aucune pente réelle, autant
      * l'exclure du calcul plutôt que de biaiser la classification vers "plat".
      */
     fun segment(points: List<TrackPoint>, segmentLengthMeters: Double = SEGMENT_LENGTH_METERS): List<TrackSegment> {
@@ -105,7 +105,7 @@ object TrackSegmenter {
  * Les seules sommes dont [SpeedCalibrationCalculator] a besoin, par jour de rando (RIC-109 : voir
  * CR_CALIBRATION_SEGMENTS.md section 9). Calculées une fois à l'import et rangées à côté
  * d'`elapsedSeconds` sur `logged_track_day`, elles évitent de re-parser le moindre GPX au moment de
- * calibrer — ce qui préserve le gain de performance obtenu en dénormalisant (RIC-62/98/99). Vérifié
+ * calibrer, ce qui préserve le gain de performance obtenu en dénormalisant (RIC-62/98/99). Vérifié
  * sur le Journal réel (script `18_aggregates.py` du prototype) : la calibration reconstruite depuis
  * ces sommes est identique au calcul complet sur tous les segments, écart maximal 1,1e-15.
  */
@@ -118,7 +118,7 @@ data class DaySegmentAggregate(
     val steepGainMeters: Double,
     val steepHours: Double,
     // RIC-115 : heures cumulées de TOUS les segments écartés par PAUSE_SPEED_KMH, plat comme
-    // pentu — jusqu'ici ce temps était simplement jeté (voir la kdoc de `of` ci-dessous) ; il sert
+    // pentu : jusqu'ici ce temps était simplement jeté (voir la kdoc de `of` ci-dessous) ; il sert
     // désormais à mesurer automatiquement la provision de pause (SpeedCalibrationCalculator).
     val stoppedHours: Double,
 ) {
@@ -138,7 +138,7 @@ data class DaySegmentAggregate(
 
         /**
          * Classe [segments] en plat/pentu selon [TrackSegmenter.FLAT_SLOPE_PERCENT], en écartant
-         * des deux catégories les segments à l'arrêt ([TrackSegmenter.PAUSE_SPEED_KMH]) — voir la
+         * des deux catégories les segments à l'arrêt ([TrackSegmenter.PAUSE_SPEED_KMH]) : voir la
          * kdoc de ces constantes pour pourquoi. RIC-129 : l'exclusion portait initialement sur le
          * plat seul ; un arrêt pris en pleine montée gonflait `steepHours` sans y ajouter de D+,
          * ce qui biaisait la pénalité calibrée à la hausse (mesuré sur le Journal réel : jusqu'à
@@ -147,7 +147,7 @@ data class DaySegmentAggregate(
          * voit plus jamais un [TrackSegment] individuel.
          *
          * RIC-115 : les segments écartés (plat ET pentu, peu importe la pente, seul le critère de
-         * vitesse compte) ne sont plus perdus — leurs heures sont sommées dans [stoppedHours].
+         * vitesse compte) ne sont plus perdus : leurs heures sont sommées dans [stoppedHours].
          */
         fun of(segments: List<TrackSegment>): DaySegmentAggregate {
             val flat = segments.filter {

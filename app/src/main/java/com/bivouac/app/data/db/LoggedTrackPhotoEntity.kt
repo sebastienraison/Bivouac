@@ -11,7 +11,7 @@ import androidx.room.PrimaryKey
 // raisonnement que les colonnes dénormalisées de LoggedTrackDayEntity.
 //
 // positionPointIndex indexe le HikeTrack concaténé (jours dans l'ordre, voir
-// LoggedTrackRepository.open) — même convention que bivouacTrackPointIndices sur
+// LoggedTrackRepository.open), même convention que bivouacTrackPointIndices sur
 // BankedTrackEntity/SavedTrackEntity pour "un marqueur accroché à un point de la trace". Null
 // quand aucune corrélation (GPS ni horodatage) n'a été possible : la photo reste alors accessible
 // seulement depuis la galerie plate, jamais un blocage.
@@ -35,7 +35,7 @@ import androidx.room.PrimaryKey
 data class LoggedTrackPhotoEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val trackId: String,
-    // Relatif à filesDir, jamais absolu — voir LoggedTrackPhotoStore pour la même raison que
+    // Relatif à filesDir, jamais absolu : voir LoggedTrackPhotoStore pour la même raison que
     // LoggedTrackGpxStore.rawGpxFilePath.
     val filePath: String,
     val addedAtMillis: Long,
@@ -44,7 +44,7 @@ data class LoggedTrackPhotoEntity(
     val longitude: Double? = null,
     val positionPointIndex: Int? = null,
     val positionApproximate: Boolean = false,
-    // SHA-256 des octets de la photo, même principe que LoggedTrackEntity.contentHash — sert à
+    // SHA-256 des octets de la photo, même principe que LoggedTrackEntity.contentHash : sert à
     // refuser un doublon : la même photo cochée deux fois dans le même lot, ou ajoutée à nouveau
     // dans une session ultérieure, ou présente en deux exemplaires dans la pellicule sous deux
     // noms. Par le contenu et non par l'Uri : deux entrées MediaStore distinctes peuvent porter
@@ -53,7 +53,7 @@ data class LoggedTrackPhotoEntity(
     val contentHash: String = "",
     // Métadonnées d'origine relevées dans MediaStore au moment de l'ajout, jamais relues ensuite.
     // Elles ne servent à rien aujourd'hui : elles sont là pour la re-acquisition depuis la galerie
-    // (RIC-151), qui aura besoin de retrouver la photo d'origine quand la copie locale a disparu —
+    // (RIC-151), qui aura besoin de retrouver la photo d'origine quand la copie locale a disparu,
     // d'où aussi le refus de supprimer automatiquement une ligne dont le fichier manque.
     //
     // Les trois sont nullables parce qu'aucune n'est garantie : le fournisseur ne remplit pas
@@ -62,7 +62,7 @@ data class LoggedTrackPhotoEntity(
     //
     // sourceDateTakenMillis est bien distinct de takenAtMillis ci-dessus : celui-ci vient de
     // l'EXIF de la photo (avec la reconstitution de fuseau de PhotoExifReader), celui-là est le
-    // DATE_TAKEN de MediaStore, en UTC vrai — c'est celui-ci qui permettra de requêter MediaStore
+    // DATE_TAKEN de MediaStore, en UTC vrai : c'est celui-ci qui permettra de requêter MediaStore
     // pour retrouver le fichier d'origine.
     val sourceDisplayName: String? = null,
     val sourceRelativePath: String? = null,
@@ -79,13 +79,13 @@ data class LoggedTrackPhotoEntity(
 )
 
 /**
- * RIC-43 : l'ordre dans lequel les photos d'une sortie se présentent partout — bandeau, galerie,
+ * RIC-43 : l'ordre dans lequel les photos d'une sortie se présentent partout : bandeau, galerie,
  * visionneuse, carrousel de la bulle.
  *
  * C'est, mot pour mot, le `ORDER BY takenAtMillis, addedAtMillis` de
  * [LoggedTrackDao.getPhotos] : chronologique par date de prise de vue, et à date égale (ou absente)
  * par ordre d'entrée dans le Journal. Les photos sans EXIF de date passent donc devant, exactement
- * comme SQLite range les NULL en tête d'un tri croissant — d'où le `nullsFirst`.
+ * comme SQLite range les NULL en tête d'un tri croissant, d'où le `nullsFirst`.
  *
  * Il existe en Kotlin parce que l'écran ne montre pas que la base : pendant une édition, les ajouts
  * en transit se superposent aux photos persistées (voir JournalViewModel.currentPhotos), et cette

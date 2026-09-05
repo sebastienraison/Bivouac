@@ -12,7 +12,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-// Seed content below is a minimal synthetic fixture built only to exercise the migration path —
+// Seed content below is a minimal synthetic fixture built only to exercise the migration path:
 // no real hike data is available in this repository or worktree to seed a v5 database with.
 private const val TRACK_1_GPX = """<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="bivouac-migration-test">
@@ -40,7 +40,7 @@ private const val TRACK_2_DAY_2_GPX = """<?xml version="1.0" encoding="UTF-8"?>
   </trkseg></trk>
 </gpx>"""
 
-// RIC-62 : contenu dépassant la CursorWindow (~2 Mo/ligne), généré plutôt que réel — aucune trace
+// RIC-62 : contenu dépassant la CursorWindow (~2 Mo/ligne), généré plutôt que réel : aucune trace
 // réelle n'est embarquable dans les sources de test (données personnelles, hors dépôt public).
 // Une répétition de points suffit : la migration copie des caractères, elle ne parse pas.
 private fun buildOversizedGpx(): String = buildString {
@@ -54,7 +54,7 @@ private fun buildOversizedGpx(): String = buildString {
     append("  </trkseg></trk>\n</gpx>")
 }
 
-// RIC-97 : même principe, mais côté Planification (banked_track/saved_track) — un import GPS dense
+// RIC-97 : même principe, mais côté Planification (banked_track/saved_track) : un import GPS dense
 // (≈1 point/s) sur une seule journée, ou une trace dupliquée depuis un trek multi-jours du Journal,
 // suffit à s'en approcher en pratique (voir CR_RIC97) ; le test le pousse délibérément au-delà.
 private fun buildOversizedBankedGpx(): String = buildString {
@@ -81,7 +81,7 @@ class BivouacDatabaseMigrationTest {
     )
 
     // Les fichiers écrits par migration7To8/migration9To10 atterrissent dans le vrai filesDir du
-    // contexte d'instrumentation — nettoyés pour ne pas polluer les autres tests (ni les runs
+    // contexte d'instrumentation, nettoyés pour ne pas polluer les autres tests (ni les runs
     // suivants).
     @After
     fun cleanUpGpxFiles() {
@@ -583,7 +583,7 @@ class BivouacDatabaseMigrationTest {
         migrated.close()
     }
 
-    // RIC-97 : même démonstration que migrate7To8 ci-dessus, mais pour banked_track/saved_track —
+    // RIC-97 : même démonstration que migrate7To8 ci-dessus, mais pour banked_track/saved_track :
     // preuve que la lecture naïve d'une ligne dépassant la CursorWindow échoue, puis que la lecture
     // par tranches de migration9To10 en ressort le contenu intact malgré tout, pointCount disparaît
     // de banked_track, et le singleton saved_track suit le même chemin sans traitement particulier.
@@ -785,7 +785,7 @@ class BivouacDatabaseMigrationTest {
     //
     // Un seul test pour toute la table, parce qu'il n'y a qu'une seule migration : contentHash et
     // les trois colonnes de métadonnées d'origine, ajoutés au fil du développement de RIC-43, sont
-    // consolidés dans ce même 14 -> 15 — aucune version intermédiaire n'a été publiée, donc aucune
+    // consolidés dans ce même 14 -> 15 : aucune version intermédiaire n'a été publiée, donc aucune
     // base réelle n'a jamais vu de table logged_track_photo sans elles.
     @Test
     fun migrate14To15_addsEmptyPhotoTableWithoutTouchingExistingRows() {
@@ -872,7 +872,7 @@ class BivouacDatabaseMigrationTest {
         migrated.close()
     }
 
-    // RIC-43 : une seule colonne ajoutée, nullable, sans rattrapage — voir MIGRATION_15_16. Ce que
+    // RIC-43 : une seule colonne ajoutée, nullable, sans rattrapage : voir MIGRATION_15_16. Ce que
     // ce test doit prouver, c'est justement que les photos déjà en base (un appareil réel porte la
     // v15 avec de vraies données) survivent intactes et ressortent avec takenAtZoneCertain à null,
     // c'est-à-dire « fuseau inconnu », que positionUncertain traite comme « pas certain ».

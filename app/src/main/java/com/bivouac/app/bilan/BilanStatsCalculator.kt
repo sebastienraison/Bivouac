@@ -15,14 +15,14 @@ enum class ProgressionMetric(val label: String, val chartTitle: String, val isLi
     SORTIES("Sorties", "Sorties par mois", isLine = false),
     KM("Km", "Km par mois", isLine = false),
     DPLUS("D+", "D+ par mois", isLine = false),
-    // Ligne (sparkline) et non barres : c'est une moyenne, pas une somme (RIC-19 §2) — sommer une
+    // Ligne (sparkline) et non barres : c'est une moyenne, pas une somme (RIC-19 §2) : sommer une
     // vitesse d'un mois à l'autre n'a aucun sens physique.
     VITESSE("Vitesse", "Vitesse à plat calibrée, par mois", isLine = true),
     BIVOUACS("Bivouacs", "Bivouacs par mois", isLine = false),
 }
 
 /** Un point du graphique Progression. [value] est null quand le mois n'a littéralement rien à montrer
- * (aucune sortie ce mois-ci pour Vitesse, avant toute mesure exploitable) — distinct de 0.0, une
+ * (aucune sortie ce mois-ci pour Vitesse, avant toute mesure exploitable) : distinct de 0.0, une
  * valeur réelle pour les métriques en barres. */
 data class MonthPoint(val yearMonth: YearMonth, val value: Double?)
 
@@ -36,10 +36,10 @@ enum class BilanRecordKind { KM_EFFORT, VAM, MAX_ALTITUDE, HIGHEST_BIVOUAC, MAX_
  * sorties réelles du Journal derrière lui").
  *
  * [dayIndex] : non nul seulement pour [BilanRecordKind.HIGHEST_BIVOUAC] et
- * [BilanRecordKind.BIGGEST_TREK] — les deux seuls records dont la spec demande explicitement un
+ * [BilanRecordKind.BIGGEST_TREK] : les deux seuls records dont la spec demande explicitement un
  * positionnement sur le bon jour à l'ouverture ; les autres ouvrent directement la trace entière
  * (RIC-19 §6). [extraDistanceKm]/[extraGainMeters] ne portent que pour BIGGEST_TREK (métadonnée
- * descriptive du trek, RIC-19 §4) — ailleurs toujours null.
+ * descriptive du trek, RIC-19 §4), ailleurs toujours null.
  */
 data class BilanRecord(
     val kind: BilanRecordKind,
@@ -57,7 +57,7 @@ data class BilanStats(
     val totals: TrackStats,
     val bivouacCount: Int,
     val progression: List<ProgressionSeries>,
-    // RIC-19 §2 : mois calendaire (toutes années confondues) avec le plus de sorties cumulées —
+    // RIC-19 §2 : mois calendaire (toutes années confondues) avec le plus de sorties cumulées :
     // null si les sorties ne couvrent pas au moins 2 mois calendaires distincts, seul garde-fou de
     // tout l'écran en dehors de celui, déjà existant, de la VAM.
     val mostActiveMonthInsight: MostActiveMonthInsight?,
@@ -73,7 +73,7 @@ data class BilanStats(
 data class MostActiveMonthInsight(val monthOfYear: Int, val cumulativeCount: Int, val sinceYear: Int)
 
 /**
- * RIC-19 : calculateur pur (aucune I/O, aucun accès Room/fichier) — reçoit tout ce dont il a besoin
+ * RIC-19 : calculateur pur (aucune I/O, aucun accès Room/fichier) : reçoit tout ce dont il a besoin
  * déjà chargé, pour rester testable en JVM comme [TrackStatsCalculator]/[SpeedCalibrationCalculator].
  * [daysByTrackId] : voir [com.bivouac.app.data.db.LoggedTrackRepository.allDaysByTrackId], jours
  * triés par dayIndex.
@@ -186,7 +186,7 @@ object BilanStatsCalculator {
 
     // Par jour et non par trace entière (contrairement à la première version de ce calcul) : la
     // distance/D+ cumulés d'un trek de plusieurs jours dépassent presque toujours ceux d'une seule
-    // journée, aussi sportive soit-elle — un trek gagnait donc systématiquement, quelle que soit
+    // journée, aussi sportive soit-elle : un trek gagnait donc systématiquement, quelle que soit
     // l'intensité réelle de chaque jour qui le compose. Mêmes colonnes que maxDistanceDayRecord/
     // maxGainDayRecord ci-dessous (flatDistanceMeters+steepDistanceMeters, steepGainMeters).
     private fun kmEffortRecord(
@@ -219,7 +219,7 @@ object BilanStatsCalculator {
 
     // Même garde-fou que la calibration par segments (SpeedCalibrationCalculator) : une sortie trop
     // courte ou trop plate pour mesurer une pénalité D+ fiable n'a pas plus de sens comme record VAM
-    // qu'elle n'en a comme échantillon de calibration — un artefact de bruit s'afficherait sinon
+    // qu'elle n'en a comme échantillon de calibration : un artefact de bruit s'afficherait sinon
     // comme "record" (RIC-19 §3, garde explicitement demandée par le ticket).
     private fun vamRecord(
         tracks: List<LoggedTrackEntity>,
@@ -256,7 +256,7 @@ object BilanStatsCalculator {
         daysByTrackId: Map<String, List<LoggedTrackDayEntity>>,
     ): BilanRecord? = bestDayRecord(tracks, daysByTrackId, BilanRecordKind.MAX_ALTITUDE) { it.maxElevationMeters }
 
-    // RIC-19 §3 : convention "altitude du dernier point du jour N" — seulement pour un jour qui
+    // RIC-19 §3 : convention "altitude du dernier point du jour N" : seulement pour un jour qui
     // n'est PAS le dernier de sa trace (sinon ce dernier point est la sortie du trek, pas un
     // bivouac ; voir bivouacCount = dayCount - 1 ci-dessus, exactement la même exclusion).
     private fun highestBivouacRecord(
@@ -290,7 +290,7 @@ object BilanStatsCalculator {
     // Distance/D+ du jour reconstruits depuis les sommes de segments RIC-109 (flatDistanceMeters +
     // steepDistanceMeters pour la distance, steepGainMeters pour le D+) plutôt qu'à partir de
     // nouvelles colonnes dédiées : elles existent déjà pour toute la banque (calibration), et
-    // TrackSegmenter ne perd qu'un reliquat de fin de journée < 100 m (sa propre kdoc) — négligeable
+    // TrackSegmenter ne perd qu'un reliquat de fin de journée < 100 m (sa propre kdoc), négligeable
     // à l'affichage en km. Le D+ peut en revanche légèrement sous-compter le D+ des segments classés
     // "plats" (pente nette < 2 %, mais pas rigoureusement nulle) : compromis documenté dans le
     // rapport final plutôt qu'une nouvelle colonne dénormalisée hors du périmètre du ticket.

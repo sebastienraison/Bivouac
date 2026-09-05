@@ -157,7 +157,7 @@ class LoggedTrackPhotoTransactionTest {
      * Le cœur de la transactionnalité côté suppression : marquer n'écrit rien, et abandonner
      * l'édition rend la photo intacte, ligne ET fichier.
      *
-     * L'abandon d'une suppression n'a volontairement pas d'appel dédié dans le repository — c'est
+     * L'abandon d'une suppression n'a volontairement pas d'appel dédié dans le repository : c'est
      * ne rien faire. Ce test le fige quand même, parce que c'est exactement la garantie que la
      * revue attend : une suppression annulée ne doit pas avoir laissé de trace.
      */
@@ -183,7 +183,7 @@ class LoggedTrackPhotoTransactionTest {
      * RIC-149 : la déduplication couvre le transit.
      *
      * Deux passages dans le sélecteur sans sauvegarde entre les deux doivent se comporter comme
-     * deux passages séparés par une sauvegarde — sans cette couverture, la même photo entrerait
+     * deux passages séparés par une sauvegarde : sans cette couverture, la même photo entrerait
      * deux fois et le doublon n'apparaîtrait qu'à la disquette.
      */
     @Test
@@ -230,7 +230,7 @@ class LoggedTrackPhotoTransactionTest {
     /**
      * RIC-149 : le balayage des transits périmés, c'est-à-dire ce qu'un process tué en pleine
      * édition laisse derrière lui. Fait à l'ouverture du Journal (voir JournalViewModel), où aucune
-     * édition n'est encore en cours — d'où l'appel sans exclusion ici.
+     * édition n'est encore en cours : d'où l'appel sans exclusion ici.
      */
     @Test
     fun purgePhotoTransit_removesOrphanTransitFilesButSparesTheOnesStillClaimed() = runBlocking {
@@ -245,14 +245,14 @@ class LoggedTrackPhotoTransactionTest {
         assertFalse(LoggedTrackPhotoStore.resolve(context, orphan.single().transitPath).exists())
         assertTrue(LoggedTrackPhotoStore.resolve(context, stillEditing.single().transitPath).exists())
 
-        // Sans exclusion — le cas réel du démarrage : il ne doit plus rien rester.
+        // Sans exclusion, le cas réel du démarrage : il ne doit plus rien rester.
         repository.purgePhotoTransit()
         assertEquals(emptyList<String>(), transitFiles())
     }
 
     /**
      * RIC-43 : le comparateur qui range les photos à l'écran doit rendre, à la photo près, l'ordre
-     * de la requête DAO — c'est toute sa raison d'être (voir [PhotoDisplayOrder]).
+     * de la requête DAO : c'est toute sa raison d'être (voir [PhotoDisplayOrder]).
      *
      * Vérifié contre la vraie base et non contre une réécriture du `ORDER BY` en commentaire : les
      * deux cas qui se devinent mal sont ici, la date de prise de vue absente (SQLite range les NULL
@@ -306,7 +306,7 @@ class LoggedTrackPhotoTransactionTest {
 
     /**
      * RIC-152 : « Purger les photos ». Le relevé annoncé par le bouton et le résultat de la purge,
-     * vérifiés ensemble — annoncer une volumétrie puis en supprimer une autre serait pire que ne
+     * vérifiés ensemble : annoncer une volumétrie puis en supprimer une autre serait pire que ne
      * rien annoncer.
      */
     @Test
@@ -332,7 +332,7 @@ class LoggedTrackPhotoTransactionTest {
 
     /**
      * RIC-158 : la purge passe désormais sous le dialogue bloquant partagé, qui a besoin d'une
-     * vraie progression (fichier par fichier) et non d'un unique avant/après — une purge peut
+     * vraie progression (fichier par fichier) et non d'un unique avant/après : une purge peut
      * porter sur des centaines de Mo, assez long pour que « toujours à 0 sur N » ne dise rien.
      */
     @Test

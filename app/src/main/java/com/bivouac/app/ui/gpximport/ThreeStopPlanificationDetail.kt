@@ -76,7 +76,7 @@ import kotlin.math.roundToInt
 // ElevationProfile's own Canvas is a fixed 72dp + its 14dp bottom axis regardless of content
 // (see BOTTOM_AXIS_HEIGHT in ElevationProfile.kt), plus the 10dp/2dp top/bottom padding this
 // composable wraps it in below (98dp), plus a small margin against label-descender/antialiasing
-// overhang right at the block's own bottom edge — see the comment on profileHeightPx below for
+// overhang right at the block's own bottom edge: see the comment on profileHeightPx below for
 // why this is a constant rather than an onGloballyPositioned measurement.
 private val PROFILE_BLOCK_HEIGHT_DP = 106.dp
 
@@ -108,7 +108,7 @@ internal fun ThreeStopPlanificationDetail(
     onDeleteClick: () -> Unit,
     onRemovePoint: (String) -> Unit,
     onExportSegment: (index: Int, segment: Segment) -> Unit,
-    // RIC-125 : export de la trace entière, indépendant des segments/bivouacs — seul moyen de
+    // RIC-125 : export de la trace entière, indépendant des segments/bivouacs : seul moyen de
     // sortir une trace mono-jour sans aucun point de bivouac posé (SegmentsList ne s'affiche pas
     // dans ce cas, voir bivouacPoints.isNotEmpty() plus bas).
     onExportTrack: () -> Unit,
@@ -129,7 +129,7 @@ internal fun ThreeStopPlanificationDetail(
         val navigationBarHeightPx = WindowInsets.navigationBars.getBottom(density).toFloat()
         val statusBarHeightPx = WindowInsets.statusBars.getTop(density).toFloat()
         // Every stop below is sized off what its own content actually measures, capped only by
-        // fullHeightPx as an absolute safety net — never by an arbitrary fraction, which is what
+        // fullHeightPx as an absolute safety net, never by an arbitrary fraction, which is what
         // was clipping the profile curve and the segments table on some real devices (BIV-57
         // phone recette): a taller-than-expected header (larger system font, different insets)
         // left less room than the fixed 55%/60% caps assumed, cutting off content below them.
@@ -141,7 +141,7 @@ internal fun ThreeStopPlanificationDetail(
         // PROFILE_BLOCK_HEIGHT_DP, not a live onGloballyPositioned measurement: ElevationProfile's
         // Canvas is a fixed dp height regardless of content, so measuring it dynamically only added
         // a multi-frame convergence lag (summary → profile → detail, each depending on the previous
-        // frame's measurement) — harmless most of the time, but a still-converging PROFILE anchor
+        // frame's measurement): harmless most of the time, but a still-converging PROFILE anchor
         // one frame short of the real value clipped the curve's X-axis labels right at the screen
         // edge (BIV-57 phone recette: zero margin for error since PROFILE's anchor puts the block's
         // bottom edge exactly at the screen's bottom). A known constant sidesteps the lag entirely.
@@ -158,7 +158,7 @@ internal fun ThreeStopPlanificationDetail(
         val profileHeightPx = (summaryHeightPx + with(density) { PROFILE_BLOCK_HEIGHT_DP.toPx() } + profileBottomReservePx)
             .coerceIn(summaryHeightPx, fullHeightPx)
         // How much room is left for the segments list before DETAIL would have to exceed the
-        // screen — the segments Column below is capped to exactly this via heightIn(max), so it
+        // screen: the segments Column below is capped to exactly this via heightIn(max), so it
         // naturally scrolls instead of pushing DETAIL past what fits on long, multi-day traces.
         // Stable from the first frame now that profileHeightPx no longer depends on a measurement
         // of its own, so the segments Column's own measurement converges in a single pass too.
@@ -250,7 +250,7 @@ internal fun ThreeStopPlanificationDetail(
                 ElevationProfile(
                     points = track.points,
                     bivouacPoints = elevationMarkerPoints,
-                    // RIC-126 : même raisonnement que HikeMapView côté GpxImportScreen — sans ça,
+                    // RIC-126 : même raisonnement que HikeMapView côté GpxImportScreen : sans ça,
                     // le profil d'un trek dupliqué depuis le Journal annonce plus de kilomètres que
                     // les statistiques affichées juste au-dessus.
                     dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
@@ -296,7 +296,7 @@ internal fun ThreeStopPlanificationDetail(
 }
 
 // Trailing icons on the title row of an open trace. Order matters and is deliberate: save, then
-// the overflow menu (duplicate/delete), then close last — see CONCEPTION notes. The overflow menu
+// the overflow menu (duplicate/delete), then close last: see CONCEPTION notes. The overflow menu
 // never holds save or close, both stay standalone; reused identically on each home screen list row
 // (minus save, nothing to save from there) to keep the convention consistent across the app.
 @Composable
@@ -317,7 +317,7 @@ private fun TrackActionsRow(
                 Icons.Default.Save,
                 contentDescription = if (dirty) "Enregistrer (modifications non sauvegardées)" else "Enregistrer",
                 // Orange (GainIconColor) rather than the error/red role: an unsaved change isn't
-                // a critical error, just a state — red is reserved for destructive actions
+                // a critical error, just a state: red is reserved for destructive actions
                 // (delete), matching Material 3's role guidance.
                 tint = if (dirty) GainIconColor else MaterialTheme.colorScheme.onSurfaceVariant,
             )
