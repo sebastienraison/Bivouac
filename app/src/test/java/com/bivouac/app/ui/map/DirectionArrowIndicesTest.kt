@@ -47,15 +47,17 @@ class DirectionArrowIndicesTest {
     }
 
     @Test
-    fun spacingIsAQuarterOfTheVisibleWidth() {
+    fun spacingIsAThirdOfTheVisibleWidth() {
         val (xs, ys) = horizontalLine(0, 3000, y = 500.0)
 
         val placed = indices(xs, ys)
 
         assertTrue("une trace traversant l'écran doit porter plusieurs flèches", placed.size >= 3)
-        // Espacement attendu : 25 % de 1000 px. Les positions sont les x eux-mêmes ici.
+        // Espacement attendu : un tiers de 1000 px (retouche recette, RIC-139 : 25 % faisait trop
+        // dense, environ trois flèches par largeur d'écran visées au lieu de quatre). Les positions
+        // sont les x eux-mêmes ici.
         placed.zipWithNext().forEach { (a, b) ->
-            assertEquals("l'espacement doit valoir un quart de largeur", 250.0, xs[b] - xs[a], 2.0)
+            assertEquals("l'espacement doit valoir un tiers de largeur", 1000.0 / 3.0, xs[b] - xs[a], 2.0)
         }
     }
 
@@ -85,7 +87,7 @@ class DirectionArrowIndicesTest {
 
     /**
      * Lacets serrés : la trace fait des allers-retours de 30 px de large en descendant l'écran.
-     * Un quart de largeur le long du tracé n'y fait que quelques pixels en ligne droite : sans la
+     * Un tiers de largeur le long du tracé n'y fait que quelques pixels en ligne droite : sans la
      * distance minimale, les flèches s'empileraient les unes sur les autres.
      */
     @Test

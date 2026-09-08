@@ -118,14 +118,18 @@ private const val SINGLE_POINT_SPAN_DEGREES = 0.01
 // How close (in dp) a tap needs to land next to the track line to register as "add a point here".
 private const val TRACK_TAP_TOLERANCE_DP = 24f
 
-// Flèches de direction sur les traces en boucle (BIV-46).
+// Flèches de direction sur les traces (BIV-46, plus limitées aux boucles depuis la retouche
+// RIC-139, voir directionArrowsEligible).
 //
 // RIC-139 : l'espacement se mesure désormais À L'ÉCRAN et non plus en mètres de terrain. BIV-46
 // posait une flèche tous les 2500 m, deux à quatre par trace, calculées une fois pour toutes :
 // zoomé, ces deux à quatre flèches se retrouvaient hors du cadre et la trace n'en portait plus une
 // seule. Une fraction de la largeur visible est la seule mesure qui garde la même densité de
 // flèches à tous les zooms, parce que c'est celle que l'œil applique.
-private const val ARROW_SPACING_SCREEN_FRACTION = 0.25
+//
+// RIC-139 (retouche recette) : 25 % (quatre flèches par largeur d'écran) faisait trop dense à la
+// relecture ; remonté à un tiers, environ trois flèches par largeur d'écran.
+private const val ARROW_SPACING_SCREEN_FRACTION = 1.0 / 3.0
 
 // Distance minimale entre deux flèches CONSÉCUTIVES le long de la trace : dans un lacet serré, deux
 // positions distantes d'un quart d'écran le long du tracé peuvent se superposer à l'écran.
@@ -1350,17 +1354,34 @@ private fun endpointMarkers(mapView: MapView, points: List<TrackPoint>): List<Ma
     }
 }
 
-// Chevron markers only belong on loops, where the shared start/finish marker leaves direction
-// ambiguous. [tintColor]
-// recolors the whole icon (losing its white outline in exchange) for multi-trace mode, where each
-// trace's arrows need to match its own line color rather than the single-track default blue.
+/**
+ * RIC-139 (retouche recette) : une trace est-elle assez longue pour porter des flèches de
+ * direction.
+ *
+ * Ne filtre plus sur [TrackGeometry.isLoop]. Cette restriction, héritée de BIV-46, réservait les
+ * flèches aux boucles (départ = arrivée) au motif que c'est là que le marqueur de départ/arrivée
+ * confondu laisse la direction ambiguë. C'était en réalité la cause du bug remonté en recette
+ * (« aucune flèche sur le détail Journal d'un trek multi-jours ») : ce n'est PAS un défaut du
+ * chemin de rendu multi-jours du Journal, [directionArrowMarkers] reçoit toujours `points`/
+ * `geoPoints` déjà concaténés sur toute la trace (voir renderTrack, identique pour Planification) ;
+ * la trace multi-jours testée en recette n'était simplement pas une boucle au sens global (elle ne
+ * revient pas à son point de départ), et une trace point-à-point mono-jour aurait exactement le
+ * même sort avec l'ancien filtre. Le sens de parcours est utile sur n'importe quelle trace assez
+ * longue pour s'y perdre en cours de route, boucle ou non ; l'ambiguïté départ/arrivée que
+ * [TrackGeometry.isLoop] visait reste résolue par endpointMarkers (pins distincts hors boucle).
+ */
+internal fun directionArrowsEligible(points: List<TrackPoint>): Boolean = points.size >= 3
+
+// [tintColor] recolors the whole icon (losing its white outline in exchange) for multi-trace mode,
+// where each trace's arrows need to match its own line color rather than the single-track default
+// blue.
 private fun directionArrowMarkers(
     mapView: MapView,
     points: List<TrackPoint>,
     geoPoints: List<GeoPoint>,
     tintColor: Int? = null,
 ): List<Marker> {
-    if (points.size < 3 || !TrackGeometry.isLoop(points, LOOP_THRESHOLD_METERS)) return emptyList()
+    if (!directionArrowsEligible(points)) return emptyList()
     val cumulative = TrackGeometry.cumulativeDistancesMeters(points)
     if (cumulative.last() <= 0) return emptyList()
 
