@@ -73,6 +73,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.hypot
 import kotlin.math.log2
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -117,11 +118,32 @@ private const val SINGLE_POINT_SPAN_DEGREES = 0.01
 // How close (in dp) a tap needs to land next to the track line to register as "add a point here".
 private const val TRACK_TAP_TOLERANCE_DP = 24f
 
-// Direction arrows along loop tracks (BIV-46): two on short loops, up to four on longer ones.
-// Equal fractions of cumulative distance keep them visually regular whatever the GPX sampling.
-private const val ARROW_TARGET_SPACING_METERS = 2500.0
-private const val ARROW_MIN_COUNT = 2
-private const val ARROW_MAX_COUNT = 4
+// Flèches de direction sur les traces en boucle (BIV-46).
+//
+// RIC-139 : l'espacement se mesure désormais À L'ÉCRAN et non plus en mètres de terrain. BIV-46
+// posait une flèche tous les 2500 m, deux à quatre par trace, calculées une fois pour toutes :
+// zoomé, ces deux à quatre flèches se retrouvaient hors du cadre et la trace n'en portait plus une
+// seule. Une fraction de la largeur visible est la seule mesure qui garde la même densité de
+// flèches à tous les zooms, parce que c'est celle que l'œil applique.
+private const val ARROW_SPACING_SCREEN_FRACTION = 0.25
+
+// Distance minimale entre deux flèches CONSÉCUTIVES le long de la trace : dans un lacet serré, deux
+// positions distantes d'un quart d'écran le long du tracé peuvent se superposer à l'écran.
+//
+// Volontairement limité aux flèches consécutives : sur un aller-retour, les flèches de l'aller et
+// du retour se côtoient de près en pointant en sens inverse, et c'est le comportement VOULU (c'est
+// même la seule chose qui distingue un aller-retour d'une boucle à l'œil). Elles ne sont jamais
+// consécutives le long de la trace, cette règle ne les touche donc pas.
+private const val ARROW_MIN_SEPARATION_DP = 26f
+
+// Marge d'exclusion sur les bords : une flèche à moitié coupée par le bord de l'écran se lit mal.
+private const val ARROW_VIEWPORT_MARGIN_DP = 20f
+
+// Garde-fou : une trace très repliée sur elle-même (lacets de montagne vus de près) peut traverser
+// l'écran des dizaines de fois. Chaque flèche est un Marker redessiné à chaque frame : au-delà,
+// elles n'apportent plus d'information et coûtent du temps de dessin.
+private const val ARROW_MAX_VISIBLE = 40
+
 // How far to look before/after an arrow's position when computing its bearing: wide enough that
 // small local zigzags (switchbacks, GPS jitter) don't flip an arrow against the trace's actual
 // macro direction of travel at that point.
@@ -130,7 +152,7 @@ private const val ARROW_BEARING_WINDOW_METERS = 150.0
 // Cursor bubble (BIV-52): lifted above the pin by roughly its rendered height, so the bubble
 // doesn't sit on top of (and block dragging) the marker it's describing.
 private const val CURSOR_MARKER_HEIGHT_DP = 40f
-private const val CLUSTER_REFRESH_DEBOUNCE_MS = 200L
+private const val MAP_GESTURE_REFRESH_DEBOUNCE_MS = 200L
 private const val CURSOR_HIT_RADIUS_DP = 28f
 
 // Journal-only (BIV-48): one track among several shown together in the multi-trace overview.
@@ -286,7 +308,13 @@ fun HikeMapView(
     // de scroll/zoom par seconde, et renderTrack reconstruit tous les overlays (polyligne
     // comprise), pas seulement les photos : le déclencher à chaque frame de geste aurait
     // introduit un vrai à-coup visuel.
-    var clusterRefreshTick by remember { mutableIntStateOf(0) }
+    //
+    // RIC-139 : les flèches de direction dépendent maintenant du cadrage visible, elles ont donc
+    // exactement le même besoin et se raccrochent au même signal plutôt que d'en ajouter un
+    // second. Le debounce est ce qui les tient hors du chemin de frame : pendant le geste, les
+    // flèches déjà posées glissent avec la carte comme n'importe quel marqueur, et la
+    // régénération n'a lieu qu'une fois le doigt reposé.
+    var mapGestureTick by remember { mutableIntStateOf(0) }
     val coroutineScope = rememberCoroutineScope()
     DisposableEffect(mapView) {
         var debounceJob: Job? = null
@@ -294,8 +322,8 @@ fun HikeMapView(
             override fun onScroll(event: ScrollEvent?): Boolean {
                 debounceJob?.cancel()
                 debounceJob = coroutineScope.launch {
-                    delay(CLUSTER_REFRESH_DEBOUNCE_MS)
-                    clusterRefreshTick++
+                    delay(MAP_GESTURE_REFRESH_DEBOUNCE_MS)
+                    mapGestureTick++
                 }
                 return false
             }
@@ -303,8 +331,8 @@ fun HikeMapView(
             override fun onZoom(event: ZoomEvent?): Boolean {
                 debounceJob?.cancel()
                 debounceJob = coroutineScope.launch {
-                    delay(CLUSTER_REFRESH_DEBOUNCE_MS)
-                    clusterRefreshTick++
+                    delay(MAP_GESTURE_REFRESH_DEBOUNCE_MS)
+                    mapGestureTick++
                 }
                 return false
             }
@@ -342,9 +370,11 @@ fun HikeMapView(
             factory = { mapView },
             update = { view ->
                 // Lecture volontaire : force ce bloc à se réexécuter quand le debounce ci-dessus
-                // incrémente le compteur après un pincement de zoom, sans quoi Compose n'a aucune
-                // raison de rappeler update() en dehors des changements qu'il lit déjà plus bas.
-                clusterRefreshTick
+                // incrémente le compteur après un pincement de zoom ou un déplacement, sans quoi
+                // Compose n'a aucune raison de rappeler update() en dehors des changements qu'il
+                // lit déjà plus bas. C'est ce qui replace les flèches de direction (RIC-139) et
+                // redécoupe les grappes de photos (RIC-43) au nouveau cadrage.
+                mapGestureTick
                 if (selectedLayer != lastLayer.value) {
                     view.setTileSource(selectedLayer.tileSource)
                     lastLayer.value = selectedLayer
@@ -1332,13 +1362,35 @@ private fun directionArrowMarkers(
 ): List<Marker> {
     if (points.size < 3 || !TrackGeometry.isLoop(points, LOOP_THRESHOLD_METERS)) return emptyList()
     val cumulative = TrackGeometry.cumulativeDistancesMeters(points)
-    val totalDistance = cumulative.last()
-    if (totalDistance <= 0) return emptyList()
+    if (cumulative.last() <= 0) return emptyList()
 
-    val count = (totalDistance / ARROW_TARGET_SPACING_METERS).roundToInt().coerceIn(ARROW_MIN_COUNT, ARROW_MAX_COUNT)
-    return (1..count).mapNotNull { i ->
-        val targetDistance = totalDistance * i / (count + 1)
-        val index = nearestIndexForDistance(cumulative, targetDistance)
+    // RIC-139 : une seule passe de projection pour toute la trace, puis un placement purement
+    // écran. Passer par les pixels plutôt que par une résolution en mètres par pixel n'est pas un
+    // détour : c'est ce qui rend l'espacement juste sur une trace repliée, où deux points éloignés
+    // sur le terrain se retrouvent côte à côte à l'écran.
+    val projection = mapView.projection
+    val size = geoPoints.size
+    val screenX = DoubleArray(size)
+    val screenY = DoubleArray(size)
+    val scratch = Point()
+    for (i in 0 until size) {
+        projection.toPixels(geoPoints[i], scratch)
+        screenX[i] = scratch.x.toDouble()
+        screenY[i] = scratch.y.toDouble()
+    }
+
+    val density = mapView.resources.displayMetrics.density
+    val indices = directionArrowIndices(
+        screenX = screenX,
+        screenY = screenY,
+        viewportWidthPx = mapView.width.toDouble(),
+        viewportHeightPx = mapView.height.toDouble(),
+        marginPx = (ARROW_VIEWPORT_MARGIN_DP * density).toDouble(),
+        minSeparationPx = (ARROW_MIN_SEPARATION_DP * density).toDouble(),
+        maxArrows = ARROW_MAX_VISIBLE,
+    )
+
+    return indices.mapNotNull { index ->
         val screenRotation = projectedTangentRotation(mapView, geoPoints, cumulative, index)
             ?: return@mapNotNull null
         Marker(mapView).apply {
@@ -1356,6 +1408,95 @@ private fun directionArrowMarkers(
             setOnMarkerClickListener { _, _ -> false }
         }
     }
+}
+
+/**
+ * RIC-139 : où poser les flèches de direction, en coordonnées écran et rien d'autre.
+ *
+ * Extraite du composable pour être testable seule : c'est ici que vit toute la règle de placement,
+ * [directionArrowMarkers] ne fait plus que projeter la trace et fabriquer les marqueurs.
+ *
+ * Le parcours se fait le long du tracé DESSINÉ, en additionnant les longueurs écran segment par
+ * segment, et une flèche tombe tous les [ARROW_SPACING_SCREEN_FRACTION] de largeur visible. C'est
+ * ce qui donne la même densité de flèches à tous les zooms : en zoomant, un même quart d'écran
+ * couvre moins de terrain, donc les flèches se rapprochent en mètres et restent aussi lisibles.
+ *
+ * Trois filtres ensuite :
+ *  - hors cadre (moins [marginPx] sur chaque bord) : rien à montrer là, et une flèche coupée par
+ *    le bord se lit mal. C'est aussi ce qui borne le coût : zoomé sur un lacet, seule la portion
+ *    visible produit des marqueurs, pas les 100 km de la trace.
+ *  - trop près de la flèche PRÉCÉDENTE, à moins de [minSeparationPx] : le cas du lacet serré, où
+ *    un quart d'écran le long du tracé ne fait que quelques pixels en ligne droite. Comparée à la
+ *    précédente retenue seulement, jamais à toutes : sur un aller-retour, les flèches de l'aller et
+ *    du retour doivent pouvoir se côtoyer en pointant en sens inverse, c'est voulu.
+ *  - au-delà de [maxArrows], on s'arrête.
+ *
+ * Cas d'une trace plus courte que l'espacement (une petite boucle vue de loin) : le parcours ne
+ * franchirait aucun seuil et la trace n'aurait aucune flèche, alors que c'est justement une boucle,
+ * donc le cas où la direction est ambiguë. Une flèche unique est alors posée au milieu du tracé.
+ *
+ * @return les index de points de la trace où poser une flèche, dans l'ordre du parcours.
+ */
+internal fun directionArrowIndices(
+    screenX: DoubleArray,
+    screenY: DoubleArray,
+    viewportWidthPx: Double,
+    viewportHeightPx: Double,
+    marginPx: Double,
+    minSeparationPx: Double,
+    maxArrows: Int,
+): List<Int> {
+    val size = minOf(screenX.size, screenY.size)
+    if (size < 3 || viewportWidthPx <= 0 || viewportHeightPx <= 0 || maxArrows <= 0) return emptyList()
+    val spacingPx = viewportWidthPx * ARROW_SPACING_SCREEN_FRACTION
+    if (spacingPx <= 0) return emptyList()
+
+    fun visible(i: Int): Boolean =
+        screenX[i] >= marginPx && screenX[i] <= viewportWidthPx - marginPx &&
+            screenY[i] >= marginPx && screenY[i] <= viewportHeightPx - marginPx
+
+    val result = mutableListOf<Int>()
+    var travelled = 0.0
+    // Le premier seuil à un demi-intervalle : une flèche posée dès le premier quart d'écran
+    // tomberait sur le marqueur de départ/arrivée de la boucle, qui occupe déjà cet endroit.
+    var nextThreshold = spacingPx / 2
+    var lastKeptIndex = -1
+
+    for (i in 1 until size) {
+        travelled += hypot(screenX[i] - screenX[i - 1], screenY[i] - screenY[i - 1])
+        if (travelled < nextThreshold) continue
+        // Repart de la position réelle et non du seuil franchi : sur un segment GPX très long
+        // (points espacés), caler le seuil suivant sur le seuil théorique ferait tomber les
+        // flèches suivantes en rafale sur les quelques points d'après.
+        nextThreshold = travelled + spacingPx
+        if (!visible(i)) continue
+        if (lastKeptIndex >= 0) {
+            val gap = hypot(screenX[i] - screenX[lastKeptIndex], screenY[i] - screenY[lastKeptIndex])
+            if (gap < minSeparationPx) continue
+        }
+        result += i
+        lastKeptIndex = i
+        if (result.size >= maxArrows) return result
+    }
+
+    if (result.isEmpty()) {
+        val middle = indexAtHalfScreenLength(screenX, screenY, size)
+        if (middle != null && visible(middle)) result += middle
+    }
+    return result
+}
+
+/** Le point du tracé qui coupe sa longueur écran en deux, ou null si le tracé est ponctuel. */
+private fun indexAtHalfScreenLength(screenX: DoubleArray, screenY: DoubleArray, size: Int): Int? {
+    var total = 0.0
+    for (i in 1 until size) total += hypot(screenX[i] - screenX[i - 1], screenY[i] - screenY[i - 1])
+    if (total <= 0.0) return null
+    var travelled = 0.0
+    for (i in 1 until size) {
+        travelled += hypot(screenX[i] - screenX[i - 1], screenY[i] - screenY[i - 1])
+        if (travelled >= total / 2) return i
+    }
+    return size / 2
 }
 
 // Looks a fixed distance before/after [index] (rather than at its immediate neighbors) so a
