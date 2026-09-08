@@ -1769,16 +1769,16 @@ internal fun ThreeStopJournalDetail(
         }
 
         fun toggleSystemDraftTag(systemTag: SystemTag) {
+            // Les deux tags système restants s'excluent mutuellement : activer l'un retire l'autre.
             val exclusiveWith = when (systemTag) {
                 SystemTag.SOLO -> SystemTag.GROUPE
                 SystemTag.GROUPE -> SystemTag.SOLO
-                SystemTag.EXTREME -> null
             }
             val activating = systemTag.value !in draftTags
-            draftTags = when {
-                activating && exclusiveWith != null -> (draftTags - exclusiveWith.value) + systemTag.value
-                activating -> draftTags + systemTag.value
-                else -> draftTags - systemTag.value
+            draftTags = if (activating) {
+                (draftTags - exclusiveWith.value) + systemTag.value
+            } else {
+                draftTags - systemTag.value
             }
         }
 
@@ -2335,7 +2335,6 @@ private fun Context.openAppSettings() {
 
 private val SoloColor = Color(0xFF7C6FCC)
 private val GroupeColor = Color(0xFF4FA8A0)
-private val ExtremeColor = Color(0xFFC0392B)
 private val FreeTagPalette = listOf(
     Color(0xFF4A7FBF), Color(0xFFB8860B), Color(0xFFC2588E), Color(0xFF5A8F3C), Color(0xFF8A6A4B),
 )
@@ -2343,7 +2342,8 @@ private val FreeTagPalette = listOf(
 private fun tagColor(tag: String): Color = when (tag) {
     SystemTag.SOLO.value -> SoloColor
     SystemTag.GROUPE.value -> GroupeColor
-    SystemTag.EXTREME.value -> ExtremeColor
+    // RIC-145 : "extreme" n'est plus un tag système ; les lignes déjà en base retombent donc ici,
+    // dans la palette des tags libres, sans traitement particulier.
     else -> FreeTagPalette[(tag.hashCode() and 0x7fffffff) % FreeTagPalette.size]
 }
 
