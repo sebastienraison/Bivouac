@@ -1527,7 +1527,18 @@ private fun JournalTrackRow(
                 // Muets par construction : même taille que le badge bivouac voisin, teinte
                 // onSurfaceVariant comme le texte de cette ligne. Ils signalent une présence, ils
                 // ne comptent rien : ni le nombre de photos, ni la longueur de la note.
+                //
+                // RIC-141 (retouche) : le bloc date/bivouacs précède toujours ces pictos et n'est
+                // jamais vide, donc chacun des deux, quand il est affiché, porte SON PROPRE
+                // séparateur juste avant lui, sans se soucier de la présence de l'autre. Avant, le
+                // séparateur ne s'affichait qu'entre les deux pictos : une sortie sans note mais
+                // avec photos passait directement du bloc bivouacs au picto photos, sans "·".
                 if (entry.note.isNotBlank()) {
+                    Text(
+                        text = "·",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Icon(
                         Icons.AutoMirrored.Filled.Notes,
                         contentDescription = "note",
@@ -1535,17 +1546,12 @@ private fun JournalTrackRow(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                // RIC-141 (retouche) : même séparateur, même caractère et même style, que celui
-                // posé entre la date et le nombre de bivouacs juste au-dessus (" · $bivouacCount") ;
-                // seulement entre les deux pictos, jamais avant le premier ni après le second.
-                if (entry.note.isNotBlank() && hasPhotos) {
+                if (hasPhotos) {
                     Text(
                         text = "·",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-                if (hasPhotos) {
                     Icon(
                         Icons.Default.PhotoLibrary,
                         contentDescription = "photos",
