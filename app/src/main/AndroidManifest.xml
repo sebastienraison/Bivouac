@@ -65,12 +65,19 @@
              uiMode volontairement absent de la liste : le passage clair/sombre continue donc de
              recréer l'Activity, ce qui est exactement ce qu'il faut pour qu'enableEdgeToEdge
              réapplique le bon habillage des barres système. -->
+        <!-- RIC-168 : sans launchMode, un GPX ouvert depuis un gestionnaire de fichiers (Mes
+             fichiers sur One UI, entre autres) alors que l'app est déjà lancée créait une SECONDE
+             instance de MainActivity dans la tâche du gestionnaire de fichiers (deux Bivouac dans
+             les récentes). singleTask fait revenir l'instance existante au premier plan et livrer
+             l'intent à onNewIntent au lieu d'en empiler une seconde ; app mono-activité (voir plus
+             bas, une seule <activity> déclarée), donc pas de back stack à préserver au-dessus. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:windowSoftInputMode="adjustResize"
-            android:label="@string/app_name">
+            android:label="@string/app_name"
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
