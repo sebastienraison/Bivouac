@@ -403,6 +403,12 @@ class LoggedTrackRepository(context: Context) {
     suspend fun tagsByTrackId(): Map<String, List<String>> =
         dao.getAllTags().groupBy({ it.trackId }, { it.tag })
 
+    /**
+     * RIC-141 : les traces qui ont au moins une photo. La liste du Journal en fait un picto par
+     * ligne : elle n'a besoin de rien d'autre des photos, surtout pas de leurs lignes complètes.
+     */
+    suspend fun trackIdsWithPhotos(): Set<String> = dao.getTrackIdsWithPhotos().toSet()
+
     suspend fun addTag(trackId: String, tag: String) {
         dao.insertTag(LoggedTrackTagEntity(trackId = trackId, tag = tag))
     }

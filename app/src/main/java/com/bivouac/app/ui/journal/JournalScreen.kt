@@ -47,6 +47,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
@@ -55,6 +56,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material.icons.filled.Terrain
@@ -216,6 +218,7 @@ fun JournalScreen(
     val filteredTracks by viewModel.filteredTracks.collectAsStateWithLifecycle()
     val tagsByTrackId by viewModel.tagsByTrackId.collectAsStateWithLifecycle()
     val dayInfoByTrackId by viewModel.dayInfoByTrackId.collectAsStateWithLifecycle()
+    val trackIdsWithPhotos by viewModel.trackIdsWithPhotos.collectAsStateWithLifecycle()
     val selectedFilterTags by viewModel.selectedFilterTags.collectAsStateWithLifecycle()
     val currentTags by viewModel.currentTags.collectAsStateWithLifecycle()
     val currentPhotos by viewModel.currentPhotos.collectAsStateWithLifecycle()
@@ -501,6 +504,7 @@ fun JournalScreen(
                 activeCalibration = activeCalibration,
                 tagsByTrackId = tagsByTrackId,
                 dayInfoByTrackId = dayInfoByTrackId,
+                trackIdsWithPhotos = trackIdsWithPhotos,
                 selectedFilterTags = selectedFilterTags,
                 onToggleFilterTag = viewModel::toggleFilterTag,
                 onImportClick = { pickGpxLauncher.launch(arrayOf("*/*")) },
@@ -1048,6 +1052,9 @@ private fun JournalHomeScreen(
     activeCalibration: SpeedCalibration,
     tagsByTrackId: Map<String, List<String>>,
     dayInfoByTrackId: Map<String, JournalDayInfo>,
+    // RIC-141 : les traces qui ont au moins une photo, pour le picto de la ligne. Un set et non un
+    // compte : la ligne ne dit que « il y en a », jamais combien.
+    trackIdsWithPhotos: Set<String>,
     selectedFilterTags: Set<String>,
     onToggleFilterTag: (String) -> Unit,
     onImportClick: () -> Unit,
@@ -1129,6 +1136,7 @@ private fun JournalHomeScreen(
                 activeCalibration = activeCalibration,
                 tagsByTrackId = tagsByTrackId,
                 dayInfoByTrackId = dayInfoByTrackId,
+                trackIdsWithPhotos = trackIdsWithPhotos,
                 selectedFilterTags = selectedFilterTags,
                 onToggleFilterTag = onToggleFilterTag,
                 onTrackClick = onTrackClick,
@@ -1187,6 +1195,9 @@ private fun JournalPopulatedList(
     activeCalibration: SpeedCalibration,
     tagsByTrackId: Map<String, List<String>>,
     dayInfoByTrackId: Map<String, JournalDayInfo>,
+    // RIC-141 : les traces qui ont au moins une photo, pour le picto de la ligne. Un set et non un
+    // compte : la ligne ne dit que « il y en a », jamais combien.
+    trackIdsWithPhotos: Set<String>,
     selectedFilterTags: Set<String>,
     onToggleFilterTag: (String) -> Unit,
     onTrackClick: (LoggedTrackEntity) -> Unit,
@@ -1352,6 +1363,7 @@ private fun JournalPopulatedList(
                     JournalTrackRow(
                         entry = entry,
                         dayInfo = dayInfoByTrackId[entry.id],
+                        hasPhotos = entry.id in trackIdsWithPhotos,
                         activeCalibration = activeCalibration,
                         selectionModeActive = selectionModeActive,
                         selected = entry.id in selectedTrackIds,
@@ -1460,6 +1472,8 @@ private fun YearHeader(
 private fun JournalTrackRow(
     entry: LoggedTrackEntity,
     dayInfo: JournalDayInfo?,
+    // RIC-141 : voir le commentaire des deux pictos plus bas.
+    hasPhotos: Boolean,
     activeCalibration: SpeedCalibration,
     selectionModeActive: Boolean,
     selected: Boolean,
@@ -1503,6 +1517,30 @@ private fun JournalTrackRow(
                         painter = painterResource(R.drawable.ic_bivouac_badge),
                         contentDescription = "nuit${if (bivouacCount != 1) "s" else ""} de bivouac",
                         modifier = Modifier.size(14.dp),
+                    )
+                }
+                // RIC-141 : ce que la ligne ne disait pas, et qu'il fallait ouvrir chaque sortie
+                // pour savoir : elle porte une note, elle porte des photos. Posés sur la ligne de
+                // date plutôt qu'après le titre : c'est déjà la ligne des à-côtés (dates, nuits de
+                // bivouac), et un titre long y aurait repoussé les pictos hors de l'écran.
+                //
+                // Muets par construction : même taille que le badge bivouac voisin, teinte
+                // onSurfaceVariant comme le texte de cette ligne. Ils signalent une présence, ils
+                // ne comptent rien : ni le nombre de photos, ni la longueur de la note.
+                if (entry.note.isNotBlank()) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Notes,
+                        contentDescription = "note",
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (hasPhotos) {
+                    Icon(
+                        Icons.Default.PhotoLibrary,
+                        contentDescription = "photos",
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

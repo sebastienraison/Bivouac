@@ -115,6 +115,13 @@ interface LoggedTrackDao {
     @Query("SELECT * FROM logged_track_photo WHERE id = :id")
     suspend fun getPhoto(id: Long): LoggedTrackPhotoEntity?
 
+    // RIC-141 : les identifiants des traces qui ont au moins une photo, toutes traces confondues.
+    // Une requête pour toute la banque, sur le modèle de getAllTags : la liste du Journal ne veut
+    // qu'un booléen par ligne, charger les photos trace par trace pour l'obtenir serait N requêtes
+    // et N listes d'entités pour rien.
+    @Query("SELECT DISTINCT trackId FROM logged_track_photo")
+    suspend fun getTrackIdsWithPhotos(): List<String>
+
     // RIC-43 : les chemins seuls, toutes traces confondues : ce dont le balayage des orphelins de
     // BackupManager a besoin, sans charger les lignes entières.
     @Query("SELECT filePath FROM logged_track_photo")

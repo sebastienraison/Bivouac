@@ -275,4 +275,49 @@ class LoggedTrackPhotoRepositoryTest {
         assertEquals(setOf(photo.id), missing)
         assertFalse("la ligne doit survivre à la disparition de son fichier", repository.listPhotos(trackId).isEmpty())
     }
+
+    /**
+     * RIC-141 : ce sur quoi repose le picto « a des photos » de la liste du Journal. Une seule
+     * requête pour toute la banque, et un booléen par trace : le contrat est qu'une trace y entre
+     * dès sa première photo et en sort avec la dernière.
+     */
+    @Test
+    fun trackIdsWithPhotos_followsTheFirstAndTheLastPhotoOfATrack() = runBlocking {
+        createTrack()
+        assertEquals(
+            "une trace sans photo ne doit pas y figurer",
+            emptySet<String>(),
+            repository.trackIdsWithPhotos(),
+        )
+
+        addPhotos(listOf(registerPhoto("a", byteArrayOf(1)), registerPhoto("b", byteArrayOf(2))))
+        assertEquals(
+            "deux photos ne doivent produire qu'une entrée",
+            setOf(trackId),
+            repository.trackIdsWithPhotos(),
+        )
+
+        // La première des deux seulement : tant qu'il en reste une, la trace reste signalée.
+        repository.deletePhotos(listOf(repository.listPhotos(trackId).first().id))
+        assertEquals(setOf(trackId), repository.trackIdsWithPhotos())
+
+        repository.deletePhotos(repository.listPhotos(trackId).map { it.id })
+        assertEquals(
+            "la dernière photo partie, la trace ne doit plus y figurer",
+            emptySet<String>(),
+            repository.trackIdsWithPhotos(),
+        )
+    }
+
+    /** RIC-152 : la purge globale des photos vide aussi ce que la liste interroge. */
+    @Test
+    fun trackIdsWithPhotos_isEmptiedByTheGlobalPhotoPurge() = runBlocking {
+        createTrack()
+        addPhotos(listOf(registerPhoto("a", byteArrayOf(1))))
+        assertEquals(setOf(trackId), repository.trackIdsWithPhotos())
+
+        repository.purgeAllPhotos()
+
+        assertEquals(emptySet<String>(), repository.trackIdsWithPhotos())
+    }
 }
