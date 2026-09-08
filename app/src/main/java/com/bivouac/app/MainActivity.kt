@@ -198,6 +198,7 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
     // Planification connaissent déjà leur univers par construction, voir UniverseChoiceDialog.
     universeChoicePending?.let { uris ->
         UniverseChoiceDialog(
+            fileCount = uris.size,
             onJournalChosen = {
                 universeChoiceResolved = true
                 incomingJournalUris = uris
@@ -205,12 +206,10 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
             },
             onPlanificationChosen = {
                 universeChoiceResolved = true
-                // Planification n'a jamais su ouvrir qu'un seul fichier à la fois (voir son propre
-                // sélecteur, OpenDocument et non OpenMultipleDocuments) : un lot externe choisi
-                // pour cet univers perd donc silencieusement tout fichier au-delà du premier.
-                // Comportement non tranché par RIC-104, signalé au pilotage plutôt que deviné plus
-                // loin (agrandir Planification au multi-fichiers, ou désactiver ce choix au-delà
-                // d'un fichier).
+                // RIC-108 : ce first() ne perd plus rien. Planification n'a jamais su ouvrir qu'un
+                // seul fichier à la fois (voir son propre sélecteur, OpenDocument et non
+                // OpenMultipleDocuments), et le dialogue grise désormais ce choix au-delà d'un
+                // fichier reçu : le seul lot qui arrive ici en compte exactement un.
                 incomingPlanificationUri = uris.first()
                 onSectionSelected(AppSection.PLANIFICATION)
             },
