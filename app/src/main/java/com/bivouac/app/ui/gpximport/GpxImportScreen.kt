@@ -92,6 +92,56 @@ import kotlinx.coroutines.flow.first
 
 private val PEEK_HEIGHT_EMPTY = 150.dp
 
+/**
+ * RIC-164 : les quatre visages de l'écran Planification, dont deux seulement portent une carte.
+ *
+ * Le défaut, relevé par le test communautaire F-Droid : au tout premier lancement, cache vide,
+ * l'écran affiché est « Aucune trace en préparation » (aucune carte visible), et pourtant une tuile
+ * OpenTopoMap partait sur le réseau. Mécanisme exact : [GpxImportViewModel.bankedTracesLoaded] naît
+ * à false, donc la toute première composition ne pouvait pas prendre la branche de l'état vide (qui
+ * l'exige, pour ne pas flasher devant une session en cours de restauration) et tombait sur la
+ * branche « banque non vide » : celle-ci compose un HikeMapView, qui instancie un MapView osmdroid
+ * avec sa source de tuiles et son centre par défaut. Le MapView charge sa première tuile
+ * immédiatement, avant même d'être dessiné, et la composition était remplacée quelques
+ * millisecondes plus tard par l'état vide : un aller-retour réseau pour une carte que personne n'a
+ * jamais vue.
+ *
+ * D'où [LOADING], qui n'existait pas : tant que la première lecture Room n'a pas répondu, l'écran
+ * ne montre ni carte ni verdict sur la banque. Aucun HikeMapView n'est composé dans cet état, donc
+ * aucun MapView n'est construit, donc aucune tuile n'est demandée. C'est bien la construction du
+ * MapView qui déclenche le téléchargement, pas son affichage : la seule garantie possible est de ne
+ * pas le créer, et c'est ce que ce mode assure.
+ *
+ * Fonction pure et testable plutôt qu'une cascade de `if` dans le composable : l'invariant à tenir
+ * (« pas de carte avant qu'il y ait quelque chose à montrer ») se vérifie alors sans appareil.
+ */
+internal enum class PlanificationScreenMode {
+    /** Première lecture de la banque en vol. Aucune carte. */
+    LOADING,
+
+    /** Banque vide et rien d'ouvert : plein écran d'accueil. Aucune carte. */
+    EMPTY,
+
+    /** Banque non vide, rien d'ouvert : carte de fond et tiroir listant les traces bankées. */
+    BANK,
+
+    /** Une trace ouverte : carte et tiroir de détail. */
+    DETAIL,
+}
+
+internal fun planificationScreenMode(
+    uiState: GpxImportUiState,
+    bankedTracesEmpty: Boolean,
+    bankedTracesLoaded: Boolean,
+): PlanificationScreenMode = when {
+    // Une trace ouverte l'emporte sur tout le reste : c'est déjà quelque chose à montrer, même si
+    // la lecture de la banque n'a pas encore répondu (cas de la restauration de session).
+    uiState is GpxImportUiState.Loaded -> PlanificationScreenMode.DETAIL
+    !bankedTracesLoaded -> PlanificationScreenMode.LOADING
+    uiState is GpxImportUiState.Idle && bankedTracesEmpty -> PlanificationScreenMode.EMPTY
+    else -> PlanificationScreenMode.BANK
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GpxImportScreen(
@@ -227,7 +277,19 @@ fun GpxImportScreen(
     // que la lecture Room de la banque ET restoreLastTrack aboutissent, uiState valait encore Idle
     // et bankedTraces encore emptyList() par construction, alors qu'une session précédente était
     // bel et bien sur le point d'être restaurée (voir GpxImportViewModel.bankedTracesLoaded).
-    if (uiState is GpxImportUiState.Idle && bankedTraces.isEmpty() && bankedTracesLoaded) {
+    val screenMode = planificationScreenMode(uiState, bankedTraces.isEmpty(), bankedTracesLoaded)
+    if (screenMode == PlanificationScreenMode.LOADING) {
+        // RIC-164 : rien, surtout pas de carte, tant que la première lecture Room n'a pas répondu.
+        // Voir [planificationScreenMode] pour ce que ce trou coûtait.
+        Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+            SectionMenuButton(
+                current = currentSection,
+                onSelect = onSectionSelected,
+                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(16.dp),
+            )
+        }
+    } else if (screenMode == PlanificationScreenMode.EMPTY) {
         Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             FullScreenEmptyState(
                 icon = Icons.Default.Route,
