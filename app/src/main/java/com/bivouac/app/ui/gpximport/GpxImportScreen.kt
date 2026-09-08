@@ -122,6 +122,7 @@ fun GpxImportScreen(
     val bankedTracesLoaded by viewModel.bankedTracesLoaded.collectAsStateWithLifecycle()
     val nameDialogRequest by viewModel.nameDialogRequest.collectAsStateWithLifecycle()
     val closeConfirmationReason by viewModel.closeConfirmationReason.collectAsStateWithLifecycle()
+    val pendingDuplicateName by viewModel.pendingDuplicateName.collectAsStateWithLifecycle()
     val deleteTarget by viewModel.deleteTarget.collectAsStateWithLifecycle()
     val bankOpenError by viewModel.bankOpenError.collectAsStateWithLifecycle()
 
@@ -166,7 +167,12 @@ fun GpxImportScreen(
     LaunchedEffect(pendingDuplicate) {
         val request = pendingDuplicate ?: return@LaunchedEffect
         lifecycleOwner.lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
-        viewModel.openDuplicateFromLoggedTrack(request.track, request.bivouacPoints, request.suggestedName)
+        viewModel.openDuplicateFromLoggedTrack(
+            request.track,
+            request.bivouacPoints,
+            request.suggestedName,
+            request.sourceName,
+        )
         onPendingDuplicateConsumed()
     }
 
@@ -402,28 +408,66 @@ fun GpxImportScreen(
     }
 
     closeConfirmationReason?.let { reason ->
-        val (title, message) = when (reason) {
-            CloseConfirmationReason.DIRTY ->
-                "Trace modifiée" to "Cette trace a des modifications non enregistrées."
-            CloseConfirmationReason.NEVER_SAVED ->
-                "Trace non enregistrée" to "Attention, cette trace n'a pas encore été enregistrée dans Bivouac."
-        }
-        AlertDialog(
-            onDismissRequest = viewModel::dismissCloseConfirmation,
-            title = { Text(title) },
-            text = { Text(message) },
-            confirmButton = {
-                TextButton(onClick = viewModel::saveAndClose) { Text("Enregistrer") }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = viewModel::dismissCloseConfirmation) { Text("Annuler") }
-                    TextButton(onClick = viewModel::discardAndClose) {
-                        Text("Ne pas enregistrer", color = MaterialTheme.colorScheme.error)
+        // RIC-121 : deux dialogues, un seul état. Le blocage est le même (une trace ouverte qu'on
+        // ne peut pas lâcher en silence), mais ce qui l'a déclenché change complètement ce que
+        // l'utilisateur doit décider : fermer, ou remplacer par la copie d'une sortie du Journal
+        // qui attend derrière (RIC-40). Le dialogue générique disait « Annuler » pour une action
+        // qui abandonne toute la duplication : c'est ce contresens que ce cas dédié ferme.
+        val duplicateSourceName = pendingDuplicateName
+        if (duplicateSourceName != null) {
+            val message = when (reason) {
+                CloseConfirmationReason.DIRTY ->
+                    "La trace ouverte a des modifications non enregistrées. " +
+                        "La copie de « $duplicateSourceName » s'ouvrira ensuite."
+                CloseConfirmationReason.NEVER_SAVED ->
+                    "La trace en cours n'a jamais été enregistrée : elle sera perdue si tu ne " +
+                        "l'enregistres pas. La copie de « $duplicateSourceName » s'ouvrira ensuite."
+            }
+            AlertDialog(
+                onDismissRequest = viewModel::dismissCloseConfirmation,
+                title = { Text("Remplacer la trace en cours ?") },
+                text = { Text(message) },
+                // Les trois issues empilées et non alignées sur une ligne : Material prescrit
+                // l'empilement dès que les libellés ne tiennent pas côte à côte, et « Enregistrer
+                // puis ouvrir » + « Ne pas enregistrer » + « Annuler la duplication » débordent
+                // largement la largeur d'un dialogue sur un téléphone. Tout est dans le slot
+                // confirmButton, seul moyen de garder les trois dans le même empilement.
+                confirmButton = {
+                    Column(horizontalAlignment = Alignment.End) {
+                        TextButton(onClick = viewModel::saveAndClose) { Text("Enregistrer puis ouvrir") }
+                        TextButton(onClick = viewModel::discardAndClose) {
+                            Text("Ne pas enregistrer", color = MaterialTheme.colorScheme.error)
+                        }
+                        TextButton(onClick = viewModel::dismissCloseConfirmation) {
+                            Text("Annuler la duplication")
+                        }
                     }
-                }
-            },
-        )
+                },
+            )
+        } else {
+            val (title, message) = when (reason) {
+                CloseConfirmationReason.DIRTY ->
+                    "Trace modifiée" to "Cette trace a des modifications non enregistrées."
+                CloseConfirmationReason.NEVER_SAVED ->
+                    "Trace non enregistrée" to "Attention, cette trace n'a pas encore été enregistrée dans Bivouac."
+            }
+            AlertDialog(
+                onDismissRequest = viewModel::dismissCloseConfirmation,
+                title = { Text(title) },
+                text = { Text(message) },
+                confirmButton = {
+                    TextButton(onClick = viewModel::saveAndClose) { Text("Enregistrer") }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = viewModel::dismissCloseConfirmation) { Text("Annuler") }
+                        TextButton(onClick = viewModel::discardAndClose) {
+                            Text("Ne pas enregistrer", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                },
+            )
+        }
     }
 
     nameDialogRequest?.let { request ->

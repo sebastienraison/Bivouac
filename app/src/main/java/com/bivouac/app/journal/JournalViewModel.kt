@@ -122,6 +122,9 @@ data class DuplicatePlanRequest(
     val track: HikeTrack,
     val bivouacPoints: List<BivouacPoint>,
     val suggestedName: String,
+    // RIC-121 : le nom de la sortie du Journal, tel qu'il s'y affiche. [suggestedName] vaut déjà
+    // « Copie de ... » : le dialogue de remplacement côté Planification a besoin de l'original.
+    val sourceName: String,
 )
 
 /**
@@ -547,6 +550,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             track = state.track,
             bivouacPoints = junctions.map { BivouacPoint(id = UUID.randomUUID().toString(), trackPointIndex = it) },
             suggestedName = "Copie de ${state.entry.name}",
+            sourceName = state.entry.name,
         )
     }
 

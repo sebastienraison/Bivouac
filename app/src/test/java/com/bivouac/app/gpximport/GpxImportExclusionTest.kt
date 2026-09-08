@@ -102,7 +102,7 @@ class GpxImportExclusionTest {
     fun duplicateFromLoggedTrackIsRefusedCleanlyWhileAnotherOperationIsInFlight() {
         assertTrue(ExclusiveOperations.tryStart(ExclusiveOperation.RESTORE))
 
-        viewModel.openDuplicateFromLoggedTrack(sampleTrack(), emptyList(), "Copie de sortie")
+        viewModel.openDuplicateFromLoggedTrack(sampleTrack(), emptyList(), "Copie de sortie", "sortie")
         idle()
 
         val state = viewModel.uiState.value
@@ -116,7 +116,7 @@ class GpxImportExclusionTest {
 
     @Test
     fun duplicateFromLoggedTrackSucceedsAndReleasesTheLockOnceDone() {
-        viewModel.openDuplicateFromLoggedTrack(sampleTrack(), emptyList(), "Copie de sortie")
+        viewModel.openDuplicateFromLoggedTrack(sampleTrack(), emptyList(), "Copie de sortie", "sortie")
         idle()
 
         assertTrue(viewModel.uiState.value is GpxImportUiState.Loaded)
