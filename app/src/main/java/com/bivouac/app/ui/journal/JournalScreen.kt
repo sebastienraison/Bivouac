@@ -1535,6 +1535,16 @@ private fun JournalTrackRow(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                // RIC-141 (retouche) : même séparateur, même caractère et même style, que celui
+                // posé entre la date et le nombre de bivouacs juste au-dessus (" · $bivouacCount") ;
+                // seulement entre les deux pictos, jamais avant le premier ni après le second.
+                if (entry.note.isNotBlank() && hasPhotos) {
+                    Text(
+                        text = "·",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 if (hasPhotos) {
                     Icon(
                         Icons.Default.PhotoLibrary,
