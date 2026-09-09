@@ -14,9 +14,12 @@ import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
+import com.bivouac.app.data.photo.PhotoContentHash
 import com.bivouac.app.data.photo.PhotoCopyPlan
 import com.bivouac.app.data.photo.PhotoExifReader
 import com.bivouac.app.data.photo.PhotoLibraryPermission
+import com.bivouac.app.data.photo.PhotoOriginalResolution
+import com.bivouac.app.data.photo.PhotoOriginalResolver
 import com.bivouac.app.data.photo.PhotoPositionCorrelator
 import com.bivouac.app.data.photo.PhotoReducer
 import com.bivouac.app.data.photo.PhotoSourceMetadata
@@ -693,6 +696,26 @@ class LoggedTrackRepository(context: Context) {
     suspend fun countAllPhotos(): Int = dao.countPhotos()
 
     /**
+     * RIC-157 : retrouve la photo d'origine de [photo] dans la galerie, et mémorise son URI quand
+     * il a changé.
+     *
+     * Toute la logique est dans [PhotoOriginalResolver] ; il ne reste ici que la persistance, qui
+     * est la seule chose que ce composant ne peut pas faire lui-même. L'écriture est conditionnée
+     * au fait que l'URI ait bougé : une résolution qui a abouti au premier essai n'a rien appris de
+     * nouveau, et réécrire la même valeur ferait une écriture SQLite par consultation de photo.
+     *
+     * Pas encore branché sur une surface visible : la montée en qualité dans la visionneuse et la
+     * récupération après restauration sont du lot B. Livré testé pour qu'il n'ait qu'à être appelé.
+     */
+    suspend fun resolvePhotoOriginal(photo: LoggedTrackPhotoEntity): PhotoOriginalResolution {
+        val resolution = PhotoOriginalResolver.resolve(appContext, photo)
+        if (resolution is PhotoOriginalResolution.Found && resolution.uriRefreshed) {
+            dao.updatePhotoLastResolvedUri(photo.id, resolution.uri.toString())
+        }
+        return resolution
+    }
+
+    /**
      * RIC-43 : parmi [photos], celles dont la copie locale a disparu : restauration d'une
      * sauvegarde antérieure à leur ajout, nettoyage manuel du stockage de l'app, ou tout simplement
      * une écriture qui n'a jamais abouti.
@@ -909,16 +932,12 @@ class LoggedTrackRepository(context: Context) {
 
     // RIC-43 : par flux plutôt que text.toByteArray() : une photo (quelques Mo) n'a pas à
     // transiter par une String intermédiaire comme le fait la variante GPX ci-dessus.
-    private fun sha256(input: InputStream): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val buffer = ByteArray(8192)
-        while (true) {
-            val read = input.read(buffer)
-            if (read < 0) break
-            digest.update(buffer, 0, read)
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
-    }
+    //
+    // RIC-157 : le calcul lui-même vit désormais dans PhotoContentHash, parce qu'il a un second
+    // appelant (PhotoOriginalResolver) dont le résultat doit coïncider au caractère près avec ce
+    // qui est écrit ici. Deux implémentations finiraient par diverger, et la re-résolution ne
+    // retrouverait plus rien sans que la moindre erreur ne le signale.
+    private fun sha256(input: InputStream): String = PhotoContentHash.of(input)
 
     private companion object {
         const val ONE_HOUR_MILLIS = 3_600_000L

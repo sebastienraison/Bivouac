@@ -149,4 +149,11 @@ interface LoggedTrackDao {
             "positionApproximate = :positionApproximate WHERE id = :id",
     )
     suspend fun updatePhotoPosition(id: Long, positionPointIndex: Int?, positionApproximate: Boolean)
+
+    // RIC-157 : la recherche profonde vient de retrouver l'original ailleurs que là où il était :
+    // le nouvel URI est mémorisé pour que la fois suivante s'arrête au premier temps de la
+    // résolution (voir PhotoOriginalResolver). Seule cette colonne bouge : rien d'autre de la photo
+    // n'a changé, surtout pas son empreinte.
+    @Query("UPDATE logged_track_photo SET lastResolvedUri = :lastResolvedUri WHERE id = :id")
+    suspend fun updatePhotoLastResolvedUri(id: Long, lastResolvedUri: String?)
 }
