@@ -33,6 +33,7 @@ import java.security.MessageDigest
 import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.abs
 
 // A parsed-and-ready-to-store import that hasn't been written to the DB yet: lets the caller
@@ -770,9 +771,17 @@ class LoggedTrackRepository(context: Context) {
         var alreadyReduced = 0
         LoggedTrackPhotoStore.dir(appContext).mkdirs()
         candidates.forEachIndexed { index, photo ->
-            val outcome = runCatching { recompressOne(photo) }
-                .onFailure { Log.w("LoggedTrackRepository", "Photo non recompressée, copie intégrale conservée", it) }
-                .getOrDefault(RecompressionOutcome.Kept)
+            val outcome = try {
+                recompressOne(photo)
+            } catch (e: CancellationException) {
+                // Jamais avalée avec les autres : une annulation doit arrêter la passe, pas
+                // compter toutes les photos restantes comme « conservées » en continuant à lire
+                // des mégaoctets pour rien. Ce qui a déjà été recompressé reste recompressé.
+                throw e
+            } catch (e: Exception) {
+                Log.w("LoggedTrackRepository", "Photo non recompressée, copie intégrale conservée", e)
+                RecompressionOutcome.Kept
+            }
             when (outcome) {
                 is RecompressionOutcome.Recompressed -> {
                     recompressed++
@@ -913,9 +922,16 @@ class LoggedTrackRepository(context: Context) {
         LoggedTrackPhotoStore.dir(appContext).mkdirs()
         LoggedTrackPhotoStore.transitDir(appContext).mkdirs()
         missing.forEachIndexed { index, photo ->
-            val outcome = runCatching { recoverOne(photo, storageMode) }
-                .onFailure { Log.w("LoggedTrackRepository", "Photo manquante non récupérée", it) }
-                .getOrDefault(false)
+            val outcome = try {
+                recoverOne(photo, storageMode)
+            } catch (e: CancellationException) {
+                // Même raison que dans la passe de recompression : une annulation arrête la
+                // recherche au lieu de compter le reste comme introuvable.
+                throw e
+            } catch (e: Exception) {
+                Log.w("LoggedTrackRepository", "Photo manquante non récupérée", e)
+                false
+            }
             if (outcome) {
                 recovered++
             } else if (PhotoOriginalResolver.hasApproximateCandidate(appContext, photo)) {

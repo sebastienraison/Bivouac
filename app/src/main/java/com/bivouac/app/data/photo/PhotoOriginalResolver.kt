@@ -8,6 +8,7 @@ import android.provider.MediaStore
 import android.util.Log
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /**
@@ -149,6 +150,12 @@ object PhotoOriginalResolver {
             var hashed = 0
             for (lookup in lookupsFor(photo.sourceDisplayName, photo.sourceDateTakenMillis)) {
                 for (candidate in query(resolver, lookup)) {
+                    // RIC-157 : la visionneuse annule cette résolution dès que l'utilisateur passe
+                    // à la photo suivante. Sans cette vérification, la boucle continuerait à hacher
+                    // des mégaoctets pour une photo qui n'est plus à l'écran : chaque candidat est
+                    // une lecture complète de fichier, et l'annulation n'a aucun autre point où
+                    // s'exercer, tout ce qui suit étant bloquant.
+                    ensureActive()
                     // Déjà éliminé à l'étape 1, inutile de relire ses octets.
                     if (candidate == known) continue
                     if (hashed >= MAX_CANDIDATES_HASHED) {

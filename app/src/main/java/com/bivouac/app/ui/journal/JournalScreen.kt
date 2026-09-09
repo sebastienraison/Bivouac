@@ -754,6 +754,10 @@ fun JournalScreen(
             photos = currentPhotos,
             initialIndex = index.coerceIn(currentPhotos.indices),
             onDismiss = { viewedPhotoIndex = null },
+            // RIC-157 : la montée en qualité de la photo affichée. Passée en paramètre plutôt que
+            // le ViewModel entier : la visionneuse n'a besoin que de ça, et ça la garde montable
+            // sans lui.
+            resolveOriginal = viewModel::resolveOriginalUri,
         )
     }
 

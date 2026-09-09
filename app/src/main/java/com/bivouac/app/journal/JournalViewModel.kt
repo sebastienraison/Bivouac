@@ -24,6 +24,7 @@ import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
+import com.bivouac.app.data.photo.PhotoOriginalResolution
 import com.bivouac.app.data.photo.PhotoPickerScope
 import com.bivouac.app.data.photo.PhotoStorageMode
 import com.bivouac.app.data.photo.PhotoStoragePolicy
@@ -1033,6 +1034,26 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     fun dismissPhotoAddReport() {
         _photoAddReport.value = null
     }
+
+    /**
+     * RIC-157 : l'URI de l'original de [photo] dans la galerie, ou null s'il n'est pas retrouvé.
+     *
+     * Sert la montée en qualité de la visionneuse, et rien d'autre : la copie réduite s'affiche
+     * instantanément, puis l'original la remplace quand (et seulement si) il est CONFIRMÉ par son
+     * empreinte. Un échec est un non-évènement, d'où le null plutôt qu'une erreur exposée à
+     * l'écran : la copie locale reste affichée, l'utilisateur n'a rien demandé et n'a rien à
+     * apprendre.
+     *
+     * `suspend` et non un launch dans le viewModelScope : c'est l'appelant (la visionneuse) qui
+     * porte le cycle de vie de cette résolution, pour qu'un swipe l'annule au lieu de la laisser
+     * courir jusqu'au bout pour une photo qui n'est plus à l'écran.
+     *
+     * Passe par le repository et non directement par PhotoOriginalResolver : c'est lui qui
+     * mémorise l'URI quand la recherche profonde a dû retrouver la photo ailleurs, ce qui rend la
+     * consultation suivante immédiate.
+     */
+    suspend fun resolveOriginalUri(photo: LoggedTrackPhotoEntity): Uri? =
+        (repository.resolvePhotoOriginal(photo) as? PhotoOriginalResolution.Found)?.uri
 
     /**
      * RIC-43 : ouvre le sélecteur interne : appelé seulement après vérification de la permission
