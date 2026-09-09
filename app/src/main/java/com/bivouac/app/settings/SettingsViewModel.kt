@@ -14,6 +14,8 @@ import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
+import com.bivouac.app.data.photo.PhotoStorageMode
+import com.bivouac.app.data.photo.PhotoStoragePolicy
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.data.prefs.SpeedCalibrationMode
 import kotlinx.coroutines.Dispatchers
@@ -84,6 +86,24 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val photosEnabled: StateFlow<Boolean> = settingsPreferences.photosEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
+    // RIC-157 : le nombre de photos du Journal, relevé une fois à l'ouverture de l'écran et
+    // rafraîchi après une purge : il ne sert qu'à départager le mode de stockage EFFECTIF quand
+    // l'utilisateur n'a rien tranché, ce qui n'a besoin d'être juste qu'à la seconde près quand il
+    // regarde ce réglage. Voir PhotoStoragePolicy.resolve.
+    private val _journalPhotoCount = MutableStateFlow(0)
+
+    /**
+     * RIC-157 : ce que la section « Photos du Journal » doit afficher comme sélection.
+     *
+     * Le mode EFFECTIF, jamais la décision brute : tant que l'utilisateur n'a pas tranché, les
+     * Réglages doivent montrer ce qui s'appliquera réellement à son prochain import, pas un
+     * troisième état « rien de coché » qui ne dirait rien de ce que l'app fait.
+     */
+    val photoStorageMode: StateFlow<PhotoStorageMode> =
+        combine(settingsPreferences.photoStorageModeDecision, _journalPhotoCount) { decision, count ->
+            PhotoStoragePolicy.resolve(decision, hasExistingPhotos = count > 0)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PhotoStorageMode.REDUCED)
+
     // Bousculé après une purge, pour que le relevé ci-dessous soit refait. Le reste du temps c'est
     // la bascule qui le déclenche.
     private val _photoStorageRefresh = MutableStateFlow(0)
@@ -153,6 +173,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 _journalTrackCount.value = loggedTrackRepository.list().size
+                _journalPhotoCount.value = loggedTrackRepository.countAllPhotos()
                 // Populates the Auto readout even for a Journal that already had hikes before
                 // BIV-16 shipped (JournalViewModel otherwise only refreshes this on a *new* import).
                 refreshAutoCalibration()
@@ -211,6 +232,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
+     * RIC-157 : le choix explicite du mode de stockage.
+     *
+     * Ne touche à aucune photo déjà importée, ni à sa ligne : chacune garde le mode sous lequel
+     * elle est entrée (voir LoggedTrackPhotoEntity.storageMode). Ce réglage ne dit que ce qui
+     * arrivera aux suivantes.
+     */
+    fun setPhotoStorageMode(mode: PhotoStorageMode) {
+        viewModelScope.launch { settingsPreferences.setPhotoStorageMode(mode) }
+    }
+
+    /**
      * RIC-152 : la purge est demandée, pas encore faite : le dialogue de confirmation s'ouvre.
      *
      * Rien n'est jamais purgé automatiquement : désactiver la fonctionnalité continue de tout
@@ -251,6 +283,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 ExclusiveOperations.finish(ExclusiveOperation.PHOTO_PURGE)
             }
             _photoStorageRefresh.value += 1
+            // RIC-157 : le Journal n'a plus de photos du tout : sans ce relevé, le mode effectif
+            // affiché resterait sur le défaut « il y a déjà des photos » (FULL) alors qu'il n'y en a
+            // plus une seule.
+            _journalPhotoCount.value = withContext(Dispatchers.IO) { loggedTrackRepository.countAllPhotos() }
         }
     }
 

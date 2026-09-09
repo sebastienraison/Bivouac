@@ -683,6 +683,16 @@ class LoggedTrackRepository(context: Context) {
     suspend fun listPhotos(trackId: String): List<LoggedTrackPhotoEntity> = dao.getPhotos(trackId)
 
     /**
+     * RIC-157 : le nombre de photos dans tout le Journal, toutes sorties confondues.
+     *
+     * Sert à deux décisions, et à rien d'autre : quel mode de stockage s'applique quand
+     * l'utilisateur n'a rien tranché (PhotoStoragePolicy.resolve), et faut-il lui poser la question
+     * après une mise à jour (PhotoStorageChoicePrompt). Un COUNT et non [photoStorageSummary], qui
+     * fait en plus un `stat` par fichier : ici seule la présence compte.
+     */
+    suspend fun countAllPhotos(): Int = dao.countPhotos()
+
+    /**
      * RIC-43 : parmi [photos], celles dont la copie locale a disparu : restauration d'une
      * sauvegarde antérieure à leur ajout, nettoyage manuel du stockage de l'app, ou tout simplement
      * une écriture qui n'a jamais abouti.

@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.PhotoSizeSelectLarge
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
@@ -74,6 +75,7 @@ import com.bivouac.app.data.db.PhotoStorageSummary
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackStatsCalculator
+import com.bivouac.app.data.photo.PhotoStorageMode
 import com.bivouac.app.data.prefs.SpeedCalibrationMode
 import com.bivouac.app.settings.RestoreOutcome
 import com.bivouac.app.settings.SettingsViewModel
@@ -113,6 +115,7 @@ fun SettingsScreen(
     val journalTrackCount by viewModel.journalTrackCount.collectAsStateWithLifecycle()
     val nonFreeFeaturesDisabled by viewModel.nonFreeFeaturesDisabled.collectAsStateWithLifecycle()
     val photosEnabled by viewModel.photosEnabled.collectAsStateWithLifecycle()
+    val photoStorageMode by viewModel.photoStorageMode.collectAsStateWithLifecycle()
     val photoStorage by viewModel.photoStorage.collectAsStateWithLifecycle()
     val photoPurgeConfirmation by viewModel.photoPurgeConfirmation.collectAsStateWithLifecycle()
     val photoPurgeError by viewModel.photoPurgeError.collectAsStateWithLifecycle()
@@ -173,6 +176,8 @@ fun SettingsScreen(
             JournalPhotosSection(
                 enabled = photosEnabled,
                 onToggle = viewModel::setPhotosEnabled,
+                storageMode = photoStorageMode,
+                onStorageModeSelected = viewModel::setPhotoStorageMode,
                 storage = photoStorage,
                 onPurgeClick = viewModel::requestPhotoPurge,
                 // RIC-158 : même registre que Sauvegarder/Restaurer ci-dessous : un import Journal
@@ -765,6 +770,8 @@ private fun NonFreeFeaturesSection(disabled: Boolean, onToggle: (Boolean) -> Uni
 private fun JournalPhotosSection(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
+    storageMode: PhotoStorageMode,
+    onStorageModeSelected: (PhotoStorageMode) -> Unit,
     storage: PhotoStorageSummary?,
     onPurgeClick: () -> Unit,
     purgeLocked: Boolean,
@@ -779,6 +786,23 @@ private fun JournalPhotosSection(
             secondaryAvatar = true,
             trailing = { Switch(checked = enabled, onCheckedChange = onToggle) },
         )
+        // RIC-157 : masqué quand la fonctionnalité est débrayée, et pas seulement grisé : un
+        // réglage qui ne peut plus rien produire n'a rien à faire à l'écran, et c'est déjà la
+        // politique du bouton de purge juste en dessous, à l'inverse.
+        if (enabled) {
+            SettingsRow(
+                icon = Icons.Default.PhotoSizeSelectLarge,
+                title = "Stockage des photos",
+                subtitle = "S'applique aux photos que tu ajouteras : celles déjà dans le Journal " +
+                    "gardent le format sous lequel elles sont entrées.",
+                secondaryAvatar = true,
+            )
+            PhotoStorageModeChoice(
+                mode = storageMode,
+                onModeSelected = onStorageModeSelected,
+                modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
+            )
+        }
         // RIC-152 : la contrepartie du « rien n'est supprimé » ci-dessus. Elle n'apparaît qu'une
         // fois la fonctionnalité débrayée ET s'il reste effectivement des photos : proposer de
         // purger une banque vide n'aurait aucun sens, et le proposer alors que la fonctionnalité

@@ -25,6 +25,7 @@ import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
 import com.bivouac.app.data.photo.PhotoPickerScope
+import com.bivouac.app.data.photo.PhotoStoragePolicy
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
@@ -915,6 +916,15 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                             trackId = entry.id,
                             resolver = contentResolver,
                             uris = uris,
+                            // RIC-157 : résolu au moment du lot, pas capturé au chargement de
+                            // l'écran : l'utilisateur peut être passé par les Réglages entre les
+                            // deux, et c'est le geste d'ajout qui doit refléter son choix. Le
+                            // compte des photos existantes ne sert qu'à départager l'absence de
+                            // choix, voir PhotoStoragePolicy.resolve.
+                            storageMode = PhotoStoragePolicy.resolve(
+                                decision = settingsPreferences.photoStorageModeDecision.first(),
+                                hasExistingPhotos = repository.countAllPhotos() > 0,
+                            ),
                             // Le contrôle d'empreinte couvre le persisté ET le transit : deux
                             // passages successifs dans le sélecteur sur la même photo, sans
                             // sauvegarde entre les deux, doivent se comporter comme deux passages
