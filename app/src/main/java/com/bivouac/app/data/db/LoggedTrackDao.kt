@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import com.bivouac.app.data.photo.PhotoStorageMode
 
 @Dao
 interface LoggedTrackDao {
@@ -126,6 +127,25 @@ interface LoggedTrackDao {
     // BackupManager a besoin, sans charger les lignes entières.
     @Query("SELECT filePath FROM logged_track_photo")
     suspend fun getAllPhotoFilePaths(): List<String>
+
+    // RIC-140/151/157 : les lignes entières, toutes traces confondues. Trois usages qui doivent
+    // raisonner sur la banque de photos complète et non sur une sortie : le décompte de l'espace
+    // occupé par mode de stockage, la passe de recompression du stock, et la recherche des
+    // fichiers manquants. Aucun blob ici (le contenu vit dans un fichier depuis RIC-43), donc
+    // aucune raison de craindre la limite CursorWindow qui a motivé LoggedTrackGpxStore.
+    @Query("SELECT * FROM logged_track_photo")
+    suspend fun getAllPhotos(): List<LoggedTrackPhotoEntity>
+
+    // RIC-157 : la recompression a remplacé le fichier local par sa version réduite. Les deux
+    // colonnes bougent ensemble et JAMAIS l'une sans l'autre : un chemin neuf avec un mode resté
+    // FULL ferait réexaminer indéfiniment une photo déjà traitée, et un mode REDUCED sur l'ancien
+    // chemin décrirait un fichier qui n'existe plus.
+    //
+    // L'empreinte, elle, ne bouge pas : elle porte les octets d'ORIGINE, et c'est ce qui permettra
+    // de retrouver l'original plus tard (voir PhotoOriginalResolver). La recalculer sur la copie
+    // réduite reviendrait à perdre définitivement ce lien.
+    @Query("UPDATE logged_track_photo SET filePath = :filePath, storageMode = :storageMode WHERE id = :id")
+    suspend fun updatePhotoStorage(id: Long, filePath: String, storageMode: PhotoStorageMode)
 
     @Insert
     suspend fun insertPhoto(photo: LoggedTrackPhotoEntity): Long

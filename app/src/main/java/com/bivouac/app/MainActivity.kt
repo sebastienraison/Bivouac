@@ -35,6 +35,7 @@ import com.bivouac.app.ui.journal.JournalScreen
 import com.bivouac.app.ui.nav.AppSection
 import com.bivouac.app.ui.nav.UniverseChoiceDialog
 import com.bivouac.app.ui.settings.SettingsScreen
+import com.bivouac.app.ui.settings.StorageUsageScreen
 import com.bivouac.app.ui.startup.ElevationBackfillGate
 import com.bivouac.app.ui.startup.PhotoStorageChoicePrompt
 import com.bivouac.app.ui.theme.BivouacTheme
@@ -42,6 +43,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private const val JOURNAL_CALIBRATION_ROUTE = "journal_calibration"
+
+// RIC-140 : sous-écran des Réglages, comme JOURNAL_CALIBRATION_ROUTE ci-dessus : pas une section,
+// donc absent du menu de navigation, et joignable seulement depuis la ligne « Espace utilisé ».
+private const val STORAGE_USAGE_ROUTE = "reglages_espace_utilise"
 
 /**
  * RIC-168 : un lot d'URI GPX entrant, associé à un numéro de génération.
@@ -241,6 +246,17 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxBatch: Incoming
                 onOpenJournalSelection = {
                     navController.navigate(JOURNAL_CALIBRATION_ROUTE) { launchSingleTop = true }
                 },
+                onOpenStorageUsage = {
+                    navController.navigate(STORAGE_USAGE_ROUTE) { launchSingleTop = true }
+                },
+            )
+        }
+        // RIC-140 : pas une AppSection non plus, et sans en-tête de section : c'est un sous-écran
+        // des Réglages, dont on revient par la flèche de retour ou le geste système.
+        composable(STORAGE_USAGE_ROUTE) {
+            StorageUsageScreen(
+                modifier = Modifier.fillMaxSize(),
+                onBack = { navController.popBackStack() },
             )
         }
         // Not an AppSection: only reachable from Réglages' "Choisir les traces" (BIV-16), never

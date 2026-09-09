@@ -27,12 +27,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.PhotoSizeSelectLarge
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
@@ -104,6 +106,8 @@ fun SettingsScreen(
     currentSection: AppSection,
     onSectionSelected: (AppSection) -> Unit,
     onOpenJournalSelection: () -> Unit,
+    // RIC-140 : le sous-écran « Espace utilisé », joignable seulement d'ici (voir MainActivity).
+    onOpenStorageUsage: () -> Unit,
     viewModel: SettingsViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -191,6 +195,7 @@ fun SettingsScreen(
                 operationsLocked = ongoingOperation != null,
                 onBackupClick = { backupLauncher.launch(suggestedBackupFileName()) },
                 onRestoreClick = { restoreLauncher.launch(arrayOf("*/*")) },
+                onStorageUsageClick = onOpenStorageUsage,
             )
             CreditsSection(
                 onOpenUrl = { url -> context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
@@ -336,10 +341,17 @@ private fun SettingsRow(
     title: String,
     subtitle: String? = null,
     secondaryAvatar: Boolean = false,
+    // RIC-140 : une ligne qui MÈNE quelque part plutôt qu'une qui porte un réglage. Le clic est
+    // posé sur la ligne entière et non sur un bouton à droite : c'est ce qu'on attend d'une ligne
+    // de réglages qui ouvre un écran, et ça évite une cible de 40 dp au bord de l'écran.
+    onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 12.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -851,6 +863,7 @@ private fun DataSection(
     operationsLocked: Boolean,
     onBackupClick: () -> Unit,
     onRestoreClick: () -> Unit,
+    onStorageUsageClick: () -> Unit,
 ) {
     SettingsSection(label = "Données") {
         SettingsRow(
@@ -893,6 +906,24 @@ private fun DataSection(
                 Text("Restaurer", maxLines = 1)
             }
         }
+        // RIC-140 : dans « Données » et non dans « Photos du Journal », alors que les photos en
+        // sont le plus gros poste : ce que cet écran raconte, c'est tout ce que l'app occupe, base
+        // et traces comprises. Le chiffre n'est pas affiché ici : il coûte plusieurs centaines
+        // d'accès disque (voir AppStorageUsageCalculator), et les Réglages ne les paieraient que
+        // pour orner une ligne que personne n'ouvre.
+        SettingsRow(
+            icon = Icons.Default.PieChart,
+            title = "Espace utilisé",
+            subtitle = "Ce que les traces, les photos et la base occupent sur le téléphone",
+            onClick = onStorageUsageClick,
+            trailing = {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+        )
     }
 }
 

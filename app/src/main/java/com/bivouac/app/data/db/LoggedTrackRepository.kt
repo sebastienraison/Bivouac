@@ -696,6 +696,15 @@ class LoggedTrackRepository(context: Context) {
     suspend fun countAllPhotos(): Int = dao.countPhotos()
 
     /**
+     * RIC-140/151/157 : toutes les lignes photo du Journal, toutes sorties confondues.
+     *
+     * Les trois surfaces du lot B raisonnent sur la banque entière et non sur une sortie : le
+     * relevé d'espace occupé, la recompression du stock et la recherche des fichiers manquants.
+     * Une requête pour tout, sur le modèle de [dao.getAllPhotoFilePaths], plutôt qu'une par trace.
+     */
+    suspend fun allPhotos(): List<LoggedTrackPhotoEntity> = dao.getAllPhotos()
+
+    /**
      * RIC-157 : retrouve la photo d'origine de [photo] dans la galerie, et mémorise son URI quand
      * il a changé.
      *
