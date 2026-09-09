@@ -24,7 +24,10 @@ import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
+import com.bivouac.app.data.photo.PhotoOriginalResolution
 import com.bivouac.app.data.photo.PhotoPickerScope
+import com.bivouac.app.data.photo.PhotoStorageMode
+import com.bivouac.app.data.photo.PhotoStoragePolicy
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
@@ -915,6 +918,10 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                             trackId = entry.id,
                             resolver = contentResolver,
                             uris = uris,
+                            // RIC-157 : résolu au moment du lot, pas capturé au chargement de
+                            // l'écran : l'utilisateur peut être passé par les Réglages entre les
+                            // deux, et c'est le geste d'ajout qui doit refléter son choix.
+                            storageMode = resolvePhotoStorageMode(),
                             // Le contrôle d'empreinte couvre le persisté ET le transit : deux
                             // passages successifs dans le sélecteur sur la même photo, sans
                             // sauvegarde entre les deux, doivent se comporter comme deux passages
@@ -952,6 +959,28 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 ExclusiveOperations.finish(ExclusiveOperation.PHOTO_IMPORT)
             }
         }
+    }
+
+    /**
+     * RIC-157 : le mode de stockage à appliquer à ce lot d'import, et le seul endroit où un défaut
+     * implicite est verrouillé.
+     *
+     * Les deux règles sont pures et testées ailleurs (PhotoStoragePolicy.resolve et
+     * shouldPersistAsDecision) : il ne reste ici que leur branchement sur les préférences et sur la
+     * base. Le COUNT n'est fait que faute de décision : le reste du temps, un lot d'import ne
+     * touche pas la table des photos avant d'y écrire.
+     */
+    private suspend fun resolvePhotoStorageMode(): PhotoStorageMode {
+        val decision = settingsPreferences.photoStorageModeDecision.first()
+        if (decision != null) return decision
+        val resolved = PhotoStoragePolicy.resolve(
+            decision = null,
+            hasExistingPhotos = repository.countAllPhotos() > 0,
+        )
+        if (PhotoStoragePolicy.shouldPersistAsDecision(decision, resolved)) {
+            settingsPreferences.setPhotoStorageMode(resolved)
+        }
+        return resolved
     }
 
     private fun hashesOfPendingDeletions(): Set<String> {
@@ -1005,6 +1034,26 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     fun dismissPhotoAddReport() {
         _photoAddReport.value = null
     }
+
+    /**
+     * RIC-157 : l'URI de l'original de [photo] dans la galerie, ou null s'il n'est pas retrouvé.
+     *
+     * Sert la montée en qualité de la visionneuse, et rien d'autre : la copie réduite s'affiche
+     * instantanément, puis l'original la remplace quand (et seulement si) il est CONFIRMÉ par son
+     * empreinte. Un échec est un non-évènement, d'où le null plutôt qu'une erreur exposée à
+     * l'écran : la copie locale reste affichée, l'utilisateur n'a rien demandé et n'a rien à
+     * apprendre.
+     *
+     * `suspend` et non un launch dans le viewModelScope : c'est l'appelant (la visionneuse) qui
+     * porte le cycle de vie de cette résolution, pour qu'un swipe l'annule au lieu de la laisser
+     * courir jusqu'au bout pour une photo qui n'est plus à l'écran.
+     *
+     * Passe par le repository et non directement par PhotoOriginalResolver : c'est lui qui
+     * mémorise l'URI quand la recherche profonde a dû retrouver la photo ailleurs, ce qui rend la
+     * consultation suivante immédiate.
+     */
+    suspend fun resolveOriginalUri(photo: LoggedTrackPhotoEntity): Uri? =
+        (repository.resolvePhotoOriginal(photo) as? PhotoOriginalResolution.Found)?.uri
 
     /**
      * RIC-43 : ouvre le sélecteur interne : appelé seulement après vérification de la permission

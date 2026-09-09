@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.bivouac.app.data.gpx.DaySegmentAggregate
 import com.bivouac.app.data.gpx.GpxWriter
 import com.bivouac.app.data.model.TrackPoint
+import com.bivouac.app.data.photo.PhotoStorageMode
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.time.Instant
@@ -137,6 +138,81 @@ class LoggedTrackPhotoRepositoryTest {
         assertEquals(0, report.failed)
         assertEquals(1, repository.listPhotos(trackId).size)
         assertEquals(1, photoFiles().size)
+    }
+
+    /**
+     * RIC-157 : le mode de stockage demandé finit bien sur la ligne, et l'URI source aussi.
+     *
+     * En mode « qualité d'archive » rien ne change du comportement historique : la copie locale est
+     * l'original octet pour octet, et c'est ce que la comparaison d'empreinte de la re-résolution
+     * exploitera plus tard. Seul lastResolvedUri est nouveau, et il est écrit dans les DEUX modes.
+     */
+    @Test
+    fun stagePhotosFromPicker_inArchiveMode_copiesTheBytesVerbatimAndRecordsTheSourceUri() = runBlocking {
+        createTrack()
+        val bytes = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
+        val uri = registerPhoto("archive", bytes)
+
+        val batch = repository.stagePhotosFromPicker(
+            trackId,
+            context.contentResolver,
+            listOf(uri),
+            storageMode = PhotoStorageMode.FULL,
+        )
+        repository.commitPendingPhotos(trackId, batch.staged)
+
+        val photo = repository.listPhotos(trackId).single()
+        assertEquals(PhotoStorageMode.FULL, photo.storageMode)
+        assertEquals(uri.toString(), photo.lastResolvedUri)
+        val stored = LoggedTrackPhotoStore.resolve(context, photo.filePath).readBytes()
+        assertTrue("la copie d'archive doit être l'original octet pour octet", bytes.contentEquals(stored))
+    }
+
+    /**
+     * RIC-157 : en mode « copie réduite », une image que la plateforme rend déjà sous la cible est
+     * recopiée telle quelle, et la ligne dit quand même REDUCED.
+     *
+     * C'est la convention tranchée dans PhotoCopyPlan.COPY_ALREADY_SMALL : la colonne enregistre la
+     * politique appliquée, pas la nature du fichier obtenu, faute de quoi la passe de recompression
+     * du lot B réexaminerait indéfiniment des photos où il n'y a rien à gagner.
+     *
+     * Limite du harnais, assumée : Robolectric ne décode pas d'image et rend des dimensions de
+     * complaisance, sous la cible, donc c'est bien cette branche-là qui est exercée ici. La
+     * réduction réelle (définition obtenue, EXIF recopié, GPS absent) est vérifiée sur un vrai
+     * décodeur par PhotoReducerInstrumentedTest, en GMD.
+     */
+    @Test
+    fun stagePhotosFromPicker_inReducedMode_marksTheRowReducedAndRecordsTheSourceUri() = runBlocking {
+        createTrack()
+        val uri = registerPhoto("reduite", byteArrayOf(10, 20, 30, 40))
+
+        val batch = repository.stagePhotosFromPicker(
+            trackId,
+            context.contentResolver,
+            listOf(uri),
+            storageMode = PhotoStorageMode.REDUCED,
+        )
+        repository.commitPendingPhotos(trackId, batch.staged)
+
+        val photo = repository.listPhotos(trackId).single()
+        assertEquals(PhotoStorageMode.REDUCED, photo.storageMode)
+        assertEquals(uri.toString(), photo.lastResolvedUri)
+        assertEquals(1, photoFiles().size)
+    }
+
+    // Défaut de la signature : sans mode explicite, on obtient le comportement historique. Compte
+    // parce que le repository est appelé depuis plusieurs endroits, et qu'un défaut REDUCED
+    // réduirait des photos à l'insu d'un appelant qui n'a jamais entendu parler de ce réglage.
+    @Test
+    fun stagePhotosFromPicker_defaultsToTheHistoricalFullCopy() = runBlocking {
+        createTrack()
+        val batch = repository.stagePhotosFromPicker(
+            trackId,
+            context.contentResolver,
+            listOf(registerPhoto("defaut", byteArrayOf(3, 1, 4, 1, 5))),
+        )
+
+        assertEquals(PhotoStorageMode.FULL, batch.staged.single().storageMode)
     }
 
     @Test

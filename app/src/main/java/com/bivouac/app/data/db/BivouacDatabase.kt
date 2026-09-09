@@ -30,7 +30,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open"): a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 16
+        const val SCHEMA_VERSION = 17
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -436,6 +436,33 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-157 : les deux colonnes du socle « stockage des photos » : voir
+        // LoggedTrackPhotoEntity.storageMode et lastResolvedUri. Cible : schemas/17.json.
+        //
+        // Deux ALTER TABLE ADD COLUMN et rien d'autre, même patron que MIGRATION_8_9 /
+        // MIGRATION_15_16 : aucune recréation de table, aucune copie, aucun rattrapage. Un appareil
+        // réel porte déjà des photos réelles, et une recréation de table ferait courir un risque
+        // sans la moindre contrepartie ici.
+        //
+        // storageMode NOT NULL DEFAULT 'FULL' : il n'existe aucune ligne « de mode inconnu ». Toute
+        // photo entrée avant ce ticket est une copie intégrale, parce que c'était le seul
+        // comportement de l'app. Le DEFAULT est donc la valeur exacte des lignes existantes, pas un
+        // pis-aller, et il doit rester déclaré côté entité (@ColumnInfo(defaultValue = "FULL"))
+        // sans quoi le schéma exporté divergerait de ce que cette migration produit.
+        //
+        // lastResolvedUri nullable, sans rattrapage possible : l'URI source des photos déjà en base
+        // n'a jamais été relevé, et rien ne permet de le reconstituer sans requêter la galerie.
+        // C'est exactement ce que fait la recherche profonde de PhotoOriginalResolver, à la demande
+        // et au cas par cas, pas en masse au premier lancement d'après mise à jour.
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `logged_track_photo` ADD COLUMN `storageMode` TEXT NOT NULL DEFAULT 'FULL'",
+                )
+                db.execSQL("ALTER TABLE `logged_track_photo` ADD COLUMN `lastResolvedUri` TEXT")
+            }
+        }
+
         // ~256K points de code par tranche : au pire quadruplé en UTF-8 ça reste sous la fenêtre de
         // 2 Mo, et un GPX réel (ASCII pour l'essentiel) en est très loin.
         private const val MIGRATION_CHUNK_CODE_POINTS = 256 * 1024
@@ -511,6 +538,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                         MIGRATION_13_14,
                         MIGRATION_14_15,
                         MIGRATION_15_16,
+                        MIGRATION_16_17,
                     )
                     .build()
                     .also { instance = it }

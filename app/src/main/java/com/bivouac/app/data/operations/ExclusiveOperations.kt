@@ -27,6 +27,18 @@ enum class ExclusiveOperation(val label: String) {
     // (qui les zippe) qu'une restauration (qui remplace le répertoire en bloc).
     PHOTO_PURGE("une purge de photos"),
 
+    // RIC-157 : la recompression du stock RÉÉCRIT photos/ fichier par fichier (une copie réduite
+    // remplace la copie intégrale) et met les lignes à jour dans la foulée. Même classe de danger
+    // que la purge : une sauvegarde qui zipperait pendant ce remplacement archiverait un mélange
+    // d'anciens et de nouveaux fichiers, et une restauration ramènerait des lignes qui ne
+    // désignent plus rien.
+    PHOTO_RECOMPRESS("une recompression des photos"),
+
+    // RIC-151 : la re-acquisition écrit dans photos/ les fichiers manquants et réécrit leur ligne.
+    // Même raisonnement que ci-dessus, et en plus elle ne doit pas croiser une recompression, qui
+    // déplacerait sous elle les fichiers qu'elle vient d'écrire.
+    PHOTO_RECOVERY("une recherche des photos manquantes"),
+
     // RIC-158 : tout import du Journal qui écrit dans gpx/ : un seul fichier, un trek multi-jours
     // (plusieurs fichiers pour une seule sortie) ou un lot de sorties séparées.
     JOURNAL_IMPORT("un import du Journal"),

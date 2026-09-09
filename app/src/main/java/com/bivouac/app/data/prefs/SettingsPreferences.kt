@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.bivouac.app.data.gpx.SpeedCalibration
+import com.bivouac.app.data.photo.PhotoStorageMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -41,6 +42,7 @@ class SettingsPreferences(private val context: Context) {
         val NON_FREE_DISABLED = booleanPreferencesKey("non_free_features_disabled")
         val LAST_BACKUP_AT = longPreferencesKey("last_backup_at_millis")
         val PHOTOS_ENABLED = booleanPreferencesKey("journal_photos_enabled")
+        val PHOTO_STORAGE_MODE = stringPreferencesKey("journal_photo_storage_mode")
     }
 
     // RIC-115 : contrairement à AUTO_PAUSE/SELECTION_PAUSE (repli sur SpeedCalibration.DEFAULT.
@@ -114,6 +116,30 @@ class SettingsPreferences(private val context: Context) {
     // Désactiver ne supprime jamais rien, ni ligne ni fichier : les photos existantes cessent
     // seulement d'être montrées, et réapparaissent telles quelles en réactivant.
     val photosEnabled: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.PHOTOS_ENABLED] ?: true }
+
+    /**
+     * RIC-157 : le mode de stockage des photos CHOISI par l'utilisateur, ou `null` s'il n'a jamais
+     * tranché.
+     *
+     * Nullable exprès, et c'est la seule préférence de ce fichier à l'être : « jamais choisi » n'est
+     * pas un état transitoire dont il faudrait cacher l'existence derrière un défaut, c'est
+     * précisément ce que la proposition post-mise à jour va demander de lever (voir
+     * PhotoStorageChoicePrompt). Un défaut posé ici rendrait cette question inexprimable.
+     *
+     * Le mode réellement appliqué à un import se résout par PhotoStoragePolicy.resolve, qui a
+     * besoin d'une information que ce fichier n'a pas : y a-t-il déjà des photos en base.
+     *
+     * Une valeur illisible (préférence restaurée depuis une sauvegarde d'une version future, où le
+     * jeu de valeurs aurait changé) compte comme « jamais choisi » plutôt que de faire lever la
+     * lecture, même prudence que speedCalibrationMode ci-dessus.
+     */
+    val photoStorageModeDecision: Flow<PhotoStorageMode?> = context.settingsDataStore.data.map { prefs ->
+        prefs[Keys.PHOTO_STORAGE_MODE]?.let { name -> runCatching { PhotoStorageMode.valueOf(name) }.getOrNull() }
+    }
+
+    suspend fun setPhotoStorageMode(mode: PhotoStorageMode) {
+        context.settingsDataStore.edit { it[Keys.PHOTO_STORAGE_MODE] = mode.name }
+    }
 
     suspend fun setSpeedCalibrationMode(mode: SpeedCalibrationMode) {
         context.settingsDataStore.edit { it[Keys.MODE] = mode.name }

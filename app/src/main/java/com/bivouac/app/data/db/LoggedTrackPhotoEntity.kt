@@ -1,9 +1,11 @@
 package com.bivouac.app.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.bivouac.app.data.photo.PhotoStorageMode
 
 // Une photo associée à une sortie du Journal (RIC-43). Copie locale uniquement (voir
 // LoggedTrackPhotoStore) : latitude/longitude/takenAtMillis viennent de l'EXIF au moment de
@@ -76,6 +78,29 @@ data class LoggedTrackPhotoEntity(
     // photo sans rien garantir (le fichier a pu disparaître). « Inconnu » se comporte alors comme
     // « pas certain », c'est-à-dire exactement comme avant la migration côté affichage.
     val takenAtZoneCertain: Boolean? = null,
+    // RIC-157 : ce que la copie locale a subi à l'import, pas ce que les Réglages disent
+    // aujourd'hui : voir PhotoStorageMode. Le réglage change quand l'utilisateur veut, le sort
+    // d'une photo déjà importée ne change plus.
+    //
+    // NOT NULL avec un défaut SQL, contrairement aux colonnes ajoutées jusqu'ici : les lignes
+    // d'avant la migration 16 -> 17 sont toutes, sans exception, des copies intégrales (c'était le
+    // seul comportement possible), donc « inconnu » n'existe pas ici et un type nullable ne
+    // décrirait aucun état réel. Le DEFAULT est ce qui permet l'ALTER TABLE ADD COLUMN sur une
+    // colonne NOT NULL, et il est déclaré ici pour que le schéma exporté et la migration coïncident.
+    @ColumnInfo(defaultValue = "FULL")
+    val storageMode: PhotoStorageMode = PhotoStorageMode.FULL,
+    // RIC-157 : l'URI de la photo d'origine, relevé à l'import, dans les DEUX modes de stockage.
+    //
+    // Premier temps de la re-résolution de l'original (voir PhotoOriginalResolver) : un URI
+    // MediaStore reste valide tant que la photo n'a pas été déplacée, renommée ou réindexée, ce qui
+    // couvre l'écrasante majorité des cas et évite toute requête. Jamais une preuve à lui seul : il
+    // peut désigner une AUTRE photo après réindexation, d'où la confirmation systématique par
+    // [contentHash], calculé sur les octets d'origine avant toute réduction.
+    //
+    // Nullable : null pour les lignes d'avant la migration (l'URI source n'était pas conservé), et
+    // pour toute photo dont la source n'a jamais pu être notée. Réécrit quand la recherche profonde
+    // retrouve l'original ailleurs.
+    val lastResolvedUri: String? = null,
 )
 
 /**

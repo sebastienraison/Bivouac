@@ -14,10 +14,18 @@ import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
+import com.bivouac.app.data.photo.PhotoContentHash
+import com.bivouac.app.data.photo.PhotoCopyPlan
 import com.bivouac.app.data.photo.PhotoExifReader
 import com.bivouac.app.data.photo.PhotoLibraryPermission
+import com.bivouac.app.data.photo.PhotoOriginalResolution
+import com.bivouac.app.data.photo.PhotoOriginalResolver
 import com.bivouac.app.data.photo.PhotoPositionCorrelator
+import com.bivouac.app.data.photo.PhotoRecompression
+import com.bivouac.app.data.photo.PhotoReducer
 import com.bivouac.app.data.photo.PhotoSourceMetadata
+import com.bivouac.app.data.photo.PhotoStorageMode
+import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
@@ -25,6 +33,7 @@ import java.security.MessageDigest
 import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.abs
 
 // A parsed-and-ready-to-store import that hasn't been written to the DB yet: lets the caller
@@ -110,6 +119,13 @@ data class PendingPhotoAdd(
     val positionApproximate: Boolean,
     val takenAtZoneCertain: Boolean?,
     val source: PhotoSourceMetadata,
+    // RIC-157 : ce que le fichier de transit A SUBI, pas ce que les Réglages demandaient. Une photo
+    // déjà petite ou impossible à décoder ne rend pas le même mode qu'une photo effectivement
+    // réduite : voir PhotoCopyPlan. Reporté tel quel sur la ligne au commit.
+    val storageMode: PhotoStorageMode = PhotoStorageMode.FULL,
+    // RIC-157 : l'URI de la source telle que le sélecteur l'a livrée, relevé dans les DEUX modes :
+    // voir LoggedTrackPhotoEntity.lastResolvedUri.
+    val sourceUri: String? = null,
 )
 
 /** Ce que rend un passage du sélecteur : ce qui est entré en transit, et le bilan du lot. */
@@ -450,6 +466,10 @@ class LoggedTrackRepository(context: Context) {
         trackId: String,
         resolver: ContentResolver,
         uris: List<Uri>,
+        // RIC-157 : la politique de stockage à appliquer à CE lot, résolue par l'appelant (voir
+        // PhotoStoragePolicy et JournalViewModel.addPhotos). Défaut FULL : c'est le comportement
+        // historique, celui qu'un appelant qui ne connaît pas encore ce réglage doit obtenir.
+        storageMode: PhotoStorageMode = PhotoStorageMode.FULL,
         alreadyStagedHashes: Set<String> = emptySet(),
         ignoredHashes: Set<String> = emptySet(),
         // Appelé après chaque photo du lot avec le nombre de photos traitées, quel qu'en soit le
@@ -483,13 +503,10 @@ class LoggedTrackRepository(context: Context) {
                 val exif = PhotoExifReader.read(resolver, uri, requireOriginal = mediaLocationGranted)
                 val position =
                     PhotoPositionCorrelator.correlate(points, exif.latitude, exif.longitude, exif.takenAtMillis)
-                val transitPath = LoggedTrackPhotoStore.transitPath(trackId, extensionFor(resolver, uri))
-                val target = LoggedTrackPhotoStore.resolve(appContext, transitPath)
-                resolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } }
-                    ?: throw IOException("Impossible d'ouvrir la photo sélectionnée")
+                val copied = copyPhotoToTransit(trackId, resolver, uri, storageMode)
                 staged += PendingPhotoAdd(
                     displayId = nextPendingPhotoDisplayId(),
-                    transitPath = transitPath,
+                    transitPath = copied.transitPath,
                     contentHash = contentHash,
                     stagedAtMillis = System.currentTimeMillis(),
                     takenAtMillis = exif.takenAtMillis,
@@ -499,6 +516,8 @@ class LoggedTrackRepository(context: Context) {
                     positionApproximate = position.approximate,
                     takenAtZoneCertain = exif.takenAtZoneCertain,
                     source = MediaStorePhotoQuery.readSource(resolver, uri),
+                    storageMode = copied.storageMode,
+                    sourceUri = uri.toString(),
                 )
                 true
             }.onSuccess { wasStaged ->
@@ -514,6 +533,62 @@ class LoggedTrackRepository(context: Context) {
             staged = staged,
             report = PhotoAddReport(added = staged.size, duplicatesSkipped = duplicatesSkipped, failed = failed),
         )
+    }
+
+    /** RIC-157 : le fichier de transit qui vient d'être écrit, et ce qu'il a réellement subi. */
+    private data class CopiedPhoto(val transitPath: String, val storageMode: PhotoStorageMode)
+
+    /**
+     * RIC-157 : la SEULE chose que le mode de stockage change dans tout le cycle photo : la
+     * fabrication du fichier de transit.
+     *
+     * Tout le reste est strictement inchangé, et doit le rester : l'empreinte est déjà calculée sur
+     * les octets d'origine par l'appelant (invariant absolu, c'est elle qui permettra de retrouver
+     * l'original), l'EXIF est déjà lu sur la source, la corrélation est déjà faite, et le commit à
+     * l'enregistrement (voir [commitPendingPhotos]) ne fait toujours que déplacer un fichier.
+     *
+     * Le mode rendu n'est pas toujours celui demandé : voir [PhotoCopyPlan], qui porte les trois
+     * issues et leurs raisons. Résumé :
+     * - mode FULL demandé : copie brute, mode FULL.
+     * - mode REDUCED, photo au-dessus de la cible : réduction, mode REDUCED.
+     * - mode REDUCED, photo déjà sous la cible : copie brute, mode **REDUCED** (rien à gagner,
+     *   jamais).
+     * - mode REDUCED, réduction impossible (format ou mémoire) : copie brute, mode **FULL** (le
+     *   fichier local est bel et bien une copie intégrale, et le lot B doit pouvoir la reprendre).
+     *
+     * L'extension du fichier suit ce qu'il contient : `jpg` pour une copie réduite, quelle que soit
+     * l'origine (un HEIC réduit est un JPEG), l'extension déduite du type MIME sinon.
+     */
+    private fun copyPhotoToTransit(
+        trackId: String,
+        resolver: ContentResolver,
+        uri: Uri,
+        requestedMode: PhotoStorageMode,
+    ): CopiedPhoto {
+        val plan = if (requestedMode == PhotoStorageMode.REDUCED) {
+            PhotoReducer.planFor(resolver, uri)
+        } else {
+            null
+        }
+        if (plan == PhotoCopyPlan.REDUCE) {
+            val transitPath = LoggedTrackPhotoStore.transitPath(trackId, "jpg")
+            val target = LoggedTrackPhotoStore.resolve(appContext, transitPath)
+            if (PhotoReducer.writeReduced(resolver, uri, target)) {
+                return CopiedPhoto(transitPath, PhotoStorageMode.REDUCED)
+            }
+            // writeReduced a déjà effacé sa cible : on repart sur un nom de fichier neuf, portant
+            // la vraie extension de la source, plutôt que de laisser des octets HEIC dans un .jpg.
+        }
+        val transitPath = LoggedTrackPhotoStore.transitPath(trackId, extensionFor(resolver, uri))
+        val target = LoggedTrackPhotoStore.resolve(appContext, transitPath)
+        copyRawBytes(resolver, uri, target)
+        val mode = if (plan == PhotoCopyPlan.COPY_ALREADY_SMALL) PhotoStorageMode.REDUCED else PhotoStorageMode.FULL
+        return CopiedPhoto(transitPath, mode)
+    }
+
+    private fun copyRawBytes(resolver: ContentResolver, uri: Uri, target: File) {
+        resolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } }
+            ?: throw IOException("Impossible d'ouvrir la photo sélectionnée")
     }
 
     /**
@@ -565,6 +640,8 @@ class LoggedTrackRepository(context: Context) {
                     sourceDisplayName = add.source.displayName,
                     sourceRelativePath = add.source.relativePath,
                     sourceDateTakenMillis = add.source.dateTakenMillis,
+                    storageMode = add.storageMode,
+                    lastResolvedUri = add.sourceUri,
                 )
                 try {
                     dao.insertPhoto(entity)
@@ -611,6 +688,295 @@ class LoggedTrackRepository(context: Context) {
     suspend fun listPhotos(trackId: String): List<LoggedTrackPhotoEntity> = dao.getPhotos(trackId)
 
     /**
+     * RIC-157 : le nombre de photos dans tout le Journal, toutes sorties confondues.
+     *
+     * Sert à deux décisions, et à rien d'autre : quel mode de stockage s'applique quand
+     * l'utilisateur n'a rien tranché (PhotoStoragePolicy.resolve), et faut-il lui poser la question
+     * après une mise à jour (PhotoStorageChoicePrompt). Un COUNT et non [photoStorageSummary], qui
+     * fait en plus un `stat` par fichier : ici seule la présence compte.
+     */
+    suspend fun countAllPhotos(): Int = dao.countPhotos()
+
+    /**
+     * RIC-140/151/157 : toutes les lignes photo du Journal, toutes sorties confondues.
+     *
+     * Les trois surfaces du lot B raisonnent sur la banque entière et non sur une sortie : le
+     * relevé d'espace occupé, la recompression du stock et la recherche des fichiers manquants.
+     * Une requête pour tout, sur le modèle de [dao.getAllPhotoFilePaths], plutôt qu'une par trace.
+     */
+    suspend fun allPhotos(): List<LoggedTrackPhotoEntity> = dao.getAllPhotos()
+
+    /**
+     * RIC-157 : ce que la passe de recompression a fait du stock, une fois finie.
+     *
+     * [kept] et [alreadyReduced] sont deux issues distinctes, et pas deux façons de dire « rien
+     * fait » : la première est un échec de re-résolution (l'original n'est plus là, ou n'est plus
+     * le même), la seconde un constat définitif (il n'y avait rien à gagner). La première invite à
+     * relancer un jour, la seconde jamais : ces photos sont d'ailleurs marquées REDUCED pour ne
+     * plus être réexaminées.
+     */
+    data class PhotoRecompressionReport(
+        val recompressed: Int,
+        val freedBytes: Long,
+        val kept: Int,
+        val alreadyReduced: Int,
+    )
+
+    private sealed interface RecompressionOutcome {
+        data class Recompressed(val freedBytes: Long) : RecompressionOutcome
+        data object Kept : RecompressionOutcome
+        data object AlreadyReduced : RecompressionOutcome
+    }
+
+    /**
+     * RIC-157 : remplace par une copie réduite les copies intégrales dont l'original est retrouvé
+     * dans la galerie ET confirmé par son empreinte.
+     *
+     * **Rien n'est jamais fabriqué à partir de la copie locale.** Réduire la copie intégrale
+     * suffirait techniquement, mais l'app perdrait alors ce qui distingue une copie réduite d'une
+     * photo dégradée : la certitude que l'original existe encore ailleurs. La condition d'entrée
+     * est donc « original retrouvé », pas « fichier local réductible ».
+     *
+     * **Aucune fenêtre sans fichier.** La copie réduite est écrite sous un nom NEUF, la ligne est
+     * ensuite basculée dessus, et l'ancien fichier n'est effacé qu'après. Une interruption laisse
+     * au pire un fichier orphelin (de la place perdue, que la purge balaie) et jamais une ligne qui
+     * ne désigne rien. Écrire par-dessus le fichier existant aurait exactement le défaut inverse :
+     * une seconde pendant laquelle la photo n'est ni l'ancienne ni la nouvelle.
+     *
+     * Le nom est neuf plutôt que réutilisé parce que l'extension change : une copie réduite est un
+     * JPEG même quand l'original était un HEIC, et laisser des octets JPEG dans un `.heic` est
+     * précisément ce que le pipeline d'import évite déjà (voir [copyPhotoToTransit]).
+     *
+     * Photo par photo, sans transaction d'ensemble : une photo qui résiste n'emporte pas le lot, et
+     * une interruption au milieu laisse les précédentes réduites et les suivantes intactes. C'est
+     * le comportement voulu, l'opération est reprenable telle quelle.
+     *
+     * L'empreinte de la ligne n'est JAMAIS recalculée : elle porte les octets d'origine, c'est ce
+     * qui permettra de retrouver l'original la fois suivante (visionneuse, RIC-151).
+     */
+    suspend fun recompressFullPhotos(
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): PhotoRecompressionReport {
+        // Les mêmes candidates que celles chiffrées par l'écran (voir PhotoRecompression), plus la
+        // présence du fichier local : une ligne dont le fichier a disparu relève de RIC-151, pas
+        // d'ici, et la compter en « conservée » ferait passer un problème pour un refus.
+        val candidates = dao.getAllPhotos().filter {
+            PhotoRecompression.isRecompressible(it) && LoggedTrackPhotoStore.resolve(appContext, it.filePath).isFile
+        }
+        val total = candidates.size
+        onProgress(0, total)
+        var recompressed = 0
+        var freedBytes = 0L
+        var kept = 0
+        var alreadyReduced = 0
+        LoggedTrackPhotoStore.dir(appContext).mkdirs()
+        candidates.forEachIndexed { index, photo ->
+            val outcome = try {
+                recompressOne(photo)
+            } catch (e: CancellationException) {
+                // Jamais avalée avec les autres : une annulation doit arrêter la passe, pas
+                // compter toutes les photos restantes comme « conservées » en continuant à lire
+                // des mégaoctets pour rien. Ce qui a déjà été recompressé reste recompressé.
+                throw e
+            } catch (e: Exception) {
+                Log.w("LoggedTrackRepository", "Photo non recompressée, copie intégrale conservée", e)
+                RecompressionOutcome.Kept
+            }
+            when (outcome) {
+                is RecompressionOutcome.Recompressed -> {
+                    recompressed++
+                    freedBytes += outcome.freedBytes
+                }
+                RecompressionOutcome.Kept -> kept++
+                RecompressionOutcome.AlreadyReduced -> alreadyReduced++
+            }
+            onProgress(index + 1, total)
+        }
+        return PhotoRecompressionReport(recompressed, freedBytes, kept, alreadyReduced)
+    }
+
+    private suspend fun recompressOne(photo: LoggedTrackPhotoEntity): RecompressionOutcome {
+        val resolution = resolvePhotoOriginal(photo)
+        // Introuvable, modifié, ou permission retirée en cours de route : la copie intégrale n'est
+        // pas touchée, et la ligne non plus. C'est le cas que le rapport de fin appelle
+        // « conservée ».
+        val uri = (resolution as? PhotoOriginalResolution.Found)?.uri ?: return RecompressionOutcome.Kept
+        val resolver = appContext.contentResolver
+        when (PhotoReducer.planFor(resolver, uri)) {
+            // L'original est déjà sous la cible : il n'y a rien à gagner, ni maintenant ni jamais.
+            // La ligne passe REDUCED sans que le fichier bouge, même convention qu'à l'import
+            // (PhotoCopyPlan.COPY_ALREADY_SMALL) : la colonne enregistre la politique appliquée,
+            // et c'est ce qui évite de réexaminer cette photo à chaque passe.
+            PhotoCopyPlan.COPY_ALREADY_SMALL -> {
+                dao.updatePhotoStorage(photo.id, photo.filePath, PhotoStorageMode.REDUCED)
+                return RecompressionOutcome.AlreadyReduced
+            }
+            // Format que la plateforme ne sait pas décoder : la ligne reste FULL, exprès. Le
+            // fichier local EST une copie intégrale, et la marquer réduite mettrait l'app hors
+            // d'état de la reprendre le jour où elle saura la décoder.
+            PhotoCopyPlan.COPY_UNDECODABLE -> return RecompressionOutcome.Kept
+            PhotoCopyPlan.REDUCE -> Unit
+        }
+
+        val currentFile = LoggedTrackPhotoStore.resolve(appContext, photo.filePath)
+        val sizeBefore = currentFile.length()
+        val newPath = LoggedTrackPhotoStore.relativePath(photo.trackId, "jpg")
+        val newFile = LoggedTrackPhotoStore.resolve(appContext, newPath)
+        if (!PhotoReducer.writeReduced(resolver, uri, newFile)) {
+            // writeReduced efface déjà sa cible en cas d'échec ; le delete est une ceinture, pour
+            // qu'aucun chemin ne laisse un fichier que plus rien ne référencera jamais.
+            newFile.delete()
+            return RecompressionOutcome.Kept
+        }
+        val sizeAfter = newFile.length()
+        // Réduction qui ne rend rien (source déjà très compressée) : on garde la copie existante,
+        // on jette la nouvelle, et on marque quand même la ligne REDUCED. Même raisonnement que
+        // « déjà sous la cible » : il n'y a rien à gagner à la réexaminer un jour de plus.
+        if (sizeAfter <= 0L || sizeAfter >= sizeBefore) {
+            newFile.delete()
+            dao.updatePhotoStorage(photo.id, photo.filePath, PhotoStorageMode.REDUCED)
+            return RecompressionOutcome.AlreadyReduced
+        }
+        try {
+            dao.updatePhotoStorage(photo.id, newPath, PhotoStorageMode.REDUCED)
+        } catch (e: Exception) {
+            // La ligne désigne toujours l'ancien fichier, qui est toujours là : rien n'est perdu,
+            // c'est le fichier qu'on vient d'écrire qui n'a plus de raison d'exister.
+            newFile.delete()
+            throw e
+        }
+        currentFile.delete()
+        return RecompressionOutcome.Recompressed(freedBytes = sizeBefore - sizeAfter)
+    }
+
+    /**
+     * RIC-157 : retrouve la photo d'origine de [photo] dans la galerie, et mémorise son URI quand
+     * il a changé.
+     *
+     * Toute la logique est dans [PhotoOriginalResolver] ; il ne reste ici que la persistance, qui
+     * est la seule chose que ce composant ne peut pas faire lui-même. L'écriture est conditionnée
+     * au fait que l'URI ait bougé : une résolution qui a abouti au premier essai n'a rien appris de
+     * nouveau, et réécrire la même valeur ferait une écriture SQLite par consultation de photo.
+     *
+     * Pas encore branché sur une surface visible : la montée en qualité dans la visionneuse et la
+     * récupération après restauration sont du lot B. Livré testé pour qu'il n'ait qu'à être appelé.
+     */
+    suspend fun resolvePhotoOriginal(photo: LoggedTrackPhotoEntity): PhotoOriginalResolution {
+        val resolution = PhotoOriginalResolver.resolve(appContext, photo)
+        if (resolution is PhotoOriginalResolution.Found && resolution.uriRefreshed) {
+            dao.updatePhotoLastResolvedUri(photo.id, resolution.uri.toString())
+        }
+        return resolution
+    }
+
+    /**
+     * RIC-151 : ce que la recherche des photos manquantes a donné.
+     *
+     * [modifiedNotAdopted] est le cas qui a motivé le ticket autant que les autres : la photo est
+     * encore dans la galerie sous le même nom, mais ce n'est plus le même fichier (un service de
+     * sauvegarde l'a recompressée). Rien n'est adopté dans ce cas, et il faut le DIRE : « rien
+     * trouvé » serait faux, et adopter serait pire, ça réécrirait le carnet avec une autre image.
+     */
+    data class PhotoRecoveryReport(
+        val recovered: Int,
+        val modifiedNotAdopted: Int,
+        val notFound: Int,
+    )
+
+    /**
+     * RIC-151 : refabrique la copie locale des photos dont le fichier a disparu, quand l'original
+     * est retrouvé dans la galerie et confirmé par son empreinte.
+     *
+     * Le cas d'usage est la restauration d'une sauvegarde antérieure à l'ajout des photos, mais
+     * n'importe quel nettoyage de stockage produit le même état : des lignes bien vivantes dont le
+     * fichier n'existe plus. C'est précisément pour cette passe qu'aucune de ces lignes n'est
+     * jamais supprimée automatiquement, et que leurs métadonnées d'origine sont conservées.
+     *
+     * **Toute la re-corrélation part des colonnes de la base** (empreinte, nom d'origine, date de
+     * prise de vue), JAMAIS de l'EXIF du fichier local : il n'y en a pas, puisque le fichier a
+     * disparu, et quand il y en a un il est de toute façon expurgé du GPS. Point acquis du projet.
+     *
+     * **La copie refabriquée suit le mode de stockage COURANT** ([storageMode], résolu par
+     * l'appelant), pas celui que la ligne portait : reprendre une photo aujourd'hui, c'est la
+     * reprendre sous le régime d'aujourd'hui. La ligne est mise à jour en conséquence, chemin et
+     * mode ensemble.
+     *
+     * **Rien n'est jamais adopté sans empreinte exacte.** Un candidat qui porte le bon nom et la
+     * bonne date mais pas le bon contenu est compté à part et laissé où il est : le Journal dirait
+     * autrement « voici ta photo » en montrant une autre image, ce qui est pire que de ne rien
+     * montrer du tout.
+     *
+     * Photo par photo, comme la recompression : une qui échoue n'emporte pas les autres, et une
+     * interruption laisse simplement le reste à reprendre.
+     */
+    suspend fun recoverMissingPhotos(
+        storageMode: PhotoStorageMode,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): PhotoRecoveryReport {
+        val missing = dao.getAllPhotos().filterNot { LoggedTrackPhotoStore.resolve(appContext, it.filePath).isFile }
+        val total = missing.size
+        onProgress(0, total)
+        var recovered = 0
+        var modifiedNotAdopted = 0
+        var notFound = 0
+        LoggedTrackPhotoStore.dir(appContext).mkdirs()
+        LoggedTrackPhotoStore.transitDir(appContext).mkdirs()
+        missing.forEachIndexed { index, photo ->
+            val outcome = try {
+                recoverOne(photo, storageMode)
+            } catch (e: CancellationException) {
+                // Même raison que dans la passe de recompression : une annulation arrête la
+                // recherche au lieu de compter le reste comme introuvable.
+                throw e
+            } catch (e: Exception) {
+                Log.w("LoggedTrackRepository", "Photo manquante non récupérée", e)
+                false
+            }
+            if (outcome) {
+                recovered++
+            } else if (PhotoOriginalResolver.hasApproximateCandidate(appContext, photo)) {
+                modifiedNotAdopted++
+            } else {
+                notFound++
+            }
+            onProgress(index + 1, total)
+        }
+        return PhotoRecoveryReport(recovered, modifiedNotAdopted, notFound)
+    }
+
+    /**
+     * @return true si la copie locale a été refabriquée et la ligne remise d'aplomb.
+     *
+     * Passe par la zone de transit puis déplace, exactement comme un ajout ordinaire
+     * ([copyPhotoToTransit] puis le renommage de [commitPendingPhotos]) : c'est la même fabrication
+     * pour le même résultat, réduction comprise, et il n'y a aucune raison d'en écrire une seconde
+     * ici. La ligne n'est basculée qu'une fois le fichier définitif en place.
+     */
+    private suspend fun recoverOne(photo: LoggedTrackPhotoEntity, storageMode: PhotoStorageMode): Boolean {
+        val uri = (resolvePhotoOriginal(photo) as? PhotoOriginalResolution.Found)?.uri ?: return false
+        val copied = copyPhotoToTransit(photo.trackId, appContext.contentResolver, uri, storageMode)
+        val transitFile = LoggedTrackPhotoStore.resolve(appContext, copied.transitPath)
+        val extension = transitFile.extension.ifEmpty { "jpg" }
+        val relativePath = LoggedTrackPhotoStore.relativePath(photo.trackId, extension)
+        val target = LoggedTrackPhotoStore.resolve(appContext, relativePath)
+        // renameTo échoue quand cacheDir et filesDir ne sont pas sur le même volume : ce n'est pas
+        // garanti par la plateforme, seulement habituel. Même repli qu'à l'enregistrement.
+        if (!transitFile.renameTo(target)) {
+            transitFile.inputStream().use { input -> target.outputStream().use { input.copyTo(it) } }
+            transitFile.delete()
+        }
+        try {
+            dao.updatePhotoStorage(photo.id, relativePath, copied.storageMode)
+        } catch (e: Exception) {
+            // La ligne désigne toujours son fichier disparu : on la laisse exactement dans l'état
+            // où on l'a trouvée plutôt que de laisser un fichier que rien ne référence.
+            target.delete()
+            throw e
+        }
+        return true
+    }
+
+    /**
      * RIC-43 : parmi [photos], celles dont la copie locale a disparu : restauration d'une
      * sauvegarde antérieure à leur ajout, nettoyage manuel du stockage de l'app, ou tout simplement
      * une écriture qui n'a jamais abouti.
@@ -622,6 +988,16 @@ class LoggedTrackRepository(context: Context) {
      * Un stat par photo, fait une fois par rafraîchissement de la liste plutôt qu'à chaque rendu
      * de carte ou de vignette.
      */
+    /**
+     * RIC-151 : combien de photos, dans tout le Journal, n'ont plus leur fichier.
+     *
+     * C'est ce qui décide de l'existence même de « Retrouver les photos manquantes » dans les
+     * Réglages : une action qui ne pourrait que répondre « zéro » n'a rien à faire à l'écran. Un
+     * `stat` par photo, fait une fois à l'ouverture des Réglages, jamais en continu.
+     */
+    suspend fun countMissingPhotoFiles(): Int =
+        dao.getAllPhotos().count { !LoggedTrackPhotoStore.resolve(appContext, it.filePath).isFile }
+
     fun missingPhotoFileIds(photos: List<LoggedTrackPhotoEntity>): Set<Long> =
         photos.filterNot { LoggedTrackPhotoStore.resolve(appContext, it.filePath).exists() }
             .mapTo(mutableSetOf()) { it.id }
@@ -827,16 +1203,12 @@ class LoggedTrackRepository(context: Context) {
 
     // RIC-43 : par flux plutôt que text.toByteArray() : une photo (quelques Mo) n'a pas à
     // transiter par une String intermédiaire comme le fait la variante GPX ci-dessus.
-    private fun sha256(input: InputStream): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val buffer = ByteArray(8192)
-        while (true) {
-            val read = input.read(buffer)
-            if (read < 0) break
-            digest.update(buffer, 0, read)
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
-    }
+    //
+    // RIC-157 : le calcul lui-même vit désormais dans PhotoContentHash, parce qu'il a un second
+    // appelant (PhotoOriginalResolver) dont le résultat doit coïncider au caractère près avec ce
+    // qui est écrit ici. Deux implémentations finiraient par diverger, et la re-résolution ne
+    // retrouverait plus rien sans que la moindre erreur ne le signale.
+    private fun sha256(input: InputStream): String = PhotoContentHash.of(input)
 
     private companion object {
         const val ONE_HOUR_MILLIS = 3_600_000L
