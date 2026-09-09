@@ -28,7 +28,7 @@ import com.bivouac.app.data.photo.PhotoStoragePolicy
  *
  * Même patron que le mode de calcul de la vitesse juste au-dessus dans les Réglages : boutons
  * segmentés pour les deux branches, et sous eux la phrase qui dit ce que la branche COURANTE
- * implique. Deux libellés courts plutôt qu'un long : « Copie réduite (recommandé) » ne tient pas
+ * implique. Deux libellés courts plutôt qu'un long : « Poids allégé (recommandé) » ne tient pas
  * dans un demi-bouton segmenté, et la recommandation vit très bien dans la phrase.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,8 +63,8 @@ internal fun PhotoStorageModeChoice(
 // historique), REDUCED ensuite. Les libellés, eux, ne suivent pas les noms techniques : personne
 // n'a à savoir que la valeur stockée s'appelle FULL.
 internal fun PhotoStorageMode.label(): String = when (this) {
-    PhotoStorageMode.FULL -> "Pleine résolution"
-    PhotoStorageMode.REDUCED -> "Copie réduite"
+    PhotoStorageMode.FULL -> "Qualité d'origine"
+    PhotoStorageMode.REDUCED -> "Poids allégé"
 }
 
 /**
@@ -77,7 +77,9 @@ internal fun PhotoStorageMode.explanation(): String = when (this) {
         "Chaque photo est copiée à l'identique : rien n'est perdu, mais le Journal grossit vite " +
             "(environ 4 Mo par photo)."
     PhotoStorageMode.REDUCED ->
-        "Recommandé : les photos sont ramenées à ${PhotoStoragePolicy.REDUCED_LONG_SIDE_PX} px sur " +
-            "leur grand côté, une dizaine de fois plus légères et largement assez nettes pour les " +
-            "revoir. Tes photos d'origine, elles, ne sont jamais touchées."
+        "Recommandé : Bivouac enregistre une copie redimensionnée à " +
+            "${PhotoStoragePolicy.REDUCED_LONG_SIDE_PX} px sur son grand côté, environ dix fois plus " +
+            "légère et largement suffisante pour l'affichage dans l'app. L'original de ta galerie, " +
+            "lui, n'est jamais touché : la visionneuse le recharge automatiquement quand il est " +
+            "encore disponible."
 }
