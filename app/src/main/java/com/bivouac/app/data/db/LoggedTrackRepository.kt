@@ -14,10 +14,14 @@ import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
+import com.bivouac.app.data.photo.PhotoCopyPlan
 import com.bivouac.app.data.photo.PhotoExifReader
 import com.bivouac.app.data.photo.PhotoLibraryPermission
 import com.bivouac.app.data.photo.PhotoPositionCorrelator
+import com.bivouac.app.data.photo.PhotoReducer
 import com.bivouac.app.data.photo.PhotoSourceMetadata
+import com.bivouac.app.data.photo.PhotoStorageMode
+import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
@@ -110,6 +114,13 @@ data class PendingPhotoAdd(
     val positionApproximate: Boolean,
     val takenAtZoneCertain: Boolean?,
     val source: PhotoSourceMetadata,
+    // RIC-157 : ce que le fichier de transit A SUBI, pas ce que les Réglages demandaient. Une photo
+    // déjà petite ou impossible à décoder ne rend pas le même mode qu'une photo effectivement
+    // réduite : voir PhotoCopyPlan. Reporté tel quel sur la ligne au commit.
+    val storageMode: PhotoStorageMode = PhotoStorageMode.FULL,
+    // RIC-157 : l'URI de la source telle que le sélecteur l'a livrée, relevé dans les DEUX modes :
+    // voir LoggedTrackPhotoEntity.lastResolvedUri.
+    val sourceUri: String? = null,
 )
 
 /** Ce que rend un passage du sélecteur : ce qui est entré en transit, et le bilan du lot. */
@@ -450,6 +461,10 @@ class LoggedTrackRepository(context: Context) {
         trackId: String,
         resolver: ContentResolver,
         uris: List<Uri>,
+        // RIC-157 : la politique de stockage à appliquer à CE lot, résolue par l'appelant (voir
+        // PhotoStoragePolicy et JournalViewModel.addPhotos). Défaut FULL : c'est le comportement
+        // historique, celui qu'un appelant qui ne connaît pas encore ce réglage doit obtenir.
+        storageMode: PhotoStorageMode = PhotoStorageMode.FULL,
         alreadyStagedHashes: Set<String> = emptySet(),
         ignoredHashes: Set<String> = emptySet(),
         // Appelé après chaque photo du lot avec le nombre de photos traitées, quel qu'en soit le
@@ -483,13 +498,10 @@ class LoggedTrackRepository(context: Context) {
                 val exif = PhotoExifReader.read(resolver, uri, requireOriginal = mediaLocationGranted)
                 val position =
                     PhotoPositionCorrelator.correlate(points, exif.latitude, exif.longitude, exif.takenAtMillis)
-                val transitPath = LoggedTrackPhotoStore.transitPath(trackId, extensionFor(resolver, uri))
-                val target = LoggedTrackPhotoStore.resolve(appContext, transitPath)
-                resolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } }
-                    ?: throw IOException("Impossible d'ouvrir la photo sélectionnée")
+                val copied = copyPhotoToTransit(trackId, resolver, uri, storageMode)
                 staged += PendingPhotoAdd(
                     displayId = nextPendingPhotoDisplayId(),
-                    transitPath = transitPath,
+                    transitPath = copied.transitPath,
                     contentHash = contentHash,
                     stagedAtMillis = System.currentTimeMillis(),
                     takenAtMillis = exif.takenAtMillis,
@@ -499,6 +511,8 @@ class LoggedTrackRepository(context: Context) {
                     positionApproximate = position.approximate,
                     takenAtZoneCertain = exif.takenAtZoneCertain,
                     source = MediaStorePhotoQuery.readSource(resolver, uri),
+                    storageMode = copied.storageMode,
+                    sourceUri = uri.toString(),
                 )
                 true
             }.onSuccess { wasStaged ->
@@ -514,6 +528,62 @@ class LoggedTrackRepository(context: Context) {
             staged = staged,
             report = PhotoAddReport(added = staged.size, duplicatesSkipped = duplicatesSkipped, failed = failed),
         )
+    }
+
+    /** RIC-157 : le fichier de transit qui vient d'être écrit, et ce qu'il a réellement subi. */
+    private data class CopiedPhoto(val transitPath: String, val storageMode: PhotoStorageMode)
+
+    /**
+     * RIC-157 : la SEULE chose que le mode de stockage change dans tout le cycle photo : la
+     * fabrication du fichier de transit.
+     *
+     * Tout le reste est strictement inchangé, et doit le rester : l'empreinte est déjà calculée sur
+     * les octets d'origine par l'appelant (invariant absolu, c'est elle qui permettra de retrouver
+     * l'original), l'EXIF est déjà lu sur la source, la corrélation est déjà faite, et le commit à
+     * l'enregistrement (voir [commitPendingPhotos]) ne fait toujours que déplacer un fichier.
+     *
+     * Le mode rendu n'est pas toujours celui demandé : voir [PhotoCopyPlan], qui porte les trois
+     * issues et leurs raisons. Résumé :
+     * - mode FULL demandé : copie brute, mode FULL.
+     * - mode REDUCED, photo au-dessus de la cible : réduction, mode REDUCED.
+     * - mode REDUCED, photo déjà sous la cible : copie brute, mode **REDUCED** (rien à gagner,
+     *   jamais).
+     * - mode REDUCED, réduction impossible (format ou mémoire) : copie brute, mode **FULL** (le
+     *   fichier local est bel et bien une copie intégrale, et le lot B doit pouvoir la reprendre).
+     *
+     * L'extension du fichier suit ce qu'il contient : `jpg` pour une copie réduite, quelle que soit
+     * l'origine (un HEIC réduit est un JPEG), l'extension déduite du type MIME sinon.
+     */
+    private fun copyPhotoToTransit(
+        trackId: String,
+        resolver: ContentResolver,
+        uri: Uri,
+        requestedMode: PhotoStorageMode,
+    ): CopiedPhoto {
+        val plan = if (requestedMode == PhotoStorageMode.REDUCED) {
+            PhotoReducer.planFor(resolver, uri)
+        } else {
+            null
+        }
+        if (plan == PhotoCopyPlan.REDUCE) {
+            val transitPath = LoggedTrackPhotoStore.transitPath(trackId, "jpg")
+            val target = LoggedTrackPhotoStore.resolve(appContext, transitPath)
+            if (PhotoReducer.writeReduced(resolver, uri, target)) {
+                return CopiedPhoto(transitPath, PhotoStorageMode.REDUCED)
+            }
+            // writeReduced a déjà effacé sa cible : on repart sur un nom de fichier neuf, portant
+            // la vraie extension de la source, plutôt que de laisser des octets HEIC dans un .jpg.
+        }
+        val transitPath = LoggedTrackPhotoStore.transitPath(trackId, extensionFor(resolver, uri))
+        val target = LoggedTrackPhotoStore.resolve(appContext, transitPath)
+        copyRawBytes(resolver, uri, target)
+        val mode = if (plan == PhotoCopyPlan.COPY_ALREADY_SMALL) PhotoStorageMode.REDUCED else PhotoStorageMode.FULL
+        return CopiedPhoto(transitPath, mode)
+    }
+
+    private fun copyRawBytes(resolver: ContentResolver, uri: Uri, target: File) {
+        resolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } }
+            ?: throw IOException("Impossible d'ouvrir la photo sélectionnée")
     }
 
     /**
@@ -565,6 +635,8 @@ class LoggedTrackRepository(context: Context) {
                     sourceDisplayName = add.source.displayName,
                     sourceRelativePath = add.source.relativePath,
                     sourceDateTakenMillis = add.source.dateTakenMillis,
+                    storageMode = add.storageMode,
+                    lastResolvedUri = add.sourceUri,
                 )
                 try {
                     dao.insertPhoto(entity)
