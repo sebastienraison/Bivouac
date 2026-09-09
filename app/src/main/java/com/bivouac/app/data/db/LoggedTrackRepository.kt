@@ -21,6 +21,7 @@ import com.bivouac.app.data.photo.PhotoLibraryPermission
 import com.bivouac.app.data.photo.PhotoOriginalResolution
 import com.bivouac.app.data.photo.PhotoOriginalResolver
 import com.bivouac.app.data.photo.PhotoPositionCorrelator
+import com.bivouac.app.data.photo.PhotoRecompression
 import com.bivouac.app.data.photo.PhotoReducer
 import com.bivouac.app.data.photo.PhotoSourceMetadata
 import com.bivouac.app.data.photo.PhotoStorageMode
@@ -703,6 +704,141 @@ class LoggedTrackRepository(context: Context) {
      * Une requête pour tout, sur le modèle de [dao.getAllPhotoFilePaths], plutôt qu'une par trace.
      */
     suspend fun allPhotos(): List<LoggedTrackPhotoEntity> = dao.getAllPhotos()
+
+    /**
+     * RIC-157 : ce que la passe de recompression a fait du stock, une fois finie.
+     *
+     * [kept] et [alreadyReduced] sont deux issues distinctes, et pas deux façons de dire « rien
+     * fait » : la première est un échec de re-résolution (l'original n'est plus là, ou n'est plus
+     * le même), la seconde un constat définitif (il n'y avait rien à gagner). La première invite à
+     * relancer un jour, la seconde jamais : ces photos sont d'ailleurs marquées REDUCED pour ne
+     * plus être réexaminées.
+     */
+    data class PhotoRecompressionReport(
+        val recompressed: Int,
+        val freedBytes: Long,
+        val kept: Int,
+        val alreadyReduced: Int,
+    )
+
+    private sealed interface RecompressionOutcome {
+        data class Recompressed(val freedBytes: Long) : RecompressionOutcome
+        data object Kept : RecompressionOutcome
+        data object AlreadyReduced : RecompressionOutcome
+    }
+
+    /**
+     * RIC-157 : remplace par une copie réduite les copies intégrales dont l'original est retrouvé
+     * dans la galerie ET confirmé par son empreinte.
+     *
+     * **Rien n'est jamais fabriqué à partir de la copie locale.** Réduire la copie intégrale
+     * suffirait techniquement, mais l'app perdrait alors ce qui distingue une copie réduite d'une
+     * photo dégradée : la certitude que l'original existe encore ailleurs. La condition d'entrée
+     * est donc « original retrouvé », pas « fichier local réductible ».
+     *
+     * **Aucune fenêtre sans fichier.** La copie réduite est écrite sous un nom NEUF, la ligne est
+     * ensuite basculée dessus, et l'ancien fichier n'est effacé qu'après. Une interruption laisse
+     * au pire un fichier orphelin (de la place perdue, que la purge balaie) et jamais une ligne qui
+     * ne désigne rien. Écrire par-dessus le fichier existant aurait exactement le défaut inverse :
+     * une seconde pendant laquelle la photo n'est ni l'ancienne ni la nouvelle.
+     *
+     * Le nom est neuf plutôt que réutilisé parce que l'extension change : une copie réduite est un
+     * JPEG même quand l'original était un HEIC, et laisser des octets JPEG dans un `.heic` est
+     * précisément ce que le pipeline d'import évite déjà (voir [copyPhotoToTransit]).
+     *
+     * Photo par photo, sans transaction d'ensemble : une photo qui résiste n'emporte pas le lot, et
+     * une interruption au milieu laisse les précédentes réduites et les suivantes intactes. C'est
+     * le comportement voulu, l'opération est reprenable telle quelle.
+     *
+     * L'empreinte de la ligne n'est JAMAIS recalculée : elle porte les octets d'origine, c'est ce
+     * qui permettra de retrouver l'original la fois suivante (visionneuse, RIC-151).
+     */
+    suspend fun recompressFullPhotos(
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): PhotoRecompressionReport {
+        // Les mêmes candidates que celles chiffrées par l'écran (voir PhotoRecompression), plus la
+        // présence du fichier local : une ligne dont le fichier a disparu relève de RIC-151, pas
+        // d'ici, et la compter en « conservée » ferait passer un problème pour un refus.
+        val candidates = dao.getAllPhotos().filter {
+            PhotoRecompression.isRecompressible(it) && LoggedTrackPhotoStore.resolve(appContext, it.filePath).isFile
+        }
+        val total = candidates.size
+        onProgress(0, total)
+        var recompressed = 0
+        var freedBytes = 0L
+        var kept = 0
+        var alreadyReduced = 0
+        LoggedTrackPhotoStore.dir(appContext).mkdirs()
+        candidates.forEachIndexed { index, photo ->
+            val outcome = runCatching { recompressOne(photo) }
+                .onFailure { Log.w("LoggedTrackRepository", "Photo non recompressée, copie intégrale conservée", it) }
+                .getOrDefault(RecompressionOutcome.Kept)
+            when (outcome) {
+                is RecompressionOutcome.Recompressed -> {
+                    recompressed++
+                    freedBytes += outcome.freedBytes
+                }
+                RecompressionOutcome.Kept -> kept++
+                RecompressionOutcome.AlreadyReduced -> alreadyReduced++
+            }
+            onProgress(index + 1, total)
+        }
+        return PhotoRecompressionReport(recompressed, freedBytes, kept, alreadyReduced)
+    }
+
+    private suspend fun recompressOne(photo: LoggedTrackPhotoEntity): RecompressionOutcome {
+        val resolution = resolvePhotoOriginal(photo)
+        // Introuvable, modifié, ou permission retirée en cours de route : la copie intégrale n'est
+        // pas touchée, et la ligne non plus. C'est le cas que le rapport de fin appelle
+        // « conservée ».
+        val uri = (resolution as? PhotoOriginalResolution.Found)?.uri ?: return RecompressionOutcome.Kept
+        val resolver = appContext.contentResolver
+        when (PhotoReducer.planFor(resolver, uri)) {
+            // L'original est déjà sous la cible : il n'y a rien à gagner, ni maintenant ni jamais.
+            // La ligne passe REDUCED sans que le fichier bouge, même convention qu'à l'import
+            // (PhotoCopyPlan.COPY_ALREADY_SMALL) : la colonne enregistre la politique appliquée,
+            // et c'est ce qui évite de réexaminer cette photo à chaque passe.
+            PhotoCopyPlan.COPY_ALREADY_SMALL -> {
+                dao.updatePhotoStorage(photo.id, photo.filePath, PhotoStorageMode.REDUCED)
+                return RecompressionOutcome.AlreadyReduced
+            }
+            // Format que la plateforme ne sait pas décoder : la ligne reste FULL, exprès. Le
+            // fichier local EST une copie intégrale, et la marquer réduite mettrait l'app hors
+            // d'état de la reprendre le jour où elle saura la décoder.
+            PhotoCopyPlan.COPY_UNDECODABLE -> return RecompressionOutcome.Kept
+            PhotoCopyPlan.REDUCE -> Unit
+        }
+
+        val currentFile = LoggedTrackPhotoStore.resolve(appContext, photo.filePath)
+        val sizeBefore = currentFile.length()
+        val newPath = LoggedTrackPhotoStore.relativePath(photo.trackId, "jpg")
+        val newFile = LoggedTrackPhotoStore.resolve(appContext, newPath)
+        if (!PhotoReducer.writeReduced(resolver, uri, newFile)) {
+            // writeReduced efface déjà sa cible en cas d'échec ; le delete est une ceinture, pour
+            // qu'aucun chemin ne laisse un fichier que plus rien ne référencera jamais.
+            newFile.delete()
+            return RecompressionOutcome.Kept
+        }
+        val sizeAfter = newFile.length()
+        // Réduction qui ne rend rien (source déjà très compressée) : on garde la copie existante,
+        // on jette la nouvelle, et on marque quand même la ligne REDUCED. Même raisonnement que
+        // « déjà sous la cible » : il n'y a rien à gagner à la réexaminer un jour de plus.
+        if (sizeAfter <= 0L || sizeAfter >= sizeBefore) {
+            newFile.delete()
+            dao.updatePhotoStorage(photo.id, photo.filePath, PhotoStorageMode.REDUCED)
+            return RecompressionOutcome.AlreadyReduced
+        }
+        try {
+            dao.updatePhotoStorage(photo.id, newPath, PhotoStorageMode.REDUCED)
+        } catch (e: Exception) {
+            // La ligne désigne toujours l'ancien fichier, qui est toujours là : rien n'est perdu,
+            // c'est le fichier qu'on vient d'écrire qui n'a plus de raison d'exister.
+            newFile.delete()
+            throw e
+        }
+        currentFile.delete()
+        return RecompressionOutcome.Recompressed(freedBytes = sizeBefore - sizeAfter)
+    }
 
     /**
      * RIC-157 : retrouve la photo d'origine de [photo] dans la galerie, et mémorise son URI quand
