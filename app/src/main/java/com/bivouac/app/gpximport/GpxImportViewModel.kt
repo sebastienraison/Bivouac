@@ -347,8 +347,9 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         _closeConfirmationReason.value = null
         // L'utilisateur a choisi de garder ce qui est ouvert plutôt que de le lâcher : une
         // duplication en attente (voir openDuplicateFromLoggedTrack) n'attendait que cette même
-        // confirmation, elle doit donc être abandonnée aussi, pas rejouée en douce.
-        pendingDuplicateLoad = null
+        // confirmation, elle doit donc être abandonnée aussi, pas rejouée en douce. C'est ce que
+        // dit le bouton « Annuler la duplication » de RIC-121.
+        setPendingDuplicate(null)
     }
 
     fun discardAndClose() {
@@ -376,18 +377,42 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         // Chaque appel à performClose() (abandon, enregistrer-puis-fermer, supprimer-puis-fermer)
         // est un moment valide pour appliquer une duplication qui n'attendait que la fermeture de
         // la trace en cours : voir openDuplicateFromLoggedTrack.
-        pendingDuplicateLoad?.let { loadDuplicate(it) }
-        pendingDuplicateLoad = null
+        val pending = pendingDuplicateLoad
+        setPendingDuplicate(null)
+        pending?.let { loadDuplicate(it) }
     }
 
     // --- RIC-40 : dupliquer une trace du Journal vers la Planification ---
 
     private var pendingDuplicateLoad: DuplicatePlan? = null
 
+    /**
+     * RIC-121 : nom de la sortie du Journal dont la copie attend que la trace en cours soit
+     * fermée, null quand aucune duplication n'est en attente. C'est la seule chose dont l'IHM ait
+     * besoin pour savoir que le dialogue de confirmation de fermeture ne parle pas d'une simple
+     * fermeture mais d'un remplacement, et pour nommer la trace qui prendra la place.
+     *
+     * Écrit exclusivement par [setPendingDuplicate], en même temps que [pendingDuplicateLoad] :
+     * deux champs mais un seul point de mutation, donc pas de divergence possible, et la valeur
+     * est posée de façon synchrone (pas dérivée par un flux) pour que le dialogue n'ait jamais une
+     * frame d'avance sur elle.
+     */
+    private val _pendingDuplicateName = MutableStateFlow<String?>(null)
+    val pendingDuplicateName: StateFlow<String?> = _pendingDuplicateName.asStateFlow()
+
+    private fun setPendingDuplicate(plan: DuplicatePlan?) {
+        pendingDuplicateLoad = plan
+        _pendingDuplicateName.value = plan?.sourceName
+    }
+
     private data class DuplicatePlan(
         val track: HikeTrack,
         val bivouacPoints: List<BivouacPoint>,
         val suggestedName: String,
+        // Le nom tel qu'il s'affiche dans le Journal (LoggedTrackEntity.name), et non
+        // [suggestedName] qui vaut déjà « Copie de ... » : c'est la sortie d'origine que le
+        // dialogue de RIC-121 doit nommer.
+        val sourceName: String,
     )
 
     /**
@@ -401,15 +426,21 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
      * Si une trace est déjà ouverte ici et que la fermer poserait question, ça ne l'écrase pas en
      * silence : la même confirmation qu'une fermeture manuelle s'affiche d'abord, et la
      * duplication ne se charge qu'une fois l'utilisateur décidé (voir performClose /
-     * dismissCloseConfirmation).
+     * dismissCloseConfirmation). RIC-121 : c'est [pendingDuplicateName] qui permet à ce
+     * dialogue-là de se raconter comme un remplacement plutôt que comme une fermeture.
      */
-    fun openDuplicateFromLoggedTrack(track: HikeTrack, bivouacPoints: List<BivouacPoint>, suggestedName: String) {
-        val plan = DuplicatePlan(track, bivouacPoints, suggestedName)
+    fun openDuplicateFromLoggedTrack(
+        track: HikeTrack,
+        bivouacPoints: List<BivouacPoint>,
+        suggestedName: String,
+        sourceName: String,
+    ) {
+        val plan = DuplicatePlan(track, bivouacPoints, suggestedName, sourceName)
         val reason = closeConfirmationReasonForCurrentTrack()
         if (reason == null) {
             loadDuplicate(plan)
         } else {
-            pendingDuplicateLoad = plan
+            setPendingDuplicate(plan)
             _closeConfirmationReason.value = reason
         }
     }

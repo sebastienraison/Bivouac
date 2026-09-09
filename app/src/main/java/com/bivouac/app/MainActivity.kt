@@ -42,26 +42,74 @@ import kotlinx.coroutines.launch
 
 private const val JOURNAL_CALIBRATION_ROUTE = "journal_calibration"
 
+/**
+ * RIC-168 : un lot d'URI GPX entrant, associé à un numéro de génération.
+ *
+ * Deux lots se distinguent par IDENTITÉ (le compteur), jamais par contenu : rouvrir deux fois le
+ * même fichier depuis Mes fichiers doit rouvrir deux fois le dialogue de choix d'univers
+ * (UniverseChoiceDialog, RIC-104), alors que le contenu (la même URI content://) serait égal d'une
+ * fois sur l'autre.
+ */
+internal data class IncomingGpxBatch(val uris: List<Uri>, val generation: Int)
+
+private val NoIncomingGpx = IncomingGpxBatch(emptyList(), generation = 0)
+
+/**
+ * RIC-168 : la règle appliquée par onNewIntent, extraite en fonction pure pour être testable en
+ * JVM sans instance d'Activity.
+ *
+ * Un intent redélivré sans GPX (l'app relancée depuis les récentes, par exemple) laisse [current]
+ * inchangé : rien ne doit effacer un dialogue de choix d'univers pas encore résolu. Un intent avec
+ * des URI toujours produit un lot de génération supérieure, y compris si son contenu est
+ * identique au précédent : voir la kdoc d'[IncomingGpxBatch].
+ */
+internal fun nextIncomingGpxBatch(current: IncomingGpxBatch, newUris: List<Uri>): IncomingGpxBatch =
+    if (newUris.isEmpty()) current else IncomingGpxBatch(newUris, current.generation + 1)
+
 class MainActivity : ComponentActivity() {
+    // RIC-168 : singleTask (voir le manifeste) fait qu'un intent reçu pendant que l'app est déjà
+    // en tâche arrive ici plutôt que de recréer une seconde Activity. Le passer par un état
+    // recomposable, plutôt qu'en argument figé de setContent comme avant, est ce qui fait passer
+    // ce second intent par EXACTEMENT le même traitement que le lancement à froid (dialogue RIC-104
+    // compris) sans reconstruire la Compose tree : onNewIntent n'a qu'à réassigner cette propriété,
+    // toute composition qui la lit se recompose automatiquement.
+    //
+    // internal (et non private) pour être exercé directement depuis un test JVM (Robolectric,
+    // ActivityController) sans passer par une vraie navigation Compose.
+    internal var incomingGpxBatch: IncomingGpxBatch by mutableStateOf(NoIncomingGpx)
+        private set
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val incomingGpxUris = intent.extractGpxUris()
+        incomingGpxBatch = IncomingGpxBatch(intent.extractGpxUris(), generation = 0)
         setContent {
             BivouacTheme {
                 // RIC-19 §5 : rattrapage bloquant des colonnes d'altitude, avant toute navigation :
                 // englobe BivouacApp entier (NavHost compris) plutôt que d'être posé à l'intérieur,
                 // pour qu'aucune section ne soit ne serait-ce que composée pendant le rattrapage.
                 ElevationBackfillGate(modifier = Modifier.fillMaxSize()) {
-                    BivouacApp(modifier = Modifier.fillMaxSize(), incomingGpxUris = incomingGpxUris)
+                    BivouacApp(modifier = Modifier.fillMaxSize(), incomingGpxBatch = incomingGpxBatch)
                 }
             }
         }
     }
+
+    // RIC-168 : app déjà ouverte (n'importe quel écran) + GPX entrant : singleTask ramène CETTE
+    // instance au premier plan et lui livre le nouvel intent ici plutôt que d'onCreate une seconde
+    // fois. setIntent d'abord, pour qu'un intent relu plus tard (rotation, passage clair/sombre qui
+    // recrée l'Activity, cf. le commentaire uiMode du manifeste) reparte de ce dernier intent et non
+    // du tout premier. Un intent sans GPX (relancé depuis les récentes, par exemple) ne touche pas
+    // au lot en attente : rien ne doit effacer un dialogue de choix d'univers pas encore résolu.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        incomingGpxBatch = nextIncomingGpxBatch(incomingGpxBatch, intent.extractGpxUris())
+    }
 }
 
 @Composable
-private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri> = emptyList()) {
+private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxBatch: IncomingGpxBatch = NoIncomingGpx) {
     val navController = rememberNavController()
 
     // RIC-40 : une boîte aux lettres entre les ViewModels du Journal et de la Planification, qui
@@ -85,8 +133,14 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
     // rouvrirait le dialogue par-dessus l'écran, alors même que l'utilisateur vient d'y répondre.
     // C'est le même piège que celui déjà désamorcé côté Planification pour l'import (voir le
     // LaunchedEffect de GpxImportScreen), qui se rejoue ici un cran plus haut.
-    var universeChoiceResolved by rememberSaveable { mutableStateOf(false) }
-    val universeChoicePending = incomingGpxUris.takeIf { it.isNotEmpty() && !universeChoiceResolved }
+    //
+    // RIC-168 : keyé sur incomingGpxBatch.generation, pas sur son contenu (les Uri elles-mêmes).
+    // Un intent redélivré à une Activity singleTask (voir onNewIntent) porte un lot différent à
+    // chaque fois qu'il en porte un, même si l'utilisateur rouvre le même fichier deux fois de
+    // suite : la génération le distingue, une égalité de contenu ne doit jamais être prise pour
+    // « déjà traité ».
+    var universeChoiceResolved by rememberSaveable(incomingGpxBatch.generation) { mutableStateOf(false) }
+    val universeChoicePending = incomingGpxBatch.uris.takeIf { it.isNotEmpty() && !universeChoiceResolved }
     // Mêmes boîtes aux lettres que pendingDuplicate ci-dessus, remplies une fois le choix
     // d'univers tranché.
     var incomingPlanificationUri by remember { mutableStateOf<Uri?>(null) }
@@ -198,6 +252,7 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
     // Planification connaissent déjà leur univers par construction, voir UniverseChoiceDialog.
     universeChoicePending?.let { uris ->
         UniverseChoiceDialog(
+            fileCount = uris.size,
             onJournalChosen = {
                 universeChoiceResolved = true
                 incomingJournalUris = uris
@@ -205,12 +260,10 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
             },
             onPlanificationChosen = {
                 universeChoiceResolved = true
-                // Planification n'a jamais su ouvrir qu'un seul fichier à la fois (voir son propre
-                // sélecteur, OpenDocument et non OpenMultipleDocuments) : un lot externe choisi
-                // pour cet univers perd donc silencieusement tout fichier au-delà du premier.
-                // Comportement non tranché par RIC-104, signalé au pilotage plutôt que deviné plus
-                // loin (agrandir Planification au multi-fichiers, ou désactiver ce choix au-delà
-                // d'un fichier).
+                // RIC-108 : ce first() ne perd plus rien. Planification n'a jamais su ouvrir qu'un
+                // seul fichier à la fois (voir son propre sélecteur, OpenDocument et non
+                // OpenMultipleDocuments), et le dialogue grise désormais ce choix au-delà d'un
+                // fichier reçu : le seul lot qui arrive ici en compte exactement un.
                 incomingPlanificationUri = uris.first()
                 onSectionSelected(AppSection.PLANIFICATION)
             },
@@ -223,9 +276,14 @@ private fun BivouacApp(modifier: Modifier = Modifier, incomingGpxUris: List<Uri>
  * Uri(s) d'un ou plusieurs fichiers GPX reçus depuis une autre application, via ouverture directe
  * (VIEW, toujours un seul fichier), partage simple (SEND) ou partage groupé (SEND_MULTIPLE) : cf.
  * les intent-filters déclarés dans le manifeste.
+ *
+ * RIC-168 : c'est cette même fonction, appelée aussi bien depuis onCreate que depuis onNewIntent,
+ * qui garantit qu'un GPX reçu app déjà ouverte (singleTask) traverse exactement le même routage
+ * qu'un lancement à froid. internal (et non private) pour être exercée directement par un test JVM
+ * avec un vrai android.content.Intent (Robolectric), sans passer par une Activity.
  */
 @Suppress("DEPRECATION")
-private fun Intent.extractGpxUris(): List<Uri> = when (action) {
+internal fun Intent.extractGpxUris(): List<Uri> = when (action) {
     Intent.ACTION_VIEW -> listOfNotNull(data)
     Intent.ACTION_SEND -> listOfNotNull(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

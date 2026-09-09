@@ -122,6 +122,9 @@ data class DuplicatePlanRequest(
     val track: HikeTrack,
     val bivouacPoints: List<BivouacPoint>,
     val suggestedName: String,
+    // RIC-121 : le nom de la sortie du Journal, tel qu'il s'y affiche. [suggestedName] vaut déjà
+    // « Copie de ... » : le dialogue de remplacement côté Planification a besoin de l'original.
+    val sourceName: String,
 )
 
 /**
@@ -209,6 +212,22 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     // avant ; le nombre de jours, lui, est toujours connu.
     private val _dayInfoByTrackId = MutableStateFlow<Map<String, JournalDayInfo>>(emptyMap())
     val dayInfoByTrackId: StateFlow<Map<String, JournalDayInfo>> = _dayInfoByTrackId.asStateFlow()
+
+    /**
+     * RIC-141 : les traces qui ont au moins une photo, pour le picto de la liste. Une requête pour
+     * toute la banque au rafraîchissement, sur le modèle de [tagsByTrackId], puis mise à jour au
+     * point d'écriture (voir saveDetails) : la liste ne se relit pas après une sauvegarde de
+     * détail, et un picto qui n'apparaît qu'au prochain lancement serait pire que pas de picto.
+     *
+     * RIC-152 : vide quand les photos sont débrayées dans les Réglages, comme [currentPhotos] :
+     * annoncer des photos qu'aucun écran ne montrera n'aurait aucun sens. Rien n'est perdu, la
+     * base est intacte et réactiver fait tout revenir.
+     */
+    private val _trackIdsWithPhotos = MutableStateFlow<Set<String>>(emptySet())
+    val trackIdsWithPhotos: StateFlow<Set<String>> =
+        combine(_trackIdsWithPhotos, settingsPreferences.photosEnabled) { ids, enabled ->
+            if (enabled) ids else emptySet()
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     // OR semantics: a track matching any one selected tag is kept; narrows what's browsable,
     // doesn't require an exact combination match. Sur selectedFilterTags (déjà recalée) et non sur
@@ -426,6 +445,25 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         refresh()
+        // RIC-141 : le picto « a des photos » se périme sans que ce ViewModel n'en sache rien. Il
+        // survit au changement de section (NavHost avec saveState/restoreState) et les photos
+        // bougent depuis ailleurs : l'enregistrement d'une sortie ici, mais aussi la purge globale
+        // des Réglages (RIC-152) et une restauration de sauvegarde. Sans ce recalage, la liste
+        // annoncerait des photos supprimées jusqu'au prochain lancement de l'app.
+        //
+        // La fin d'une opération du registre d'exclusion (RIC-156) est le signal qui les couvre
+        // toutes : tout ce qui touche en masse aux fichiers de photos y passe par construction, et
+        // le relevé est une seule requête sur une colonne indexée. Pas besoin de distinguer
+        // laquelle vient de finir : recompter est moins cher que raisonner dessus.
+        viewModelScope.launch {
+            ExclusiveOperations.current.collect { operation ->
+                if (operation != null) return@collect
+                val ids = withContext(Dispatchers.IO) {
+                    runCatching { repository.trackIdsWithPhotos() }.getOrNull()
+                }
+                if (ids != null) _trackIdsWithPhotos.value = ids
+            }
+        }
         // RIC-149 : les fichiers de transit qu'un process tué en pleine édition a laissés derrière
         // lui. Ici, à l'ouverture du Journal : c'est le seul endroit d'où un transit peut naître,
         // et à cet instant précis aucune édition n'est en cours dans ce process, donc tout ce qui
@@ -460,6 +498,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             withContext(Dispatchers.IO) {
                 _tracks.value = repository.list()
                 _tagsByTrackId.value = repository.tagsByTrackId()
+                _trackIdsWithPhotos.value = repository.trackIdsWithPhotos()
                 val zone = ZoneId.systemDefault()
                 _dayInfoByTrackId.value = repository.daySummariesByTrackId()
                     .mapValues { (_, summary) ->
@@ -547,6 +586,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             track = state.track,
             bivouacPoints = junctions.map { BivouacPoint(id = UUID.randomUUID().toString(), trackPointIndex = it) },
             suggestedName = "Copie de ${state.entry.name}",
+            sourceName = state.entry.name,
         )
     }
 

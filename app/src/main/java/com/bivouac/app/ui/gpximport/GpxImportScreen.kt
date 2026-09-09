@@ -92,6 +92,56 @@ import kotlinx.coroutines.flow.first
 
 private val PEEK_HEIGHT_EMPTY = 150.dp
 
+/**
+ * RIC-164 : les quatre visages de l'écran Planification, dont deux seulement portent une carte.
+ *
+ * Le défaut, relevé par le test communautaire F-Droid : au tout premier lancement, cache vide,
+ * l'écran affiché est « Aucune trace en préparation » (aucune carte visible), et pourtant une tuile
+ * OpenTopoMap partait sur le réseau. Mécanisme exact : [GpxImportViewModel.bankedTracesLoaded] naît
+ * à false, donc la toute première composition ne pouvait pas prendre la branche de l'état vide (qui
+ * l'exige, pour ne pas flasher devant une session en cours de restauration) et tombait sur la
+ * branche « banque non vide » : celle-ci compose un HikeMapView, qui instancie un MapView osmdroid
+ * avec sa source de tuiles et son centre par défaut. Le MapView charge sa première tuile
+ * immédiatement, avant même d'être dessiné, et la composition était remplacée quelques
+ * millisecondes plus tard par l'état vide : un aller-retour réseau pour une carte que personne n'a
+ * jamais vue.
+ *
+ * D'où [LOADING], qui n'existait pas : tant que la première lecture Room n'a pas répondu, l'écran
+ * ne montre ni carte ni verdict sur la banque. Aucun HikeMapView n'est composé dans cet état, donc
+ * aucun MapView n'est construit, donc aucune tuile n'est demandée. C'est bien la construction du
+ * MapView qui déclenche le téléchargement, pas son affichage : la seule garantie possible est de ne
+ * pas le créer, et c'est ce que ce mode assure.
+ *
+ * Fonction pure et testable plutôt qu'une cascade de `if` dans le composable : l'invariant à tenir
+ * (« pas de carte avant qu'il y ait quelque chose à montrer ») se vérifie alors sans appareil.
+ */
+internal enum class PlanificationScreenMode {
+    /** Première lecture de la banque en vol. Aucune carte. */
+    LOADING,
+
+    /** Banque vide et rien d'ouvert : plein écran d'accueil. Aucune carte. */
+    EMPTY,
+
+    /** Banque non vide, rien d'ouvert : carte de fond et tiroir listant les traces bankées. */
+    BANK,
+
+    /** Une trace ouverte : carte et tiroir de détail. */
+    DETAIL,
+}
+
+internal fun planificationScreenMode(
+    uiState: GpxImportUiState,
+    bankedTracesEmpty: Boolean,
+    bankedTracesLoaded: Boolean,
+): PlanificationScreenMode = when {
+    // Une trace ouverte l'emporte sur tout le reste : c'est déjà quelque chose à montrer, même si
+    // la lecture de la banque n'a pas encore répondu (cas de la restauration de session).
+    uiState is GpxImportUiState.Loaded -> PlanificationScreenMode.DETAIL
+    !bankedTracesLoaded -> PlanificationScreenMode.LOADING
+    uiState is GpxImportUiState.Idle && bankedTracesEmpty -> PlanificationScreenMode.EMPTY
+    else -> PlanificationScreenMode.BANK
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GpxImportScreen(
@@ -122,6 +172,7 @@ fun GpxImportScreen(
     val bankedTracesLoaded by viewModel.bankedTracesLoaded.collectAsStateWithLifecycle()
     val nameDialogRequest by viewModel.nameDialogRequest.collectAsStateWithLifecycle()
     val closeConfirmationReason by viewModel.closeConfirmationReason.collectAsStateWithLifecycle()
+    val pendingDuplicateName by viewModel.pendingDuplicateName.collectAsStateWithLifecycle()
     val deleteTarget by viewModel.deleteTarget.collectAsStateWithLifecycle()
     val bankOpenError by viewModel.bankOpenError.collectAsStateWithLifecycle()
 
@@ -166,7 +217,12 @@ fun GpxImportScreen(
     LaunchedEffect(pendingDuplicate) {
         val request = pendingDuplicate ?: return@LaunchedEffect
         lifecycleOwner.lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
-        viewModel.openDuplicateFromLoggedTrack(request.track, request.bivouacPoints, request.suggestedName)
+        viewModel.openDuplicateFromLoggedTrack(
+            request.track,
+            request.bivouacPoints,
+            request.suggestedName,
+            request.sourceName,
+        )
         onPendingDuplicateConsumed()
     }
 
@@ -221,7 +277,19 @@ fun GpxImportScreen(
     // que la lecture Room de la banque ET restoreLastTrack aboutissent, uiState valait encore Idle
     // et bankedTraces encore emptyList() par construction, alors qu'une session précédente était
     // bel et bien sur le point d'être restaurée (voir GpxImportViewModel.bankedTracesLoaded).
-    if (uiState is GpxImportUiState.Idle && bankedTraces.isEmpty() && bankedTracesLoaded) {
+    val screenMode = planificationScreenMode(uiState, bankedTraces.isEmpty(), bankedTracesLoaded)
+    if (screenMode == PlanificationScreenMode.LOADING) {
+        // RIC-164 : rien, surtout pas de carte, tant que la première lecture Room n'a pas répondu.
+        // Voir [planificationScreenMode] pour ce que ce trou coûtait.
+        Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+            SectionMenuButton(
+                current = currentSection,
+                onSelect = onSectionSelected,
+                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(16.dp),
+            )
+        }
+    } else if (screenMode == PlanificationScreenMode.EMPTY) {
         Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             FullScreenEmptyState(
                 icon = Icons.Default.Route,
@@ -402,28 +470,66 @@ fun GpxImportScreen(
     }
 
     closeConfirmationReason?.let { reason ->
-        val (title, message) = when (reason) {
-            CloseConfirmationReason.DIRTY ->
-                "Trace modifiée" to "Cette trace a des modifications non enregistrées."
-            CloseConfirmationReason.NEVER_SAVED ->
-                "Trace non enregistrée" to "Attention, cette trace n'a pas encore été enregistrée dans Bivouac."
-        }
-        AlertDialog(
-            onDismissRequest = viewModel::dismissCloseConfirmation,
-            title = { Text(title) },
-            text = { Text(message) },
-            confirmButton = {
-                TextButton(onClick = viewModel::saveAndClose) { Text("Enregistrer") }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = viewModel::dismissCloseConfirmation) { Text("Annuler") }
-                    TextButton(onClick = viewModel::discardAndClose) {
-                        Text("Ne pas enregistrer", color = MaterialTheme.colorScheme.error)
+        // RIC-121 : deux dialogues, un seul état. Le blocage est le même (une trace ouverte qu'on
+        // ne peut pas lâcher en silence), mais ce qui l'a déclenché change complètement ce que
+        // l'utilisateur doit décider : fermer, ou remplacer par la copie d'une sortie du Journal
+        // qui attend derrière (RIC-40). Le dialogue générique disait « Annuler » pour une action
+        // qui abandonne toute la duplication : c'est ce contresens que ce cas dédié ferme.
+        val duplicateSourceName = pendingDuplicateName
+        if (duplicateSourceName != null) {
+            val message = when (reason) {
+                CloseConfirmationReason.DIRTY ->
+                    "La trace ouverte a des modifications non enregistrées. " +
+                        "La copie de « $duplicateSourceName » s'ouvrira ensuite."
+                CloseConfirmationReason.NEVER_SAVED ->
+                    "La trace en cours n'a jamais été enregistrée : elle sera perdue si tu ne " +
+                        "l'enregistres pas. La copie de « $duplicateSourceName » s'ouvrira ensuite."
+            }
+            AlertDialog(
+                onDismissRequest = viewModel::dismissCloseConfirmation,
+                title = { Text("Remplacer la trace en cours ?") },
+                text = { Text(message) },
+                // Les trois issues empilées et non alignées sur une ligne : Material prescrit
+                // l'empilement dès que les libellés ne tiennent pas côte à côte, et « Enregistrer
+                // puis ouvrir » + « Ne pas enregistrer » + « Annuler la duplication » débordent
+                // largement la largeur d'un dialogue sur un téléphone. Tout est dans le slot
+                // confirmButton, seul moyen de garder les trois dans le même empilement.
+                confirmButton = {
+                    Column(horizontalAlignment = Alignment.End) {
+                        TextButton(onClick = viewModel::saveAndClose) { Text("Enregistrer puis ouvrir") }
+                        TextButton(onClick = viewModel::discardAndClose) {
+                            Text("Ne pas enregistrer", color = MaterialTheme.colorScheme.error)
+                        }
+                        TextButton(onClick = viewModel::dismissCloseConfirmation) {
+                            Text("Annuler la duplication")
+                        }
                     }
-                }
-            },
-        )
+                },
+            )
+        } else {
+            val (title, message) = when (reason) {
+                CloseConfirmationReason.DIRTY ->
+                    "Trace modifiée" to "Cette trace a des modifications non enregistrées."
+                CloseConfirmationReason.NEVER_SAVED ->
+                    "Trace non enregistrée" to "Attention, cette trace n'a pas encore été enregistrée dans Bivouac."
+            }
+            AlertDialog(
+                onDismissRequest = viewModel::dismissCloseConfirmation,
+                title = { Text(title) },
+                text = { Text(message) },
+                confirmButton = {
+                    TextButton(onClick = viewModel::saveAndClose) { Text("Enregistrer") }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = viewModel::dismissCloseConfirmation) { Text("Annuler") }
+                        TextButton(onClick = viewModel::discardAndClose) {
+                            Text("Ne pas enregistrer", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                },
+            )
+        }
     }
 
     nameDialogRequest?.let { request ->

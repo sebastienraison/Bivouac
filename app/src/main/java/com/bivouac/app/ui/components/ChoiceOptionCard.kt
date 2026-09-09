@@ -34,6 +34,10 @@ import androidx.compose.ui.unit.dp
  *
  * [recommended] met en avant le cas le plus fréquent sans l'imposer : les autres branches restent
  * au même niveau de lisibilité, seul le fond change.
+ *
+ * [enabled] à false grise la carte et la rend inerte, sans la retirer : RIC-108 s'en sert pour dire
+ * qu'une branche existe mais ne s'applique pas ici, ce qu'une option absente ne dirait pas. Le
+ * sous-titre reste alors le seul endroit qui explique pourquoi : l'appelant l'y met.
  */
 @Composable
 fun ChoiceOptionCard(
@@ -43,6 +47,7 @@ fun ChoiceOptionCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     recommended: Boolean = false,
+    enabled: Boolean = true,
 ) {
     val shape = RoundedCornerShape(14.dp)
     val background = if (recommended) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
@@ -53,13 +58,19 @@ fun ChoiceOptionCard(
     val subtitleColor =
         if (recommended) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
 
+    // 0.38 : l'opacité de contenu désactivé de Material 3, la même que celle d'un bouton grisé.
+    val disabledAlpha = 0.38f
+    val effectiveBorder = if (enabled) borderColor else borderColor.copy(alpha = disabledAlpha)
+    val effectiveContent = if (enabled) contentColor else contentColor.copy(alpha = disabledAlpha)
+    val effectiveSubtitle = if (enabled) subtitleColor else subtitleColor.copy(alpha = disabledAlpha)
+
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
             .background(background)
-            .border(1.dp, borderColor, shape)
-            .clickable(role = Role.Button, onClick = onClick)
+            .border(1.dp, effectiveBorder, shape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -75,18 +86,18 @@ fun ChoiceOptionCard(
                         Color.White.copy(alpha = 0.4f)
                     } else {
                         MaterialTheme.colorScheme.surfaceContainerHighest
-                    },
+                    }.let { if (enabled) it else it.copy(alpha = disabledAlpha) },
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = contentColor)
+            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = effectiveContent)
         }
         Column {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = contentColor)
+            Text(title, style = MaterialTheme.typography.titleSmall, color = effectiveContent)
             Text(
                 subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = subtitleColor,
+                color = effectiveSubtitle,
                 modifier = Modifier.padding(top = 3.dp),
             )
         }
