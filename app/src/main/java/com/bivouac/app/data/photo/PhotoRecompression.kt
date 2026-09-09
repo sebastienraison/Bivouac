@@ -95,7 +95,7 @@ object PhotoRecompression {
      *
      * Trois conditions, toutes nécessaires :
      * - la bascule VA vers [PhotoStorageMode.REDUCED] et EN VIENT d'un autre mode : ni un simple
-     *   affichage des Réglages (aucun changement), ni un choix de « Qualité d'archive » n'ont à
+     *   affichage des Réglages (aucun changement), ni un choix de « Pleine résolution » n'ont à
      *   déclencher quoi que ce soit ;
      * - il existe des photos en [PhotoStorageMode.FULL] à cet instant : sans stock, la proposition
      *   n'aurait rien à annoncer ;

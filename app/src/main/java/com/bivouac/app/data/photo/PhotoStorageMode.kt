@@ -5,8 +5,8 @@ package com.bivouac.app.data.photo
  *
  * Mesure d'origine : les copies intégrales pèsent ~4,5 Mo pièce, 855 Mo sur un usage réel. D'où le
  * choix laissé à l'utilisateur (voir Réglages) entre une copie réduite, largement suffisante pour
- * revoir ses photos dans le Journal, et une copie intégrale pour qui veut que le Journal soit
- * l'archive elle-même.
+ * revoir ses photos dans le Journal, et une copie intégrale pour qui veut retrouver ses photos en
+ * pleine résolution dans le Journal.
  *
  * Persisté sur chaque ligne ([com.bivouac.app.data.db.LoggedTrackPhotoEntity.storageMode]) et pas
  * seulement dans les préférences : le réglage peut changer à tout moment, alors que ce qu'une photo
@@ -14,7 +14,7 @@ package com.bivouac.app.data.photo
  * (recompression du stock, montée en qualité dans la visionneuse) sur quoi il reste du travail.
  */
 enum class PhotoStorageMode {
-    /** Copie intégrale des octets d'origine : le comportement historique, et « Qualité d'archive ». */
+    /** Copie intégrale des octets d'origine : le comportement historique, et « Pleine résolution ». */
     FULL,
 
     /**

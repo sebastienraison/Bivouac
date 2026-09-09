@@ -283,7 +283,7 @@ fun PhotoStorageChoicePrompt(viewModel: PhotoStorageChoiceViewModel = viewModel(
 
     if (state is PhotoStorageChoiceViewModel.State.Prompting) {
         // Le nom et non la valeur : rememberSaveable passe par un Bundle, et une String y entre
-        // sans Saver sur mesure. Présélection sur « Qualité d'archive » : c'est le régime SOUS
+        // sans Saver sur mesure. Présélection sur « Pleine résolution » : c'est le régime SOUS
         // LEQUEL cette personne est aujourd'hui (elle a des photos et n'a rien tranché, voir
         // PhotoStoragePolicy.resolve). Présélectionner la copie réduite parce qu'on la recommande
         // changerait son régime au moindre appui distrait sur « Enregistrer ».
@@ -316,7 +316,7 @@ fun PhotoStorageChoicePrompt(viewModel: PhotoStorageChoiceViewModel = viewModel(
     }
 
     // RIC-157 : enchaînée juste après avoir choisi « Copie réduite » ci-dessus, quand il restait
-    // des photos en qualité d'archive à reprendre. N et le poids viennent de la même estimation
+    // des photos en pleine résolution à reprendre. N et le poids viennent de la même estimation
     // que la carte de l'écran « Espace utilisé » (PhotoRecompression.estimate), pas d'un second
     // calcul.
     recompressionOffer?.let { estimate ->
@@ -326,7 +326,7 @@ fun PhotoStorageChoicePrompt(viewModel: PhotoStorageChoiceViewModel = viewModel(
             text = {
                 Text(
                     "${countLabel(estimate.photoCount, "photo déjà importée reste", "photos déjà importées restent")} " +
-                        "en qualité d'archive (~${formatBytes(estimate.freedBytes)}). Les recompresser " +
+                        "en pleine résolution (~${formatBytes(estimate.freedBytes)}). Les recompresser " +
                         "maintenant ?",
                 )
             },

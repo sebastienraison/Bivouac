@@ -148,7 +148,7 @@ class PhotoRecompressionTest {
         )
     }
 
-    // Choisir « Qualité d'archive » ne doit jamais rien déclencher, quel que soit le reste.
+    // Choisir « Pleine résolution » ne doit jamais rien déclencher, quel que soit le reste.
     @Test
     fun neverOffersOnASwitchToFull() {
         assertFalse(

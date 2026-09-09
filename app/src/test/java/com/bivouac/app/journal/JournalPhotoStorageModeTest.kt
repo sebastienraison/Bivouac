@@ -78,7 +78,7 @@ class JournalPhotoStorageModeTest {
     }
 
     /**
-     * « Qualité d'archive » choisi dans les Réglages : les lignes le disent, et le fichier local est
+     * « Pleine résolution » choisi dans les Réglages : les lignes le disent, et le fichier local est
      * l'original octet pour octet, comme avant ce ticket.
      */
     @Test
