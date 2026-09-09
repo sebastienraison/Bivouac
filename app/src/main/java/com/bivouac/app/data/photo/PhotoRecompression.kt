@@ -88,4 +88,30 @@ object PhotoRecompression {
         if (freed <= 0L) return null
         return Estimate(photoCount = candidateFileBytes.size, freedBytes = freed)
     }
+
+    /**
+     * RIC-157 : faut-il enchaîner, juste après la bascule vers la copie réduite, la proposition de
+     * recompresser le stock déjà importé ?
+     *
+     * Trois conditions, toutes nécessaires :
+     * - la bascule VA vers [PhotoStorageMode.REDUCED] et EN VIENT d'un autre mode : ni un simple
+     *   affichage des Réglages (aucun changement), ni un choix de « Qualité d'archive » n'ont à
+     *   déclencher quoi que ce soit ;
+     * - il existe des photos en [PhotoStorageMode.FULL] à cet instant : sans stock, la proposition
+     *   n'aurait rien à annoncer ;
+     * - [estimate] n'est pas nul : il vaut null quand aucune de ces photos n'est recompressible
+     *   (original introuvable) ou quand la recompression ne libérerait rien (déjà sous la cible,
+     *   voir [estimate]). Un bouton qui promettrait de libérer 0 Mo n'a pas à exister, ici pas plus
+     *   qu'à l'écran « Espace utilisé ».
+     */
+    fun shouldOfferRecompressionAfterModeChange(
+        previousMode: PhotoStorageMode,
+        newMode: PhotoStorageMode,
+        fullPhotoCount: Int,
+        estimate: Estimate?,
+    ): Boolean {
+        if (newMode != PhotoStorageMode.REDUCED || previousMode == newMode) return false
+        if (fullPhotoCount <= 0) return false
+        return estimate != null
+    }
 }

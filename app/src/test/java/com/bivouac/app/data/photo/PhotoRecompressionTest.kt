@@ -130,4 +130,76 @@ class PhotoRecompressionTest {
         assertNull(PhotoRecompression.estimate(emptyList()))
         assertNull(PhotoRecompression.estimate(listOf(100_000L, 200_000L)))
     }
+
+    // --- shouldOfferRecompressionAfterModeChange (RIC-157, retour de recette) ------------------
+
+    private val someEstimate = PhotoRecompression.Estimate(photoCount = 3, freedBytes = 9_000_000L)
+
+    // Le cas nominal : c'est exactement le retour de recette à couvrir.
+    @Test
+    fun offersRecompressionOnASwitchToReducedWithFullPhotosAndSomethingToGain() {
+        assertTrue(
+            PhotoRecompression.shouldOfferRecompressionAfterModeChange(
+                previousMode = PhotoStorageMode.FULL,
+                newMode = PhotoStorageMode.REDUCED,
+                fullPhotoCount = 3,
+                estimate = someEstimate,
+            ),
+        )
+    }
+
+    // Choisir « Qualité d'archive » ne doit jamais rien déclencher, quel que soit le reste.
+    @Test
+    fun neverOffersOnASwitchToFull() {
+        assertFalse(
+            PhotoRecompression.shouldOfferRecompressionAfterModeChange(
+                previousMode = PhotoStorageMode.REDUCED,
+                newMode = PhotoStorageMode.FULL,
+                fullPhotoCount = 3,
+                estimate = someEstimate,
+            ),
+        )
+    }
+
+    // Un simple affichage des Réglages n'est pas une bascule : le mode choisi est déjà celui
+    // affiché (SegmentedButton rappelle onModeSelected même sur le bouton déjà sélectionné).
+    @Test
+    fun neverOffersWhenTheModeDoesNotActuallyChange() {
+        assertFalse(
+            PhotoRecompression.shouldOfferRecompressionAfterModeChange(
+                previousMode = PhotoStorageMode.REDUCED,
+                newMode = PhotoStorageMode.REDUCED,
+                fullPhotoCount = 3,
+                estimate = someEstimate,
+            ),
+        )
+    }
+
+    // Aucune photo FULL : rien à annoncer, même si un appelant fournissait par erreur une
+    // estimation non nulle.
+    @Test
+    fun neverOffersWhenThereAreNoFullPhotos() {
+        assertFalse(
+            PhotoRecompression.shouldOfferRecompressionAfterModeChange(
+                previousMode = PhotoStorageMode.FULL,
+                newMode = PhotoStorageMode.REDUCED,
+                fullPhotoCount = 0,
+                estimate = someEstimate,
+            ),
+        )
+    }
+
+    // Rien à gagner (originaux introuvables, ou déjà sous la cible) : pas de bouton qui
+    // promettrait de libérer 0 Mo, ici pas plus qu'à l'écran « Espace utilisé ».
+    @Test
+    fun neverOffersWhenTheEstimateIsNull() {
+        assertFalse(
+            PhotoRecompression.shouldOfferRecompressionAfterModeChange(
+                previousMode = PhotoStorageMode.FULL,
+                newMode = PhotoStorageMode.REDUCED,
+                fullPhotoCount = 5,
+                estimate = null,
+            ),
+        )
+    }
 }

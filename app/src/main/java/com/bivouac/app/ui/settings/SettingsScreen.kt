@@ -125,6 +125,9 @@ fun SettingsScreen(
     val photosEnabled by viewModel.photosEnabled.collectAsStateWithLifecycle()
     val photoStorageMode by viewModel.photoStorageMode.collectAsStateWithLifecycle()
     val photoStorage by viewModel.photoStorage.collectAsStateWithLifecycle()
+    val photoRecompressionOffer by viewModel.photoRecompressionOffer.collectAsStateWithLifecycle()
+    val photoRecompressionReport by viewModel.photoRecompressionReport.collectAsStateWithLifecycle()
+    val photoRecompressionError by viewModel.photoRecompressionError.collectAsStateWithLifecycle()
     val photoPurgeConfirmation by viewModel.photoPurgeConfirmation.collectAsStateWithLifecycle()
     val photoPurgeError by viewModel.photoPurgeError.collectAsStateWithLifecycle()
     val missingPhotoCount by viewModel.missingPhotoCount.collectAsStateWithLifecycle()
@@ -171,6 +174,39 @@ fun SettingsScreen(
             PhotoGalleryActionOutcome.EXPLAIN_BLOCKED -> photoPermissionBlockedDialog = true
             PhotoGalleryActionOutcome.REQUEST_PERMISSION ->
                 photoRecoveryPermissionLauncher.launch(PhotoLibraryPermission.requestedPermissions)
+        }
+    }
+
+    // RIC-157 : même flux de permission que ci-dessus, un second exemplaire parce que sa cible est
+    // une autre action (viewModel.recompressPhotosFromOffer, pas recoverMissingPhotos) : même
+    // patron que StorageUsageScreen, qui porte le sien pour la même raison.
+    val photoRecompressPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ ->
+        if (PhotoLibraryPermission.isGranted(context)) {
+            photoPermanentlyDenied = false
+            viewModel.recompressPhotosFromOffer()
+        } else {
+            photoPermanentlyDenied = PhotoLibraryPermission.isPermanentlyDenied(context)
+            if (photoPermanentlyDenied) photoPermissionBlockedDialog = true
+        }
+    }
+    val onRecompressFromOfferClick: () -> Unit = {
+        when (
+            photoGalleryActionOutcome(
+                photosEnabled = photosEnabled,
+                permissionGranted = PhotoLibraryPermission.isGranted(context),
+                permanentlyDenied = photoPermanentlyDenied,
+            )
+        ) {
+            PhotoGalleryActionOutcome.IGNORED -> Unit
+            PhotoGalleryActionOutcome.RUN -> viewModel.recompressPhotosFromOffer()
+            PhotoGalleryActionOutcome.EXPLAIN_BLOCKED -> {
+                viewModel.dismissPhotoRecompressionOffer()
+                photoPermissionBlockedDialog = true
+            }
+            PhotoGalleryActionOutcome.REQUEST_PERMISSION ->
+                photoRecompressPermissionLauncher.launch(PhotoLibraryPermission.requestedPermissions)
         }
     }
     // Picking a file only stages it: restoring overwrites the current database, so it still
@@ -222,7 +258,10 @@ fun SettingsScreen(
                 enabled = photosEnabled,
                 onToggle = viewModel::setPhotosEnabled,
                 storageMode = photoStorageMode,
-                onStorageModeSelected = viewModel::setPhotoStorageMode,
+                // RIC-157 : et non setPhotoStorageMode directement, qui ne fait que persister :
+                // c'est ce point d'entrée-ci qui enchaîne la proposition de recompresser le stock
+                // existant quand la bascule le justifie (voir choosePhotoStorageMode).
+                onStorageModeSelected = viewModel::choosePhotoStorageMode,
                 storage = photoStorage,
                 onPurgeClick = viewModel::requestPhotoPurge,
                 // RIC-158 : même registre que Sauvegarder/Restaurer ci-dessous : un import Journal
@@ -265,6 +304,50 @@ fun SettingsScreen(
             BlockingProgress(title = it.phase.title, done = it.done, total = it.total)
         },
     )
+
+    // RIC-157 : posée juste après la bascule vers la copie réduite, quand il reste des photos en
+    // qualité d'archive à reprendre (voir choosePhotoStorageMode et
+    // PhotoRecompression.shouldOfferRecompressionAfterModeChange). N et le poids viennent de la
+    // même estimation que la carte de l'écran « Espace utilisé », pas d'un second calcul.
+    photoRecompressionOffer?.let { estimate ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPhotoRecompressionOffer,
+            title = { Text("Recompresser tes photos ?") },
+            text = {
+                Text(
+                    "${countLabel(estimate.photoCount, "photo déjà importée reste", "photos déjà importées restent")} " +
+                        "en qualité d'archive (~${formatBytes(estimate.freedBytes)}). Les recompresser " +
+                        "maintenant ?",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = onRecompressFromOfferClick) { Text("Recompresser") }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissPhotoRecompressionOffer) { Text("Plus tard") }
+            },
+        )
+    }
+
+    // Même rapport et même mise en forme que le bouton dédié de l'écran « Espace utilisé » : voir
+    // recompressionReportMessage (StorageUsageScreen), c'est la même opération.
+    photoRecompressionReport?.let { report ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPhotoRecompressionReport,
+            title = { Text("Recompression terminée") },
+            text = { Text(recompressionReportMessage(report)) },
+            confirmButton = { TextButton(onClick = viewModel::dismissPhotoRecompressionReport) { Text("OK") } },
+        )
+    }
+
+    photoRecompressionError?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPhotoRecompressionError,
+            title = { Text("Recompression impossible") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = viewModel::dismissPhotoRecompressionError) { Text("OK") } },
+        )
+    }
 
     // RIC-152 : la seule suppression de photos en masse de l'app, donc une confirmation qui dit
     // exactement ce qui part et qu'on n'en revient pas. Le chiffre est repris du relevé fait au
@@ -330,15 +413,18 @@ fun SettingsScreen(
         )
     }
 
-    // RIC-43/151 : le seul retour possible après un refus définitif, Android ne réaffichant plus
-    // son invite. Même dialogue et même issue qu'au Journal.
+    // RIC-43/151/157 : le seul retour possible après un refus définitif, Android ne réaffichant
+    // plus son invite. Même dialogue et même issue qu'au Journal, partagé par les trois actions
+    // d'ici qui vont chercher dans la galerie (retrouver les photos manquantes, recompresser
+    // depuis le bouton dédié ou depuis cette proposition-ci) : le texte reste générique plutôt que
+    // de nommer l'une des trois.
     if (photoPermissionBlockedDialog) {
         AlertDialog(
             onDismissRequest = { photoPermissionBlockedDialog = false },
             title = { Text("Accès aux photos refusé") },
             text = {
                 Text(
-                    "Retrouver une photo manquante demande d'aller la chercher dans ta galerie, et " +
+                    "Cette action demande d'aller chercher tes photos d'origine dans la galerie, et " +
                         "Android ne redemandera plus l'autorisation depuis l'application. " +
                         "Autorise l'accès à la galerie dans les réglages de l'application.",
                 )
