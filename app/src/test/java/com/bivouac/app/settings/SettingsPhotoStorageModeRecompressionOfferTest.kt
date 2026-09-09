@@ -131,7 +131,7 @@ class SettingsPhotoStorageModeRecompressionOfferTest {
         settle()
 
         assertNull(
-            "« Qualité d'archive » ne doit jamais proposer de recompresser quoi que ce soit",
+            "« Pleine résolution » ne doit jamais proposer de recompresser quoi que ce soit",
             viewModel.photoRecompressionOffer.value,
         )
     }

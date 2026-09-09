@@ -137,7 +137,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     /**
      * RIC-157 : la proposition posée juste après avoir basculé vers la copie réduite alors qu'il
-     * reste des photos en qualité d'archive (voir [PhotoRecompression.shouldOfferRecompressionAfterModeChange]).
+     * reste des photos en pleine résolution (voir [PhotoRecompression.shouldOfferRecompressionAfterModeChange]).
      * Non nulle tant que le dialogue doit rester à l'écran ; porte l'estimation déjà calculée, pour
      * que le dialogue chiffre exactement ce qu'il annonce sans la recalculer.
      */

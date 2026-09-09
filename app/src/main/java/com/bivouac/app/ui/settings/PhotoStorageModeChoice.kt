@@ -63,7 +63,7 @@ internal fun PhotoStorageModeChoice(
 // historique), REDUCED ensuite. Les libellés, eux, ne suivent pas les noms techniques : personne
 // n'a à savoir que la valeur stockée s'appelle FULL.
 internal fun PhotoStorageMode.label(): String = when (this) {
-    PhotoStorageMode.FULL -> "Qualité d'archive"
+    PhotoStorageMode.FULL -> "Pleine résolution"
     PhotoStorageMode.REDUCED -> "Copie réduite"
 }
 

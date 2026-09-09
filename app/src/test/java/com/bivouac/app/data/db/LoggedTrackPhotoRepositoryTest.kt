@@ -143,7 +143,7 @@ class LoggedTrackPhotoRepositoryTest {
     /**
      * RIC-157 : le mode de stockage demandé finit bien sur la ligne, et l'URI source aussi.
      *
-     * En mode « qualité d'archive » rien ne change du comportement historique : la copie locale est
+     * En mode « pleine résolution » rien ne change du comportement historique : la copie locale est
      * l'original octet pour octet, et c'est ce que la comparaison d'empreinte de la re-résolution
      * exploitera plus tard. Seul lastResolvedUri est nouveau, et il est écrit dans les DEUX modes.
      */

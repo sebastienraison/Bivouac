@@ -306,7 +306,7 @@ fun SettingsScreen(
     )
 
     // RIC-157 : posée juste après la bascule vers la copie réduite, quand il reste des photos en
-    // qualité d'archive à reprendre (voir choosePhotoStorageMode et
+    // pleine résolution à reprendre (voir choosePhotoStorageMode et
     // PhotoRecompression.shouldOfferRecompressionAfterModeChange). N et le poids viennent de la
     // même estimation que la carte de l'écran « Espace utilisé », pas d'un second calcul.
     photoRecompressionOffer?.let { estimate ->
@@ -316,7 +316,7 @@ fun SettingsScreen(
             text = {
                 Text(
                     "${countLabel(estimate.photoCount, "photo déjà importée reste", "photos déjà importées restent")} " +
-                        "en qualité d'archive (~${formatBytes(estimate.freedBytes)}). Les recompresser " +
+                        "en pleine résolution (~${formatBytes(estimate.freedBytes)}). Les recompresser " +
                         "maintenant ?",
                 )
             },

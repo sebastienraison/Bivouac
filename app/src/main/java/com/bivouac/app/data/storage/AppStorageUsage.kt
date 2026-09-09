@@ -17,7 +17,7 @@ import kotlinx.coroutines.withContext
  *
  * Les deux modes sont comptés séparément parce que c'est exactement la question que se pose
  * quelqu'un qui vient de découvrir le réglage de RIC-157 : combien pèse ce que j'ai déjà, et
- * combien en reste-t-il en qualité d'archive ?
+ * combien en reste-t-il en pleine résolution ?
  *
  * [missingCount] n'est pas une anomalie à corriger d'ici : une ligne dont le fichier a disparu
  * compte pour zéro octet, ce qui est exact, et c'est « Retrouver les photos manquantes » (RIC-151)
