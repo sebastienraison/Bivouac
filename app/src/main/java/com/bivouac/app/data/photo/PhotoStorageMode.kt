@@ -14,7 +14,7 @@ package com.bivouac.app.data.photo
  * (recompression du stock, montée en qualité dans la visionneuse) sur quoi il reste du travail.
  */
 enum class PhotoStorageMode {
-    /** Copie intégrale des octets d'origine : le comportement historique, et « Pleine résolution ». */
+    /** Copie intégrale des octets d'origine : le comportement historique, et « Qualité d'origine ». */
     FULL,
 
     /**

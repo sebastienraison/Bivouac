@@ -78,7 +78,7 @@ class JournalPhotoStorageModeTest {
     }
 
     /**
-     * « Pleine résolution » choisi dans les Réglages : les lignes le disent, et le fichier local est
+     * « Qualité d'origine » choisi dans les Réglages : les lignes le disent, et le fichier local est
      * l'original octet pour octet, comme avant ce ticket.
      */
     @Test
@@ -92,7 +92,7 @@ class JournalPhotoStorageModeTest {
     }
 
     /**
-     * « Copie réduite » choisi dans les Réglages : les lignes le disent aussi.
+     * « Poids allégé » choisi dans les Réglages : les lignes le disent aussi.
      *
      * (Robolectric ne décode pas d'image et rend des dimensions sous la cible : c'est donc la
      * branche « déjà assez petite, copie brute mais politique REDUCED » qui est exercée. La

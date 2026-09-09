@@ -316,7 +316,7 @@ fun SettingsScreen(
             text = {
                 Text(
                     "${countLabel(estimate.photoCount, "photo déjà importée reste", "photos déjà importées restent")} " +
-                        "en pleine résolution (~${formatBytes(estimate.freedBytes)}). Les recompresser " +
+                        "en qualité d'origine (~${formatBytes(estimate.freedBytes)}). Les recompresser " +
                         "maintenant ?",
                 )
             },

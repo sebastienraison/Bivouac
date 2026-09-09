@@ -258,8 +258,8 @@ internal fun recompressionReportMessage(report: LoggedTrackRepository.PhotoRecom
         lines += "Aucune photo n'a pu être recompressée."
     }
     if (report.kept > 0) {
-        lines += "${countLabel(report.kept, "photo conservée", "photos conservées")} en pleine " +
-            "résolution : original introuvable ou modifié depuis l'import."
+        lines += "${countLabel(report.kept, "photo conservée", "photos conservées")} en qualité " +
+            "d'origine : original introuvable ou modifié depuis l'import."
     }
     if (report.alreadyReduced > 0) {
         lines += "${countLabel(report.alreadyReduced, "photo était déjà", "photos étaient déjà")} " +
@@ -387,11 +387,11 @@ private fun BreakdownCard(usage: AppStorageUsage) {
                 value = formatBytes(usage.photos.directoryBytes),
                 details = buildList {
                     add(
-                        "Pleine résolution : ${countLabel(usage.photos.fullCount, "photo", "photos")}, " +
+                        "Qualité d'origine : ${countLabel(usage.photos.fullCount, "photo", "photos")}, " +
                             formatBytes(usage.photos.fullBytes),
                     )
                     add(
-                        "Copie réduite : ${countLabel(usage.photos.reducedCount, "photo", "photos")}, " +
+                        "Poids allégé : ${countLabel(usage.photos.reducedCount, "photo", "photos")}, " +
                             formatBytes(usage.photos.reducedBytes),
                     )
                     // Dit ici parce que c'est ici que le chiffre surprend : des photos comptées
@@ -457,8 +457,8 @@ private fun RecompressionCard(freedBytes: Long, photoCount: Int, onRecompressCli
         Column(modifier = Modifier.padding(20.dp)) {
             Text("Recompresser pourrait libérer ~${formatBytes(freedBytes)}", style = MaterialTheme.typography.titleMedium)
             Text(
-                "${countLabel(photoCount, "photo est conservée", "photos sont conservées")} en pleine " +
-                    "résolution. Bivouac peut les remplacer par une copie réduite, à condition de " +
+                "${countLabel(photoCount, "photo est conservée", "photos sont conservées")} en qualité " +
+                    "d'origine. Bivouac peut les remplacer par une version allégée, à condition de " +
                     "retrouver l'original dans ta galerie : celles dont l'original a disparu ou a " +
                     "changé ne sont jamais touchées.",
                 style = MaterialTheme.typography.bodySmall,
