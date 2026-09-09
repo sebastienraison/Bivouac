@@ -106,16 +106,16 @@ fun StorageUsageScreen(
     }
     val onRecompressClick: () -> Unit = {
         when (
-            recompressionOutcome(
+            photoGalleryActionOutcome(
                 photosEnabled = photosEnabled,
                 permissionGranted = PhotoLibraryPermission.isGranted(context),
                 permanentlyDenied = permanentlyDenied,
             )
         ) {
-            RecompressionOutcome.IGNORED -> Unit
-            RecompressionOutcome.RUN -> viewModel.recompressPhotos()
-            RecompressionOutcome.EXPLAIN_BLOCKED -> blockedDialog = true
-            RecompressionOutcome.REQUEST_PERMISSION ->
+            PhotoGalleryActionOutcome.IGNORED -> Unit
+            PhotoGalleryActionOutcome.RUN -> viewModel.recompressPhotos()
+            PhotoGalleryActionOutcome.EXPLAIN_BLOCKED -> blockedDialog = true
+            PhotoGalleryActionOutcome.REQUEST_PERMISSION ->
                 permissionLauncher.launch(PhotoLibraryPermission.requestedPermissions)
         }
     }
@@ -218,25 +218,28 @@ fun StorageUsageScreen(
 }
 
 /**
- * RIC-157 : ce qu'un appui sur « Recompresser » doit produire.
+ * RIC-157/151 : ce qu'un appui doit produire, pour toute action des Réglages qui a besoin d'aller
+ * regarder dans la galerie : recompresser le stock, retrouver les photos manquantes.
  *
- * Extraite du composable pour la même raison que `addPhotosOutcome` (RIC-43) : la règle qui compte,
- * « aucune issue muette, et aucune demande de permission quand les photos sont débrayées », se
- * vérifie alors sans monter d'écran.
+ * Extraite des composables pour la même raison que `addPhotosOutcome` (RIC-43) : la règle qui
+ * compte, « aucune issue muette, et aucune demande de permission quand les photos sont débrayées »,
+ * se vérifie alors sans monter d'écran. Commune aux deux actions parce que c'est littéralement la
+ * même décision : deux copies auraient divergé sur le cas du refus définitif, qui est le seul
+ * subtil.
  */
-internal enum class RecompressionOutcome { IGNORED, RUN, REQUEST_PERMISSION, EXPLAIN_BLOCKED }
+internal enum class PhotoGalleryActionOutcome { IGNORED, RUN, REQUEST_PERMISSION, EXPLAIN_BLOCKED }
 
-internal fun recompressionOutcome(
+internal fun photoGalleryActionOutcome(
     photosEnabled: Boolean,
     permissionGranted: Boolean,
     permanentlyDenied: Boolean,
-): RecompressionOutcome = when {
+): PhotoGalleryActionOutcome = when {
     // RIC-152 : photos débrayées, l'accès à la galerie n'est JAMAIS demandé. Inatteignable en
-    // pratique (la carte n'est pas affichée), garde de dernier recours comme pour l'ajout.
-    !photosEnabled -> RecompressionOutcome.IGNORED
-    permissionGranted -> RecompressionOutcome.RUN
-    permanentlyDenied -> RecompressionOutcome.EXPLAIN_BLOCKED
-    else -> RecompressionOutcome.REQUEST_PERMISSION
+    // pratique (le bouton n'est pas affiché), garde de dernier recours comme pour l'ajout.
+    !photosEnabled -> PhotoGalleryActionOutcome.IGNORED
+    permissionGranted -> PhotoGalleryActionOutcome.RUN
+    permanentlyDenied -> PhotoGalleryActionOutcome.EXPLAIN_BLOCKED
+    else -> PhotoGalleryActionOutcome.REQUEST_PERMISSION
 }
 
 /**
@@ -267,11 +270,14 @@ internal fun recompressionReportMessage(report: LoggedTrackRepository.PhotoRecom
 
 /**
  * La page « informations sur l'application » du système, seul endroit où se défait un refus devenu
- * définitif. runCatching pour la même raison qu'au Journal : un Context sans activité pour
- * l'accueillir ferait remonter une ActivityNotFoundException, et ne pas ouvrir les réglages est un
- * échec acceptable là où planter en tentant de les ouvrir ne l'est pas.
+ * définitif. Partagée par les deux écrans des Réglages qui peuvent le rencontrer (recompression
+ * ici, recherche des photos manquantes dans SettingsScreen).
+ *
+ * runCatching pour la même raison qu'au Journal : un Context sans activité pour l'accueillir ferait
+ * remonter une ActivityNotFoundException, et ne pas ouvrir les réglages est un échec acceptable là
+ * où planter en tentant de les ouvrir ne l'est pas.
  */
-private fun Context.openApplicationSettings() {
+internal fun Context.openApplicationSettings() {
     runCatching {
         startActivity(
             Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))

@@ -861,6 +861,106 @@ class LoggedTrackRepository(context: Context) {
     }
 
     /**
+     * RIC-151 : ce que la recherche des photos manquantes a donné.
+     *
+     * [modifiedNotAdopted] est le cas qui a motivé le ticket autant que les autres : la photo est
+     * encore dans la galerie sous le même nom, mais ce n'est plus le même fichier (un service de
+     * sauvegarde l'a recompressée). Rien n'est adopté dans ce cas, et il faut le DIRE : « rien
+     * trouvé » serait faux, et adopter serait pire, ça réécrirait le carnet avec une autre image.
+     */
+    data class PhotoRecoveryReport(
+        val recovered: Int,
+        val modifiedNotAdopted: Int,
+        val notFound: Int,
+    )
+
+    /**
+     * RIC-151 : refabrique la copie locale des photos dont le fichier a disparu, quand l'original
+     * est retrouvé dans la galerie et confirmé par son empreinte.
+     *
+     * Le cas d'usage est la restauration d'une sauvegarde antérieure à l'ajout des photos, mais
+     * n'importe quel nettoyage de stockage produit le même état : des lignes bien vivantes dont le
+     * fichier n'existe plus. C'est précisément pour cette passe qu'aucune de ces lignes n'est
+     * jamais supprimée automatiquement, et que leurs métadonnées d'origine sont conservées.
+     *
+     * **Toute la re-corrélation part des colonnes de la base** (empreinte, nom d'origine, date de
+     * prise de vue), JAMAIS de l'EXIF du fichier local : il n'y en a pas, puisque le fichier a
+     * disparu, et quand il y en a un il est de toute façon expurgé du GPS. Point acquis du projet.
+     *
+     * **La copie refabriquée suit le mode de stockage COURANT** ([storageMode], résolu par
+     * l'appelant), pas celui que la ligne portait : reprendre une photo aujourd'hui, c'est la
+     * reprendre sous le régime d'aujourd'hui. La ligne est mise à jour en conséquence, chemin et
+     * mode ensemble.
+     *
+     * **Rien n'est jamais adopté sans empreinte exacte.** Un candidat qui porte le bon nom et la
+     * bonne date mais pas le bon contenu est compté à part et laissé où il est : le Journal dirait
+     * autrement « voici ta photo » en montrant une autre image, ce qui est pire que de ne rien
+     * montrer du tout.
+     *
+     * Photo par photo, comme la recompression : une qui échoue n'emporte pas les autres, et une
+     * interruption laisse simplement le reste à reprendre.
+     */
+    suspend fun recoverMissingPhotos(
+        storageMode: PhotoStorageMode,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): PhotoRecoveryReport {
+        val missing = dao.getAllPhotos().filterNot { LoggedTrackPhotoStore.resolve(appContext, it.filePath).isFile }
+        val total = missing.size
+        onProgress(0, total)
+        var recovered = 0
+        var modifiedNotAdopted = 0
+        var notFound = 0
+        LoggedTrackPhotoStore.dir(appContext).mkdirs()
+        LoggedTrackPhotoStore.transitDir(appContext).mkdirs()
+        missing.forEachIndexed { index, photo ->
+            val outcome = runCatching { recoverOne(photo, storageMode) }
+                .onFailure { Log.w("LoggedTrackRepository", "Photo manquante non récupérée", it) }
+                .getOrDefault(false)
+            if (outcome) {
+                recovered++
+            } else if (PhotoOriginalResolver.hasApproximateCandidate(appContext, photo)) {
+                modifiedNotAdopted++
+            } else {
+                notFound++
+            }
+            onProgress(index + 1, total)
+        }
+        return PhotoRecoveryReport(recovered, modifiedNotAdopted, notFound)
+    }
+
+    /**
+     * @return true si la copie locale a été refabriquée et la ligne remise d'aplomb.
+     *
+     * Passe par la zone de transit puis déplace, exactement comme un ajout ordinaire
+     * ([copyPhotoToTransit] puis le renommage de [commitPendingPhotos]) : c'est la même fabrication
+     * pour le même résultat, réduction comprise, et il n'y a aucune raison d'en écrire une seconde
+     * ici. La ligne n'est basculée qu'une fois le fichier définitif en place.
+     */
+    private suspend fun recoverOne(photo: LoggedTrackPhotoEntity, storageMode: PhotoStorageMode): Boolean {
+        val uri = (resolvePhotoOriginal(photo) as? PhotoOriginalResolution.Found)?.uri ?: return false
+        val copied = copyPhotoToTransit(photo.trackId, appContext.contentResolver, uri, storageMode)
+        val transitFile = LoggedTrackPhotoStore.resolve(appContext, copied.transitPath)
+        val extension = transitFile.extension.ifEmpty { "jpg" }
+        val relativePath = LoggedTrackPhotoStore.relativePath(photo.trackId, extension)
+        val target = LoggedTrackPhotoStore.resolve(appContext, relativePath)
+        // renameTo échoue quand cacheDir et filesDir ne sont pas sur le même volume : ce n'est pas
+        // garanti par la plateforme, seulement habituel. Même repli qu'à l'enregistrement.
+        if (!transitFile.renameTo(target)) {
+            transitFile.inputStream().use { input -> target.outputStream().use { input.copyTo(it) } }
+            transitFile.delete()
+        }
+        try {
+            dao.updatePhotoStorage(photo.id, relativePath, copied.storageMode)
+        } catch (e: Exception) {
+            // La ligne désigne toujours son fichier disparu : on la laisse exactement dans l'état
+            // où on l'a trouvée plutôt que de laisser un fichier que rien ne référence.
+            target.delete()
+            throw e
+        }
+        return true
+    }
+
+    /**
      * RIC-43 : parmi [photos], celles dont la copie locale a disparu : restauration d'une
      * sauvegarde antérieure à leur ajout, nettoyage manuel du stockage de l'app, ou tout simplement
      * une écriture qui n'a jamais abouti.
@@ -872,6 +972,16 @@ class LoggedTrackRepository(context: Context) {
      * Un stat par photo, fait une fois par rafraîchissement de la liste plutôt qu'à chaque rendu
      * de carte ou de vignette.
      */
+    /**
+     * RIC-151 : combien de photos, dans tout le Journal, n'ont plus leur fichier.
+     *
+     * C'est ce qui décide de l'existence même de « Retrouver les photos manquantes » dans les
+     * Réglages : une action qui ne pourrait que répondre « zéro » n'a rien à faire à l'écran. Un
+     * `stat` par photo, fait une fois à l'ouverture des Réglages, jamais en continu.
+     */
+    suspend fun countMissingPhotoFiles(): Int =
+        dao.getAllPhotos().count { !LoggedTrackPhotoStore.resolve(appContext, it.filePath).isFile }
+
     fun missingPhotoFileIds(photos: List<LoggedTrackPhotoEntity>): Set<Long> =
         photos.filterNot { LoggedTrackPhotoStore.resolve(appContext, it.filePath).exists() }
             .mapTo(mutableSetOf()) { it.id }

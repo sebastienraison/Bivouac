@@ -6,27 +6,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * RIC-157 : ce qu'un appui sur « Recompresser » produit, et ce que le rapport de fin raconte.
+ * RIC-157/151 : ce qu'un appui produit sur les deux actions des Réglages qui vont regarder dans la
+ * galerie, et ce que leurs rapports de fin racontent.
  *
  * Deux règles se vérifient ici sans monter d'écran : aucune issue muette (le bouton fait toujours
  * quelque chose de visible), et aucune demande de permission galerie quand les photos sont
  * débrayées dans les Réglages (RIC-152).
  */
-class RecompressionOutcomeTest {
+class PhotoGalleryActionOutcomeTest {
 
     @Test
     fun withThePermissionGrantedItRunsStraightAway() {
         assertEquals(
-            RecompressionOutcome.RUN,
-            recompressionOutcome(photosEnabled = true, permissionGranted = true, permanentlyDenied = false),
+            PhotoGalleryActionOutcome.RUN,
+            photoGalleryActionOutcome(photosEnabled = true, permissionGranted = true, permanentlyDenied = false),
         )
     }
 
     @Test
     fun withoutThePermissionItAsksForIt() {
         assertEquals(
-            RecompressionOutcome.REQUEST_PERMISSION,
-            recompressionOutcome(photosEnabled = true, permissionGranted = false, permanentlyDenied = false),
+            PhotoGalleryActionOutcome.REQUEST_PERMISSION,
+            photoGalleryActionOutcome(photosEnabled = true, permissionGranted = false, permanentlyDenied = false),
         )
     }
 
@@ -38,8 +39,8 @@ class RecompressionOutcomeTest {
     @Test
     fun afterAPermanentDenialItExplainsInsteadOfAskingAgain() {
         assertEquals(
-            RecompressionOutcome.EXPLAIN_BLOCKED,
-            recompressionOutcome(photosEnabled = true, permissionGranted = false, permanentlyDenied = true),
+            PhotoGalleryActionOutcome.EXPLAIN_BLOCKED,
+            photoGalleryActionOutcome(photosEnabled = true, permissionGranted = false, permanentlyDenied = true),
         )
     }
 
@@ -51,12 +52,12 @@ class RecompressionOutcomeTest {
     @Test
     fun withPhotosDisabledNothingHappensAndNoPermissionIsEverRequested() {
         assertEquals(
-            RecompressionOutcome.IGNORED,
-            recompressionOutcome(photosEnabled = false, permissionGranted = false, permanentlyDenied = false),
+            PhotoGalleryActionOutcome.IGNORED,
+            photoGalleryActionOutcome(photosEnabled = false, permissionGranted = false, permanentlyDenied = false),
         )
         assertEquals(
-            RecompressionOutcome.IGNORED,
-            recompressionOutcome(photosEnabled = false, permissionGranted = true, permanentlyDenied = false),
+            PhotoGalleryActionOutcome.IGNORED,
+            photoGalleryActionOutcome(photosEnabled = false, permissionGranted = true, permanentlyDenied = false),
         )
     }
 
@@ -87,5 +88,32 @@ class RecompressionOutcomeTest {
 
         assertTrue(message, message.contains("Aucune photo n'a pu être recompressée"))
         assertTrue(message, message.contains("4 photos conservées"))
+    }
+
+    /**
+     * RIC-151 : les trois issues de la recherche, et surtout la deuxième, dite en toutes lettres :
+     * la photo est bien là, mais ce n'est plus le même fichier, et rien n'a été repris à sa place.
+     */
+    @Test
+    fun theRecoveryReportSaysWhatWasFoundAndWhatWasDeliberatelyNotAdopted() {
+        val message = photoRecoveryReportMessage(
+            LoggedTrackRepository.PhotoRecoveryReport(recovered = 5, modifiedNotAdopted = 2, notFound = 1),
+        )
+
+        assertTrue(message, message.contains("5 photos retrouvées"))
+        assertTrue(message, message.contains("modifiée depuis l'import"))
+        assertTrue(message, message.contains("rien n'a été repris"))
+        assertTrue(message, message.contains("1 photo reste introuvable"))
+    }
+
+    @Test
+    fun aRecoveryThatFoundNothingStillSaysSo() {
+        val message = photoRecoveryReportMessage(
+            LoggedTrackRepository.PhotoRecoveryReport(recovered = 0, modifiedNotAdopted = 0, notFound = 3),
+        )
+
+        assertTrue(message, message.contains("Aucune photo n'a pu être retrouvée"))
+        // La fiche survit à l'échec : c'est ce qui permet de retenter le jour où l'original revient.
+        assertTrue(message, message.contains("conservée dans le Journal"))
     }
 }

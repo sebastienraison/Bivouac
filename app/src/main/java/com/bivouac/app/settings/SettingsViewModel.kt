@@ -44,6 +44,10 @@ enum class DataOperationPhase(val title: String) {
     // RIC-158 : la purge des photos peut porter sur des centaines de Mo, assez long pour mériter
     // le même dialogue bloquant que la sauvegarde et la restauration, cohérence oblige.
     PHOTO_PURGE("Purge des photos en cours"),
+
+    // RIC-151 : une recherche dans la galerie et un réencodage par photo manquante : c'est
+    // l'opération la plus lente des quatre, et de loin celle qui a le plus besoin d'un compteur.
+    PHOTO_RECOVERY("Recherche des photos manquantes"),
 }
 
 /** RIC-156 : où en est la sauvegarde ou la restauration. [total] est null quand le travail n'est pas dénombrable. */
@@ -135,6 +139,24 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _photoPurgeError = MutableStateFlow<String?>(null)
     val photoPurgeError: StateFlow<String?> = _photoPurgeError.asStateFlow()
 
+    /**
+     * RIC-151 : le nombre de photos dont le fichier local a disparu, relevé à l'ouverture de
+     * l'écran et après chaque recherche.
+     *
+     * C'est lui, et lui seul, qui fait exister « Retrouver les photos manquantes » : proposer en
+     * permanence une action qui ne pourrait que répondre « zéro » ajouterait du bruit dans les
+     * Réglages pour un cas qui, chez la plupart des gens, ne se produira jamais. Un `stat` par
+     * photo à l'ouverture, jamais de détection en tâche de fond : arbitrage du pilotage.
+     */
+    private val _missingPhotoCount = MutableStateFlow(0)
+    val missingPhotoCount: StateFlow<Int> = _missingPhotoCount.asStateFlow()
+
+    private val _photoRecoveryReport = MutableStateFlow<LoggedTrackRepository.PhotoRecoveryReport?>(null)
+    val photoRecoveryReport: StateFlow<LoggedTrackRepository.PhotoRecoveryReport?> = _photoRecoveryReport.asStateFlow()
+
+    private val _photoRecoveryError = MutableStateFlow<String?>(null)
+    val photoRecoveryError: StateFlow<String?> = _photoRecoveryError.asStateFlow()
+
     val lastBackupAtMillis: StateFlow<Long?> = settingsPreferences.lastBackupAtMillis
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -174,6 +196,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             withContext(Dispatchers.IO) {
                 _journalTrackCount.value = loggedTrackRepository.list().size
                 _journalPhotoCount.value = loggedTrackRepository.countAllPhotos()
+                _missingPhotoCount.value = loggedTrackRepository.countMissingPhotoFiles()
                 // Populates the Auto readout even for a Journal that already had hikes before
                 // BIV-16 shipped (JournalViewModel otherwise only refreshes this on a *new* import).
                 refreshAutoCalibration()
@@ -292,6 +315,53 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun dismissPhotoPurgeError() {
         _photoPurgeError.value = null
+    }
+
+    /**
+     * RIC-151 : la recherche des photos manquantes, déclenchée à la main et seulement à la main.
+     *
+     * Même discipline que la purge et la sauvegarde : verrou du registre d'exclusion posé par le
+     * clic (elle écrit dans photos/ et réécrit des lignes), progression publiée dans la foulée,
+     * verrou levé dans un `finally`, rapport de fin publié APRÈS la levée du dialogue bloquant.
+     *
+     * Le mode de stockage passé est le mode EFFECTIF d'aujourd'hui (voir [photoStorageMode]) : une
+     * photo reprise maintenant l'est sous le régime courant, pas sous celui qu'elle portait quand
+     * son fichier existait encore.
+     *
+     * La permission galerie est vérifiée par l'écran, qui déclenche le flux existant : sans elle la
+     * passe ne trouverait rien et compterait tout comme introuvable.
+     */
+    fun recoverMissingPhotos() {
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.PHOTO_RECOVERY)) {
+            _photoRecoveryError.value = refusalMessage()
+            return
+        }
+        _dataOperationProgress.value =
+            DataOperationProgress(DataOperationPhase.PHOTO_RECOVERY, done = 0, total = _missingPhotoCount.value)
+        val storageMode = photoStorageMode.value
+        viewModelScope.launch {
+            val report = try {
+                withContext(Dispatchers.IO) {
+                    loggedTrackRepository.recoverMissingPhotos(storageMode) { done, total ->
+                        _dataOperationProgress.value =
+                            DataOperationProgress(DataOperationPhase.PHOTO_RECOVERY, done, total)
+                    }
+                }
+            } finally {
+                _dataOperationProgress.value = null
+                ExclusiveOperations.finish(ExclusiveOperation.PHOTO_RECOVERY)
+            }
+            _photoRecoveryReport.value = report
+            _missingPhotoCount.value = withContext(Dispatchers.IO) { loggedTrackRepository.countMissingPhotoFiles() }
+        }
+    }
+
+    fun dismissPhotoRecoveryReport() {
+        _photoRecoveryReport.value = null
+    }
+
+    fun dismissPhotoRecoveryError() {
+        _photoRecoveryError.value = null
     }
 
     /**

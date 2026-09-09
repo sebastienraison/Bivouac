@@ -164,6 +164,29 @@ object PhotoOriginalResolver {
             PhotoOriginalResolution.NotFound
         }
 
+    /**
+     * RIC-151 : la galerie contient-elle au moins une photo qui RESSEMBLE à celle-ci, sans être
+     * elle ?
+     *
+     * À n'appeler qu'après un [PhotoOriginalResolution.NotFound], et pour une seule raison : dire à
+     * l'utilisateur « ta photo est là, mais ce n'est plus le même fichier » plutôt que « elle a
+     * disparu ». Les deux méritent des mots différents : le premier cas est celui d'un service de
+     * sauvegarde photo qui a recompressé la pellicule, et l'original, lui, est bel et bien perdu.
+     *
+     * Les mêmes requêtes que la recherche profonde ([lookupsFor]), sans hachage : on ne cherche pas
+     * à confirmer quoi que ce soit, seulement à savoir si le nom ou la date désignent encore
+     * quelque chose. Une correspondance approximative n'est JAMAIS adoptée : ce qui n'a pas la
+     * bonne empreinte n'est pas la photo du Journal, et l'importer à sa place réécrirait
+     * silencieusement le carnet.
+     */
+    suspend fun hasApproximateCandidate(context: Context, photo: LoggedTrackPhotoEntity): Boolean =
+        withContext(Dispatchers.IO) {
+            if (!PhotoLibraryPermission.isGranted(context)) return@withContext false
+            val resolver = context.contentResolver
+            lookupsFor(photo.sourceDisplayName, photo.sourceDateTakenMillis)
+                .any { query(resolver, it).isNotEmpty() }
+        }
+
     // Null (et non une exception) sur tout échec : un URI mort, une permission retirée entre la
     // vérification et la lecture, un fournisseur qui ne répond plus. Aucun de ces cas n'est une
     // anomalie ici, ce sont les cas que la recherche profonde existe pour rattraper.

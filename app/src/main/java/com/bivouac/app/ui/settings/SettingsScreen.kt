@@ -33,9 +33,10 @@ import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.PhotoSizeSelectLarge
+import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
@@ -61,6 +62,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,10 +75,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.BuildConfig
+import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.db.PhotoStorageSummary
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackStatsCalculator
+import com.bivouac.app.data.photo.PhotoLibraryPermission
 import com.bivouac.app.data.photo.PhotoStorageMode
 import com.bivouac.app.data.prefs.SpeedCalibrationMode
 import com.bivouac.app.settings.RestoreOutcome
@@ -123,6 +127,9 @@ fun SettingsScreen(
     val photoStorage by viewModel.photoStorage.collectAsStateWithLifecycle()
     val photoPurgeConfirmation by viewModel.photoPurgeConfirmation.collectAsStateWithLifecycle()
     val photoPurgeError by viewModel.photoPurgeError.collectAsStateWithLifecycle()
+    val missingPhotoCount by viewModel.missingPhotoCount.collectAsStateWithLifecycle()
+    val photoRecoveryReport by viewModel.photoRecoveryReport.collectAsStateWithLifecycle()
+    val photoRecoveryError by viewModel.photoRecoveryError.collectAsStateWithLifecycle()
     val lastBackupAtMillis by viewModel.lastBackupAtMillis.collectAsStateWithLifecycle()
     val dataOperationProgress by viewModel.dataOperationProgress.collectAsStateWithLifecycle()
     val ongoingOperation by viewModel.ongoingOperation.collectAsStateWithLifecycle()
@@ -131,6 +138,40 @@ fun SettingsScreen(
 
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
         uri?.let { viewModel.backup(it) }
+    }
+    // RIC-151 : le flux de permission galerie du domaine photos, ici pour « Retrouver les photos
+    // manquantes ». Même mécanique et mêmes états qu'au Journal (RIC-43) et que sur l'écran
+    // « Espace utilisé » : après un refus devenu définitif, relancer la demande rend la main sans
+    // afficher un pixel, d'où le drapeau et le dialogue qui explique à la place.
+    var photoPermanentlyDenied by rememberSaveable { mutableStateOf(false) }
+    var photoPermissionBlockedDialog by rememberSaveable { mutableStateOf(false) }
+    val photoRecoveryPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ ->
+        // isGranted et non la carte de réponses : sur Android 14, « Sélectionner des photos » rend
+        // READ_MEDIA_IMAGES refusée alors que l'accès partiel, lui, est bien accordé.
+        if (PhotoLibraryPermission.isGranted(context)) {
+            photoPermanentlyDenied = false
+            viewModel.recoverMissingPhotos()
+        } else {
+            photoPermanentlyDenied = PhotoLibraryPermission.isPermanentlyDenied(context)
+            if (photoPermanentlyDenied) photoPermissionBlockedDialog = true
+        }
+    }
+    val onRecoverMissingPhotosClick: () -> Unit = {
+        when (
+            photoGalleryActionOutcome(
+                photosEnabled = photosEnabled,
+                permissionGranted = PhotoLibraryPermission.isGranted(context),
+                permanentlyDenied = photoPermanentlyDenied,
+            )
+        ) {
+            PhotoGalleryActionOutcome.IGNORED -> Unit
+            PhotoGalleryActionOutcome.RUN -> viewModel.recoverMissingPhotos()
+            PhotoGalleryActionOutcome.EXPLAIN_BLOCKED -> photoPermissionBlockedDialog = true
+            PhotoGalleryActionOutcome.REQUEST_PERMISSION ->
+                photoRecoveryPermissionLauncher.launch(PhotoLibraryPermission.requestedPermissions)
+        }
     }
     // Picking a file only stages it: restoring overwrites the current database, so it still
     // needs an explicit confirmation below before viewModel.restore() actually runs.
@@ -187,6 +228,8 @@ fun SettingsScreen(
                 // RIC-158 : même registre que Sauvegarder/Restaurer ci-dessous : un import Journal
                 // ou Planification en vol grise la purge aussi.
                 purgeLocked = ongoingOperation != null,
+                missingPhotoCount = missingPhotoCount,
+                onRecoverMissingPhotosClick = onRecoverMissingPhotosClick,
             )
             DataSection(
                 lastBackupAtMillis = lastBackupAtMillis,
@@ -263,6 +306,52 @@ fun SettingsScreen(
             title = { Text("Purge impossible") },
             text = { Text(message) },
             confirmButton = { TextButton(onClick = viewModel::dismissPhotoPurgeError) { Text("OK") } },
+        )
+    }
+
+    // RIC-151 : jamais de fin silencieuse, même quand la recherche n'a rien pu reprendre. Les trois
+    // issues sont dites séparément : « retrouvée », « retrouvée mais modifiée » (rien n'a été
+    // adopté, exprès) et « introuvable » n'appellent pas les mêmes conclusions.
+    photoRecoveryReport?.let { report ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPhotoRecoveryReport,
+            title = { Text("Recherche terminée") },
+            text = { Text(photoRecoveryReportMessage(report)) },
+            confirmButton = { TextButton(onClick = viewModel::dismissPhotoRecoveryReport) { Text("OK") } },
+        )
+    }
+
+    photoRecoveryError?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPhotoRecoveryError,
+            title = { Text("Recherche impossible") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = viewModel::dismissPhotoRecoveryError) { Text("OK") } },
+        )
+    }
+
+    // RIC-43/151 : le seul retour possible après un refus définitif, Android ne réaffichant plus
+    // son invite. Même dialogue et même issue qu'au Journal.
+    if (photoPermissionBlockedDialog) {
+        AlertDialog(
+            onDismissRequest = { photoPermissionBlockedDialog = false },
+            title = { Text("Accès aux photos refusé") },
+            text = {
+                Text(
+                    "Retrouver une photo manquante demande d'aller la chercher dans ta galerie, et " +
+                        "Android ne redemandera plus l'autorisation depuis l'application. " +
+                        "Autorise l'accès à la galerie dans les réglages de l'application.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    photoPermissionBlockedDialog = false
+                    context.openApplicationSettings()
+                }) { Text("Ouvrir les réglages") }
+            },
+            dismissButton = {
+                TextButton(onClick = { photoPermissionBlockedDialog = false }) { Text("Annuler") }
+            },
         )
     }
 
@@ -787,6 +876,8 @@ private fun JournalPhotosSection(
     storage: PhotoStorageSummary?,
     onPurgeClick: () -> Unit,
     purgeLocked: Boolean,
+    missingPhotoCount: Int,
+    onRecoverMissingPhotosClick: () -> Unit,
 ) {
     SettingsSection(label = "Photos du Journal") {
         SettingsRow(
@@ -814,6 +905,34 @@ private fun JournalPhotosSection(
                 onModeSelected = onStorageModeSelected,
                 modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
             )
+            // RIC-151 : affichée seulement quand il y a effectivement des fichiers manquants, et
+            // pas en permanence. Deux raisons : une action qui ne pourrait que répondre « zéro
+            // trouvée » est du bruit dans un écran de réglages, et le nombre est ce qui donne une
+            // raison de cliquer, exactement comme la volumétrie sur le bouton de purge. Le relevé
+            // est fait à l'ouverture des Réglages, jamais en tâche de fond (arbitrage du
+            // pilotage) : le compte peut donc dater de quelques minutes, ce qui est sans
+            // conséquence, la recherche repartant de l'état réel du disque.
+            if (missingPhotoCount > 0) {
+                SettingsRow(
+                    icon = Icons.Default.ImageSearch,
+                    title = "Retrouver les photos manquantes",
+                    subtitle = "${countLabel(missingPhotoCount, "photo du Journal n'a plus", "photos du Journal n'ont plus")} " +
+                        "de fichier local, après une restauration ou un nettoyage du stockage. " +
+                        "Bivouac peut les reprendre depuis ta galerie, à condition d'y retrouver " +
+                        "l'original exact.",
+                    secondaryAvatar = true,
+                )
+                OutlinedButton(
+                    onClick = onRecoverMissingPhotosClick,
+                    // Même grisage que la purge : la recherche écrit elle aussi dans photos/.
+                    enabled = !purgeLocked,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp),
+                ) {
+                    Icon(Icons.Default.ImageSearch, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Retrouver les photos manquantes")
+                }
+            }
         }
         // RIC-152 : la contrepartie du « rien n'est supprimé » ci-dessus. Elle n'apparaît qu'une
         // fois la fonctionnalité débrayée ET s'il reste effectivement des photos : proposer de
@@ -837,6 +956,32 @@ private fun JournalPhotosSection(
             }
         }
     }
+}
+
+/**
+ * RIC-151 : le rapport de fin de la recherche des photos manquantes.
+ *
+ * « Retrouvée mais modifiée » est dit à part et en toutes lettres : c'est le cas d'un service de
+ * sauvegarde photo qui a recompressé la pellicule, et il faut que l'utilisateur comprenne que rien
+ * n'a été adopté à la place. Adopter une image approchante serait réécrire son carnet.
+ */
+internal fun photoRecoveryReportMessage(report: LoggedTrackRepository.PhotoRecoveryReport): String {
+    val lines = mutableListOf<String>()
+    lines += if (report.recovered > 0) {
+        "${countLabel(report.recovered, "photo retrouvée", "photos retrouvées")} et remise en place."
+    } else {
+        "Aucune photo n'a pu être retrouvée."
+    }
+    if (report.modifiedNotAdopted > 0) {
+        lines += "${countLabel(report.modifiedNotAdopted, "photo retrouvée", "photos retrouvées")} " +
+            "dans la galerie, mais modifiée depuis l'import : ce n'est plus le même fichier, rien " +
+            "n'a été repris."
+    }
+    if (report.notFound > 0) {
+        lines += "${countLabel(report.notFound, "photo reste introuvable", "photos restent introuvables")} " +
+            "dans la galerie. Sa fiche est conservée dans le Journal, au cas où l'original revienne."
+    }
+    return lines.joinToString("\n\n")
 }
 
 /** RIC-152 : « 12 photos, 34,5 Mo » : ce que la purge va retirer, lignes et fichiers. */
