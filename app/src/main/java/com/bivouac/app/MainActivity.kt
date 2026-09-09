@@ -36,6 +36,7 @@ import com.bivouac.app.ui.nav.AppSection
 import com.bivouac.app.ui.nav.UniverseChoiceDialog
 import com.bivouac.app.ui.settings.SettingsScreen
 import com.bivouac.app.ui.startup.ElevationBackfillGate
+import com.bivouac.app.ui.startup.PhotoStorageChoicePrompt
 import com.bivouac.app.ui.theme.BivouacTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -90,6 +91,13 @@ class MainActivity : ComponentActivity() {
                 // pour qu'aucune section ne soit ne serait-ce que composée pendant le rattrapage.
                 ElevationBackfillGate(modifier = Modifier.fillMaxSize()) {
                     BivouacApp(modifier = Modifier.fillMaxSize(), incomingGpxBatch = incomingGpxBatch)
+                    // RIC-157 : proposition post-mise à jour du mode de stockage des photos. Après
+                    // le rattrapage d'altitude et non avant : celui-là est bloquant et peut durer,
+                    // empiler une question par-dessus n'aurait aucun sens. À côté de BivouacApp et
+                    // non dedans : c'est un dialogue (donc sa propre fenêtre, aucune contribution à
+                    // la mise en page) et il ne dépend d'aucun écran en particulier. Le plus
+                    // souvent il ne dessine rien du tout, voir PhotoStorageChoiceViewModel.
+                    PhotoStorageChoicePrompt()
                 }
             }
         }

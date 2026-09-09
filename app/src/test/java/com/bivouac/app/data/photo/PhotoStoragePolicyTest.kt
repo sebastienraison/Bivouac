@@ -1,6 +1,8 @@
 package com.bivouac.app.data.photo
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -23,6 +25,42 @@ class PhotoStoragePolicyTest {
         assertEquals(
             PhotoStorageMode.FULL,
             PhotoStoragePolicy.resolve(decision = null, hasExistingPhotos = true),
+        )
+    }
+
+    /**
+     * Le défaut d'un Journal vide se verrouille : sans ça, un utilisateur tout neuf importerait son
+     * premier lot en copie réduite puis tous les suivants en copie intégrale, la présence de photos
+     * ayant changé entre-temps. Deux régimes dans un même Journal.
+     */
+    @Test
+    fun theImplicitReducedDefaultIsPinnedSoItCannotFlipOnTheNextBatch() {
+        assertTrue(
+            PhotoStoragePolicy.shouldPersistAsDecision(decision = null, resolved = PhotoStorageMode.REDUCED),
+        )
+    }
+
+    /**
+     * Le défaut d'un Journal déjà pourvu ne se verrouille PAS : c'est le profil de quelqu'un qui met
+     * l'app à jour, et fermer sa question dans son dos empêcherait la proposition post-mise à jour
+     * de se poser, sa condition étant « aucune décision enregistrée ».
+     */
+    @Test
+    fun theImplicitFullDefaultIsNeverPinnedSoTheQuestionStaysOpen() {
+        assertFalse(
+            PhotoStoragePolicy.shouldPersistAsDecision(decision = null, resolved = PhotoStorageMode.FULL),
+        )
+    }
+
+    // Une décision existante ne se réécrit jamais : ça n'ajouterait rien et masquerait un appelant
+    // qui aurait oublié de la lire.
+    @Test
+    fun anExistingDecisionIsNeverRewritten() {
+        assertFalse(
+            PhotoStoragePolicy.shouldPersistAsDecision(PhotoStorageMode.REDUCED, PhotoStorageMode.REDUCED),
+        )
+        assertFalse(
+            PhotoStoragePolicy.shouldPersistAsDecision(PhotoStorageMode.FULL, PhotoStorageMode.FULL),
         )
     }
 

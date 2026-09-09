@@ -71,4 +71,23 @@ object PhotoStoragePolicy {
      */
     fun resolve(decision: PhotoStorageMode?, hasExistingPhotos: Boolean): PhotoStorageMode =
         decision ?: if (hasExistingPhotos) PhotoStorageMode.FULL else PhotoStorageMode.REDUCED
+
+    /**
+     * RIC-157 : ce défaut implicite doit-il être écrit comme une vraie décision ?
+     *
+     * Il le faut, sans quoi [resolve] retourne sa veste en cours de route pour une installation
+     * neuve : le tout premier lot part en copie réduite (Journal vide), et le suivant repasserait en
+     * copie intégrale, puisqu'il y a désormais des photos et toujours aucune décision. Deux régimes
+     * dans un même Journal, sans que rien ne l'ait demandé ni ne le signale.
+     *
+     * Il ne le faut PAS quand le défaut résolu est [PhotoStorageMode.FULL] : ce cas-là est
+     * exactement celui d'un stock constitué avant ce ticket, et sa question doit rester ouverte
+     * jusqu'à ce qu'on la lui pose (voir PhotoStorageChoicePrompt, dont la condition est
+     * précisément « aucune décision enregistrée »). L'écrire la fermerait dans son dos.
+     *
+     * Et jamais quand une décision existe déjà : la réécrire n'ajouterait rien et masquerait un
+     * appelant qui aurait oublié de la lire.
+     */
+    fun shouldPersistAsDecision(decision: PhotoStorageMode?, resolved: PhotoStorageMode): Boolean =
+        decision == null && resolved == PhotoStorageMode.REDUCED
 }

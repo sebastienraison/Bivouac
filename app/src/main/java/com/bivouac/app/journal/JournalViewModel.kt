@@ -25,6 +25,7 @@ import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
 import com.bivouac.app.data.photo.PhotoPickerScope
+import com.bivouac.app.data.photo.PhotoStorageMode
 import com.bivouac.app.data.photo.PhotoStoragePolicy
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
@@ -918,13 +919,8 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                             uris = uris,
                             // RIC-157 : résolu au moment du lot, pas capturé au chargement de
                             // l'écran : l'utilisateur peut être passé par les Réglages entre les
-                            // deux, et c'est le geste d'ajout qui doit refléter son choix. Le
-                            // compte des photos existantes ne sert qu'à départager l'absence de
-                            // choix, voir PhotoStoragePolicy.resolve.
-                            storageMode = PhotoStoragePolicy.resolve(
-                                decision = settingsPreferences.photoStorageModeDecision.first(),
-                                hasExistingPhotos = repository.countAllPhotos() > 0,
-                            ),
+                            // deux, et c'est le geste d'ajout qui doit refléter son choix.
+                            storageMode = resolvePhotoStorageMode(),
                             // Le contrôle d'empreinte couvre le persisté ET le transit : deux
                             // passages successifs dans le sélecteur sur la même photo, sans
                             // sauvegarde entre les deux, doivent se comporter comme deux passages
@@ -962,6 +958,28 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 ExclusiveOperations.finish(ExclusiveOperation.PHOTO_IMPORT)
             }
         }
+    }
+
+    /**
+     * RIC-157 : le mode de stockage à appliquer à ce lot d'import, et le seul endroit où un défaut
+     * implicite est verrouillé.
+     *
+     * Les deux règles sont pures et testées ailleurs (PhotoStoragePolicy.resolve et
+     * shouldPersistAsDecision) : il ne reste ici que leur branchement sur les préférences et sur la
+     * base. Le COUNT n'est fait que faute de décision : le reste du temps, un lot d'import ne
+     * touche pas la table des photos avant d'y écrire.
+     */
+    private suspend fun resolvePhotoStorageMode(): PhotoStorageMode {
+        val decision = settingsPreferences.photoStorageModeDecision.first()
+        if (decision != null) return decision
+        val resolved = PhotoStoragePolicy.resolve(
+            decision = null,
+            hasExistingPhotos = repository.countAllPhotos() > 0,
+        )
+        if (PhotoStoragePolicy.shouldPersistAsDecision(decision, resolved)) {
+            settingsPreferences.setPhotoStorageMode(resolved)
+        }
+        return resolved
     }
 
     private fun hashesOfPendingDeletions(): Set<String> {
