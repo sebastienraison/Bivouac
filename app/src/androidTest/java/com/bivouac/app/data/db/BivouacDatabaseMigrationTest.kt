@@ -930,6 +930,92 @@ class BivouacDatabaseMigrationTest {
 
         migrated.close()
     }
+
+    /**
+     * RIC-157 : deux colonnes ajoutées, sans recréation de table ni rattrapage (voir
+     * MIGRATION_16_17).
+     *
+     * Ce que ce test doit prouver, c'est que les photos déjà en base (un appareil réel porte la
+     * base avec de vraies photos) survivent intactes, et surtout qu'elles ressortent en
+     * `storageMode = 'FULL'` : c'est bien ce qu'elles SONT, des copies intégrales, puisque l'app
+     * n'a jamais su faire autre chose avant ce ticket. Une valeur par défaut fausse ici enverrait
+     * le lot B recompresser ce qu'il croirait déjà réduit, ou l'inverse.
+     */
+    @Test
+    fun migrate16To17_marksExistingPhotosFullAndAddsTheResolutionColumn() {
+        helper.createDatabase(testDbName, 16).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note) VALUES " +
+                    "('track-1', 'Randonnee Belledonne', 1780300800000, 'hash-track-1', " +
+                    "8200.0, 650.0, 300.0, 3, 240, '')",
+            )
+            execSQL(
+                "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, takenAtMillis, " +
+                    "latitude, longitude, positionPointIndex, positionApproximate, contentHash, " +
+                    "sourceDisplayName, sourceRelativePath, sourceDateTakenMillis, takenAtZoneCertain) " +
+                    "VALUES ('track-1', 'photos/track-1-abc.jpg', 1780300900000, 1780300850000, " +
+                    "45.1885, 5.7245, 1, 0, 'abc123', 'IMG_0001.jpg', 'DCIM/Camera/', 1780300850000, 1)",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            17,
+            true,
+            BivouacDatabase.MIGRATION_16_17,
+        )
+
+        migrated.query(
+            "SELECT filePath, contentHash, sourceDisplayName, takenAtZoneCertain, storageMode, " +
+                "lastResolvedUri FROM logged_track_photo WHERE contentHash = 'abc123'",
+        ).use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("photos/track-1-abc.jpg", cursor.getString(0))
+            assertEquals("abc123", cursor.getString(1))
+            assertEquals("IMG_0001.jpg", cursor.getString(2))
+            assertEquals(1, cursor.getInt(3))
+            assertEquals("FULL", cursor.getString(4))
+            assertTrue("aucun URI source n'existait avant la migration", cursor.isNull(5))
+        }
+
+        // Les deux colonnes sont utilisables d'emblée, dans les deux sens : c'est ce que
+        // LoggedTrackRepository.commitPendingPhotos écrit désormais pour toute photo ajoutée, et ce
+        // que PhotoOriginalResolver réécrira quand la recherche profonde aboutira.
+        migrated.execSQL(
+            "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, " +
+                "positionApproximate, contentHash, storageMode, lastResolvedUri) " +
+                "VALUES ('track-1', 'photos/track-1-def.jpg', 1780301000000, 0, 'def456', " +
+                "'REDUCED', 'content://media/external/images/media/42')",
+        )
+        migrated.query(
+            "SELECT storageMode, lastResolvedUri FROM logged_track_photo WHERE contentHash = 'def456'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("REDUCED", cursor.getString(0))
+            assertEquals("content://media/external/images/media/42", cursor.getString(1))
+        }
+
+        // Une insertion qui n'énumère pas storageMode (le cas d'un INSERT écrit à la main quelque
+        // part, ou d'une restauration partielle) doit rester possible et retomber sur 'FULL' :
+        // c'est ce que le DEFAULT garantit, et ce que Room attend du schéma exporté.
+        migrated.execSQL(
+            "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, " +
+                "positionApproximate, contentHash) " +
+                "VALUES ('track-1', 'photos/track-1-ghi.jpg', 1780301100000, 0, 'ghi789')",
+        )
+        migrated.query(
+            "SELECT storageMode FROM logged_track_photo WHERE contentHash = 'ghi789'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("FULL", cursor.getString(0))
+        }
+
+        migrated.close()
+    }
 }
 
 private fun String.escapeSql(): String = replace("'", "''")
