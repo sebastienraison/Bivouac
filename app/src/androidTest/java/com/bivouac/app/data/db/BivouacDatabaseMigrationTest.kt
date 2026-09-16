@@ -1016,6 +1016,106 @@ class BivouacDatabaseMigrationTest {
 
         migrated.close()
     }
+
+    /**
+     * RIC-143 / RIC-144 : sept colonnes ajoutées, sans recréation de table ni rattrapage (voir
+     * MIGRATION_17_18).
+     *
+     * Ce que ce test doit prouver tient en deux points. D'abord que les photos déjà en base
+     * survivent intactes : l'appareil de recette porte une base réelle, et les ajustements sont
+     * précisément le ticket où l'on serait tenté de recréer la table.
+     *
+     * Ensuite que les lignes existantes ressortent « sans aucun ajustement » : rotation à 0, quatre
+     * colonnes de recadrage à null. C'est ce qui garantit qu'une mise à jour ne fait bouger aucune
+     * photo déjà là : le corollaire de ce ticket, c'est que l'écrasante majorité des photos ne sera
+     * jamais ajustée, et qu'elles doivent donc s'afficher exactement comme avant.
+     */
+    @Test
+    fun migrate17To18_leavesExistingPhotosWithoutAnyAdjustment() {
+        helper.createDatabase(testDbName, 17).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note) VALUES " +
+                    "('track-1', 'Randonnee Belledonne', 1780300800000, 'hash-track-1', " +
+                    "8200.0, 650.0, 300.0, 3, 240, '')",
+            )
+            execSQL(
+                "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, takenAtMillis, " +
+                    "latitude, longitude, positionPointIndex, positionApproximate, contentHash, " +
+                    "sourceDisplayName, sourceRelativePath, sourceDateTakenMillis, " +
+                    "takenAtZoneCertain, storageMode, lastResolvedUri) " +
+                    "VALUES ('track-1', 'photos/track-1-abc.jpg', 1780300900000, 1780300850000, " +
+                    "45.1885, 5.7245, 1, 0, 'abc123', 'IMG_0001.jpg', 'DCIM/Camera/', 1780300850000, " +
+                    "1, 'REDUCED', 'content://media/external/images/media/42')",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            18,
+            true,
+            BivouacDatabase.MIGRATION_17_18,
+        )
+
+        migrated.query(
+            "SELECT filePath, contentHash, storageMode, lastResolvedUri, rotationQuarterTurns, " +
+                "cropLeft, cropTop, cropRight, cropBottom, caption, shownOnMap " +
+                "FROM logged_track_photo WHERE contentHash = 'abc123'",
+        ).use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("photos/track-1-abc.jpg", cursor.getString(0))
+            assertEquals("abc123", cursor.getString(1))
+            assertEquals("REDUCED", cursor.getString(2))
+            assertEquals("content://media/external/images/media/42", cursor.getString(3))
+            assertEquals("une photo d'avant la migration n'est pas tournée", 0, cursor.getInt(4))
+            assertTrue("aucun recadrage avant la migration", cursor.isNull(5))
+            assertTrue("aucun recadrage avant la migration", cursor.isNull(6))
+            assertTrue("aucun recadrage avant la migration", cursor.isNull(7))
+            assertTrue("aucun recadrage avant la migration", cursor.isNull(8))
+            // Colonnes du lot 2, portées d'avance : vides, et personne ne les lit encore.
+            assertTrue("aucune légende avant la migration", cursor.isNull(9))
+            assertEquals("une photo reste visible sur la carte par défaut", 1, cursor.getInt(10))
+        }
+
+        // Les colonnes sont utilisables d'emblée : c'est ce que LoggedTrackDao.updatePhotoAdjustments
+        // écrit quand l'éditeur « Ajuster » valide.
+        migrated.execSQL(
+            "UPDATE logged_track_photo SET rotationQuarterTurns = 3, cropLeft = 0.1, " +
+                "cropTop = 0.25, cropRight = 0.9, cropBottom = 0.75 WHERE contentHash = 'abc123'",
+        )
+        migrated.query(
+            "SELECT rotationQuarterTurns, cropLeft, cropTop, cropRight, cropBottom " +
+                "FROM logged_track_photo WHERE contentHash = 'abc123'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(3, cursor.getInt(0))
+            assertEquals(0.1f, cursor.getFloat(1), 1e-6f)
+            assertEquals(0.25f, cursor.getFloat(2), 1e-6f)
+            assertEquals(0.9f, cursor.getFloat(3), 1e-6f)
+            assertEquals(0.75f, cursor.getFloat(4), 1e-6f)
+        }
+
+        // Une insertion qui n'énumère pas les deux colonnes NOT NULL doit rester possible et
+        // retomber sur « pas de rotation, visible sur la carte » : c'est ce que les DEFAULT
+        // garantissent, et ce que Room attend du schéma exporté.
+        migrated.execSQL(
+            "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, " +
+                "positionApproximate, contentHash) " +
+                "VALUES ('track-1', 'photos/track-1-def.jpg', 1780301000000, 0, 'def456')",
+        )
+        migrated.query(
+            "SELECT rotationQuarterTurns, shownOnMap FROM logged_track_photo WHERE contentHash = 'def456'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+            assertEquals(1, cursor.getInt(1))
+        }
+
+        migrated.close()
+    }
 }
 
 private fun String.escapeSql(): String = replace("'", "''")

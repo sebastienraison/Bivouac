@@ -176,4 +176,39 @@ interface LoggedTrackDao {
     // n'a changé, surtout pas son empreinte.
     @Query("UPDATE logged_track_photo SET lastResolvedUri = :lastResolvedUri WHERE id = :id")
     suspend fun updatePhotoLastResolvedUri(id: Long, lastResolvedUri: String?)
+
+    // RIC-143 / RIC-144 : les ajustements d'affichage validés dans l'éditeur « Ajuster ».
+    //
+    // Les cinq colonnes ensemble et jamais séparément : rotation et recadrage se pensent dans le
+    // même repère (le cadre vit dans l'image tournée), les écrire l'une sans l'autre laisserait un
+    // instant où le rectangle désigne une autre zone de la photo. Les quatre colonnes de recadrage
+    // valent null ensemble quand il n'y a plus de recadrage : c'est aussi ce qui permet de DÉFAIRE
+    // un recadrage, pas seulement d'en poser un.
+    //
+    // Le fichier n'est pas touché : c'est tout le principe du non destructif.
+    @Query(
+        "UPDATE logged_track_photo SET rotationQuarterTurns = :rotationQuarterTurns, " +
+            "cropLeft = :cropLeft, cropTop = :cropTop, cropRight = :cropRight, " +
+            "cropBottom = :cropBottom WHERE id = :id",
+    )
+    suspend fun updatePhotoAdjustments(
+        id: Long,
+        rotationQuarterTurns: Int,
+        cropLeft: Float?,
+        cropTop: Float?,
+        cropRight: Float?,
+        cropBottom: Float?,
+    )
+
+    // RIC-170 : la légende, écrite à la sauvegarde du mode édition comme les ajustements ci-dessus.
+    // Null remet la photo sans légende (bulle et visionneuse retrouvent alors « Ajouter une
+    // légende » / rien à afficher).
+    @Query("UPDATE logged_track_photo SET caption = :caption WHERE id = :id")
+    suspend fun updatePhotoCaption(id: Long, caption: String?)
+
+    // RIC-171 : « Retirer de la carte » / « Replacer sur la carte ». La position (positionPointIndex)
+    // n'est jamais touchée par cette colonne : retirer puis replacer retrouve exactement le même
+    // point, rien n'a jamais été perdu.
+    @Query("UPDATE logged_track_photo SET shownOnMap = :shownOnMap WHERE id = :id")
+    suspend fun updatePhotoShownOnMap(id: Long, shownOnMap: Boolean)
 }

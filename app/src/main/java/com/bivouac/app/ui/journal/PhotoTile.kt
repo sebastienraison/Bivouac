@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrokenImage
+import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -26,9 +27,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
 import com.bivouac.app.data.db.positionUncertain
+import com.bivouac.app.data.photo.adjustedBy
+import com.bivouac.app.data.photo.adjustments
 
 /**
  * RIC-43 : le rendu commun d'une photo du Journal partout où elle apparaît en petit : bandeau de la
@@ -43,7 +47,15 @@ import com.bivouac.app.data.db.positionUncertain
 internal fun PhotoTile(photo: LoggedTrackPhotoEntity, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val file = remember(photo.filePath) { LoggedTrackPhotoStore.resolve(context, photo.filePath) }
-    val painter = rememberAsyncImagePainter(model = file, contentScale = ContentScale.Crop)
+    // RIC-143/144 : la vignette montre la zone recadrée et rien d'autre, comme s'il s'agissait d'une
+    // image à part entière (décision produit du 2026-09-16). Le recadrage n'est pas un état qu'on
+    // signale, c'est ce que la photo EST devenue : le bandeau, la grille, la bulle et la visionneuse
+    // doivent donc toutes montrer la même chose, d'où la transformation commune.
+    val adjustments = photo.adjustments
+    val painter = rememberAsyncImagePainter(
+        model = ImageRequest.Builder(context).data(file).adjustedBy(adjustments).build(),
+        contentScale = ContentScale.Crop,
+    )
     Box(modifier = modifier) {
         // L'état d'erreur de Coil plutôt qu'un File.exists() : il couvre aussi le fichier présent
         // mais illisible, et surtout il n'ajoute aucun accès disque sur le thread de composition,
@@ -61,6 +73,14 @@ internal fun PhotoTile(photo: LoggedTrackPhotoEntity, modifier: Modifier = Modif
         if (photo.positionUncertain) {
             ApproximatePositionBadge(
                 modifier = Modifier.align(Alignment.BottomStart).padding(3.dp),
+            )
+        }
+        // RIC-171 : « Retirée de la carte ». BottomEnd et non BottomStart : l'autre coin porte déjà
+        // la pastille de positionnement approximatif, et une photo peut en théorie porter les deux
+        // à la fois (retirée ET approximative).
+        if (!photo.shownOnMap) {
+            RemovedFromMapBadge(
+                modifier = Modifier.align(Alignment.BottomEnd).padding(3.dp),
             )
         }
     }
@@ -129,6 +149,29 @@ private fun ApproximatePositionBadge(modifier: Modifier = Modifier) {
             Icons.Default.LocationSearching,
             contentDescription = "Positionnement approximatif",
             tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(2.dp).size(12.dp),
+        )
+    }
+}
+
+/**
+ * RIC-171 : la photo est retirée de la carte (marqueur absent, absente de la bulle et de son
+ * carrousel), tout en restant présente ici, dans le bandeau, la grille et la visionneuse. La
+ * position, elle, est conservée en base (voir shownOnMap) : ce badge dit seulement « pas montrée
+ * là-bas en ce moment », pas « sans position ».
+ */
+@Composable
+private fun RemovedFromMapBadge(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        tonalElevation = 2.dp,
+    ) {
+        Icon(
+            Icons.Default.LocationOff,
+            contentDescription = "Retirée de la carte",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(2.dp).size(12.dp),
         )
     }

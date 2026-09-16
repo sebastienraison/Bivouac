@@ -64,6 +64,9 @@ import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.TrackPoint
+import com.bivouac.app.data.photo.PhotoAdjustments
+import com.bivouac.app.data.photo.adjustedBy
+import com.bivouac.app.data.photo.adjustments
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.formatKm1
 import java.io.File
@@ -258,6 +261,13 @@ fun HikeMapView(
     // RIC-43 : tap sur la miniature de la bulle du curseur : ouvre la visionneuse plein écran
     // côté écran (voir CursorInfoWindow, qui porte le vrai listener de clic).
     onPhotoBubbleClick: (File) -> Unit = {},
+    // RIC-166 : la photo en cours de repositionnement, ou null hors mode placement. Son marqueur
+    // devient alors le seul déplaçable de la carte (voir photoPlacementMarker) ; en dehors de ce
+    // mode aucun marqueur photo n'est jamais glissable.
+    photoPlacementTarget: LoggedTrackPhotoEntity? = null,
+    // Appelé à chaque position aimantée du glissement, comme onBivouacDragPreview : pas de
+    // distinction aperçu/validé ici, voir JournalViewModel.updatePhotoPlacementPosition.
+    onPhotoPlacementDrag: (Int) -> Unit = {},
     // Journal-only (BIV-48): when non-empty, overrides single-track rendering entirely: a
     // contemplative multi-trace overview, no tap/drag interactions, no bivouacs/arrows/cursor.
     multiTracks: List<ColoredTrack> = emptyList(),
@@ -397,6 +407,7 @@ fun HikeMapView(
                     cursorIndex, onCursorChanged, cursorInfoWindow, cursorDragState,
                     distanceCache, photoIconCache,
                     photos, missingPhotoIds, onCursorCleared, onPhotoBubbleClick,
+                    photoPlacementTarget, onPhotoPlacementDrag,
                     multiTracks, highlightedTrackId, onTraceTapped, copyrightOverlay,
                 )
                 pendingHeightCorrection.value = when {
@@ -474,6 +485,8 @@ private fun renderTrack(
     missingPhotoIds: Set<Long>,
     onCursorCleared: () -> Unit,
     onPhotoBubbleClick: (File) -> Unit,
+    photoPlacementTarget: LoggedTrackPhotoEntity?,
+    onPhotoPlacementDrag: (Int) -> Unit,
     multiTracks: List<ColoredTrack>,
     highlightedTrackId: String?,
     onTraceTapped: (String) -> Unit,
@@ -581,18 +594,49 @@ private fun renderTrack(
         fitToTrack(mapView, geoPoints, visibleHeightPx)
     }
 
-    // RIC-43 : une photo dont la copie locale a disparu n'a aucun marqueur : taper un repère qui
-    // n'ouvrirait rien serait pire que son absence. Elle reste néanmoins dans `photos` pour la
-    // bulle du curseur, qui sait dire « photo absente » (voir cursorBubbleContent).
-    val placeablePhotos = if (missingPhotoIds.isEmpty()) photos else photos.filter { it.id !in missingPhotoIds }
+    // RIC-171 : une photo retirée de la carte n'a plus de marqueur ni de place dans la bulle/le
+    // carrousel : voir shownOnMap. Elle reste présente dans le bandeau, la grille et la
+    // visionneuse, qui ne passent pas par ici. `mapVisiblePhotos` remplace `photos` pour tout ce
+    // qui suit dans cette fonction (marqueurs, cluster, curseur, bulle).
+    val mapVisiblePhotos = photos.filter { it.shownOnMap }
 
-    clusterPhotos(mapView, geoPoints, placeablePhotos, density).forEach { cluster ->
+    // RIC-43 : une photo dont la copie locale a disparu n'a aucun marqueur : taper un repère qui
+    // n'ouvrirait rien serait pire que son absence. Elle reste néanmoins dans `mapVisiblePhotos`
+    // pour la bulle du curseur, qui sait dire « photo absente » (voir cursorBubbleContent).
+    val placeablePhotos = if (missingPhotoIds.isEmpty()) {
+        mapVisiblePhotos
+    } else {
+        mapVisiblePhotos.filter { it.id !in missingPhotoIds }
+    }
+
+    // RIC-166 : la photo en cours de repositionnement porte son propre marqueur déplaçable
+    // (photoPlacementMarker, plus bas) : elle est retirée du regroupement normal, sans quoi la
+    // carte afficherait deux marqueurs pour la même photo pendant le glissement.
+    val clusterablePhotos = if (photoPlacementTarget == null) {
+        placeablePhotos
+    } else {
+        placeablePhotos.filterNot { it.id == photoPlacementTarget.id }
+    }
+
+    clusterPhotos(mapView, geoPoints, clusterablePhotos, density).forEach { cluster ->
         if (cluster.photos.size == 1) {
             photoMarker(mapView, geoPoints, cluster.photos.first(), onCursorChanged, iconCache)
                 ?.let { mapView.overlays.add(it) }
         } else {
             mapView.overlays.add(photoClusterMarker(mapView, cluster, onCursorChanged, iconCache))
         }
+    }
+
+    if (photoPlacementTarget != null && points.isNotEmpty()) {
+        // ⚠️ `photos.find { ... }` et non `photoPlacementTarget` tel quel pour la position de
+        // départ : ce dernier est l'instantané capturé à l'ouverture du mode (requestPhotoPlacement),
+        // jamais remis à jour pendant le glissement. `renderTrack` reconstruit TOUS les overlays à
+        // chaque rendu, y compris ceux déclenchés par le glissement lui-même (onPhotoPlacementDrag
+        // écrit dans le brouillon, qui recompose `photos` avec la position déjà superposée, voir
+        // JournalViewModel.currentPhotos) : repartir de l'instantané figé aurait fait revenir le
+        // marqueur à son point de départ à chaque position aimantée, au lieu de suivre le doigt.
+        val livePlacementPhoto = photos.find { it.id == photoPlacementTarget.id } ?: photoPlacementTarget
+        mapView.overlays.add(photoPlacementMarker(mapView, points, geoPoints, livePlacementPhoto, onPhotoPlacementDrag))
     }
 
     // RIC-43 : les bivouacs APRÈS les photos, donc dessinés par-dessus. osmdroid empile ses
@@ -624,11 +668,11 @@ private fun renderTrack(
         mapView.overlays.add(
             cursorMarker(
                 mapView, points, geoPoints, cursorIndex, density, onCursorChanged,
-                cursorInfoWindow, cursorDragState, distanceCache, photos, missingPhotoIds,
+                cursorInfoWindow, cursorDragState, distanceCache, mapVisiblePhotos, missingPhotoIds,
             ),
         )
         val bubbleContent =
-            cursorBubbleContent(context, points, cursorIndex, distanceCache, photos, missingPhotoIds)
+            cursorBubbleContent(context, points, cursorIndex, distanceCache, mapVisiblePhotos, missingPhotoIds)
         val bubblePosition = geoPoints[cursorIndex]
         // A tap can be dispatched to an overlay that existed before this recomposition and open
         // its default InfoWindow after renderTrack returns. Re-open ours on the next UI frame so
@@ -946,6 +990,93 @@ private fun photoMarker(
     return marker
 }
 
+/**
+ * RIC-166 : le marqueur, unique, de la photo en cours de repositionnement (« Repositionner sur la
+ * trace », menu Position de la visionneuse). Mise en évidence par un halo (voir
+ * [photoPlacementMarkerIcon]) : c'est le seul marqueur glissable de tout l'écran pendant que ce mode
+ * est actif, et il doit se voir.
+ *
+ * Mécanique de glissement/aimantation IDENTIQUE à [bivouacMarker] : même
+ * `TrackGeometry.nearestPointIndex`, réutilisé tel quel plutôt que dupliqué, comme demandé. Une
+ * seule callback et non un couple aperçu/commit comme les bivouacs : la spec est explicite, il n'y a
+ * pas de Valider/Annuler propre ici, chaque position aimantée réécrit directement le brouillon
+ * d'édition (voir JournalViewModel.updatePhotoPlacementPosition), et c'est la disquette qui la rend
+ * définitive.
+ */
+private fun photoPlacementMarker(
+    mapView: MapView,
+    points: List<TrackPoint>,
+    geoPoints: List<GeoPoint>,
+    photo: LoggedTrackPhotoEntity,
+    onDragged: (Int) -> Unit,
+): Marker {
+    val marker = Marker(mapView)
+    val startIndex = photo.positionPointIndex?.takeIf { it in geoPoints.indices } ?: 0
+    marker.position = geoPoints[startIndex]
+    // ANCHOR_CENTER des deux côtés, et non ANCHOR_CENTER/ANCHOR_BOTTOM comme les autres marqueurs
+    // (pin pointu) : le halo est un disque symétrique, son centre EST le point qu'il désigne.
+    marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+    marker.icon = photoPlacementMarkerIcon(mapView.context)
+    marker.setInfoWindow(null)
+    marker.setOnMarkerClickListener { _, _ -> true }
+    marker.isDraggable = true
+    marker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
+        override fun onMarkerDragStart(marker: Marker) = Unit
+
+        override fun onMarkerDrag(marker: Marker) {
+            val current = marker.position
+            val nearestIndex = TrackGeometry.nearestPointIndex(points, current.latitude, current.longitude)
+            marker.position = geoPoints[nearestIndex]
+            mapView.invalidate()
+            onDragged(nearestIndex)
+        }
+
+        override fun onMarkerDragEnd(marker: Marker) {
+            val nearestIndex = TrackGeometry.nearestPointIndex(points, marker.position.latitude, marker.position.longitude)
+            onDragged(nearestIndex)
+        }
+    })
+    return marker
+}
+
+/**
+ * RIC-166 : le marqueur photo habituel ([photoMarkerIcon]), avec un halo translucide derrière pour
+ * le distinguer de tous les autres pendant le mode placement. Reconstruit à chaque pose plutôt que
+ * mis en cache comme [PhotoMarkerIconCache] : ce marqueur n'existe jamais qu'une fois à la fois.
+ */
+private fun photoPlacementMarkerIcon(context: Context): Drawable {
+    val density = context.resources.displayMetrics.density
+    val base = ContextCompat.getDrawable(context, R.drawable.ic_marker_photo)!!
+    val haloRadius = base.intrinsicWidth * 0.9f
+    val size = (haloRadius * 2).toInt().coerceAtLeast(base.intrinsicWidth)
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    canvas.drawCircle(
+        size / 2f,
+        size / 2f,
+        haloRadius,
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = ContextCompat.getColor(context, R.color.marker_photo)
+            alpha = 90
+        },
+    )
+    canvas.drawCircle(
+        size / 2f,
+        size / 2f,
+        haloRadius,
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = ContextCompat.getColor(context, R.color.marker_photo)
+            style = Paint.Style.STROKE
+            strokeWidth = 1.5f * density
+        },
+    )
+    val left = ((size - base.intrinsicWidth) / 2f).toInt()
+    val top = ((size - base.intrinsicHeight) / 2f).toInt()
+    base.setBounds(left, top, left + base.intrinsicWidth, top + base.intrinsicHeight)
+    base.draw(canvas)
+    return BitmapDrawable(context.resources, bitmap)
+}
+
 // Same drag-and-snap gabarit as a bivouac marker, but nothing here is ever persisted: every
 // snapped position during a drag is immediately reported as final via onCursorChanged (no
 // preview/commit split), and re-opens the info bubble on each index change so it tracks the
@@ -1092,9 +1223,16 @@ private fun cursorBubbleContent(
     return CursorBubbleContent(
         text = text,
         photoFiles = present.map { (photo, _) -> LoggedTrackPhotoStore.resolve(context, photo.filePath) },
+        // RIC-143/144 : parallèle à photoFiles, comme photoTimes juste en dessous. La bulle affiche
+        // la zone recadrée et rien d'autre, au même titre que les vignettes et la visionneuse : une
+        // photo recadrée dans le bandeau mais entière sur la carte serait deux photos différentes.
+        photoAdjustments = present.map { (photo, _) -> photo.adjustments },
         // Parallèle à photoFiles, un élément par photo du lot : c'est ce qui permet à l'heure
         // affichée de suivre le carrousel sans que la bulle ait à retenir les entités.
         photoTimes = present.map { (photo, _) -> photo.takenAtMillis?.let(::formatPhotoTimeOfDay) },
+        // RIC-170 : même principe, pour la légende sous la vignette. Une entrée nulle ou blanche
+        // vaut « pas de légende », la bulle la masque alors (voir CursorInfoWindow.showCurrentPhoto).
+        photoCaptions = present.map { (photo, _) -> photo.caption },
         initialPhotoIndex = present.indexOfFirst { (photo, _) -> photo.id == closest.id }.coerceAtLeast(0),
     )
 }
@@ -1125,10 +1263,16 @@ private data class CursorBubbleContent(
     // Vide quand aucune photo n'est assez proche. Plusieurs entrées quand plusieurs le sont : la
     // vignette devient alors parcourable, avec un compteur.
     val photoFiles: List<File> = emptyList(),
+    // RIC-143/144 : même taille et même ordre que photoFiles, une entrée valant PhotoAdjustments.NONE
+    // pour une photo jamais ajustée, c'est-à-dire l'écrasante majorité.
+    val photoAdjustments: List<PhotoAdjustments> = emptyList(),
     // Même taille et même ordre que photoFiles, une entrée nulle valant « heure inconnue ». Une
     // liste parallèle plutôt qu'une liste de paires : seule photoFiles est manipulée par le
     // carrousel, et les heures n'y interviennent qu'au moment de composer la ligne de texte.
     val photoTimes: List<String?> = emptyList(),
+    // RIC-170 : même taille et même ordre que photoFiles, une entrée nulle ou blanche valant
+    // « pas de légende ».
+    val photoCaptions: List<String?> = emptyList(),
     val initialPhotoIndex: Int = 0,
     val photoMissing: Boolean = false,
 )
@@ -1175,6 +1319,7 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
     // Le lot courant du carrousel et la page affichée. Rechargés à chaque onOpen, c'est-à-dire à
     // chaque déplacement du curseur : changer d'endroit sur la trace, c'est changer de lot.
     private var photoFiles: List<File> = emptyList()
+    private var photoAdjustments: List<PhotoAdjustments> = emptyList()
     private var photoIndex = 0
 
     // RIC-43 : la ligne distance/altitude nue, et les heures de prise de vue du lot. Retenues
@@ -1183,10 +1328,14 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
     private var baseText: String = ""
     private var photoTimes: List<String?> = emptyList()
 
+    // RIC-170 : même raison que photoTimes ci-dessus, pour la légende sous la vignette.
+    private var photoCaptions: List<String?> = emptyList()
+
     private val textView = mView.findViewById<TextView>(R.id.cursor_bubble_text)
     private val photoFrame = mView.findViewById<View>(R.id.cursor_bubble_photo_frame)
     private val photoView = mView.findViewById<ImageView>(R.id.cursor_bubble_photo)
     private val counterView = mView.findViewById<TextView>(R.id.cursor_bubble_counter)
+    private val captionView = mView.findViewById<TextView>(R.id.cursor_bubble_caption)
 
     // Le seuil au-delà duquel un glissement est un feuilletage et non un tap qui a bougé : celui
     // du système, exactement celui qu'utilise un ViewPager, plutôt qu'une valeur inventée ici.
@@ -1202,6 +1351,10 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
             width = side
             height = side
         }
+        // RIC-170 : la légende ne déborde jamais la largeur de la vignette, qui est elle-même
+        // calculée sur l'écran réel (voir cursorBubblePhotoSidePx) : une valeur figée en dp ne le
+        // pourrait pas.
+        captionView.maxWidth = side
         mView.findViewById<View>(R.id.cursor_bubble_close).setOnClickListener { onCloseClick() }
         // Le tap reste un vrai clic de View (accessibilité, retour sonore) ; le listener de touche
         // ci-dessous ne fait que décider si le geste était un tap ou un feuilletage.
@@ -1277,7 +1430,12 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
         // error() en plus du chemin : le fichier peut avoir disparu entre le relevé de
         // missingPhotoIds et l'ouverture de la bulle, ou être présent mais illisible. Sans ce
         // repli, Coil laisserait simplement la miniature précédente à l'écran.
-        photoView.load(file) { error(R.drawable.ic_photo_missing) }
+        // RIC-143/144 : le même mécanisme de rendu que partout ailleurs (voir adjustedBy) : cette
+        // bulle est une View et non un composable, mais `load` construit le même ImageRequest.
+        photoView.load(file) {
+            error(R.drawable.ic_photo_missing)
+            adjustedBy(photoAdjustments.getOrNull(photoIndex) ?: PhotoAdjustments.NONE)
+        }
         photoView.contentDescription = null
         if (photoFiles.size > 1) {
             counterView.visibility = View.VISIBLE
@@ -1285,13 +1443,23 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
         } else {
             counterView.visibility = View.GONE
         }
+        // RIC-170 : masquée quand cette photo n'a pas de légende, jamais un texte vide affiché.
+        val caption = photoCaptions.getOrNull(photoIndex)?.trim()
+        if (caption.isNullOrEmpty()) {
+            captionView.visibility = View.GONE
+        } else {
+            captionView.visibility = View.VISIBLE
+            captionView.text = caption
+        }
     }
 
     override fun onOpen(item: Any?) {
         val content = item as? CursorBubbleContent ?: return
         baseText = content.text
         photoFiles = content.photoFiles
+        photoAdjustments = content.photoAdjustments
         photoTimes = content.photoTimes
+        photoCaptions = content.photoCaptions
         photoIndex = content.initialPhotoIndex.coerceIn(0, (content.photoFiles.size - 1).coerceAtLeast(0))
         // Posé tout de suite : les deux branches sans photo affichable en restent là, et celle qui
         // en a une le repose avec l'heure via showCurrentPhoto.
@@ -1307,6 +1475,7 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
             content.photoMissing -> {
                 photoFrame.visibility = View.VISIBLE
                 counterView.visibility = View.GONE
+                captionView.visibility = View.GONE
                 photoView.scaleType = ImageView.ScaleType.CENTER_INSIDE
                 photoView.setImageResource(R.drawable.ic_photo_missing)
                 photoView.contentDescription = "Photo absente"
@@ -1315,6 +1484,7 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
             else -> {
                 photoFrame.visibility = View.GONE
                 counterView.visibility = View.GONE
+                captionView.visibility = View.GONE
                 photoView.setImageDrawable(null)
                 photoView.contentDescription = null
                 photoView.isClickable = false

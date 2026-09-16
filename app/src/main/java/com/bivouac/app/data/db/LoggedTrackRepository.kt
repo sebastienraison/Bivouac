@@ -14,6 +14,7 @@ import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
+import com.bivouac.app.data.photo.PhotoAdjustments
 import com.bivouac.app.data.photo.PhotoContentHash
 import com.bivouac.app.data.photo.PhotoCopyPlan
 import com.bivouac.app.data.photo.PhotoExifReader
@@ -25,6 +26,7 @@ import com.bivouac.app.data.photo.PhotoRecompression
 import com.bivouac.app.data.photo.PhotoReducer
 import com.bivouac.app.data.photo.PhotoSourceMetadata
 import com.bivouac.app.data.photo.PhotoStorageMode
+import com.bivouac.app.data.photo.withAdjustments
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -126,6 +128,16 @@ data class PendingPhotoAdd(
     // RIC-157 : l'URI de la source telle que le sélecteur l'a livrée, relevé dans les DEUX modes :
     // voir LoggedTrackPhotoEntity.lastResolvedUri.
     val sourceUri: String? = null,
+    // RIC-143 / RIC-144 : une photo encore en transit s'affiche comme les autres, donc elle
+    // s'ajuste comme les autres. Les ajustements voyagent avec elle jusqu'à l'insert, où ils
+    // deviennent des colonnes. Le fichier de transit, lui, n'est pas plus touché que ne l'est une
+    // copie déjà enregistrée.
+    val adjustments: PhotoAdjustments = PhotoAdjustments.NONE,
+    // RIC-170 / RIC-171 : même raisonnement que les ajustements ci-dessus, pour les deux champs du
+    // lot 2. Une photo encore en transit peut recevoir une légende ou être retirée de la carte
+    // avant même d'avoir de ligne : les deux voyagent avec elle jusqu'à l'insert.
+    val caption: String? = null,
+    val shownOnMap: Boolean = true,
 )
 
 /** Ce que rend un passage du sélecteur : ce qui est entré en transit, et le bilan du lot. */
@@ -642,7 +654,14 @@ class LoggedTrackRepository(context: Context) {
                     sourceDateTakenMillis = add.source.dateTakenMillis,
                     storageMode = add.storageMode,
                     lastResolvedUri = add.sourceUri,
-                )
+                    // RIC-170/171 : même logique que les ajustements juste en dessous, pour la
+                    // légende et la visibilité sur la carte posées avant le premier enregistrement.
+                    caption = add.caption,
+                    shownOnMap = add.shownOnMap,
+                    // RIC-143/144 : les ajustements posés pendant l'édition sur une photo encore en
+                    // transit deviennent des colonnes dès son premier insert, sans passer par une
+                    // mise à jour séparée : elle n'a jamais existé sans eux.
+                ).withAdjustments(add.adjustments)
                 try {
                     dao.insertPhoto(entity)
                 } catch (e: Exception) {
@@ -1026,6 +1045,36 @@ class LoggedTrackRepository(context: Context) {
         }
     }
 
+    /**
+     * RIC-143 / RIC-144 : les ajustements d'affichage validés dans l'éditeur, écrits à la
+     * sauvegarde du mode édition.
+     *
+     * Une écriture de colonnes, rien d'autre : le fichier n'est ni relu, ni réécrit, ni déplacé.
+     * C'est ce qui rend l'opération instantanée quel que soit le poids de la photo, et surtout
+     * réversible sans perte : retirer un recadrage rend la photo entière, pas une image déjà
+     * rognée.
+     *
+     * [onProgress] a le même rôle que dans [commitPendingPhotos] et [deletePhotos] : les trois
+     * moitiés du même geste alimentent un seul compteur.
+     */
+    suspend fun updatePhotoAdjustments(
+        adjustmentsById: Map<Long, PhotoAdjustments>,
+        onProgress: () -> Unit = {},
+    ) {
+        for ((id, adjustments) in adjustmentsById) {
+            val crop = adjustments.cropRect?.sanitized()
+            dao.updatePhotoAdjustments(
+                id = id,
+                rotationQuarterTurns = adjustments.normalizedRotationQuarterTurns,
+                cropLeft = crop?.left,
+                cropTop = crop?.top,
+                cropRight = crop?.right,
+                cropBottom = crop?.bottom,
+            )
+            onProgress()
+        }
+    }
+
     // "Repositionner" (RIC-43) : toujours positionApproximate = false, qu'il s'agisse de corriger
     // une position déduite par horodatage ou de déplacer une position déjà certaine : un
     // repositionnement manuel vaut confirmation explicite dans les deux cas.
@@ -1035,6 +1084,41 @@ class LoggedTrackRepository(context: Context) {
     // quelle, avec sa requête DAO, pour que ce lot-là la reprenne plutôt que de la réécrire.
     suspend fun repositionPhoto(id: Long, positionPointIndex: Int?) {
         dao.updatePhotoPosition(id, positionPointIndex, positionApproximate = false)
+    }
+
+    /**
+     * RIC-166 : les repositionnements manuels accumulés pendant une édition, écrits à la
+     * sauvegarde. Même moitié du même geste que [deletePhotos]/[updatePhotoAdjustments] :
+     * [onProgress] alimente le même compteur. Reprend [repositionPhoto] telle quelle plutôt que de
+     * la réécrire, comme le prévoyait déjà son commentaire.
+     */
+    suspend fun updatePhotoPositions(positionByPhotoId: Map<Long, Int>, onProgress: () -> Unit = {}) {
+        for ((id, pointIndex) in positionByPhotoId) {
+            repositionPhoto(id, pointIndex)
+            onProgress()
+        }
+    }
+
+    /**
+     * RIC-170 : les légendes posées dans l'édition en cours, écrites à la sauvegarde. Une valeur
+     * nulle efface la légende (case "Ajouter une légende" côté écran).
+     */
+    suspend fun updatePhotoCaptions(captionByPhotoId: Map<Long, String?>, onProgress: () -> Unit = {}) {
+        for ((id, caption) in captionByPhotoId) {
+            dao.updatePhotoCaption(id, caption)
+            onProgress()
+        }
+    }
+
+    /**
+     * RIC-171 : « Retirer de la carte » / « Replacer sur la carte », écrit à la sauvegarde. La
+     * position elle-même (positionPointIndex) n'est jamais touchée par cette écriture.
+     */
+    suspend fun updatePhotoShownOnMap(shownOnMapByPhotoId: Map<Long, Boolean>, onProgress: () -> Unit = {}) {
+        for ((id, shownOnMap) in shownOnMapByPhotoId) {
+            dao.updatePhotoShownOnMap(id, shownOnMap)
+            onProgress()
+        }
     }
 
     /**

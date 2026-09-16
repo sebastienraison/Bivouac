@@ -30,7 +30,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open"): a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 17
+        const val SCHEMA_VERSION = 18
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -463,6 +463,39 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-143 / RIC-144 : les ajustements d'affichage des photos, plus deux colonnes du lot 2
+        // portées d'avance. Voir LoggedTrackPhotoEntity. Cible : schemas/18.json.
+        //
+        // Sept ALTER TABLE ADD COLUMN et rien d'autre, même patron que MIGRATION_15_16 /
+        // MIGRATION_16_17 : aucune recréation de table, aucune copie, aucun rattrapage. La règle
+        // vaut encore plus ici que d'habitude : l'appareil de recette porte une base réelle avec de
+        // vraies photos, et il n'y a rigoureusement rien à gagner à recréer la table.
+        //
+        // UNE SEULE migration pour tout le chantier « manipulation des photos », lot 2 compris
+        // (caption, shownOnMap) : une base réelle traverse ces ADD COLUMN une fois, pas trois. Le
+        // coût est nul (des colonnes vides), et il n'y a qu'un chemin de migration à éprouver.
+        //
+        // rotationQuarterTurns NOT NULL DEFAULT 0 et shownOnMap NOT NULL DEFAULT 1 : pour les deux,
+        // le défaut EST l'état exact des lignes existantes (aucune rotation, visible sur la carte),
+        // pas un pis-aller. Les quatre colonnes de recadrage sont nullables parce que « pas de
+        // recadrage » ne se confond pas avec « recadrage plein cadre ». caption est nullable pour
+        // la même raison : une légende vide n'est pas une légende absente.
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `logged_track_photo` ADD COLUMN `rotationQuarterTurns` INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL("ALTER TABLE `logged_track_photo` ADD COLUMN `cropLeft` REAL")
+                db.execSQL("ALTER TABLE `logged_track_photo` ADD COLUMN `cropTop` REAL")
+                db.execSQL("ALTER TABLE `logged_track_photo` ADD COLUMN `cropRight` REAL")
+                db.execSQL("ALTER TABLE `logged_track_photo` ADD COLUMN `cropBottom` REAL")
+                db.execSQL("ALTER TABLE `logged_track_photo` ADD COLUMN `caption` TEXT")
+                db.execSQL(
+                    "ALTER TABLE `logged_track_photo` ADD COLUMN `shownOnMap` INTEGER NOT NULL DEFAULT 1",
+                )
+            }
+        }
+
         // ~256K points de code par tranche : au pire quadruplé en UTF-8 ça reste sous la fenêtre de
         // 2 Mo, et un GPX réel (ASCII pour l'essentiel) en est très loin.
         private const val MIGRATION_CHUNK_CODE_POINTS = 256 * 1024
@@ -539,6 +572,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                         MIGRATION_14_15,
                         MIGRATION_15_16,
                         MIGRATION_16_17,
+                        MIGRATION_17_18,
                     )
                     .build()
                     .also { instance = it }

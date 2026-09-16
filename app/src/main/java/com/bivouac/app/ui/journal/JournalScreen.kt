@@ -62,6 +62,8 @@ import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -224,6 +226,9 @@ fun JournalScreen(
     val currentPhotos by viewModel.currentPhotos.collectAsStateWithLifecycle()
     val missingPhotoIds by viewModel.missingPhotoIds.collectAsStateWithLifecycle()
     val photoDeleteTarget by viewModel.photoDeleteTarget.collectAsStateWithLifecycle()
+    val photoAdjustTarget by viewModel.photoAdjustTarget.collectAsStateWithLifecycle()
+    val photoCaptionTarget by viewModel.photoCaptionTarget.collectAsStateWithLifecycle()
+    val photoPlacementTarget by viewModel.photoPlacementTarget.collectAsStateWithLifecycle()
     val photoError by viewModel.photoError.collectAsStateWithLifecycle()
     val photoAddReport by viewModel.photoAddReport.collectAsStateWithLifecycle()
     val photosDirty by viewModel.photosDirty.collectAsStateWithLifecycle()
@@ -366,6 +371,17 @@ fun JournalScreen(
     // RIC-19 : seedé depuis detail.initialCursorIndex plutôt que toujours null : une ouverture
     // venue d'un record du Bilan sur un jour précis arrive avec son curseur déjà positionné.
     var cursorIndex by remember(detail?.entry?.id) { mutableStateOf(detail?.initialCursorIndex) }
+    // RIC-161/166 : le mode édition de ThreeStopJournalDetail, répercuté ici pour la visionneuse et
+    // le mode placement, tous deux hissés au niveau de l'écran (voir ThreeStopJournalDetail.onEditingChanged).
+    var isEditingDetail by remember(detail?.entry?.id) { mutableStateOf(false) }
+    // RIC-166 : la position aimantée du glissement en cours, pour que le profil altimétrique suive
+    // (voir ThreeStopJournalDetail -> ElevationProfile.cursorIndex). Initialisée à la position déjà
+    // connue de la photo dès l'ouverture du mode placement, et non à null : le profil montre alors
+    // tout de suite un marqueur au bon endroit, avant même le premier geste.
+    var photoPlacementPreviewIndex by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(photoPlacementTarget?.id) {
+        photoPlacementPreviewIndex = photoPlacementTarget?.positionPointIndex
+    }
     when {
         detail != null -> {
             // Constat E : sur une sortie de plusieurs jours, chaque coupure entre deux fichiers est
@@ -407,6 +423,12 @@ fun JournalScreen(
                         }
                         if (index >= 0) viewedPhotoIndex = index
                     },
+                    photoPlacementTarget = photoPlacementTarget,
+                    onPhotoPlacementDrag = { pointIndex ->
+                        photoPlacementTarget?.let { viewModel.updatePhotoPlacementPosition(it.id, pointIndex) }
+                        photoPlacementPreviewIndex = pointIndex
+                    },
+                    onPhotoPlacementDone = viewModel::exitPhotoPlacement,
                     nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
                 )
                 ThreeStopJournalDetail(
@@ -419,7 +441,9 @@ fun JournalScreen(
                     onDeleteClick = viewModel::requestDelete,
                     onDuplicateClick = { viewModel.buildDuplicateForPlanification()?.let(onDuplicateToPlanification) },
                     onSheetTopMeasured = { sheetTopPx = it },
-                    cursorIndex = cursorIndex,
+                    // RIC-166 : le profil suit la position en cours de glissement pendant le mode
+                    // placement ; hors de ce mode, il retrouve le curseur normal.
+                    cursorIndex = photoPlacementPreviewIndex ?: cursorIndex,
                     onCursorDragged = { cursorIndex = it },
                     currentTags = currentTags,
                     tagsByTrackId = tagsByTrackId,
@@ -433,12 +457,14 @@ fun JournalScreen(
                     photoOperationInFlight = photoOperationProgress != null,
                     onAddPhotosClick = handleAddPhotosClick,
                     onDeletePhotoClick = viewModel::requestDeletePhoto,
+                    onAdjustPhotoClick = viewModel::requestAdjustPhoto,
                     onPhotoClick = { index -> viewedPhotoIndex = index },
                     photosDirty = photosDirty,
                     onDiscardPhotoEdits = viewModel::discardPhotoEdits,
                     photosEnabled = photosEnabled,
                     photoPermissionDenied = photoPermissionDenied,
                     onOpenAppSettingsClick = { journalContext.openAppSettings() },
+                    onEditingChanged = { isEditingDetail = it },
                 )
             }
         }
@@ -758,6 +784,43 @@ fun JournalScreen(
             // le ViewModel entier : la visionneuse n'a besoin que de ça, et ça la garde montable
             // sans lui.
             resolveOriginal = viewModel::resolveOriginalUri,
+            // RIC-161 : la barre d'actions ne montre qu'en mode édition (voir ThreeStopJournalDetail).
+            editing = isEditingDetail,
+            onAdjustClick = viewModel::requestAdjustPhoto,
+            onDeleteClick = viewModel::requestDeletePhoto,
+            // RIC-166 : ferme la visionneuse ET bascule la carte en mode placement, dans cet ordre :
+            // c'est cette fonction qui porte les deux gestes que la visionneuse elle-même ne connaît
+            // pas l'un de l'autre.
+            onRepositionClick = { photo ->
+                viewedPhotoIndex = null
+                viewModel.requestPhotoPlacement(photo)
+            },
+            onToggleShownOnMap = viewModel::togglePhotoShownOnMap,
+            onCaptionClick = viewModel::requestPhotoCaptionEdit,
+        )
+    }
+
+    // RIC-143/144 : l'éditeur « Ajuster ». Hissé ici, au niveau de l'écran, comme la visionneuse et
+    // pour la même raison : c'est un plein écran, il n'a rien à faire à l'intérieur du tiroir de la
+    // vue détail. La photo vient de currentPhotos, donc avec les ajustements en attente déjà
+    // superposés : rouvrir l'éditeur reprend le brouillon en cours.
+    photoAdjustTarget?.let { target ->
+        PhotoAdjustDialog(
+            photo = currentPhotos.find { it.id == target.id } ?: target,
+            onCancel = viewModel::dismissPhotoAdjust,
+            onConfirm = { adjustments -> viewModel.applyPhotoAdjustments(target.id, adjustments) },
+        )
+    }
+
+    // RIC-170 : la saisie de légende, hissée ici pour la même raison que l'éditeur « Ajuster »
+    // ci-dessus (elle peut s'ouvrir depuis la visionneuse, qui est elle-même hissée). La photo vient
+    // de currentPhotos, comme photoAdjustTarget : rouvrir la saisie reprend la légende du brouillon
+    // en cours, y compris avant d'avoir enregistré.
+    photoCaptionTarget?.let { target ->
+        PhotoCaptionDialog(
+            photo = currentPhotos.find { it.id == target.id } ?: target,
+            onCancel = viewModel::dismissPhotoCaptionEdit,
+            onConfirm = { caption -> viewModel.applyPhotoCaption(target.id, caption) },
         )
     }
 
@@ -984,6 +1047,11 @@ private fun JournalMap(
     photos: List<LoggedTrackPhotoEntity> = emptyList(),
     missingPhotoIds: Set<Long> = emptySet(),
     onPhotoBubbleClick: (File) -> Unit = {},
+    // RIC-166 : voir HikeMapView. Null hors mode placement, ce qui est le cas partout ailleurs que
+    // dans le détail Journal en édition.
+    photoPlacementTarget: LoggedTrackPhotoEntity? = null,
+    onPhotoPlacementDrag: (Int) -> Unit = {},
+    onPhotoPlacementDone: () -> Unit = {},
     multiTracks: List<ColoredTrack> = emptyList(),
     highlightedTrackId: String? = null,
     onTraceTapped: (String) -> Unit = {},
@@ -1011,6 +1079,8 @@ private fun JournalMap(
             photos = photos,
             missingPhotoIds = missingPhotoIds,
             onPhotoBubbleClick = onPhotoBubbleClick,
+            photoPlacementTarget = photoPlacementTarget,
+            onPhotoPlacementDrag = onPhotoPlacementDrag,
             multiTracks = multiTracks,
             highlightedTrackId = highlightedTrackId,
             onTraceTapped = onTraceTapped,
@@ -1029,10 +1099,50 @@ private fun JournalMap(
                 nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
             )
         }
-        // RIC-43 : la bannière « Fais glisser le repère sur la carte » vivait ici. Elle part avec le
-        // flux de repositionnement, différé à un lot ultérieur : le menu d'appui long d'une vignette
-        // ne garde que « Supprimer ». Conséquence assumée : une photo sans position reste non
-        // placée, visible en galerie et dans le bandeau, absente de la carte.
+        // RIC-43 : la bannière « Fais glisser le repère sur la carte » vivait ici. Elle est revenue
+        // avec RIC-166, sous une autre forme (bandeau + bouton « Terminé », écran 4 de la maquette
+        // validée le 2026-09-16) : voir PhotoPlacementBanner ci-dessous.
+        if (photoPlacementTarget != null) {
+            PhotoPlacementBanner(
+                onDone = onPhotoPlacementDone,
+                modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(16.dp),
+            )
+        }
+    }
+}
+
+/**
+ * RIC-166 : le bandeau du mode placement, écran 4 de la maquette validée le 2026-09-16. TopStart et
+ * non TopCenter : les contrôles de couche/section occupent déjà tout le TopEnd (voir ci-dessus), et
+ * la note Esri du satellite le TopStart en fond de carte, jamais visible ici puisque le mode
+ * placement est propre au détail Journal, qui n'affiche pas cette attribution.
+ */
+@Composable
+private fun PhotoPlacementBanner(onDone: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFFEBEBE2),
+        tonalElevation = 3.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                "Fais glisser la photo le long de la trace",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF1A1C19),
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Button(
+                onClick = onDone,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+            ) {
+                Text("Terminé")
+            }
+        }
     }
 }
 
@@ -1737,6 +1847,9 @@ internal fun ThreeStopJournalDetail(
     photoOperationInFlight: Boolean = false,
     onAddPhotosClick: () -> Unit = {},
     onDeletePhotoClick: (LoggedTrackPhotoEntity) -> Unit = {},
+    // RIC-143/144 : « Ajuster » dans le menu d'une vignette. L'éditeur lui-même est monté au niveau
+    // de l'écran, comme la visionneuse : la vue détail ne fait que signaler la demande.
+    onAdjustPhotoClick: (LoggedTrackPhotoEntity) -> Unit = {},
     // RIC-149 : les ajouts en transit et les suppressions en attente vivent dans le ViewModel (ce
     // sont des fichiers, pas un état de composition), mais ils font partie du même brouillon que les
     // tags et la note ci-dessus. Ces deux paramètres sont ce qui les y raccroche : le premier
@@ -1751,6 +1864,11 @@ internal fun ThreeStopJournalDetail(
     // Index dans currentPhotos : le tap peut venir du bandeau ou de la galerie plate, les deux
     // ouvrent la même visionneuse hissée au niveau de l'écran (voir plus bas), pas ici.
     onPhotoClick: (Int) -> Unit = {},
+    // RIC-161/166 : le mode édition est un état local à cette vue détail (isEditing plus bas), mais
+    // la visionneuse et le mode placement sur la carte sont hissés au niveau de l'écran, comme
+    // PhotoViewerDialog et PhotoAdjustDialog. Ce callback est ce qui leur fait suivre l'édition sans
+    // dupliquer l'état : appelé partout où isEditing change ci-dessous.
+    onEditingChanged: (Boolean) -> Unit = {},
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = LocalDensity.current
@@ -1790,6 +1908,7 @@ internal fun ThreeStopJournalDetail(
             // relâché à la sortie précédente replierait l'en-tête avant le premier tap.
             noteFocused = false
             isEditing = true
+            onEditingChanged(true)
         }
 
         // RIC-149 : l'abandon des photos est appelé explicitement sur chaque sortie qui n'enregistre
@@ -1798,6 +1917,7 @@ internal fun ThreeStopJournalDetail(
         // l'enregistrement qu'elle vient de lancer : course perdue d'avance sur des fichiers.
         fun abandonEditing() {
             isEditing = false
+            onEditingChanged(false)
             onDiscardPhotoEdits()
         }
 
@@ -1823,6 +1943,7 @@ internal fun ThreeStopJournalDetail(
         // suite, sinon une sortie propre resterait à quai faute d'écriture à attendre.
         fun saveAndStopEditing(onFinished: () -> Unit = {}) {
             isEditing = false
+            onEditingChanged(false)
             if (isDirty) onSaveDetails(draftTags, draftNote.text, onFinished) else onFinished()
         }
 
@@ -2232,6 +2353,7 @@ internal fun ThreeStopJournalDetail(
                                         photo = photo,
                                         editing = isEditing,
                                         onClick = { onPhotoClick(index) },
+                                        onAdjustClick = { onAdjustPhotoClick(photo) },
                                         onDeleteClick = { onDeletePhotoClick(photo) },
                                     )
                                 }

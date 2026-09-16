@@ -24,10 +24,13 @@ import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
+import com.bivouac.app.data.photo.PhotoAdjustments
 import com.bivouac.app.data.photo.PhotoOriginalResolution
 import com.bivouac.app.data.photo.PhotoPickerScope
 import com.bivouac.app.data.photo.PhotoStorageMode
 import com.bivouac.app.data.photo.PhotoStoragePolicy
+import com.bivouac.app.data.photo.adjustments
+import com.bivouac.app.data.photo.withAdjustments
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
@@ -162,6 +165,27 @@ enum class PhotoOperationPhase { IMPORT, COMMIT }
  */
 data class PhotoOperationProgress(val phase: PhotoOperationPhase, val done: Int, val total: Int)
 
+/**
+ * RIC-170/171/166 : les trois brouillons du lot 2 combinés en une seule valeur. Voir
+ * [JournalViewModel] (`_pendingPhotoPlacementEdits`) pour la raison (rester à cinq flux combinés
+ * dans [JournalViewModel.currentPhotos]) : cette classe n'est qu'un panier de transport, elle ne
+ * porte aucune règle.
+ */
+private data class PendingPhotoPlacementEdits(
+    val captions: Map<Long, String?> = emptyMap(),
+    val shownOnMap: Map<Long, Boolean> = emptyMap(),
+    val positions: Map<Long, Int> = emptyMap(),
+)
+
+/** RIC-149/170/171/166 : le panier intermédiaire de [JournalViewModel.currentPhotos], même raison. */
+private data class PhotoOverlayState(
+    val photos: List<LoggedTrackPhotoEntity>,
+    val pendingAdds: List<PendingPhotoAdd>,
+    val pendingDeletions: Set<Long>,
+    val pendingAdjustments: Map<Long, PhotoAdjustments>,
+    val placementEdits: PendingPhotoPlacementEdits,
+)
+
 class JournalViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = LoggedTrackRepository(application)
@@ -273,6 +297,53 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      */
     private val _pendingPhotoDeletions = MutableStateFlow<Set<Long>>(emptySet())
 
+    /**
+     * RIC-143 / RIC-144 : les ajustements posés dans l'éditeur « Ajuster » pendant l'édition en
+     * cours, par identifiant d'affichage.
+     *
+     * Une seule carte pour les photos déjà enregistrées ET pour les ajouts encore en transit : les
+     * deux s'affichent de la même façon dans le bandeau, donc les deux s'ajustent de la même façon.
+     * C'est à la sauvegarde qu'elles se séparent : les premières deviennent un UPDATE, les secondes
+     * partent avec l'insert de leur ligne (voir [saveDetails]).
+     *
+     * ⚠️ Leçon RIC-149, et elle vaut un test à elle seule (JournalPhotoAdjustmentsTest) : cette
+     * carte DOIT compter dans [photosDirty]. Sans ça, une édition qui n'aurait fait que recadrer
+     * sortirait par « rien à enregistrer », et le travail serait perdu sans un mot.
+     */
+    private val _pendingPhotoAdjustments = MutableStateFlow<Map<Long, PhotoAdjustments>>(emptyMap())
+
+    /**
+     * RIC-170 : les légendes posées pendant l'édition en cours, par identifiant d'affichage. Une
+     * valeur nulle veut dire « légende retirée », distincte d'une absence de clé (« rien de changé
+     * ici »), exactement comme [PendingPhotoAdd.caption] côté transit.
+     *
+     * Même patron que [_pendingPhotoAdjustments], y compris la leçon RIC-149 : voir [photosDirty].
+     */
+    private val _pendingPhotoCaptions = MutableStateFlow<Map<Long, String?>>(emptyMap())
+
+    /**
+     * RIC-171 : « Retirer de la carte » / « Replacer sur la carte » posé pendant l'édition en
+     * cours. Même patron que [_pendingPhotoAdjustments].
+     */
+    private val _pendingPhotoShownOnMap = MutableStateFlow<Map<Long, Boolean>>(emptyMap())
+
+    /**
+     * RIC-166 : le nouvel index de point posé par un glissement dans le mode placement, pendant
+     * l'édition en cours. Même patron que [_pendingPhotoAdjustments] : chaque position intermédiaire
+     * du glissement réécrit directement cette carte (pas de distinction aperçu/validé, voir
+     * [requestPhotoPlacementDrag]), et c'est la disquette qui la rend définitive.
+     */
+    private val _pendingPhotoPositions = MutableStateFlow<Map<Long, Int>>(emptyMap())
+
+    // RIC-170/171/166 : les trois cartes du lot 2 combinées en une seule fois, pour que
+    // currentPhotos ci-dessous reste à cinq flux combinés (limite de l'overload combine() à cinq
+    // paramètres typés) plutôt que huit.
+    private val _pendingPhotoPlacementEdits = combine(
+        _pendingPhotoCaptions,
+        _pendingPhotoShownOnMap,
+        _pendingPhotoPositions,
+    ) { captions, shownOnMap, positions -> PendingPhotoPlacementEdits(captions, shownOnMap, positions) }
+
     // RIC-152 : le débrayage est appliqué ici, à la source, et pas seulement en cachant le bandeau
     // côté écran. Tout ce qui montre des photos part de ce flux : bandeau, galerie, marqueurs de
     // la carte, bulle du curseur, visionneuse : le rendre vide quand la fonctionnalité est
@@ -291,24 +362,51 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     // en bout de bandeau, puis sautait à sa place chronologique à la sauvegarde : le bandeau
     // racontait deux histoires différentes à quelques secondes d'écart. La liste combinée est donc
     // triée exactement comme la requête DAO l'aurait rendue, voir PhotoDisplayOrder.
+    //
+    // RIC-143/144 : les ajustements en attente sont superposés ici, au même endroit et pour la même
+    // raison. Toutes les surfaces (bandeau, grille, bulle, visionneuse) partent de ce flux : poser
+    // la superposition une fois ici suffit à ce qu'un recadrage se voie partout AVANT même d'être
+    // enregistré, et à ce qu'un abandon le fasse disparaître partout d'un coup.
     val currentPhotos: StateFlow<List<LoggedTrackPhotoEntity>> =
         combine(
-            _currentPhotos,
-            _pendingPhotoAdds,
-            _pendingPhotoDeletions,
+            combine(
+                _currentPhotos,
+                _pendingPhotoAdds,
+                _pendingPhotoDeletions,
+                _pendingPhotoAdjustments,
+                _pendingPhotoPlacementEdits,
+            ) { photos, pendingAdds, pendingDeletions, pendingAdjustments, placementEdits ->
+                PhotoOverlayState(photos, pendingAdds, pendingDeletions, pendingAdjustments, placementEdits)
+            },
             settingsPreferences.photosEnabled,
-        ) { photos, pendingAdds, pendingDeletions, enabled ->
+        ) { state, enabled ->
             if (!enabled) {
                 emptyList()
             } else {
-                val kept = photos.filterNot { it.id in pendingDeletions }
+                val kept = state.photos.filterNot { it.id in state.pendingDeletions }
                 // Un ajout dont l'empreinte est déjà en base vient d'être enregistré : la liste
                 // relue le porte désormais, la version en transit ferait double emploi. C'est ce
                 // qui permet à la sauvegarde de publier la nouvelle liste AVANT de vider les
                 // attentes, donc sans que les vignettes clignotent : l'ordre inverse les ferait
                 // disparaître le temps d'un aller-retour disque.
                 val savedHashes = kept.mapTo(mutableSetOf()) { it.contentHash }
-                (kept + pendingAdds.filterNot { it.contentHash in savedHashes }.map { it.toDisplayEntity() })
+                (kept + state.pendingAdds.filterNot { it.contentHash in savedHashes }.map { it.toDisplayEntity() })
+                    .map { photo ->
+                        var overlaid = state.pendingAdjustments[photo.id]?.let(photo::withAdjustments) ?: photo
+                        // RIC-170/171/166 : même superposition que les ajustements ci-dessus, pour
+                        // les trois nouveautés du lot 2. containsKey et non `?:` : une légende
+                        // retirée vaut null, ce que `?:` prendrait pour « rien à superposer ».
+                        if (photo.id in state.placementEdits.captions) {
+                            overlaid = overlaid.copy(caption = state.placementEdits.captions[photo.id])
+                        }
+                        state.placementEdits.shownOnMap[photo.id]?.let {
+                            overlaid = overlaid.copy(shownOnMap = it)
+                        }
+                        state.placementEdits.positions[photo.id]?.let {
+                            overlaid = overlaid.copy(positionPointIndex = it, positionApproximate = false)
+                        }
+                        overlaid
+                    }
                     .sortedWith(PhotoDisplayOrder)
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -326,8 +424,21 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * l'avertissement de sortie : voir ThreeStopJournalDetail.
      */
     val photosDirty: StateFlow<Boolean> =
-        combine(_pendingPhotoAdds, _pendingPhotoDeletions) { adds, deletions ->
-            adds.isNotEmpty() || deletions.isNotEmpty()
+        combine(
+            _pendingPhotoAdds,
+            _pendingPhotoDeletions,
+            _pendingPhotoAdjustments,
+            _pendingPhotoPlacementEdits,
+        ) { adds, deletions, adjustments, placementEdits ->
+            // RIC-143/144 : les ajustements comptent, au même titre qu'un ajout ou une suppression.
+            // C'est la condition pour que la croix propose « Enregistrer » et que la disquette
+            // s'allume après un simple recadrage.
+            // RIC-170/171/166 : leçon RIC-149 répétée pour les trois nouveautés du lot 2 : une
+            // légende, un retrait de la carte ou un repositionnement DOIVENT compter ici, sans quoi
+            // l'édition sortirait par « rien à enregistrer » et le geste serait perdu sans un mot.
+            adds.isNotEmpty() || deletions.isNotEmpty() || adjustments.isNotEmpty() ||
+                placementEdits.captions.isNotEmpty() || placementEdits.shownOnMap.isNotEmpty() ||
+                placementEdits.positions.isNotEmpty()
         }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     // Lu par l'écran pour masquer le bandeau Photos lui-même, ce qu'une liste vide ne suffirait
@@ -362,6 +473,22 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     // même mécanique que _deleteTarget pour une trace entière, plus bas.
     private val _photoDeleteTarget = MutableStateFlow<LoggedTrackPhotoEntity?>(null)
     val photoDeleteTarget: StateFlow<LoggedTrackPhotoEntity?> = _photoDeleteTarget.asStateFlow()
+
+    // RIC-143/144 : non nul pendant que l'éditeur « Ajuster » est ouvert, et porte la photo qu'il
+    // édite. Même mécanique que _photoDeleteTarget ci-dessus.
+    private val _photoAdjustTarget = MutableStateFlow<LoggedTrackPhotoEntity?>(null)
+    val photoAdjustTarget: StateFlow<LoggedTrackPhotoEntity?> = _photoAdjustTarget.asStateFlow()
+
+    // RIC-170 : non nul pendant que le champ de saisie de la légende est ouvert. Même mécanique que
+    // _photoAdjustTarget ci-dessus.
+    private val _photoCaptionTarget = MutableStateFlow<LoggedTrackPhotoEntity?>(null)
+    val photoCaptionTarget: StateFlow<LoggedTrackPhotoEntity?> = _photoCaptionTarget.asStateFlow()
+
+    // RIC-166 : non nul pendant que la carte du détail Journal est en mode placement pour cette
+    // photo. Un seul mode placement à la fois : poser une nouvelle cible en remplace une
+    // éventuelle précédente plutôt que d'empiler.
+    private val _photoPlacementTarget = MutableStateFlow<LoggedTrackPhotoEntity?>(null)
+    val photoPlacementTarget: StateFlow<LoggedTrackPhotoEntity?> = _photoPlacementTarget.asStateFlow()
 
     // RIC-43 : non nul pendant que le sélecteur interne est ouvert, porte les candidats trouvés
     // par MediaStorePhotoQuery (éventuellement une liste vide, un vrai résultat « rien trouvé »
@@ -736,8 +863,33 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         }
         val previousTags = _currentTags.value.toSet()
         val deletions = _pendingPhotoDeletions.value
-        val additions = _pendingPhotoAdds.value
-        val photoWork = deletions.size + additions.size
+        val pendingAdjustments = _pendingPhotoAdjustments.value
+        val pendingCaptions = _pendingPhotoCaptions.value
+        val pendingShownOnMap = _pendingPhotoShownOnMap.value
+        val pendingPositions = _pendingPhotoPositions.value
+        // RIC-143/144/170/171/166 : tout ce qui a été posé sur un ajout encore en transit part avec
+        // son insert plutôt que par une mise à jour d'après coup : la ligne n'aura jamais existé
+        // sans ça. containsKey et non `?:` pour la légende : une légende retirée vaut null, ce que
+        // `?:` prendrait pour « rien à superposer ».
+        val additions = _pendingPhotoAdds.value.map { add ->
+            var updated = pendingAdjustments[add.displayId]?.let { add.copy(adjustments = it) } ?: add
+            if (add.displayId in pendingCaptions) updated = updated.copy(caption = pendingCaptions[add.displayId])
+            pendingShownOnMap[add.displayId]?.let { updated = updated.copy(shownOnMap = it) }
+            pendingPositions[add.displayId]?.let {
+                updated = updated.copy(positionPointIndex = it, positionApproximate = false)
+            }
+            updated
+        }
+        // Ceux qui restent visent des lignes déjà en base. Une photo marquée pour suppression est
+        // écartée : ajuster puis supprimer dans la même édition ne doit pas écrire des colonnes sur
+        // une ligne qui s'apprête à disparaître.
+        val savedAdjustments = pendingAdjustments
+            .filterKeys { id -> id > 0 && id !in deletions }
+        val savedCaptions = pendingCaptions.filterKeys { id -> id > 0 && id !in deletions }
+        val savedShownOnMap = pendingShownOnMap.filterKeys { id -> id > 0 && id !in deletions }
+        val savedPositions = pendingPositions.filterKeys { id -> id > 0 && id !in deletions }
+        val photoWork = deletions.size + additions.size + savedAdjustments.size +
+            savedCaptions.size + savedShownOnMap.size + savedPositions.size
         val inFlightPaths = additions.map { it.transitPath }
         // Posés avant le launch, donc avant que quoi que ce soit d'autre ne puisse s'exécuter : la
         // protection ne doit pas dépendre du moment où la coroutine sera ordonnancée, c'est
@@ -766,6 +918,10 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                         }
                         runCatching {
                             repository.deletePhotos(deletions, onProgress = advance)
+                            repository.updatePhotoAdjustments(savedAdjustments, onProgress = advance)
+                            repository.updatePhotoCaptions(savedCaptions, onProgress = advance)
+                            repository.updatePhotoShownOnMap(savedShownOnMap, onProgress = advance)
+                            repository.updatePhotoPositions(savedPositions, onProgress = advance)
                             failures = repository.commitPendingPhotos(entry.id, additions, onProgress = advance)
                             _currentPhotos.value = repository.listPhotos(entry.id)
                         }.onFailure {
@@ -783,6 +939,15 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 // pourrait produire est écarté par empreinte dans currentPhotos.
                 _pendingPhotoDeletions.value = emptySet()
                 _pendingPhotoAdds.value = emptyList()
+                // Vidés au même moment et pour la même raison : les lignes relues portent désormais
+                // les colonnes, la superposition ferait double emploi.
+                _pendingPhotoAdjustments.value = emptyMap()
+                _pendingPhotoCaptions.value = emptyMap()
+                _pendingPhotoShownOnMap.value = emptyMap()
+                _pendingPhotoPositions.value = emptyMap()
+                // RIC-166 : quitter l'édition en mode placement le termine proprement, disquette
+                // comprise : la position posée par le glissement vient d'être écrite ci-dessus.
+                _photoPlacementTarget.value = null
                 if (photoFailures > 0) {
                     _photoError.value = if (photoFailures == 1) {
                         "Une photo n'a pas pu être enregistrée."
@@ -838,6 +1003,11 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         positionApproximate = positionApproximate,
         takenAtZoneCertain = takenAtZoneCertain,
         contentHash = contentHash,
+        // RIC-170/171 : une photo encore en transit affiche sa légende et son état « sur la carte »
+        // exactement comme une photo enregistrée, même raisonnement que les ajustements plus haut
+        // (withAdjustments, appelé côté currentPhotos).
+        caption = caption,
+        shownOnMap = shownOnMap,
         sourceDisplayName = source.displayName,
         sourceRelativePath = source.relativePath,
         sourceDateTakenMillis = source.dateTakenMillis,
@@ -1003,6 +1173,17 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         val discarded = _pendingPhotoAdds.value.filterNot { it.transitPath in transitPathsBeingCommitted }
         _pendingPhotoAdds.value = emptyList()
         _pendingPhotoDeletions.value = emptySet()
+        // RIC-143/144 : les ajustements en attente s'oublient comme les suppressions, sans rien à
+        // effacer sur le disque : ils n'ont jamais touché un fichier. Les photos retrouvent le
+        // cadrage qu'elles avaient, y compris celles qu'on venait de recadrer.
+        _pendingPhotoAdjustments.value = emptyMap()
+        // RIC-170/171/166 : même sort pour les trois brouillons du lot 2, et fermeture de la
+        // saisie de légende / du mode placement s'ils étaient restés ouverts.
+        _pendingPhotoCaptions.value = emptyMap()
+        _pendingPhotoShownOnMap.value = emptyMap()
+        _pendingPhotoPositions.value = emptyMap()
+        _photoCaptionTarget.value = null
+        _photoPlacementTarget.value = null
         if (discarded.isEmpty()) return
         viewModelScope.launch {
             withContext(NonCancellable + Dispatchers.IO) { repository.discardPendingPhotos(discarded) }
@@ -1155,6 +1336,137 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _photoDeleteTarget.value = photo
     }
 
+    /**
+     * RIC-143 / RIC-144 : ouvrir l'éditeur « Ajuster » sur une photo.
+     *
+     * Même mécanique que [requestDeletePhoto] : le ViewModel porte la cible, l'écran monte le
+     * dialogue quand elle est non nulle. La photo passée est celle du bandeau, donc celle de
+     * `currentPhotos` : elle porte déjà les ajustements en attente, et l'éditeur repart de là où on
+     * s'était arrêté même sans avoir enregistré.
+     */
+    fun requestAdjustPhoto(photo: LoggedTrackPhotoEntity) {
+        _photoAdjustTarget.value = photo
+    }
+
+    fun dismissPhotoAdjust() {
+        _photoAdjustTarget.value = null
+    }
+
+    /**
+     * RIC-143 / RIC-144 : « OK » dans l'éditeur. Rien n'entre en base ici : l'ajustement rejoint le
+     * brouillon d'édition, exactement comme une note tapée ou une photo choisie, et attend la
+     * disquette.
+     *
+     * Un ajustement identique à celui que la photo porte déjà est RETIRÉ de la carte plutôt
+     * qu'inscrit : sans ça, ouvrir l'éditeur et valider sans rien toucher marquerait l'écran comme
+     * modifié, et l'utilisateur se verrait proposer d'enregistrer un geste qu'il n'a pas fait.
+     */
+    fun applyPhotoAdjustments(photoId: Long, adjustments: PhotoAdjustments) {
+        _photoAdjustTarget.value = null
+        val current = _pendingPhotoAdjustments.value
+        _pendingPhotoAdjustments.value = if (adjustments == storedAdjustments(photoId)) {
+            current - photoId
+        } else {
+            current + (photoId to adjustments)
+        }
+    }
+
+    // Ce que la photo porte hors brouillon : ses colonnes si elle est enregistrée, ce qui voyage
+    // avec elle si elle est encore en transit.
+    private fun storedAdjustments(photoId: Long): PhotoAdjustments =
+        _currentPhotos.value.find { it.id == photoId }?.adjustments
+            ?: _pendingPhotoAdds.value.find { it.displayId == photoId }?.adjustments
+            ?: PhotoAdjustments.NONE
+
+    /**
+     * RIC-170 : ouvrir la saisie de légende sur une photo (bulle de la carte ou visionneuse en
+     * édition). Même mécanique que [requestAdjustPhoto].
+     */
+    fun requestPhotoCaptionEdit(photo: LoggedTrackPhotoEntity) {
+        _photoCaptionTarget.value = photo
+    }
+
+    fun dismissPhotoCaptionEdit() {
+        _photoCaptionTarget.value = null
+    }
+
+    /**
+     * RIC-170 : validation du champ de légende. Une chaîne blanche vaut absence de légende, comme
+     * si le champ n'avait jamais été rempli : voir [storedCaption] pour le symétrique en lecture.
+     * Même retrait-si-identique que [applyPhotoAdjustments], pour la même raison.
+     */
+    fun applyPhotoCaption(photoId: Long, caption: String) {
+        _photoCaptionTarget.value = null
+        val trimmed = caption.trim().ifBlank { null }
+        val current = _pendingPhotoCaptions.value
+        _pendingPhotoCaptions.value = if (trimmed == storedCaption(photoId)) {
+            current - photoId
+        } else {
+            current + (photoId to trimmed)
+        }
+    }
+
+    private fun storedCaption(photoId: Long): String? =
+        _currentPhotos.value.find { it.id == photoId }?.caption
+            ?: _pendingPhotoAdds.value.find { it.displayId == photoId }?.caption
+
+    /**
+     * RIC-171 : « Retirer de la carte » / « Replacer sur la carte », bascule de [photo.shownOnMap].
+     * La position (positionPointIndex) n'est jamais touchée : replacer retrouve le même point.
+     */
+    fun togglePhotoShownOnMap(photo: LoggedTrackPhotoEntity) {
+        val target = !photo.shownOnMap
+        val current = _pendingPhotoShownOnMap.value
+        _pendingPhotoShownOnMap.value = if (target == storedShownOnMap(photo.id)) {
+            current - photo.id
+        } else {
+            current + (photo.id to target)
+        }
+    }
+
+    private fun storedShownOnMap(photoId: Long): Boolean =
+        _currentPhotos.value.find { it.id == photoId }?.shownOnMap
+            ?: _pendingPhotoAdds.value.find { it.displayId == photoId }?.shownOnMap
+            ?: true
+
+    /**
+     * RIC-166 : « Repositionner sur la trace ». N'ouvre que le mode placement côté carte : la
+     * fermeture de la visionneuse est un geste d'écran (voir JournalScreen), ce ViewModel ne porte
+     * que la cible.
+     */
+    fun requestPhotoPlacement(photo: LoggedTrackPhotoEntity) {
+        _photoPlacementTarget.value = photo
+    }
+
+    /**
+     * RIC-166 : chaque position instantanée du glissement, posée directement dans le brouillon.
+     * Pas de distinction aperçu/validé (contrairement aux bivouacs de la Planification, dont le
+     * marqueur est en lecture seule ici) : la spec est explicite, « pas de Valider/Annuler propre,
+     * la disquette valide, quitter l'édition sans enregistrer annule ». Fonction pure testée :
+     * [pagerIndexAfterRemoval] côté visionneuse suit le même principe (voir PhotoViewerDialog).
+     */
+    fun updatePhotoPlacementPosition(photoId: Long, pointIndex: Int) {
+        val current = _pendingPhotoPositions.value
+        _pendingPhotoPositions.value = if (pointIndex == storedPositionIndex(photoId)) {
+            current - photoId
+        } else {
+            current + (photoId to pointIndex)
+        }
+    }
+
+    private fun storedPositionIndex(photoId: Long): Int? =
+        _currentPhotos.value.find { it.id == photoId }?.positionPointIndex
+            ?: _pendingPhotoAdds.value.find { it.displayId == photoId }?.positionPointIndex
+
+    /**
+     * RIC-166 : sortie du mode placement, sans rien perdre : le brouillon de position déjà posé par
+     * le glissement reste tel quel, seule la carte redevient normale. Appelée par le bouton
+     * « Terminé » et par tout ce qui termine l'édition (voir discardPhotoEdits, saveDetails).
+     */
+    fun exitPhotoPlacement() {
+        _photoPlacementTarget.value = null
+    }
+
     fun dismissPhotoDeleteConfirmation() {
         _photoDeleteTarget.value = null
     }
@@ -1170,6 +1482,15 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     fun confirmDeletePhoto() {
         val target = _photoDeleteTarget.value ?: return
         _photoDeleteTarget.value = null
+        // RIC-143/144 : une photo supprimée n'a plus d'ajustement en attente à porter, qu'elle
+        // parte tout de suite (transit) ou à la sauvegarde (ligne existante).
+        _pendingPhotoAdjustments.value = _pendingPhotoAdjustments.value - target.id
+        // RIC-170/171/166 : même raisonnement pour les trois brouillons du lot 2, et pour le mode
+        // placement s'il visait justement la photo qu'on supprime.
+        _pendingPhotoCaptions.value = _pendingPhotoCaptions.value - target.id
+        _pendingPhotoShownOnMap.value = _pendingPhotoShownOnMap.value - target.id
+        _pendingPhotoPositions.value = _pendingPhotoPositions.value - target.id
+        if (_photoPlacementTarget.value?.id == target.id) _photoPlacementTarget.value = null
         val pendingAdd = _pendingPhotoAdds.value.find { it.displayId == target.id }
         if (pendingAdd != null) {
             _pendingPhotoAdds.value = _pendingPhotoAdds.value - pendingAdd
