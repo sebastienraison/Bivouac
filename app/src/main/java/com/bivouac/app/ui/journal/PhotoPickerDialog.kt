@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -39,6 +39,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -79,6 +84,12 @@ internal fun PhotoPickerDialog(
     // parce qu'on est allé voir plus loin serait une punition, et le compte affiché plus bas dit
     // toujours combien de photos partiront, y compris celles qui ne sont plus à l'écran.
     var selected by remember { mutableStateOf<Set<Uri>>(emptySet()) }
+    // RIC-162 : index de la candidate agrandie dans la visionneuse de sélection, ou null quand la
+    // grille seule est affichée. Vit ici et pas dans la visionneuse elle-même : c'est ce qui permet
+    // à `selected` (juste au-dessus) de rester la SEULE source de vérité de la sélection, lue et
+    // modifiée aussi bien par la grille que par la visionneuse, sans copie à resynchroniser à la
+    // fermeture.
+    var viewerIndex by remember { mutableStateOf<Int?>(null) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -148,16 +159,14 @@ internal fun PhotoPickerDialog(
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(2.dp),
                     ) {
-                        items(candidates, key = { it.toString() }) { uri ->
+                        itemsIndexed(candidates, key = { _, uri -> uri.toString() }) { index, uri ->
                             val isSelected = uri in selected
                             Box(
                                 modifier = Modifier
                                     .padding(2.dp)
                                     .aspectRatio(1f)
                                     .clip(RoundedCornerShape(4.dp))
-                                    .clickable {
-                                        selected = if (isSelected) selected - uri else selected + uri
-                                    },
+                                    .clickable { selected = toggleSelection(selected, uri) },
                             ) {
                                 AsyncImage(
                                     model = uri,
@@ -169,15 +178,48 @@ internal fun PhotoPickerDialog(
                                     Box(modifier = Modifier.fillMaxSize().background(SelectedOverlayColor))
                                     Icon(
                                         Icons.Default.Check,
-                                        contentDescription = null,
+                                        contentDescription = "Sélectionnée",
                                         tint = MaterialTheme.colorScheme.onPrimary,
                                         modifier = Modifier
+                                            .align(Alignment.TopEnd)
                                             .padding(6.dp)
                                             .size(20.dp)
                                             .clip(CircleShape)
                                             .background(MaterialTheme.colorScheme.primary)
                                             .padding(2.dp),
                                     )
+                                }
+                                // RIC-162 : icône « étendre », en haut à GAUCHE (la coche reste à
+                                // droite), qui ouvre la visionneuse de sélection sur CETTE
+                                // candidate. Zone cliquable de 32 dp autour du pictogramme visuel
+                                // de 24 dp : une cible tactile plus généreuse que le seul rond
+                                // visible, sans empiéter sur la coche de l'autre coin. Nichée dans
+                                // le Box cliquable de la vignette, elle intercepte le tap avant
+                                // qu'il n'atteigne le clic de bascule de sélection : les deux
+                                // gestes cohabitent sans se marcher dessus.
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .padding(4.dp)
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .clickable { viewerIndex = index },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .background(Color.Black.copy(alpha = 0.45f)),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            ExpandPhotoIcon,
+                                            contentDescription = "Agrandir la photo",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(14.dp),
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -206,14 +248,65 @@ internal fun PhotoPickerDialog(
                             if (selected.isEmpty()) "Aucune sélection" else "${selected.size} sélectionnée(s)",
                             style = MaterialTheme.typography.bodySmall,
                         )
+                        // RIC-162 : le bouton porte désormais le compte, comme sur la maquette
+                        // validée ("Ajouter (3)") ; le texte au milieu de la ligne, lui, reste tel
+                        // quel, le retirer irait au-delà de ce que le ticket demande.
                         Button(onClick = { onConfirm(selected.toList()) }, enabled = selected.isNotEmpty()) {
-                            Text("Ajouter")
+                            Text(if (selected.isEmpty()) "Ajouter" else "Ajouter (${selected.size})")
                         }
                     }
                 }
             }
         }
     }
+    // RIC-162 : visionneuse de sélection, ouverte par l'icône « étendre » d'une vignette. `selected`
+    // est passé par référence (lecture/écriture) : basculer une photo ici modifie directement l'état
+    // hoisté ci-dessus, donc la grille est déjà à jour au moment où la visionneuse se referme.
+    viewerIndex?.let { index ->
+        PhotoSelectionViewerDialog(
+            photos = candidates,
+            initialIndex = index,
+            isSelected = { it in selected },
+            onToggleSelected = { uri -> selected = toggleSelection(selected, uri) },
+            onDismiss = { viewerIndex = null },
+        )
+    }
+}
+
+/**
+ * RIC-162 : pictogramme « open_in_full » (flèches vers les coins opposés) de l'icône « étendre »
+ * de la grille, reconstruit à la main plutôt que d'ajouter la dépendance material-icons-extended
+ * pour un seul glyphe absent du jeu core déjà utilisé ici (Check, Close). Tracé identique à celui
+ * de la maquette validée (`docs/pilotage/maquette-manipulation-photos-2026-09-16.html`, écran 6).
+ */
+private val ExpandPhotoIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "ExpandPhoto",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).apply {
+        val stroke = SolidColor(Color.Black)
+        path(stroke = stroke, strokeLineWidth = 2.4f, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round) {
+            moveTo(15f, 3f)
+            lineTo(21f, 3f)
+            lineTo(21f, 9f)
+        }
+        path(stroke = stroke, strokeLineWidth = 2.4f, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round) {
+            moveTo(9f, 21f)
+            lineTo(3f, 21f)
+            lineTo(3f, 15f)
+        }
+        path(stroke = stroke, strokeLineWidth = 2.4f, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round) {
+            moveTo(21f, 3f)
+            lineTo(14f, 10f)
+        }
+        path(stroke = stroke, strokeLineWidth = 2.4f, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round) {
+            moveTo(3f, 21f)
+            lineTo(10f, 14f)
+        }
+    }.build()
 }
 
 /**

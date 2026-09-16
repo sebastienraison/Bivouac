@@ -51,7 +51,6 @@ import com.bivouac.app.data.photo.PhotoAdjustments
 import com.bivouac.app.data.photo.PhotoStorageMode
 import com.bivouac.app.data.photo.adjustedBy
 import com.bivouac.app.data.photo.adjustments
-import java.io.File
 
 /**
  * RIC-43 : visionneuse plein écran avec défilement entre les photos de la sortie (HorizontalPager)
@@ -115,8 +114,8 @@ internal fun PhotoViewerDialog(
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
             HorizontalPager(state = pagerState, userScrollEnabled = !zoomed, modifier = Modifier.fillMaxSize()) { page ->
                 ZoomableAsyncPhoto(
-                    file = LoggedTrackPhotoStore.resolve(context, photos[page].filePath),
-                    originalUri = upgradedUri.takeIf { page == upgradedPage },
+                    model = LoggedTrackPhotoStore.resolve(context, photos[page].filePath),
+                    overlayUri = upgradedUri.takeIf { page == upgradedPage },
                     // RIC-143/144 : les MÊMES ajustements pour les deux couches. C'est tout l'intérêt
                     // d'un rectangle normalisé : la copie locale et l'original n'ont pas les mêmes
                     // dimensions, mais la même fraction leur donne le même cadrage, donc le fondu de
@@ -213,31 +212,40 @@ internal fun ImmersiveBlackWindow() {
  * pincement repasse sous 1x : pas de double-tap dédié pour l'instant, pincer suffit dans les deux
  * sens.
  *
- * RIC-157 : [originalUri], quand il est là, se superpose à la copie locale au lieu de la remplacer.
+ * RIC-157 : [overlayUri], quand il est là, se superpose à la copie locale au lieu de la remplacer.
  * Deux images empilées et non un `model` qu'on échange : un échange repart d'une image vide le
  * temps du chargement, ce qui donne exactement le flash blanc que la spec interdit. Ici la copie
  * locale reste dessous, visible, et l'original apparaît par-dessus en fondu une fois décodé. Le
  * zoom et le cadrage vivent sur le conteneur des deux, donc ils survivent tels quels à la bascule :
  * l'utilisateur qui examinait un détail continue de l'examiner, en mieux.
+ *
+ * RIC-162 : [model] est volontairement un `Any` (Coil accepte `File`, `Uri`, etc. indifféremment)
+ * et non plus un `File` : c'est ce qui permet à la visionneuse de sélection du sélecteur de photos
+ * (PhotoSelectionViewerDialog, sur des URIs MediaStore) de réutiliser exactement ce pager zoomable
+ * sans dupliquer sa mécanique de geste. [overlayUri] y reste toujours `null`, cette visionneuse-là
+ * n'ayant pas de montée en qualité à faire : ses candidates sont déjà les fichiers originaux.
  */
 @Composable
-private fun ZoomableAsyncPhoto(
-    file: File,
-    originalUri: Uri?,
-    adjustments: PhotoAdjustments,
+internal fun ZoomableAsyncPhoto(
+    model: Any,
+    overlayUri: Uri?,
+    // RIC-143/144 : valeur par défaut NONE (identité) et non un paramètre requis. La visionneuse de
+    // sélection à l'import (PhotoSelectionViewerDialog, RIC-162) réutilise ce pager sur des URIs
+    // MediaStore qui n'ont pas encore de ligne en base, donc pas d'ajustements à appliquer.
+    adjustments: PhotoAdjustments = PhotoAdjustments.NONE,
     onZoomedChanged: (Boolean) -> Unit,
 ) {
-    var scale by remember(file) { mutableFloatStateOf(1f) }
-    var offset by remember(file) { mutableStateOf(Offset.Zero) }
+    var scale by remember(model) { mutableFloatStateOf(1f) }
+    var offset by remember(model) { mutableStateOf(Offset.Zero) }
     LaunchedEffect(scale > 1f) { onZoomedChanged(scale > 1f) }
     Box(
         modifier = Modifier
             .fillMaxSize()
-            // Clé `file` et non `Unit` : un changement de fichier recrée scale/offset ci-dessus
-            // (remember(file)) alors qu'un pointerInput déjà lancé garde sa closure sur les
+            // Clé `model` et non `Unit` : un changement de photo recrée scale/offset ci-dessus
+            // (remember(model)) alors qu'un pointerInput déjà lancé garde sa closure sur les
             // anciens états : la boucle de gestes aurait alors piloté des états orphelins, et la
             // photo affichée n'aurait plus jamais zoomé.
-            .pointerInput(file) {
+            .pointerInput(model) {
                 // detectTransformGestures consomme aussi un simple glissement à un doigt (c'est
                 // un pan par définition) : ça cassait le défilement du HorizontalPager parent dès
                 // qu'on touchait une photo, signalé en testant. Boucle manuelle à la place :
@@ -274,18 +282,18 @@ private fun ZoomableAsyncPhoto(
             contentAlignment = Alignment.Center,
         ) {
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(file).adjustedBy(adjustments).build(),
+                model = ImageRequest.Builder(LocalContext.current).data(model).adjustedBy(adjustments).build(),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
-            if (originalUri != null) {
+            if (overlayUri != null) {
                 AsyncImage(
                     // crossfade : l'original apparaît en fondu par-dessus la copie locale, jamais
                     // d'un coup. Sans lui, la substitution se voit comme un clignotement, alors
                     // que ce qu'on veut est que la photo « se précise » sans annoncer sa mécanique.
                     model = ImageRequest.Builder(LocalContext.current)
-                        .data(originalUri)
+                        .data(overlayUri)
                         .adjustedBy(adjustments)
                         .crossfade(true)
                         .build(),
