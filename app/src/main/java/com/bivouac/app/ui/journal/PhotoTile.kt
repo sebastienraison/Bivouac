@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrokenImage
+import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -72,6 +73,14 @@ internal fun PhotoTile(photo: LoggedTrackPhotoEntity, modifier: Modifier = Modif
         if (photo.positionUncertain) {
             ApproximatePositionBadge(
                 modifier = Modifier.align(Alignment.BottomStart).padding(3.dp),
+            )
+        }
+        // RIC-171 : « Retirée de la carte ». BottomEnd et non BottomStart : l'autre coin porte déjà
+        // la pastille de positionnement approximatif, et une photo peut en théorie porter les deux
+        // à la fois (retirée ET approximative).
+        if (!photo.shownOnMap) {
+            RemovedFromMapBadge(
+                modifier = Modifier.align(Alignment.BottomEnd).padding(3.dp),
             )
         }
     }
@@ -140,6 +149,29 @@ private fun ApproximatePositionBadge(modifier: Modifier = Modifier) {
             Icons.Default.LocationSearching,
             contentDescription = "Positionnement approximatif",
             tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(2.dp).size(12.dp),
+        )
+    }
+}
+
+/**
+ * RIC-171 : la photo est retirée de la carte (marqueur absent, absente de la bulle et de son
+ * carrousel), tout en restant présente ici, dans le bandeau, la grille et la visionneuse. La
+ * position, elle, est conservée en base (voir shownOnMap) : ce badge dit seulement « pas montrée
+ * là-bas en ce moment », pas « sans position ».
+ */
+@Composable
+private fun RemovedFromMapBadge(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        tonalElevation = 2.dp,
+    ) {
+        Icon(
+            Icons.Default.LocationOff,
+            contentDescription = "Retirée de la carte",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(2.dp).size(12.dp),
         )
     }
