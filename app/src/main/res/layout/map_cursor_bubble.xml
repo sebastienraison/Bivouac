@@ -85,4 +85,19 @@
 
     </FrameLayout>
 
+    <!-- RIC-170 : la legende de la photo courante du carrousel, sous la vignette. Cachee par
+         defaut : une photo sans legende ne doit pas laisser une ligne vide dans la bulle (voir
+         HikeMapView.CursorInfoWindow.showCurrentPhoto). -->
+    <TextView
+        android:id="@+id/cursor_bubble_caption"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:maxWidth="120dp"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
 </LinearLayout>

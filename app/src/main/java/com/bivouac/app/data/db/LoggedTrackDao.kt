@@ -199,4 +199,16 @@ interface LoggedTrackDao {
         cropRight: Float?,
         cropBottom: Float?,
     )
+
+    // RIC-170 : la légende, écrite à la sauvegarde du mode édition comme les ajustements ci-dessus.
+    // Null remet la photo sans légende (bulle et visionneuse retrouvent alors « Ajouter une
+    // légende » / rien à afficher).
+    @Query("UPDATE logged_track_photo SET caption = :caption WHERE id = :id")
+    suspend fun updatePhotoCaption(id: Long, caption: String?)
+
+    // RIC-171 : « Retirer de la carte » / « Replacer sur la carte ». La position (positionPointIndex)
+    // n'est jamais touchée par cette colonne : retirer puis replacer retrouve exactement le même
+    // point, rien n'a jamais été perdu.
+    @Query("UPDATE logged_track_photo SET shownOnMap = :shownOnMap WHERE id = :id")
+    suspend fun updatePhotoShownOnMap(id: Long, shownOnMap: Boolean)
 }

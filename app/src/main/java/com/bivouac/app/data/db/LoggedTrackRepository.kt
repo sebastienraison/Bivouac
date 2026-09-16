@@ -133,6 +133,11 @@ data class PendingPhotoAdd(
     // deviennent des colonnes. Le fichier de transit, lui, n'est pas plus touché que ne l'est une
     // copie déjà enregistrée.
     val adjustments: PhotoAdjustments = PhotoAdjustments.NONE,
+    // RIC-170 / RIC-171 : même raisonnement que les ajustements ci-dessus, pour les deux champs du
+    // lot 2. Une photo encore en transit peut recevoir une légende ou être retirée de la carte
+    // avant même d'avoir de ligne : les deux voyagent avec elle jusqu'à l'insert.
+    val caption: String? = null,
+    val shownOnMap: Boolean = true,
 )
 
 /** Ce que rend un passage du sélecteur : ce qui est entré en transit, et le bilan du lot. */
@@ -649,6 +654,10 @@ class LoggedTrackRepository(context: Context) {
                     sourceDateTakenMillis = add.source.dateTakenMillis,
                     storageMode = add.storageMode,
                     lastResolvedUri = add.sourceUri,
+                    // RIC-170/171 : même logique que les ajustements juste en dessous, pour la
+                    // légende et la visibilité sur la carte posées avant le premier enregistrement.
+                    caption = add.caption,
+                    shownOnMap = add.shownOnMap,
                     // RIC-143/144 : les ajustements posés pendant l'édition sur une photo encore en
                     // transit deviennent des colonnes dès son premier insert, sans passer par une
                     // mise à jour séparée : elle n'a jamais existé sans eux.
@@ -1075,6 +1084,41 @@ class LoggedTrackRepository(context: Context) {
     // quelle, avec sa requête DAO, pour que ce lot-là la reprenne plutôt que de la réécrire.
     suspend fun repositionPhoto(id: Long, positionPointIndex: Int?) {
         dao.updatePhotoPosition(id, positionPointIndex, positionApproximate = false)
+    }
+
+    /**
+     * RIC-166 : les repositionnements manuels accumulés pendant une édition, écrits à la
+     * sauvegarde. Même moitié du même geste que [deletePhotos]/[updatePhotoAdjustments] :
+     * [onProgress] alimente le même compteur. Reprend [repositionPhoto] telle quelle plutôt que de
+     * la réécrire, comme le prévoyait déjà son commentaire.
+     */
+    suspend fun updatePhotoPositions(positionByPhotoId: Map<Long, Int>, onProgress: () -> Unit = {}) {
+        for ((id, pointIndex) in positionByPhotoId) {
+            repositionPhoto(id, pointIndex)
+            onProgress()
+        }
+    }
+
+    /**
+     * RIC-170 : les légendes posées dans l'édition en cours, écrites à la sauvegarde. Une valeur
+     * nulle efface la légende (case "Ajouter une légende" côté écran).
+     */
+    suspend fun updatePhotoCaptions(captionByPhotoId: Map<Long, String?>, onProgress: () -> Unit = {}) {
+        for ((id, caption) in captionByPhotoId) {
+            dao.updatePhotoCaption(id, caption)
+            onProgress()
+        }
+    }
+
+    /**
+     * RIC-171 : « Retirer de la carte » / « Replacer sur la carte », écrit à la sauvegarde. La
+     * position elle-même (positionPointIndex) n'est jamais touchée par cette écriture.
+     */
+    suspend fun updatePhotoShownOnMap(shownOnMapByPhotoId: Map<Long, Boolean>, onProgress: () -> Unit = {}) {
+        for ((id, shownOnMap) in shownOnMapByPhotoId) {
+            dao.updatePhotoShownOnMap(id, shownOnMap)
+            onProgress()
+        }
     }
 
     /**
