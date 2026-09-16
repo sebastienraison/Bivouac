@@ -6,19 +6,32 @@ import android.net.Uri
 import android.os.Build
 import android.view.WindowManager
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Crop
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PinDrop
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -30,13 +43,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
@@ -74,6 +91,19 @@ internal fun PhotoViewerDialog(
      * n'ont pas de quoi résoudre (aperçu, test) n'ont rien à fournir.
      */
     resolveOriginal: (suspend (LoggedTrackPhotoEntity) -> Uri?)? = null,
+    // RIC-161 : la vue détail est-elle en édition ? Faux par défaut : hors édition, la visionneuse
+    // s'affiche exactement comme avant ce lot (aucune barre, légende en lecture seule).
+    editing: Boolean = false,
+    onAdjustClick: (LoggedTrackPhotoEntity) -> Unit = {},
+    onDeleteClick: (LoggedTrackPhotoEntity) -> Unit = {},
+    // RIC-166 : « Repositionner sur la trace », dans le menu Position. Ferme la visionneuse et bascule
+    // la carte du détail Journal en mode placement : c'est l'appelant (JournalScreen) qui porte les
+    // deux gestes, cette visionneuse ne connaît que la demande.
+    onRepositionClick: (LoggedTrackPhotoEntity) -> Unit = {},
+    // RIC-171 : « Retirer de la carte » / « Replacer sur la carte », même menu Position.
+    onToggleShownOnMap: (LoggedTrackPhotoEntity) -> Unit = {},
+    // RIC-170 : tap sur la zone légende (ou sur « Ajouter une légende » si elle est vide).
+    onCaptionClick: (LoggedTrackPhotoEntity) -> Unit = {},
 ) {
     val context = LocalContext.current
     val pagerState = rememberPagerState(initialPage = initialIndex) { photos.size }
@@ -81,6 +111,31 @@ internal fun PhotoViewerDialog(
     // panoramique vers la droite/gauche à l'intérieur d'une photo zoomée changerait de page au
     // lieu de déplacer le cadrage.
     var zoomed by remember { mutableStateOf(false) }
+
+    /**
+     * RIC-161 : après une suppression décidée depuis la barre d'actions, la photo SUIVANTE ; si
+     * c'était la dernière, la PRÉCÉDENTE ; s'il n'en reste aucune, fermer (voir
+     * [pagerIndexAfterRemoval], fonction pure testée séparément).
+     *
+     * `photos` ne change que par ce chemin pendant que la visionneuse est ouverte (aucune autre
+     * suppression ne peut viser la photo affichée tant qu'elle occupe tout l'écran) : la page
+     * affichée AU MOMENT du rétrécissement de la liste est donc, par construction, celle qui vient
+     * de disparaître. `previousPhotos` ne sert qu'à détecter ce rétrécissement, pas à autre chose.
+     */
+    var previousPhotos by remember { mutableStateOf(photos) }
+    LaunchedEffect(photos) {
+        val previous = previousPhotos
+        previousPhotos = photos
+        if (photos.size >= previous.size) return@LaunchedEffect
+        val removedIndex = pagerState.currentPage
+        val removedId = previous.getOrNull(removedIndex)?.id
+        val stillThere = removedId != null && photos.any { it.id == removedId }
+        if (stillThere) return@LaunchedEffect
+        when (val newIndex = pagerIndexAfterRemoval(previous.size, removedIndex)) {
+            null -> onDismiss()
+            else -> pagerState.scrollToPage(newIndex.coerceIn(photos.indices))
+        }
+    }
 
     /**
      * RIC-157 : l'original de la SEULE page courante, une fois retrouvé et confirmé.
@@ -134,9 +189,129 @@ internal fun PhotoViewerDialog(
             ) {
                 Icon(Icons.Default.Close, contentDescription = "Fermer", tint = Color.White)
             }
+
+            // RIC-161/170 : légende et barre d'actions portent sur la photo COURANTE du pager, pas
+            // sur toutes ses pages : deux overlays hissés au-dessus de HorizontalPager plutôt que
+            // dupliqués dans chaque page.
+            val currentPhoto = photos.getOrNull(pagerState.currentPage)
+            if (currentPhoto != null) {
+                Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+                    PhotoCaptionOverlay(
+                        photo = currentPhoto,
+                        editing = editing,
+                        onClick = { onCaptionClick(currentPhoto) },
+                    )
+                    // RIC-161 : en mode édition SEULEMENT. Hors édition, rien ne change : ni barre,
+                    // ni geste sur la vignette.
+                    if (editing) {
+                        PhotoViewerActionBar(
+                            shownOnMap = currentPhoto.shownOnMap,
+                            onAdjustClick = { onAdjustClick(currentPhoto) },
+                            onRepositionClick = { onRepositionClick(currentPhoto) },
+                            onToggleShownOnMap = { onToggleShownOnMap(currentPhoto) },
+                            onDeleteClick = { onDeleteClick(currentPhoto) },
+                        )
+                    }
+                }
+            }
         }
     }
 }
+
+/**
+ * RIC-170 : la légende, en bas de la visionneuse au-dessus de la barre d'actions. Dégradé noir vers
+ * transparent pour rester lisible sur n'importe quelle photo, comme la légende d'une bulle de
+ * carte. Masquée hors édition quand il n'y a rien à montrer : une bande vide sans légende ni bouton
+ * n'a aucune raison d'être là.
+ */
+@Composable
+private fun PhotoCaptionOverlay(
+    photo: LoggedTrackPhotoEntity,
+    editing: Boolean,
+    onClick: () -> Unit,
+) {
+    val caption = photo.caption?.trim().orEmpty()
+    if (!editing && caption.isEmpty()) return
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f))))
+            .let { if (editing) it.clickable(onClick = onClick) else it }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Text(
+            text = caption.ifEmpty { "Ajouter une légende" },
+            color = if (caption.isEmpty()) Color.White.copy(alpha = 0.7f) else Color.White,
+            fontSize = 14.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * RIC-161 : la barre d'actions de la visionneuse en mode édition, écran 2 de la maquette validée le
+ * 2026-09-16 : trois entrées icône + libellé, fond #2F312C, 80 dp de haut.
+ */
+@Composable
+private fun PhotoViewerActionBar(
+    shownOnMap: Boolean,
+    onAdjustClick: () -> Unit,
+    onRepositionClick: () -> Unit,
+    onToggleShownOnMap: () -> Unit,
+    onDeleteClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().height(80.dp).background(Color(0xFF2F312C)),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ViewerActionButton(icon = Icons.Default.Crop, label = "Ajuster", onClick = onAdjustClick)
+
+        // RIC-171/166 : une seule entrée « Position » ouvre un menu à deux choix, plutôt que deux
+        // boutons séparés dans une barre qui n'en a que trois : c'est la même hiérarchie que la
+        // maquette (écran 3), le tap révèle l'un OU l'autre selon ce qu'on veut faire.
+        var positionMenuExpanded by remember { mutableStateOf(false) }
+        Box {
+            ViewerActionButton(
+                icon = Icons.Default.PinDrop,
+                label = "Position",
+                onClick = { positionMenuExpanded = true },
+            )
+            DropdownMenu(expanded = positionMenuExpanded, onDismissRequest = { positionMenuExpanded = false }) {
+                DropdownMenuItem(
+                    text = { Text("Repositionner sur la trace") },
+                    onClick = { positionMenuExpanded = false; onRepositionClick() },
+                )
+                DropdownMenuItem(
+                    text = { Text(if (shownOnMap) "Retirer de la carte" else "Replacer sur la carte") },
+                    onClick = { positionMenuExpanded = false; onToggleShownOnMap() },
+                )
+            }
+        }
+
+        // Couleur d'erreur fixée en dur et non MaterialTheme.colorScheme.error : cette visionneuse
+        // pose ses couleurs en dur sur fond noir, comme le reste de l'écran (voir ACCENT dans
+        // PhotoAdjustDialog) : un rouge de thème clair y serait illisible.
+        ViewerActionButton(icon = Icons.Default.Delete, label = "Supprimer", tint = ERROR_ON_DARK, onClick = onDeleteClick)
+    }
+}
+
+@Composable
+private fun ViewerActionButton(icon: ImageVector, label: String, onClick: () -> Unit, tint: Color = Color.White) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Icon(icon, contentDescription = label, tint = tint)
+        Text(label, color = tint, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+// Rouge clair (Material red 200), lisible sur le fond #2F312C de la barre, là où le rouge de thème
+// (souvent plus sombre) se fondrait dedans.
+private val ERROR_ON_DARK = Color(0xFFFF8A80)
 
 /**
  * RIC-157 : cette photo mérite-t-elle qu'on aille chercher son original ?
@@ -150,6 +325,23 @@ internal fun PhotoViewerDialog(
  */
 internal fun deservesQualityUpgrade(photo: LoggedTrackPhotoEntity): Boolean =
     photo.storageMode == PhotoStorageMode.REDUCED
+
+/**
+ * RIC-161 : quelle page afficher une fois la photo de [removedIndex] retirée d'une liste qui en
+ * comptait [sizeBeforeRemoval].
+ *
+ * Trois cas, dans l'ordre de la spec : `null` s'il ne reste plus rien (ferme la visionneuse) ; la
+ * PRÉCÉDENTE si la photo retirée était la dernière (l'index qui suit n'existe plus) ; sinon la
+ * SUIVANTE, qui occupe déjà l'index de la photo retirée puisque la liste s'est resserrée d'un cran.
+ *
+ * Extraite du composable pour être vérifiable sans monter d'écran, même raisonnement que
+ * [deservesQualityUpgrade] juste au-dessus.
+ */
+internal fun pagerIndexAfterRemoval(sizeBeforeRemoval: Int, removedIndex: Int): Int? = when {
+    sizeBeforeRemoval <= 1 -> null
+    removedIndex >= sizeBeforeRemoval - 1 -> removedIndex - 1
+    else -> removedIndex
+}
 
 /**
  * RIC-43 : la visionneuse occupe réellement toute la dalle : barres système masquées, encoche
