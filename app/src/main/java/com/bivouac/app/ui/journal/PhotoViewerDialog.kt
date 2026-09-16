@@ -175,8 +175,10 @@ internal fun deservesQualityUpgrade(photo: LoggedTrackPhotoEntity): Boolean =
  * la seule valeur disponible à l'époque, et qui suffit ici (en paysage, le bord qui porte l'encoche
  * est justement un petit côté). En dessous de l'API 28 il n'y a pas d'encoche à gérer.
  */
+// RIC-143 : internal et non private, l'éditeur « Ajuster » est l'autre plein écran noir de l'app et
+// doit se comporter exactement pareil (barres masquées, encoche couverte, tout rendu à la fermeture).
 @Composable
-private fun ImmersiveBlackWindow() {
+internal fun ImmersiveBlackWindow() {
     val view = LocalView.current
     val dialogWindow = (view.parent as? DialogWindowProvider)?.window
     DisposableEffect(dialogWindow) {

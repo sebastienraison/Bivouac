@@ -97,7 +97,18 @@ data class NormalizedCropRect(
 
     /** Le rectangle couvre-t-il l'image entière ? Alors il n'y a rien à rogner. */
     val isFullFrame: Boolean
-        get() = left <= 0f && top <= 0f && right >= 1f && bottom >= 1f
+        get() = coversWholeImage()
+
+    /**
+     * Le même, à [tolerance] près.
+     *
+     * L'éditeur en a besoin : son cadre vit en pixels d'écran et fait l'aller-retour par des
+     * fractions, ce qui laisse des poussières de l'ordre de 1e-7. Sans tolérance, ouvrir « Ajuster »
+     * puis valider sans rien toucher enregistrerait un recadrage plein cadre là où il n'y avait rien,
+     * donc marquerait l'écran comme modifié pour rien.
+     */
+    fun coversWholeImage(tolerance: Float = 0f): Boolean =
+        left <= tolerance && top <= tolerance && right >= 1f - tolerance && bottom >= 1f - tolerance
 
     /**
      * Remis dans les clous : bornes dans 0..1, côtés remis dans le bon ordre, et une largeur/hauteur

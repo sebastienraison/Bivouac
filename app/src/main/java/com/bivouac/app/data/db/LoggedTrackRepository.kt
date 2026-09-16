@@ -14,6 +14,7 @@ import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
+import com.bivouac.app.data.photo.PhotoAdjustments
 import com.bivouac.app.data.photo.PhotoContentHash
 import com.bivouac.app.data.photo.PhotoCopyPlan
 import com.bivouac.app.data.photo.PhotoExifReader
@@ -25,6 +26,7 @@ import com.bivouac.app.data.photo.PhotoRecompression
 import com.bivouac.app.data.photo.PhotoReducer
 import com.bivouac.app.data.photo.PhotoSourceMetadata
 import com.bivouac.app.data.photo.PhotoStorageMode
+import com.bivouac.app.data.photo.withAdjustments
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -126,6 +128,11 @@ data class PendingPhotoAdd(
     // RIC-157 : l'URI de la source telle que le sélecteur l'a livrée, relevé dans les DEUX modes :
     // voir LoggedTrackPhotoEntity.lastResolvedUri.
     val sourceUri: String? = null,
+    // RIC-143 / RIC-144 : une photo encore en transit s'affiche comme les autres, donc elle
+    // s'ajuste comme les autres. Les ajustements voyagent avec elle jusqu'à l'insert, où ils
+    // deviennent des colonnes. Le fichier de transit, lui, n'est pas plus touché que ne l'est une
+    // copie déjà enregistrée.
+    val adjustments: PhotoAdjustments = PhotoAdjustments.NONE,
 )
 
 /** Ce que rend un passage du sélecteur : ce qui est entré en transit, et le bilan du lot. */
@@ -642,7 +649,10 @@ class LoggedTrackRepository(context: Context) {
                     sourceDateTakenMillis = add.source.dateTakenMillis,
                     storageMode = add.storageMode,
                     lastResolvedUri = add.sourceUri,
-                )
+                    // RIC-143/144 : les ajustements posés pendant l'édition sur une photo encore en
+                    // transit deviennent des colonnes dès son premier insert, sans passer par une
+                    // mise à jour séparée : elle n'a jamais existé sans eux.
+                ).withAdjustments(add.adjustments)
                 try {
                     dao.insertPhoto(entity)
                 } catch (e: Exception) {
@@ -1022,6 +1032,36 @@ class LoggedTrackRepository(context: Context) {
     suspend fun deletePhotos(ids: Collection<Long>, onProgress: () -> Unit = {}) {
         ids.forEach {
             deletePhoto(it)
+            onProgress()
+        }
+    }
+
+    /**
+     * RIC-143 / RIC-144 : les ajustements d'affichage validés dans l'éditeur, écrits à la
+     * sauvegarde du mode édition.
+     *
+     * Une écriture de colonnes, rien d'autre : le fichier n'est ni relu, ni réécrit, ni déplacé.
+     * C'est ce qui rend l'opération instantanée quel que soit le poids de la photo, et surtout
+     * réversible sans perte : retirer un recadrage rend la photo entière, pas une image déjà
+     * rognée.
+     *
+     * [onProgress] a le même rôle que dans [commitPendingPhotos] et [deletePhotos] : les trois
+     * moitiés du même geste alimentent un seul compteur.
+     */
+    suspend fun updatePhotoAdjustments(
+        adjustmentsById: Map<Long, PhotoAdjustments>,
+        onProgress: () -> Unit = {},
+    ) {
+        for ((id, adjustments) in adjustmentsById) {
+            val crop = adjustments.cropRect?.sanitized()
+            dao.updatePhotoAdjustments(
+                id = id,
+                rotationQuarterTurns = adjustments.normalizedRotationQuarterTurns,
+                cropLeft = crop?.left,
+                cropTop = crop?.top,
+                cropRight = crop?.right,
+                cropBottom = crop?.bottom,
+            )
             onProgress()
         }
     }
