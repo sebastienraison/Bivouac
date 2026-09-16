@@ -628,7 +628,15 @@ private fun renderTrack(
     }
 
     if (photoPlacementTarget != null && points.isNotEmpty()) {
-        mapView.overlays.add(photoPlacementMarker(mapView, points, geoPoints, photoPlacementTarget, onPhotoPlacementDrag))
+        // ⚠️ `photos.find { ... }` et non `photoPlacementTarget` tel quel pour la position de
+        // départ : ce dernier est l'instantané capturé à l'ouverture du mode (requestPhotoPlacement),
+        // jamais remis à jour pendant le glissement. `renderTrack` reconstruit TOUS les overlays à
+        // chaque rendu, y compris ceux déclenchés par le glissement lui-même (onPhotoPlacementDrag
+        // écrit dans le brouillon, qui recompose `photos` avec la position déjà superposée, voir
+        // JournalViewModel.currentPhotos) : repartir de l'instantané figé aurait fait revenir le
+        // marqueur à son point de départ à chaque position aimantée, au lieu de suivre le doigt.
+        val livePlacementPhoto = photos.find { it.id == photoPlacementTarget.id } ?: photoPlacementTarget
+        mapView.overlays.add(photoPlacementMarker(mapView, points, geoPoints, livePlacementPhoto, onPhotoPlacementDrag))
     }
 
     // RIC-43 : les bivouacs APRÈS les photos, donc dessinés par-dessus. osmdroid empile ses
