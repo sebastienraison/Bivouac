@@ -101,6 +101,41 @@ data class LoggedTrackPhotoEntity(
     // pour toute photo dont la source n'a jamais pu être notée. Réécrit quand la recherche profonde
     // retrouve l'original ailleurs.
     val lastResolvedUri: String? = null,
+    // RIC-144 : la rotation d'AFFICHAGE, en quarts de tour dans le sens horaire, appliquée PAR-DESSUS
+    // l'orientation EXIF que le décodeur respecte déjà. Le fichier n'est jamais réécrit : c'est tout
+    // l'intérêt, une photo ajustée reste l'original sur le disque, et défaire un ajustement ne coûte
+    // aucune perte de qualité. Voir PhotoAdjustments.
+    //
+    // NOT NULL DEFAULT 0, comme storageMode plus haut : « pas de rotation » est un état réel et
+    // c'est celui de toutes les lignes d'avant la migration 17 -> 18, un type nullable ne
+    // décrirait rien de plus. Le DEFAULT est ce qui permet l'ALTER TABLE ADD COLUMN sur une
+    // colonne NOT NULL, et il est déclaré ici pour que le schéma exporté et la migration coïncident.
+    @ColumnInfo(defaultValue = "0")
+    val rotationQuarterTurns: Int = 0,
+    // RIC-143 : le recadrage d'AFFICHAGE, rectangle normalisé 0..1 dans le repère de l'image
+    // TOURNÉE (c'est-à-dire après application de rotationQuarterTurns ci-dessus, elle-même après
+    // l'EXIF). Normalisé et non en pixels : la même photo est affichée depuis la copie locale
+    // réduite ET depuis l'original en pleine résolution (RIC-157), qui n'ont pas les mêmes
+    // dimensions ; seule une fraction leur donne exactement le même cadrage, donc aucun saut au
+    // fondu de la visionneuse.
+    //
+    // Les quatre valent null ensemble, et null veut dire « aucun recadrage », pas « recadrage plein
+    // cadre » : la distinction compte, l'éditeur repart de l'image entière et rien ne rogne un
+    // pixel tant que l'utilisateur n'a pas déplacé une poignée. Quatre colonnes plutôt qu'une
+    // chaîne sérialisée : ce sont quatre nombres, SQLite sait les stocker, et un format maison
+    // serait un parseur de plus à maintenir pour rien.
+    val cropLeft: Float? = null,
+    val cropTop: Float? = null,
+    val cropRight: Float? = null,
+    val cropBottom: Float? = null,
+    // ⚠️ Les deux colonnes ci-dessous sont portées par la migration 17 -> 18 pour le LOT 2
+    // (légende RIC-170, retirer de la carte RIC-171) et ne sont lues ni écrites nulle part
+    // aujourd'hui. Elles voyagent avec celles du lot 1 délibérément : une migration de plus, sur
+    // une base réelle pleine de photos, pour deux ADD COLUMN qu'on sait déjà nécessaires, serait
+    // un risque payé deux fois. Ne construire aucune surface dessus avant le lot 2.
+    val caption: String? = null,
+    @ColumnInfo(defaultValue = "1")
+    val shownOnMap: Boolean = true,
 )
 
 /**
