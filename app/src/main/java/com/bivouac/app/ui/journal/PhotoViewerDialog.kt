@@ -47,7 +47,10 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
+import com.bivouac.app.data.photo.PhotoAdjustments
 import com.bivouac.app.data.photo.PhotoStorageMode
+import com.bivouac.app.data.photo.adjustedBy
+import com.bivouac.app.data.photo.adjustments
 import java.io.File
 
 /**
@@ -114,6 +117,11 @@ internal fun PhotoViewerDialog(
                 ZoomableAsyncPhoto(
                     file = LoggedTrackPhotoStore.resolve(context, photos[page].filePath),
                     originalUri = upgradedUri.takeIf { page == upgradedPage },
+                    // RIC-143/144 : les MÊMES ajustements pour les deux couches. C'est tout l'intérêt
+                    // d'un rectangle normalisé : la copie locale et l'original n'ont pas les mêmes
+                    // dimensions, mais la même fraction leur donne le même cadrage, donc le fondu de
+                    // RIC-157 ne fait pas sauter la photo.
+                    adjustments = photos[page].adjustments,
                     onZoomedChanged = { zoomed = it },
                 )
             }
@@ -211,7 +219,12 @@ private fun ImmersiveBlackWindow() {
  * l'utilisateur qui examinait un détail continue de l'examiner, en mieux.
  */
 @Composable
-private fun ZoomableAsyncPhoto(file: File, originalUri: Uri?, onZoomedChanged: (Boolean) -> Unit) {
+private fun ZoomableAsyncPhoto(
+    file: File,
+    originalUri: Uri?,
+    adjustments: PhotoAdjustments,
+    onZoomedChanged: (Boolean) -> Unit,
+) {
     var scale by remember(file) { mutableFloatStateOf(1f) }
     var offset by remember(file) { mutableStateOf(Offset.Zero) }
     LaunchedEffect(scale > 1f) { onZoomedChanged(scale > 1f) }
@@ -259,7 +272,7 @@ private fun ZoomableAsyncPhoto(file: File, originalUri: Uri?, onZoomedChanged: (
             contentAlignment = Alignment.Center,
         ) {
             AsyncImage(
-                model = file,
+                model = ImageRequest.Builder(LocalContext.current).data(file).adjustedBy(adjustments).build(),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
@@ -269,7 +282,11 @@ private fun ZoomableAsyncPhoto(file: File, originalUri: Uri?, onZoomedChanged: (
                     // crossfade : l'original apparaît en fondu par-dessus la copie locale, jamais
                     // d'un coup. Sans lui, la substitution se voit comme un clignotement, alors
                     // que ce qu'on veut est que la photo « se précise » sans annoncer sa mécanique.
-                    model = ImageRequest.Builder(LocalContext.current).data(originalUri).crossfade(true).build(),
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(originalUri)
+                        .adjustedBy(adjustments)
+                        .crossfade(true)
+                        .build(),
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize(),

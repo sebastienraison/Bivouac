@@ -64,6 +64,9 @@ import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.TrackPoint
+import com.bivouac.app.data.photo.PhotoAdjustments
+import com.bivouac.app.data.photo.adjustedBy
+import com.bivouac.app.data.photo.adjustments
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.formatKm1
 import java.io.File
@@ -1092,6 +1095,10 @@ private fun cursorBubbleContent(
     return CursorBubbleContent(
         text = text,
         photoFiles = present.map { (photo, _) -> LoggedTrackPhotoStore.resolve(context, photo.filePath) },
+        // RIC-143/144 : parallèle à photoFiles, comme photoTimes juste en dessous. La bulle affiche
+        // la zone recadrée et rien d'autre, au même titre que les vignettes et la visionneuse : une
+        // photo recadrée dans le bandeau mais entière sur la carte serait deux photos différentes.
+        photoAdjustments = present.map { (photo, _) -> photo.adjustments },
         // Parallèle à photoFiles, un élément par photo du lot : c'est ce qui permet à l'heure
         // affichée de suivre le carrousel sans que la bulle ait à retenir les entités.
         photoTimes = present.map { (photo, _) -> photo.takenAtMillis?.let(::formatPhotoTimeOfDay) },
@@ -1125,6 +1132,9 @@ private data class CursorBubbleContent(
     // Vide quand aucune photo n'est assez proche. Plusieurs entrées quand plusieurs le sont : la
     // vignette devient alors parcourable, avec un compteur.
     val photoFiles: List<File> = emptyList(),
+    // RIC-143/144 : même taille et même ordre que photoFiles, une entrée valant PhotoAdjustments.NONE
+    // pour une photo jamais ajustée, c'est-à-dire l'écrasante majorité.
+    val photoAdjustments: List<PhotoAdjustments> = emptyList(),
     // Même taille et même ordre que photoFiles, une entrée nulle valant « heure inconnue ». Une
     // liste parallèle plutôt qu'une liste de paires : seule photoFiles est manipulée par le
     // carrousel, et les heures n'y interviennent qu'au moment de composer la ligne de texte.
@@ -1175,6 +1185,7 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
     // Le lot courant du carrousel et la page affichée. Rechargés à chaque onOpen, c'est-à-dire à
     // chaque déplacement du curseur : changer d'endroit sur la trace, c'est changer de lot.
     private var photoFiles: List<File> = emptyList()
+    private var photoAdjustments: List<PhotoAdjustments> = emptyList()
     private var photoIndex = 0
 
     // RIC-43 : la ligne distance/altitude nue, et les heures de prise de vue du lot. Retenues
@@ -1277,7 +1288,12 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
         // error() en plus du chemin : le fichier peut avoir disparu entre le relevé de
         // missingPhotoIds et l'ouverture de la bulle, ou être présent mais illisible. Sans ce
         // repli, Coil laisserait simplement la miniature précédente à l'écran.
-        photoView.load(file) { error(R.drawable.ic_photo_missing) }
+        // RIC-143/144 : le même mécanisme de rendu que partout ailleurs (voir adjustedBy) : cette
+        // bulle est une View et non un composable, mais `load` construit le même ImageRequest.
+        photoView.load(file) {
+            error(R.drawable.ic_photo_missing)
+            adjustedBy(photoAdjustments.getOrNull(photoIndex) ?: PhotoAdjustments.NONE)
+        }
         photoView.contentDescription = null
         if (photoFiles.size > 1) {
             counterView.visibility = View.VISIBLE
@@ -1291,6 +1307,7 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
         val content = item as? CursorBubbleContent ?: return
         baseText = content.text
         photoFiles = content.photoFiles
+        photoAdjustments = content.photoAdjustments
         photoTimes = content.photoTimes
         photoIndex = content.initialPhotoIndex.coerceIn(0, (content.photoFiles.size - 1).coerceAtLeast(0))
         // Posé tout de suite : les deux branches sans photo affichable en restent là, et celle qui
