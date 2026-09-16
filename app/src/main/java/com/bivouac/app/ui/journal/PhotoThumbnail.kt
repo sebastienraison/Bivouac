@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -36,6 +37,10 @@ import com.bivouac.app.data.db.LoggedTrackPhotoEntity
  * RIC-43 : le menu se réduit à « Supprimer ». Les entrées « Repositionner » et « Placer sur la
  * trace » partent avec le flux de placement sur la trace, différé à un lot ultérieur : un menu à
  * une seule entrée vaut mieux qu'une entrée qui promet une mécanique inachevée.
+ *
+ * RIC-143/144 : « Ajuster » le rejoint, et c'est le point d'entrée du lot 1. La barre d'actions de
+ * la visionneuse (écran 2 de la maquette) viendra avec le lot 2 et lui donnera un second chemin :
+ * les deux ouvriront le même éditeur.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -43,6 +48,7 @@ internal fun PhotoThumbnail(
     photo: LoggedTrackPhotoEntity,
     editing: Boolean,
     onClick: () -> Unit,
+    onAdjustClick: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -61,6 +67,14 @@ internal fun PhotoThumbnail(
                 ),
         )
         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+            // RIC-143/144 : « Ajuster » ouvre l'éditeur de rotation et de recadrage. En mode
+            // édition seulement, comme tout ce menu : ajuster est une modification, elle rejoint le
+            // même brouillon que la note et les tags, et attend la disquette.
+            DropdownMenuItem(
+                text = { Text("Ajuster") },
+                leadingIcon = { Icon(Icons.Default.Crop, contentDescription = null) },
+                onClick = { menuExpanded = false; onAdjustClick() },
+            )
             DropdownMenuItem(
                 text = { Text("Supprimer") },
                 leadingIcon = {

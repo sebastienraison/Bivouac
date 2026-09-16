@@ -224,6 +224,7 @@ fun JournalScreen(
     val currentPhotos by viewModel.currentPhotos.collectAsStateWithLifecycle()
     val missingPhotoIds by viewModel.missingPhotoIds.collectAsStateWithLifecycle()
     val photoDeleteTarget by viewModel.photoDeleteTarget.collectAsStateWithLifecycle()
+    val photoAdjustTarget by viewModel.photoAdjustTarget.collectAsStateWithLifecycle()
     val photoError by viewModel.photoError.collectAsStateWithLifecycle()
     val photoAddReport by viewModel.photoAddReport.collectAsStateWithLifecycle()
     val photosDirty by viewModel.photosDirty.collectAsStateWithLifecycle()
@@ -433,6 +434,7 @@ fun JournalScreen(
                     photoOperationInFlight = photoOperationProgress != null,
                     onAddPhotosClick = handleAddPhotosClick,
                     onDeletePhotoClick = viewModel::requestDeletePhoto,
+                    onAdjustPhotoClick = viewModel::requestAdjustPhoto,
                     onPhotoClick = { index -> viewedPhotoIndex = index },
                     photosDirty = photosDirty,
                     onDiscardPhotoEdits = viewModel::discardPhotoEdits,
@@ -758,6 +760,18 @@ fun JournalScreen(
             // le ViewModel entier : la visionneuse n'a besoin que de ça, et ça la garde montable
             // sans lui.
             resolveOriginal = viewModel::resolveOriginalUri,
+        )
+    }
+
+    // RIC-143/144 : l'éditeur « Ajuster ». Hissé ici, au niveau de l'écran, comme la visionneuse et
+    // pour la même raison : c'est un plein écran, il n'a rien à faire à l'intérieur du tiroir de la
+    // vue détail. La photo vient de currentPhotos, donc avec les ajustements en attente déjà
+    // superposés : rouvrir l'éditeur reprend le brouillon en cours.
+    photoAdjustTarget?.let { target ->
+        PhotoAdjustDialog(
+            photo = currentPhotos.find { it.id == target.id } ?: target,
+            onCancel = viewModel::dismissPhotoAdjust,
+            onConfirm = { adjustments -> viewModel.applyPhotoAdjustments(target.id, adjustments) },
         )
     }
 
@@ -1737,6 +1751,9 @@ internal fun ThreeStopJournalDetail(
     photoOperationInFlight: Boolean = false,
     onAddPhotosClick: () -> Unit = {},
     onDeletePhotoClick: (LoggedTrackPhotoEntity) -> Unit = {},
+    // RIC-143/144 : « Ajuster » dans le menu d'une vignette. L'éditeur lui-même est monté au niveau
+    // de l'écran, comme la visionneuse : la vue détail ne fait que signaler la demande.
+    onAdjustPhotoClick: (LoggedTrackPhotoEntity) -> Unit = {},
     // RIC-149 : les ajouts en transit et les suppressions en attente vivent dans le ViewModel (ce
     // sont des fichiers, pas un état de composition), mais ils font partie du même brouillon que les
     // tags et la note ci-dessus. Ces deux paramètres sont ce qui les y raccroche : le premier
@@ -2232,6 +2249,7 @@ internal fun ThreeStopJournalDetail(
                                         photo = photo,
                                         editing = isEditing,
                                         onClick = { onPhotoClick(index) },
+                                        onAdjustClick = { onAdjustPhotoClick(photo) },
                                         onDeleteClick = { onDeletePhotoClick(photo) },
                                     )
                                 }
