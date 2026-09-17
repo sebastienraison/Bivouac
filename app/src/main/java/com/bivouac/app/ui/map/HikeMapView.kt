@@ -163,6 +163,13 @@ private const val CURSOR_MARKER_HEIGHT_DP = 40f
 private const val MAP_GESTURE_REFRESH_DEBOUNCE_MS = 200L
 private const val CURSOR_HIT_RADIUS_DP = 28f
 
+// RIC-185 : rayon du halo du marqueur de repositionnement (photoPlacementMarkerIcon), en fraction
+// de la largeur intrinsèque du pin. Partagé par le dessin ET par la zone de saisie élargie
+// (PhotoPlacementHitMarker, plus bas) : sans ce partage, les deux pouvaient diverger silencieusement
+// à la prochaine retouche de l'un des deux, exactement le bug remonté en recette version "zone de
+// saisie" (le halo se voyait, mais ne captait pas le toucher).
+private const val PHOTO_PLACEMENT_HALO_RADIUS_FACTOR = 0.9f
+
 // Journal-only (BIV-48): one track among several shown together in the multi-trace overview.
 data class ColoredTrack(val id: String, val track: HikeTrack, val color: Color)
 
@@ -490,6 +497,35 @@ private fun EsriAttributionLink(modifier: Modifier = Modifier) {
     )
 }
 
+/**
+ * RIC-185 : ce que le mode placement d'une photo change dans renderTrack, extrait en pur pour être
+ * vérifiable sans assembler un vrai MapView (osmdroid télécharge de vraies tuiles dès le premier
+ * rendu, hors de portée d'un test JVM, cf. PhotoPlacementDragControllerTest). renderTrack lit ces
+ * cinq décisions au lieu de tester `photoPlacementTarget != null` séparément à chaque overlay,
+ * pour qu'un futur oubli ne laisse pas une surface redevenir interactive par erreur.
+ *
+ * Ne couvre PAS l'ordre complet des overlays (polylines, extrémités, flèches...), seulement ce que
+ * ce ticket fait dépendre du mode. Le fait que le marqueur de placement soit ajouté EN DERNIER
+ * reste structurel (un seul point d'ajout, tout en bas de renderTrack) : il n'est pas modélisé ici
+ * et n'est donc vérifié que par lecture du code, pas par ce test.
+ */
+internal data class PlacementModeOverlayRules(
+    val trackTapOverlayEnabled: Boolean,
+    val photoMarkersInteractive: Boolean,
+    val bivouacMarkersDraggable: Boolean,
+    val cursorDraggable: Boolean,
+    val cursorBubbleReopens: Boolean,
+)
+
+internal fun placementModeOverlayRules(placementActive: Boolean, bivouacsReadOnly: Boolean): PlacementModeOverlayRules =
+    PlacementModeOverlayRules(
+        trackTapOverlayEnabled = !placementActive,
+        photoMarkersInteractive = !placementActive,
+        bivouacMarkersDraggable = !bivouacsReadOnly && !placementActive,
+        cursorDraggable = !placementActive,
+        cursorBubbleReopens = !placementActive,
+    )
+
 private fun renderTrack(
     mapView: MapView,
     track: HikeTrack?,
@@ -557,6 +593,17 @@ private fun renderTrack(
     val points = track.points
     val geoPoints = points.map { GeoPoint(it.latitude, it.longitude) }
 
+    // RIC-185 : recette S22 du 17/09, en mode placement d'une photo (photoPlacementTarget non nul)
+    // le marqueur du halo doit gagner tout conflit de toucher, et lui seul doit rester réactif.
+    // overlayRules centralise les décisions que ce ticket fait dépendre du mode, pour que renderTrack
+    // ne teste jamais `photoPlacementTarget != null` séparément à chaque overlay : un futur oubli
+    // laisserait une surface redevenir interactive par erreur. Voir placementModeOverlayRules,
+    // extraite en pur (PlacementModeOverlayRulesTest) pour être vérifiable sans assembler un vrai
+    // MapView, qui télécharge des tuiles dès le premier rendu (coût déjà écarté pour
+    // PhotoPlacementDragControllerTest).
+    val placementModeActive = photoPlacementTarget != null
+    val overlayRules = placementModeOverlayRules(placementModeActive, bivouacsReadOnly)
+
     // RIC-181 : tout ce qui pose le curseur AILLEURS que par un balayage du carrousel d'un cluster
     // déjà ouvert (trace, marqueur simple, glissement du curseur lui-même) referme ce cluster : sans
     // ça, un ancien groupe resterait actif en mémoire et pourrait, par coïncidence, se voir réutilisé
@@ -619,11 +666,17 @@ private fun renderTrack(
     // poser un bivouac, sans notion de cluster) ; refermer ici, inconditionnellement, ne change donc
     // jamais son propre comportement et évite un cluster resté actif par coïncidence là où le
     // concept a un sens (le Journal, seul écran qui branche onTrackTapped sur onCursorChanged).
-    val trackTapClearingCluster: (Int) -> Unit = { index ->
-        activeClusterState.photoIds = null
-        onTrackTapped(index)
+    //
+    // RIC-185 : absent pendant le mode placement (overlayRules.trackTapOverlayEnabled). Sans ça, un
+    // toucher à côté du halo posait le curseur ET ouvrait sa bulle, l'un des trois symptômes de la
+    // recette S22 du 17/09.
+    if (overlayRules.trackTapOverlayEnabled) {
+        val trackTapClearingCluster: (Int) -> Unit = { index ->
+            activeClusterState.photoIds = null
+            onTrackTapped(index)
+        }
+        mapView.overlays.add(trackTapOverlay(mapView, points, geoPoints, density, trackTapClearingCluster))
     }
-    mapView.overlays.add(trackTapOverlay(mapView, points, geoPoints, density, trackTapClearingCluster))
 
     // Cadrage AVANT les marqueurs, et non plus tout à la fin : clusterPhotos regroupe les photos
     // selon leur distance en pixels d'écran, donc il lit mapView.projection. Cadrer après lui, au
@@ -668,14 +721,31 @@ private fun renderTrack(
             // RIC-181 : « le tap sur un marqueur simple garde le comportement actuel » (spec) : pas
             // de groupe à ouvrir, mais on referme quand même un cluster resté actif d'un tap
             // précédent ailleurs sur la carte, même raison que trackTapClearingCluster ci-dessus.
-            photoMarker(mapView, geoPoints, cluster.photos.first(), onCursorChangedClearingCluster, iconCache)
-                ?.let { mapView.overlays.add(it) }
+            //
+            // RIC-185 : interactive = overlayRules.photoMarkersInteractive, false pendant le mode
+            // placement (l'un des trois symptômes de la recette S22 : un pin photo sous le doigt
+            // prenait le toucher avant le marqueur de placement).
+            photoMarker(
+                mapView, geoPoints, cluster.photos.first(), onCursorChangedClearingCluster, iconCache,
+                interactive = overlayRules.photoMarkersInteractive,
+            )?.let { mapView.overlays.add(it) }
         } else {
-            mapView.overlays.add(photoClusterMarker(mapView, cluster, onCursorChanged, activeClusterState, iconCache))
+            mapView.overlays.add(
+                photoClusterMarker(
+                    mapView, cluster, onCursorChanged, activeClusterState, iconCache,
+                    interactive = overlayRules.photoMarkersInteractive,
+                ),
+            )
         }
     }
 
-    if (photoPlacementTarget != null && points.isNotEmpty()) {
+    // RIC-185 : construit ici comme avant ce ticket (même emplacement de code), mais ajouté aux
+    // overlays plus bas seulement, tout en bas de renderTrack, APRÈS les bivouacs et le curseur :
+    // lui seul doit gagner tout conflit de toucher pendant le mode placement, et osmdroid distribue
+    // les touchers du DERNIER overlay ajouté au PREMIER (DefaultOverlayManager.onSingleTapConfirmed
+    // et onLongPress itèrent overlaysReversed() et s'arrêtent au premier true qui consomme
+    // l'événement, vérifié dans le bytecode d'osmdroid 6.1.20).
+    val placementMarker = if (photoPlacementTarget != null && points.isNotEmpty()) {
         // ⚠️ `photos.find { ... }` et non `photoPlacementTarget` tel quel pour la position de
         // départ : ce dernier est l'instantané capturé à l'ouverture du mode (requestPhotoPlacement),
         // jamais remis à jour pendant le glissement. `renderTrack` reconstruit TOUS les overlays à
@@ -684,9 +754,9 @@ private fun renderTrack(
         // JournalViewModel.currentPhotos) : repartir de l'instantané figé aurait fait revenir le
         // marqueur à son point de départ à chaque position aimantée, au lieu de suivre le doigt.
         val livePlacementPhoto = photos.find { it.id == photoPlacementTarget.id } ?: photoPlacementTarget
-        mapView.overlays.add(
-            photoPlacementMarker(mapView, points, geoPoints, livePlacementPhoto, cursorDragState, onPhotoPlacementDrag),
-        )
+        photoPlacementMarker(mapView, points, geoPoints, livePlacementPhoto, cursorDragState, onPhotoPlacementDrag)
+    } else {
+        null
     }
 
     // RIC-43 : les bivouacs APRÈS les photos, donc dessinés par-dessus. osmdroid empile ses
@@ -698,11 +768,17 @@ private fun renderTrack(
     // Sans effet sur les touchers malgré la distribution à l'envers d'osmdroid : les bivouacs du
     // Journal ne sont pas déplaçables et leur listener rend false, le toucher continue donc sa
     // route vers le marqueur photo qui se trouve dessous.
+    //
+    // RIC-185 : draggable passe aussi par overlayRules (!bivouacsReadOnly ET pas de mode placement).
+    // Vérifié : le seul écran qui active le mode placement (Journal) pose déjà bivouacsReadOnly =
+    // true, donc draggable était déjà toujours false ici pendant ce mode ; ce garde-fou explicite
+    // évite que ça cesse d'être vrai par accident si un futur écran combine les deux autrement, sans
+    // changer le comportement actuel d'un seul bit.
     bivouacPoints.forEach { bivouac ->
         mapView.overlays.add(
             bivouacMarker(
                 mapView, points, geoPoints, bivouac, onBivouacMoved, onBivouacDragPreview,
-                draggable = !bivouacsReadOnly,
+                draggable = overlayRules.bivouacMarkersDraggable,
             ),
         )
     }
@@ -722,27 +798,42 @@ private fun renderTrack(
         // onCursorChangedClearingCluster : le cluster doit rester actif pendant qu'on le feuillette,
         // c'est tout le sujet du ticket (voir ActiveClusterState).
         cursorInfoWindow.onCarouselPhotoChanged = onCursorChanged
+        // RIC-185 : draggable = overlayRules.cursorDraggable, false pendant le mode placement (le
+        // curseur reste visible à sa dernière position, mais ne doit plus pouvoir être saisi : c'est
+        // le troisième marqueur, après les photos et les bivouacs, à rendre inerte pour ce mode).
         mapView.overlays.add(
             cursorMarker(
                 mapView, points, geoPoints, cursorIndex, density, onCursorChangedClearingCluster,
                 cursorInfoWindow, cursorDragState, distanceCache, mapVisiblePhotos, missingPhotoIds,
+                draggable = overlayRules.cursorDraggable,
             ),
         )
-        val bubbleContent = cursorBubbleContent(
-            context, points, cursorIndex, distanceCache, mapVisiblePhotos, missingPhotoIds,
-            explicitPhotoIds = activeClusterState.photoIds,
-        )
-        val bubblePosition = geoPoints[cursorIndex]
-        // A tap can be dispatched to an overlay that existed before this recomposition and open
-        // its default InfoWindow after renderTrack returns. Re-open ours on the next UI frame so
-        // it deterministically wins and no empty osmdroid speech bubble remains on screen.
-        mapView.postDelayed({
-            InfoWindow.closeAllInfoWindowsOn(mapView)
-            cursorInfoWindow.open(bubbleContent, bubblePosition, 0, cursorBubbleOffsetY(density))
-        }, 100L)
+        // RIC-185 : pas de réouverture pendant le mode placement (overlayRules.cursorBubbleReopens).
+        // renderTrack l'a déjà fermée tout en haut (cursorInfoWindow.close()) ; ne pas la rouvrir ici
+        // suffit à la garder fermée, c'était le troisième symptôme de la recette S22 (un toucher à
+        // côté du halo rouvrait la bulle du dernier curseur posé).
+        if (overlayRules.cursorBubbleReopens) {
+            val bubbleContent = cursorBubbleContent(
+                context, points, cursorIndex, distanceCache, mapVisiblePhotos, missingPhotoIds,
+                explicitPhotoIds = activeClusterState.photoIds,
+            )
+            val bubblePosition = geoPoints[cursorIndex]
+            // A tap can be dispatched to an overlay that existed before this recomposition and open
+            // its default InfoWindow after renderTrack returns. Re-open ours on the next UI frame so
+            // it deterministically wins and no empty osmdroid speech bubble remains on screen.
+            mapView.postDelayed({
+                InfoWindow.closeAllInfoWindowsOn(mapView)
+                cursorInfoWindow.open(bubbleContent, bubblePosition, 0, cursorBubbleOffsetY(density))
+            }, 100L)
+        }
     } else {
         cursorInfoWindow.close()
     }
+
+    // RIC-185 : le marqueur de placement, s'il existe, est ajouté EN DERNIER, après tout le reste
+    // (bivouacs, extrémités, flèches de direction, curseur) : voir le commentaire à sa construction,
+    // plus haut, pour pourquoi c'est ce qui lui fait gagner tout conflit de toucher dans sa zone.
+    placementMarker?.let { mapView.overlays.add(it) }
 
     mapView.invalidate()
 }
@@ -934,6 +1025,10 @@ private fun clusterPhotos(
  * n'importe où réellement sur la trace, c'était le bug remonté). [activeClusterState] mémorise ce
  * groupe pour la durée où sa bulle reste ouverte : voir [ActiveClusterState] et
  * [cursorBubbleContent].
+ *
+ * RIC-185 : [interactive] à false pendant le mode placement d'une photo (voir
+ * [PlacementModeOverlayRules.photoMarkersInteractive]) : le clic ne fait plus rien, sans quoi un
+ * cluster sous le doigt prenait le toucher avant le marqueur de placement.
  */
 private fun photoClusterMarker(
     mapView: MapView,
@@ -941,6 +1036,7 @@ private fun photoClusterMarker(
     onCursorChanged: (Int) -> Unit,
     activeClusterState: ActiveClusterState,
     iconCache: PhotoMarkerIconCache,
+    interactive: Boolean,
 ): Marker {
     val marker = Marker(mapView)
     marker.position = cluster.position
@@ -950,6 +1046,7 @@ private fun photoClusterMarker(
     val targetIndex = cluster.photos.first().positionPointIndex!!
     val photoIds = cluster.photos.mapTo(mutableSetOf()) { it.id }
     marker.setOnMarkerClickListener { _, _ ->
+        if (!interactive) return@setOnMarkerClickListener false
         activeClusterState.photoIds = photoIds
         onCursorChanged(targetIndex)
         true
@@ -1037,6 +1134,10 @@ private fun photoMarkerIcon(context: Context, badgeText: String?): Drawable {
  * Rend null si la photo n'a pas de position (galerie seule) ou si l'index est devenu invalide : ne
  * devrait pas arriver en usage normal, positionPointIndex étant calculé sur cette même trace, qui
  * ne peut techniquement pas être réimportée différemment sous le même id ; le garde-fou coûte peu.
+ *
+ * RIC-185 : [interactive] à false pendant le mode placement d'une photo (voir
+ * [PlacementModeOverlayRules.photoMarkersInteractive]) : le clic ne fait plus rien, symptôme de la
+ * recette S22 où un pin photo sous le doigt prenait le toucher avant le marqueur de placement.
  */
 private fun photoMarker(
     mapView: MapView,
@@ -1044,6 +1145,7 @@ private fun photoMarker(
     photo: LoggedTrackPhotoEntity,
     onCursorChanged: (Int) -> Unit,
     iconCache: PhotoMarkerIconCache,
+    interactive: Boolean,
 ): Marker? {
     val index = photo.positionPointIndex ?: return null
     if (index !in geoPoints.indices) return null
@@ -1059,7 +1161,7 @@ private fun photoMarker(
     marker.icon = iconCache.get(mapView.context, null)
     marker.setInfoWindow(null)
     marker.isDraggable = false
-    marker.setOnMarkerClickListener { _, _ -> onCursorChanged(index); true }
+    marker.setOnMarkerClickListener { _, _ -> if (interactive) { onCursorChanged(index); true } else false }
     return marker
 }
 
@@ -1139,6 +1241,11 @@ internal class PhotoPlacementDragController(
  *
  * RIC-174 : la décision (throttlage, drapeau de glissement) est déléguée à
  * [PhotoPlacementDragController], ce listener ne fait plus que la traduire en mouvements du Marker.
+ *
+ * RIC-185 : le Marker est un [PhotoPlacementHitMarker], pas un Marker nu : sa zone de saisie
+ * couvre le halo dessiné par [photoPlacementMarkerIcon], pas seulement le pin. Recette S22 du
+ * 17/09 : un toucher dans le halo mais hors du petit rectangle du pin (Marker.hitTest par défaut,
+ * `mOrientedMarkerRect.contains(x, y)`, vérifié dans le bytecode) ratait le marqueur.
  */
 private fun photoPlacementMarker(
     mapView: MapView,
@@ -1148,7 +1255,7 @@ private fun photoPlacementMarker(
     cursorDragState: CursorDragState,
     onDragged: (Int) -> Unit,
 ): Marker {
-    val marker = Marker(mapView)
+    val marker = PhotoPlacementHitMarker(mapView, photoPlacementHaloRadiusPx(mapView.context))
     val startIndex = photo.positionPointIndex?.takeIf { it in geoPoints.indices } ?: 0
     marker.position = geoPoints[startIndex]
     // ANCHOR_CENTER des deux côtés, et non ANCHOR_CENTER/ANCHOR_BOTTOM comme les autres marqueurs
@@ -1181,6 +1288,17 @@ private fun photoPlacementMarker(
 }
 
 /**
+ * RIC-185 : rayon du halo en pixels écran, calculé une fois pour toutes à partir de la largeur
+ * intrinsèque du pin ([PHOTO_PLACEMENT_HALO_RADIUS_FACTOR]) et partagé par le dessin
+ * ([photoPlacementMarkerIcon]) et la zone de saisie élargie ([PhotoPlacementHitMarker]) : même
+ * constante des deux côtés, pas deux nombres qui pourraient diverger à la prochaine retouche.
+ */
+private fun photoPlacementHaloRadiusPx(context: Context): Float {
+    val base = ContextCompat.getDrawable(context, R.drawable.ic_marker_photo)!!
+    return base.intrinsicWidth * PHOTO_PLACEMENT_HALO_RADIUS_FACTOR
+}
+
+/**
  * RIC-166 : le marqueur photo habituel ([photoMarkerIcon]), avec un halo translucide derrière pour
  * le distinguer de tous les autres pendant le mode placement. Reconstruit à chaque pose plutôt que
  * mis en cache comme [PhotoMarkerIconCache] : ce marqueur n'existe jamais qu'une fois à la fois.
@@ -1188,7 +1306,7 @@ private fun photoPlacementMarker(
 private fun photoPlacementMarkerIcon(context: Context): Drawable {
     val density = context.resources.displayMetrics.density
     val base = ContextCompat.getDrawable(context, R.drawable.ic_marker_photo)!!
-    val haloRadius = base.intrinsicWidth * 0.9f
+    val haloRadius = base.intrinsicWidth * PHOTO_PLACEMENT_HALO_RADIUS_FACTOR
     val size = (haloRadius * 2).toInt().coerceAtLeast(base.intrinsicWidth)
     val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
@@ -1218,10 +1336,42 @@ private fun photoPlacementMarkerIcon(context: Context): Drawable {
     return BitmapDrawable(context.resources, bitmap)
 }
 
+/**
+ * RIC-185 : la partie pure du hitTest élargi de [PhotoPlacementHitMarker], indépendante d'osmdroid
+ * et donc testable directement sans assembler un vrai MapView (voir
+ * PlacementHaloHitTestTest). Un simple test de distance au carré contre le rayon du halo, appelé
+ * seulement quand `Marker.hitTest` par défaut (le rectangle du pin) a déjà refusé le toucher.
+ */
+internal fun isWithinPlacementHalo(touchX: Float, touchY: Float, centerX: Int, centerY: Int, haloRadiusPx: Float): Boolean {
+    val dx = touchX - centerX
+    val dy = touchY - centerY
+    return dx * dx + dy * dy <= haloRadiusPx * haloRadiusPx
+}
+
+// RIC-185 : même motif que CursorDragMarker juste en dessous (hitTest élargi au-delà du rectangle
+// du pin), rayon différent : celui du halo dessiné par photoPlacementMarkerIcon
+// (photoPlacementHaloRadiusPx), pas un rayon fixe en dp. C'est ce qui manquait pour que la zone de
+// saisie du marqueur de placement couvre son halo visible (recette S22 du 17/09) : Marker.hitTest
+// par défaut ne teste que mOrientedMarkerRect (le pin), jamais ce qui est dessiné par-dessus.
+private class PhotoPlacementHitMarker(
+    private val owner: MapView,
+    private val haloRadiusPx: Float,
+) : Marker(owner) {
+    override fun hitTest(event: MotionEvent, mapView: MapView): Boolean {
+        if (super.hitTest(event, mapView)) return true
+        val center = owner.projection.toPixels(position, Point())
+        return isWithinPlacementHalo(event.x, event.y, center.x, center.y, haloRadiusPx)
+    }
+}
+
 // Same drag-and-snap gabarit as a bivouac marker, but nothing here is ever persisted: every
 // snapped position during a drag is immediately reported as final via onCursorChanged (no
 // preview/commit split), and re-opens the info bubble on each index change so it tracks the
 // marker without waiting for the next full recomposition.
+//
+// RIC-185 : [draggable] à false pendant le mode placement d'une photo (voir
+// [PlacementModeOverlayRules.cursorDraggable]) : le curseur reste visible à sa dernière position
+// mais ne doit plus pouvoir être saisi pendant ce mode.
 private fun cursorMarker(
     mapView: MapView,
     points: List<TrackPoint>,
@@ -1234,12 +1384,13 @@ private fun cursorMarker(
     distanceCache: TrackDistanceCache,
     photos: List<LoggedTrackPhotoEntity>,
     missingPhotoIds: Set<Long>,
+    draggable: Boolean,
 ): Marker {
     val marker = CursorDragMarker(mapView)
     marker.position = geoPoints[cursorIndex]
     marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
     marker.icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_marker_cursor)
-    marker.isDraggable = true
+    marker.isDraggable = draggable
     marker.setInfoWindow(null)
     // The cursor's dedicated CursorInfoWindow is opened explicitly with distance/altitude.
     // Consuming marker taps prevents osmdroid from opening its large empty default bubble on
