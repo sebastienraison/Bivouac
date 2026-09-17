@@ -52,7 +52,7 @@ class PhotoAdjustDialogTest {
         composeTestRule.onNodeWithContentDescription("Tourner à gauche").assertIsDisplayed()
         composeTestRule.onNodeWithContentDescription("Tourner à droite").assertIsDisplayed()
         composeTestRule
-            .onNodeWithText("Coins : les proportions sont conservées · Côtés : recadrage libre")
+            .onNodeWithText("Coins : proportions conservées · Côtés : recadrage libre · Intérieur : déplacer")
             .assertIsDisplayed()
     }
 

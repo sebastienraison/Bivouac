@@ -61,11 +61,19 @@ class PhotoCropGeometryTest {
     }
 
     @Test
-    fun `un contact au milieu du cadre ne saisit rien`() {
+    fun `un contact au milieu du cadre saisit l'interieur, pour deplacer le cadre en bloc`() {
         val frame = CropFrame(100f, 150f, 300f, 250f)
 
-        // L'image est fixe dans cet éditeur : il n'y a rien à faire d'un glissement au centre.
-        assertNull(cropHandleAt(200f, 200f, frame, touchRadius = 22f))
+        // RIC-179 : un glissement loin de tout bord déplace désormais le cadre entier, plutôt que
+        // de ne rien faire.
+        assertEquals(CropHandle.INSIDE, cropHandleAt(200f, 200f, frame, touchRadius = 22f))
+    }
+
+    @Test
+    fun `un contact hors du cadre ne saisit rien`() {
+        val frame = CropFrame(100f, 150f, 300f, 250f)
+
+        assertNull(cropHandleAt(50f, 50f, frame, touchRadius = 22f))
     }
 
     // --- Coins : proportions conservées ---------------------------------------------------------
@@ -174,6 +182,71 @@ class PhotoCropGeometryTest {
         val dragged = dragCropHandle(frame, bounds, CropHandle.RIGHT, dx = -5000f, dy = 0f, minSide)
 
         assertEquals(frame.left + minSide, dragged.right, 1e-3f)
+    }
+
+    // --- Intérieur : déplacer le cadre entier (RIC-179) -----------------------------------------
+
+    @Test
+    fun `tirer l'interieur translate le cadre sans changer sa taille`() {
+        val frame = CropFrame(150f, 150f, 250f, 200f) // 100 x 50, loin de tout bord de `bounds`
+
+        val dragged = dragCropHandle(frame, bounds, CropHandle.INSIDE, dx = 30f, dy = -20f, minSide)
+
+        assertEquals(180f, dragged.left, 1e-3f)
+        assertEquals(130f, dragged.top, 1e-3f)
+        assertEquals(frame.width, dragged.width, 1e-3f)
+        assertEquals(frame.height, dragged.height, 1e-3f)
+    }
+
+    @Test
+    fun `un deplacement bute sur chacun des quatre bords sans deformer le cadre`() {
+        val frame = CropFrame(150f, 150f, 250f, 200f) // 100 x 50
+
+        val left = dragCropHandle(frame, bounds, CropHandle.INSIDE, dx = -5000f, dy = 0f, minSide)
+        assertEquals(bounds.left, left.left, 1e-3f)
+        assertEquals(frame.width, left.width, 1e-3f)
+        assertEquals(frame.height, left.height, 1e-3f)
+
+        val right = dragCropHandle(frame, bounds, CropHandle.INSIDE, dx = 5000f, dy = 0f, minSide)
+        assertEquals(bounds.right, right.right, 1e-3f)
+        assertEquals(frame.width, right.width, 1e-3f)
+        assertEquals(frame.height, right.height, 1e-3f)
+
+        val top = dragCropHandle(frame, bounds, CropHandle.INSIDE, dx = 0f, dy = -5000f, minSide)
+        assertEquals(bounds.top, top.top, 1e-3f)
+        assertEquals(frame.width, top.width, 1e-3f)
+        assertEquals(frame.height, top.height, 1e-3f)
+
+        val bottom = dragCropHandle(frame, bounds, CropHandle.INSIDE, dx = 0f, dy = 5000f, minSide)
+        assertEquals(bounds.bottom, bottom.bottom, 1e-3f)
+        assertEquals(frame.width, bottom.width, 1e-3f)
+        assertEquals(frame.height, bottom.height, 1e-3f)
+    }
+
+    @Test
+    fun `un deplacement en diagonale butee sur deux bords a la fois ne deforme pas le cadre`() {
+        val frame = CropFrame(150f, 150f, 250f, 200f)
+
+        val dragged = dragCropHandle(frame, bounds, CropHandle.INSIDE, dx = -5000f, dy = -5000f, minSide)
+
+        assertEquals(bounds.left, dragged.left, 1e-3f)
+        assertEquals(bounds.top, dragged.top, 1e-3f)
+        assertEquals(frame.width, dragged.width, 1e-3f)
+        assertEquals(frame.height, dragged.height, 1e-3f)
+    }
+
+    @Test
+    fun `un deplacement se comporte pareil sur des bornes portrait que paysage`() {
+        // Bornes portrait : ce que fitInside produit une fois l'image tournée d'un quart de tour.
+        // Rien dans le déplacement du cadre ne doit supposer une orientation paysage.
+        val portraitBounds = CropFrame(100f, 50f, 300f, 450f) // 200 x 400
+        val frame = CropFrame(150f, 100f, 250f, 150f) // 100 x 50, proche du bord haut
+
+        val dragged = dragCropHandle(frame, portraitBounds, CropHandle.INSIDE, dx = 0f, dy = -5000f, minSide)
+
+        assertEquals(portraitBounds.top, dragged.top, 1e-3f)
+        assertEquals(frame.width, dragged.width, 1e-3f)
+        assertEquals(frame.height, dragged.height, 1e-3f)
     }
 
     // --- Aller-retour écran / base ---------------------------------------------------------------

@@ -216,7 +216,9 @@ internal fun PhotoAdjustDialog(
                     )
                 }
                 Text(
-                    "Coins : les proportions sont conservées · Côtés : recadrage libre",
+                    // RIC-179 : « Intérieur » ajouté au texte d'aide, même style de séparateur
+                    // (point médian) que les deux autres, pour annoncer le troisième geste.
+                    "Coins : proportions conservées · Côtés : recadrage libre · Intérieur : déplacer",
                     color = Color(0xFFC8C9BC),
                     style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,

@@ -34,6 +34,10 @@ data class CropFrame(val left: Float, val top: Float, val right: Float, val bott
  * l'échelle en conservant ses proportions, un CÔTÉ ne bouge qu'une dimension. Les deux gestes
  * cohabitent sur le même cadre, sans mode à choisir, sans ratio prédéfini. C'est ce mode mixte qui
  * a fait écarter la bibliothèque évaluée en conception : elle ne savait faire que l'un ou l'autre.
+ *
+ * RIC-179 : INSIDE s'ajoute aux deux gestes ci-dessus, avec la priorité la plus basse (voir
+ * [cropHandleAt]) : un contact qui ne mord ni un coin ni un côté mais tombe dans le cadre le
+ * déplace en bloc, taille et proportions inchangées.
  */
 enum class CropHandle {
     TOP_LEFT,
@@ -44,6 +48,7 @@ enum class CropHandle {
     TOP,
     RIGHT,
     BOTTOM,
+    INSIDE,
     ;
 
     val isCorner: Boolean
@@ -62,6 +67,11 @@ enum class CropHandle {
  * obtenir les 44 dp exigés. Les côtés sont saisissables sur TOUTE leur longueur et pas seulement au
  * niveau de la barre dessinée : la barre dit où est la poignée, elle ne doit pas être la seule
  * façon de l'atteindre.
+ *
+ * RIC-179 : ordre de priorité coins puis côtés puis intérieur, jamais l'inverse. Près d'un bord,
+ * les trois zones se recouvrent (l'intérieur est un rectangle rétréci de [touchRadius] de chaque
+ * côté), et c'est toujours le geste le plus spécifique qui doit gagner : redimensionner prime sur
+ * déplacer.
  */
 fun cropHandleAt(x: Float, y: Float, frame: CropFrame, touchRadius: Float): CropHandle? {
     val nearLeft = abs(x - frame.left) <= touchRadius
@@ -79,22 +89,27 @@ fun cropHandleAt(x: Float, y: Float, frame: CropFrame, touchRadius: Float): Crop
     if (nearRight && withinY) return CropHandle.RIGHT
     if (nearTop && withinX) return CropHandle.TOP
     if (nearBottom && withinX) return CropHandle.BOTTOM
+    val strictlyInside = x > frame.left + touchRadius && x < frame.right - touchRadius &&
+        y > frame.top + touchRadius && y < frame.bottom - touchRadius
+    if (strictlyInside) return CropHandle.INSIDE
     return null
 }
 
 /**
  * Le cadre après un déplacement de [dx], [dy] sur la poignée saisie.
  *
- * Deux gestes, et deux seulement :
+ * Trois gestes :
  * - COIN : homothétie autour du coin OPPOSÉ, donc les proportions du cadre sont conservées. Le
  *   facteur d'échelle est la projection du déplacement sur la diagonale : tirer perpendiculairement
  *   à la diagonale ne change rien, ce qui est exactement ce qu'on attend d'une mise à l'échelle.
  * - CÔTÉ : un seul bord bouge, les trois autres ne bougent pas. Recadrage libre.
+ * - INTÉRIEUR (RIC-179) : translation du cadre entier, taille et proportions inchangées.
  *
- * Dans les deux cas, deux invariants ne sont jamais violés : le cadre reste entièrement dans
- * [bounds] (l'image affichée), et aucun de ses côtés ne descend sous [minSide]. Ils sont appliqués
- * en bornant le geste, pas en le refusant : tirer au-delà de l'image fait buter le cadre sur le
- * bord, il ne se fige pas au premier pixel de trop.
+ * Dans les trois cas, deux invariants ne sont jamais violés : le cadre reste entièrement dans
+ * [bounds] (l'image affichée), et aucun de ses côtés ne descend sous [minSide] (sans objet pour la
+ * translation, qui ne change pas la taille). Ils sont appliqués en bornant le geste, pas en le
+ * refusant : tirer au-delà de l'image fait buter le cadre sur le bord, il ne se fige pas au premier
+ * pixel de trop.
  */
 fun dragCropHandle(
     frame: CropFrame,
@@ -103,10 +118,23 @@ fun dragCropHandle(
     dx: Float,
     dy: Float,
     minSide: Float,
-): CropFrame = if (handle.isCorner) {
-    scaleAroundOppositeCorner(frame, bounds, handle, dx, dy, minSide)
-} else {
-    moveSide(frame, bounds, handle, dx, dy, minSide)
+): CropFrame = when {
+    handle.isCorner -> scaleAroundOppositeCorner(frame, bounds, handle, dx, dy, minSide)
+    handle == CropHandle.INSIDE -> moveFrame(frame, bounds, dx, dy)
+    else -> moveSide(frame, bounds, handle, dx, dy, minSide)
+}
+
+/**
+ * RIC-179 : déplace [frame] de [dx], [dy] sans changer sa taille, borné pour qu'il reste entièrement
+ * dans [bounds]. `coerceIn` exige `min <= max` ; `maxOf(bounds.left, ...)` couvre le cas dégénéré
+ * d'un cadre plus large ou plus haut que l'image (ne devrait pas arriver, le cadre initial et
+ * [minSide] sont bornés par l'image, mais une géométrie pure ne doit jamais planter sur une entrée
+ * qu'elle n'a pas elle-même garantie).
+ */
+private fun moveFrame(frame: CropFrame, bounds: CropFrame, dx: Float, dy: Float): CropFrame {
+    val newLeft = (frame.left + dx).coerceIn(bounds.left, maxOf(bounds.left, bounds.right - frame.width))
+    val newTop = (frame.top + dy).coerceIn(bounds.top, maxOf(bounds.top, bounds.bottom - frame.height))
+    return CropFrame(newLeft, newTop, newLeft + frame.width, newTop + frame.height)
 }
 
 private fun moveSide(
