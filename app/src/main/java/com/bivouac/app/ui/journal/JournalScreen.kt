@@ -798,6 +798,10 @@ fun JournalScreen(
                 viewedPhotoIndex = null
                 viewModel.requestPhotoPlacement(photo)
             },
+            // RIC-178 : la trace ouverte, pour que la visionneuse puisse rejouer
+            // PhotoPositionCorrelator sur la photo affichée (voir PhotoViewerDialog.autoPositionMenuEntry).
+            trackPoints = detail?.track?.points.orEmpty(),
+            onRestoreAutoPositionClick = viewModel::restorePhotoAutoPosition,
             onToggleShownOnMap = viewModel::togglePhotoShownOnMap,
             onCaptionClick = viewModel::requestPhotoCaptionEdit,
         )

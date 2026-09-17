@@ -146,6 +146,15 @@ data class StagedPhotoBatch(val staged: List<PendingPhotoAdd>, val report: Photo
 /** RIC-152 : ce que « Purger les photos » annonce avant d'agir : voir [LoggedTrackRepository.photoStorageSummary]. */
 data class PhotoStorageSummary(val count: Int, val totalBytes: Long)
 
+/**
+ * RIC-178 : une position à écrire pour une photo, glissement manuel du mode placement OU retour à
+ * la position automatique (« Replacer à la position GPS »/« … selon l'heure de prise de vue », menu
+ * Position de la visionneuse). [positionApproximate] suit la même colonne que
+ * [LoggedTrackPhotoEntity.positionApproximate] : false pour un glissement manuel ou un GPS rejoué,
+ * true seulement quand la routine rejouée n'a pu s'appuyer que sur l'horodatage.
+ */
+data class PhotoPositionUpdate(val pointIndex: Int, val positionApproximate: Boolean)
+
 // Identifiants d'affichage des ajouts en attente : uniques pour la durée du process, et toujours
 // négatifs pour ne jamais pouvoir croiser un id Room autogénéré (qui part de 1). Au niveau du
 // fichier et non de l'instance de repository : plusieurs repositories coexistent (un par
@@ -1075,26 +1084,27 @@ class LoggedTrackRepository(context: Context) {
         }
     }
 
-    // "Repositionner" (RIC-43) : toujours positionApproximate = false, qu'il s'agisse de corriger
+    // "Repositionner" (RIC-43) : positionApproximate par défaut à false, qu'il s'agisse de corriger
     // une position déduite par horodatage ou de déplacer une position déjà certaine : un
     // repositionnement manuel vaut confirmation explicite dans les deux cas.
     //
-    // Plus atteignable depuis l'UI : le menu d'appui long d'une vignette ne garde que
-    // « Supprimer », la mécanique de placement étant différée à un lot ultérieur. Conservée telle
-    // quelle, avec sa requête DAO, pour que ce lot-là la reprenne plutôt que de la réécrire.
-    suspend fun repositionPhoto(id: Long, positionPointIndex: Int?) {
-        dao.updatePhotoPosition(id, positionPointIndex, positionApproximate = false)
+    // RIC-178 : paramètre explicite plutôt que toujours false. « Replacer selon l'heure de prise de
+    // vue » (menu Position) rejoue PhotoPositionCorrelator et peut rendre une position approximative
+    // qu'il faut écrire telle quelle, pas confirmée comme si l'utilisateur avait pointé du doigt.
+    suspend fun repositionPhoto(id: Long, positionPointIndex: Int?, positionApproximate: Boolean = false) {
+        dao.updatePhotoPosition(id, positionPointIndex, positionApproximate)
     }
 
     /**
-     * RIC-166 : les repositionnements manuels accumulés pendant une édition, écrits à la
-     * sauvegarde. Même moitié du même geste que [deletePhotos]/[updatePhotoAdjustments] :
-     * [onProgress] alimente le même compteur. Reprend [repositionPhoto] telle quelle plutôt que de
-     * la réécrire, comme le prévoyait déjà son commentaire.
+     * RIC-166/178 : les repositionnements accumulés pendant une édition (glissement manuel ou
+     * retour à la position automatique du menu Position), écrits à la sauvegarde. Même moitié du
+     * même geste que [deletePhotos]/[updatePhotoAdjustments] : [onProgress] alimente le même
+     * compteur. Reprend [repositionPhoto] telle quelle plutôt que de la réécrire, comme le prévoyait
+     * déjà son commentaire.
      */
-    suspend fun updatePhotoPositions(positionByPhotoId: Map<Long, Int>, onProgress: () -> Unit = {}) {
-        for ((id, pointIndex) in positionByPhotoId) {
-            repositionPhoto(id, pointIndex)
+    suspend fun updatePhotoPositions(positionByPhotoId: Map<Long, PhotoPositionUpdate>, onProgress: () -> Unit = {}) {
+        for ((id, update) in positionByPhotoId) {
+            repositionPhoto(id, update.pointIndex, update.positionApproximate)
             onProgress()
         }
     }
