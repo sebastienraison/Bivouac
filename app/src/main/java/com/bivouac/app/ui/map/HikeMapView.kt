@@ -165,11 +165,25 @@ private const val CURSOR_HIT_RADIUS_DP = 28f
 // Journal-only (BIV-48): one track among several shown together in the multi-trace overview.
 data class ColoredTrack(val id: String, val track: HikeTrack, val color: Color)
 
-// Compose updates HikeMapView whenever the Journal cursor index changes. While osmdroid owns an
-// active drag, rebuilding all overlays would replace the marker under the finger and interrupt
-// the gesture. This tiny bridge lets renderTrack leave the live overlay tree untouched until the
-// finger is released.
-private class CursorDragState(var isDragging: Boolean = false)
+// Compose updates HikeMapView whenever the Journal cursor index or the photo draft changes. While
+// osmdroid owns an active drag, rebuilding all overlays would replace the marker under the finger
+// and interrupt the gesture. This tiny bridge lets renderTrack leave the live overlay tree
+// untouched until the finger is released.
+//
+// RIC-174 : partagé entre le curseur ET le marqueur de repositionnement photo (photoPlacementMarker),
+// et non plus réservé au seul curseur malgré son nom d'origine gardé pour limiter le diff. Un seul
+// glissement tactile est possible à la fois sur cette carte (un seul doigt, un seul MapView) : le
+// même drapeau suffit à garder les deux, pas besoin d'un état par marqueur. Voir
+// PhotoPlacementDragController pour ce qui l'utilise côté placement.
+//
+// Implémente MapDragStateHandle (interface internal, testable) plutôt que d'exposer directement
+// cette classe privée : PhotoPlacementDragController, qui doit être internal pour être testé en
+// JVM pur, ne peut pas prendre un type privé dans sa signature publique.
+internal interface MapDragStateHandle {
+    var isDragging: Boolean
+}
+
+private class CursorDragState(override var isDragging: Boolean = false) : MapDragStateHandle
 
 // osmdroid's CopyrightOverlay draws its notice with a single Canvas.drawText call, which never
 // wraps: fine for Mapnik's short "© OpenStreetMap contributors" but runs off the right edge of
@@ -636,7 +650,9 @@ private fun renderTrack(
         // JournalViewModel.currentPhotos) : repartir de l'instantané figé aurait fait revenir le
         // marqueur à son point de départ à chaque position aimantée, au lieu de suivre le doigt.
         val livePlacementPhoto = photos.find { it.id == photoPlacementTarget.id } ?: photoPlacementTarget
-        mapView.overlays.add(photoPlacementMarker(mapView, points, geoPoints, livePlacementPhoto, onPhotoPlacementDrag))
+        mapView.overlays.add(
+            photoPlacementMarker(mapView, points, geoPoints, livePlacementPhoto, cursorDragState, onPhotoPlacementDrag),
+        )
     }
 
     // RIC-43 : les bivouacs APRÈS les photos, donc dessinés par-dessus. osmdroid empile ses
@@ -991,6 +1007,67 @@ private fun photoMarker(
 }
 
 /**
+ * RIC-174 : la logique d'un glissement du marqueur de placement, extraite de son
+ * `OnMarkerDragListener` pour être vérifiable sans geste tactile réel (voir
+ * PhotoPlacementDragControllerTest). Aucune dépendance osmdroid : seule
+ * `TrackGeometry.nearestPointIndex` est pure, et c'est tout ce dont cette classe a besoin.
+ *
+ * Cause du gel remonté en recette (S22) : `onMarkerDrag` appelait `onDragged` à CHAQUE frame de
+ * toucher brut, y compris quand l'index aimanté n'avait pas changé. Chaque appel écrit dans le
+ * brouillon d'édition (JournalViewModel.updatePhotoPlacementPosition), ce qui recompose `photos`,
+ * ce qui relance `renderTrack`, qui vide et reconstruit TOUS les overlays : l'instance de Marker
+ * tenue par le doigt disparaissait dès le premier mouvement, avant même le premier changement
+ * d'index. « Quelques pixels » de glissement, c'était le temps qu'il fallait à osmdroid pour
+ * livrer cette toute première frame ACTION_MOVE.
+ *
+ * Deux mécanismes complémentaires règlent ça, exactement comme pour le curseur
+ * ([cursorMarker]) :
+ *  - [onDragStart]/[onDragEnd] lèvent/abaissent [mapDragState], que `renderTrack` consulte tout en
+ *    haut pour ne PAS reconstruire les overlays tant qu'un glissement est en cours (guard déjà en
+ *    place pour le curseur, désormais partagé, voir [CursorDragState]) : le marqueur saisi par le
+ *    doigt reste la même instance jusqu'au relâchement.
+ *  - [onDrag] ne notifie [onDragged] QUE quand l'index aimanté change réellement (comme
+ *    [bivouacMarker]/[cursorMarker]), pas à chaque frame : le brouillon (donc le profil
+ *    altimétrique) continue de suivre à chaque position aimantée, sans repasser par une écriture
+ *    pour chaque micro-mouvement du doigt qui reste sur le même point de trace.
+ */
+internal class PhotoPlacementDragController(
+    private val points: List<TrackPoint>,
+    private val mapDragState: MapDragStateHandle,
+    private val onDragged: (Int) -> Unit,
+) {
+    private var lastEmittedIndex: Int? = null
+
+    fun onDragStart() {
+        mapDragState.isDragging = true
+    }
+
+    /** Une frame de glissement brut : rend l'index aimanté, pour repositionner le Marker à l'écran. */
+    fun onDrag(latitude: Double, longitude: Double): Int {
+        val nearestIndex = TrackGeometry.nearestPointIndex(points, latitude, longitude)
+        if (nearestIndex != lastEmittedIndex) {
+            lastEmittedIndex = nearestIndex
+            onDragged(nearestIndex)
+        }
+        return nearestIndex
+    }
+
+    /**
+     * Relâchement : le glissement en cours se termine (le prochain renderTrack peut reconstruire),
+     * et la valeur finale est réémise sans condition, même si la dernière frame de [onDrag] l'avait
+     * déjà notifiée : même raison que [cursorMarker].onMarkerDragEnd, un point de mise à jour
+     * déterministe après une rafale de callbacks de mouvement.
+     */
+    fun onDragEnd(latitude: Double, longitude: Double): Int {
+        mapDragState.isDragging = false
+        val nearestIndex = TrackGeometry.nearestPointIndex(points, latitude, longitude)
+        lastEmittedIndex = nearestIndex
+        onDragged(nearestIndex)
+        return nearestIndex
+    }
+}
+
+/**
  * RIC-166 : le marqueur, unique, de la photo en cours de repositionnement (« Repositionner sur la
  * trace », menu Position de la visionneuse). Mise en évidence par un halo (voir
  * [photoPlacementMarkerIcon]) : c'est le seul marqueur glissable de tout l'écran pendant que ce mode
@@ -1002,12 +1079,16 @@ private fun photoMarker(
  * pas de Valider/Annuler propre ici, chaque position aimantée réécrit directement le brouillon
  * d'édition (voir JournalViewModel.updatePhotoPlacementPosition), et c'est la disquette qui la rend
  * définitive.
+ *
+ * RIC-174 : la décision (throttlage, drapeau de glissement) est déléguée à
+ * [PhotoPlacementDragController], ce listener ne fait plus que la traduire en mouvements du Marker.
  */
 private fun photoPlacementMarker(
     mapView: MapView,
     points: List<TrackPoint>,
     geoPoints: List<GeoPoint>,
     photo: LoggedTrackPhotoEntity,
+    cursorDragState: CursorDragState,
     onDragged: (Int) -> Unit,
 ): Marker {
     val marker = Marker(mapView)
@@ -1020,20 +1101,23 @@ private fun photoPlacementMarker(
     marker.setInfoWindow(null)
     marker.setOnMarkerClickListener { _, _ -> true }
     marker.isDraggable = true
+    val dragController = PhotoPlacementDragController(points, cursorDragState, onDragged)
     marker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
-        override fun onMarkerDragStart(marker: Marker) = Unit
+        override fun onMarkerDragStart(marker: Marker) {
+            dragController.onDragStart()
+        }
 
         override fun onMarkerDrag(marker: Marker) {
             val current = marker.position
-            val nearestIndex = TrackGeometry.nearestPointIndex(points, current.latitude, current.longitude)
+            val nearestIndex = dragController.onDrag(current.latitude, current.longitude)
             marker.position = geoPoints[nearestIndex]
             mapView.invalidate()
-            onDragged(nearestIndex)
         }
 
         override fun onMarkerDragEnd(marker: Marker) {
-            val nearestIndex = TrackGeometry.nearestPointIndex(points, marker.position.latitude, marker.position.longitude)
-            onDragged(nearestIndex)
+            val nearestIndex = dragController.onDragEnd(marker.position.latitude, marker.position.longitude)
+            marker.position = geoPoints[nearestIndex]
+            mapView.invalidate()
         }
     })
     return marker
