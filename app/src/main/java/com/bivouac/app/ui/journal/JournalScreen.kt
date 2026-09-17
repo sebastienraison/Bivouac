@@ -396,6 +396,22 @@ fun JournalScreen(
                         BivouacPoint(id = "jonction-$index", trackPointIndex = pointIndex)
                     }
             }
+            // RIC-184 : Terminé et Annuler partagent ce geste, la seule différence étant l'appel
+            // ViewModel derrière (exitPhotoPlacement / cancelPhotoPlacement, RIC-183). La cible est
+            // capturée AVANT de sortir du mode : le ViewModel l'efface dans cet appel, il n'y a donc
+            // plus rien à lire après pour savoir quelle photo rouvrir. Partagé avec
+            // ThreeStopJournalDetail (retour arrière aligné sur Annuler, RIC-183) : c'est cette vue
+            // écran, et non le tiroir, qui sait rouvrir la visionneuse.
+            val handlePhotoPlacementDone = {
+                val target = photoPlacementTarget
+                viewModel.exitPhotoPlacement()
+                viewedPhotoIndex = target?.let { photoIndexToReopenAfterPlacement(it.id, currentPhotos) }
+            }
+            val handlePhotoPlacementCancel = {
+                val target = photoPlacementTarget
+                viewModel.cancelPhotoPlacement()
+                viewedPhotoIndex = target?.let { photoIndexToReopenAfterPlacement(it.id, currentPhotos) }
+            }
             Box(modifier = modifier.fillMaxSize()) {
                 JournalMap(
                     track = detail.track,
@@ -428,8 +444,8 @@ fun JournalScreen(
                         photoPlacementTarget?.let { viewModel.updatePhotoPlacementPosition(it.id, pointIndex) }
                         photoPlacementPreviewIndex = pointIndex
                     },
-                    onPhotoPlacementDone = viewModel::exitPhotoPlacement,
-                    onPhotoPlacementCancel = viewModel::cancelPhotoPlacement,
+                    onPhotoPlacementDone = handlePhotoPlacementDone,
+                    onPhotoPlacementCancel = handlePhotoPlacementCancel,
                     nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
                 )
                 ThreeStopJournalDetail(
@@ -468,8 +484,10 @@ fun JournalScreen(
                     onEditingChanged = { isEditingDetail = it },
                     // RIC-183 : pour que le retour arrière (BackHandler plus bas) se comporte
                     // comme Annuler pendant le mode placement.
+                    // RIC-184 : le même passage rouvre aussi la visionneuse et rend le tiroir à son
+                    // cran d'avant (voir le LaunchedEffect sur drawer, plus bas).
                     photoPlacementActive = photoPlacementTarget != null,
-                    onPhotoPlacementCancel = viewModel::cancelPhotoPlacement,
+                    onPhotoPlacementCancel = handlePhotoPlacementCancel,
                 )
             }
         }
@@ -1831,6 +1849,11 @@ private fun ReadOnlyBivouacRow(arrival: TrackPoint?, departure: TrackPoint?) {
     }
 }
 
+// RIC-184 : cran cible pendant le mode placement (carte + profil altimétrique, qui suit le
+// glissement, voir cursorIndex plus haut) : nommé pour repasser à SUMMARY sans avoir à le
+// rechercher dans le corps de ThreeStopJournalDetail.
+private val PhotoPlacementDrawerStop = DrawerStop.PROFILE
+
 // internal rather than private: exercised directly by BivouacDatabaseMigrationTest's sibling,
 // ThreeStopJournalDetailDirtyIndicatorTest (androidTest), to test the isDirty save-icon states
 // without driving the whole Journal screen through a real ViewModel.
@@ -1892,6 +1915,8 @@ internal fun ThreeStopJournalDetail(
     onEditingChanged: (Boolean) -> Unit = {},
     // RIC-183 : true pendant le mode placement (photoPlacementTarget non nul côté écran). Sert ici
     // à aligner le retour arrière (voir BackHandler plus bas) sur Annuler pendant le mode.
+    // RIC-184 : pilote aussi le cran du tiroir (voir drawer plus bas, qui vit dans cette vue
+    // détail et donc pas hissé).
     photoPlacementActive: Boolean = false,
     onPhotoPlacementCancel: () -> Unit = {},
 ) {
@@ -2014,6 +2039,28 @@ internal fun ThreeStopJournalDetail(
             )
         }
         val drawer = rememberThreeStopDrawerState(anchors, entry.id)
+        // RIC-184 : le tiroir descend sur PhotoPlacementDrawerStop à l'entrée du mode placement
+        // (carte visible pour le glissement), et revient au cran qu'il avait avant une fois le
+        // mode quitté par Terminé ou Annuler. remember (pas rememberSaveable) suffit : la rotation
+        // ne recrée pas l'Activity (voir viewedPhotoIndex plus haut, même contrainte manifeste),
+        // seul le tiroir change ici, pas le process.
+        //
+        // « L'édition continue » (isEditing) est ce qui distingue Terminé/Annuler de la disquette
+        // et de l'abandon : ces deux derniers coupent isEditing AVANT de fermer le mode placement
+        // (voir saveAndStopEditing, abandonEditing), et ne doivent RIEN au tiroir ni à la
+        // visionneuse, contrairement à Terminé/Annuler (spec RIC-184 §3).
+        var placementReturnStop by remember(entry.id) { mutableStateOf<DrawerStop?>(null) }
+        LaunchedEffect(photoPlacementActive) {
+            if (photoPlacementActive) {
+                if (placementReturnStop == null) placementReturnStop = drawer.stop
+                drawer.animateTo(PhotoPlacementDrawerStop)
+            } else if (isEditing) {
+                placementReturnStop?.let { drawer.animateTo(it) }
+                placementReturnStop = null
+            } else {
+                placementReturnStop = null
+            }
+        }
         val statusBarHeightPx = WindowInsets.statusBars.getTop(density).toFloat()
         // RIC-100, décision 3.2 : clavier ouvert, la fenêtre de saisie des notes se réduit à
         // trois lignes environ. L'en-tête et le profil occupent le haut du tiroir sans rien
@@ -2523,6 +2570,20 @@ internal fun addPhotosOutcome(
     permanentlyDenied -> AddPhotosOutcome.EXPLAIN_BLOCKED
     else -> AddPhotosOutcome.REQUEST_PERMISSION
 }
+
+/**
+ * RIC-184 : l'index où rouvrir la visionneuse à la sortie du mode placement (Terminé, Annuler).
+ * Recherche par identifiant et non par l'index d'avant le mode : le glissement peut avoir fait
+ * franchir à la photo un point qui change son rang dans [photos] (currentPhotos les trie par
+ * position sur la trace). Fonction pure, extraite comme [pagerIndexAfterRemoval]
+ * (PhotoViewerDialog) : pas de Compose ni de Robolectric nécessaires pour la vérifier.
+ *
+ * Rend null si la photo a disparu de la liste pendant le mode (suppression) : rien à rouvrir.
+ */
+internal fun photoIndexToReopenAfterPlacement(
+    photoId: Long,
+    photos: List<LoggedTrackPhotoEntity>,
+): Int? = photos.indexOfFirst { it.id == photoId }.takeIf { it >= 0 }
 
 /**
  * RIC-43 : la page « informations sur l'application » du système, seul endroit où se défait un
