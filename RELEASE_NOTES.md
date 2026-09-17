@@ -1,18 +1,66 @@
-# Bivouac — Notes de version
+# Bivouac : notes de version
+
+## V2.3.0
+
+**Journal, photos : stockage à deux modes (nouveau) :**
+
+- Choix dans les Réglages entre "Qualité d'origine" (copie identique à la photo de la galerie) et
+  "Poids allégé" (copie réduite à 2048 px, environ dix fois plus légère). Les nouvelles
+  installations démarrent en poids allégé ; les installations qui ont déjà des photos reçoivent une
+  proposition au premier lancement (choisir maintenant, plus tard, ou ne plus voir)
+- Recompression des photos déjà importées : proposée à la bascule vers le mode allégé, disponible
+  ensuite dans les Réglages. Chaque photo est remplacée de façon sûre (nouveau fichier, bascule,
+  puis suppression de l'ancien)
+- En mode allégé, la visionneuse plein écran affiche l'original de la galerie quand il est encore
+  sur le téléphone (montée en qualité transparente)
+- Écran "Espace utilisé" dans les Réglages : traces, photos, reste
+- Photos manquantes après une restauration : retrouvées automatiquement dans la galerie quand
+  l'original y est encore
+
+**Journal, photos : manipulation (nouveau) :**
+
+- "Ajuster" une photo : rotation par quarts de tour et recadrage (coins à proportions conservées,
+  côtés libres, déplacement du cadre), non destructif et appliqué à toutes les vues ; bouton
+  Réinitialiser
+- Visionneuse plein écran en mode édition : barre d'actions Ajuster / Position / Supprimer, légende
+  modifiable d'un tap
+- Position : repositionner une photo en la faisant glisser le long de la trace (le tiroir descend
+  sur la carte, le profil altimétrique suit, Annuler ou Terminé), revenir à la position GPS ou à la
+  position déduite de l'heure de prise de vue, retirer une photo de la carte et l'y replacer (badge
+  dans la grille)
+- Légende par photo, affichée dans la visionneuse et dans la bulle de la carte
+- Import : agrandir une photo candidate avant de la choisir, sélection par tap dans la visionneuse
+- Un tap sur un groupe de photos sur la carte ouvre tout le groupe dans le carrousel de la bulle,
+  et le curseur suit le balayage
+
+**Améliorations :**
+
+- Flèches de direction recalculées selon le zoom et le cadrage, sur tous les jours d'un trek
+- Pictos "a une note" et "a des photos" sur chaque ligne du Journal
+- Dialogue dédié quand une duplication vers Planification attend derrière la fermeture d'une trace
+
+**Bugfixes :**
+
+- Plusieurs fichiers GPX partagés vers Planification : le choix est désactivé au lieu de perdre en
+  silence tous les fichiers après le premier
+- Correction de la double instance de l'app quand un GPX est ouvert depuis une autre application
+- Désactivation de la connexion réseau au premier démarrage sans aucune interaction (une tuile était
+  chargée pour une carte encore invisible)
+- Badges de vignette (position approximative, retirée de la carte) désormais lisibles
 
 ## V2.2.1
 
 **Bugfix critique :**
 
 - Sur Android 8 à 13, l'import d'une trace GPX échouait systématiquement ("Trace incorrecte ou
-  fichier illisible"), rendant l'app inutilisable sur ces versions — l'app ne fonctionnait
+  fichier illisible"), rendant l'app inutilisable sur ces versions : l'app ne fonctionnait
   en pratique que sur Android 14+. Corrigé (bibliothèque de lecture GPX s'appuyant sur une API
   Java absente des Android antérieurs, désormais fournie par l'app elle-même). Merci au testeur
   bénévole de la revue F-Droid qui a découvert et documenté le problème.
 
 ## V2.2.0
 
-**Journal — photos (nouveau) :**
+**Journal, photos (nouveau) :**
 
 - Associer des photos de la galerie du téléphone à une randonnée du Journal : positionnées
   automatiquement sur la trace grâce à leurs données GPS, marqueurs sur la carte, carrousel à
@@ -39,13 +87,13 @@
 **Bugfixes :**
 
 - Le profil d'altitude d'une trace restait entièrement vide dès qu'un seul point du GPX n'avait
-  pas d'altitude — les trous sont désormais comblés par interpolation
+  pas d'altitude : les trous sont désormais comblés par interpolation
 
 ## V2.1.0
 
 **Bilan (nouveau) :**
 
-- Nouvel onglet Bilan : vue d'ensemble du Journal — totaux cumulés, graphique de progression
+- Nouvel onglet Bilan : vue d'ensemble du Journal : totaux cumulés, graphique de progression
   mensuelle (sorties, km, D+, vitesse, bivouacs) sur tout l'historique, et tes records personnels
   (km-effort, vitesse ascensionnelle, altitude max atteinte, bivouac le plus haut, plus gros trek...).
   Chaque record renvoie directement à la sortie concernée dans le Journal.
@@ -60,7 +108,7 @@
 - Planification : au tout premier lancement de l'app, l'écran "Aucune trace en préparation" pouvait
   s'afficher brièvement même quand une session précédente était sur le point d'être restaurée
 - Planification : après avoir tué puis relancé l'app sur une trace déjà enregistrée en banque, fermer
-  l'écran redemandait à tort une confirmation de sauvegarde — et sauvegarder à cette invite dupliquait
+  l'écran redemandait à tort une confirmation de sauvegarde, et sauvegarder à cette invite dupliquait
   la trace au lieu de simplement fermer
 
 ## V2.0.2
@@ -74,14 +122,14 @@
 **Bugfixes :**
 
 - Le calcul automatique de pénalité D+ (Auto/Sélection) pouvait être surestimé quand un arrêt était
-  pris en pleine montée — désormais exclu du calcul, comme c'était déjà le cas sur terrain plat
+  pris en pleine montée : désormais exclu du calcul, comme c'était déjà le cas sur terrain plat
 - Duplication d'une trace du Journal vers Planification : le dialogue de renommage pouvait se
   refermer tout seul avant d'avoir pu taper un nom
 - Planification : un trek multi-jours dupliqué depuis le Journal, dont l'enregistrement s'était
   arrêté loin du bivouac un soir, pouvait afficher un trajet fictif sur la carte et gonfler la
-  distance totale affichée — même correctif que celui déjà appliqué au Journal
+  distance totale affichée : même correctif que celui déjà appliqué au Journal
 - Une trace mono-jour sans aucun point de bivouac posé n'avait aucun moyen d'export GPX depuis
-  Planification — ajouté au menu de la trace
+  Planification, ajouté au menu de la trace
 - Ouvrir une trace de la banque devenue illisible affichait un écran d'erreur qui faisait
   disparaître le reste de la liste ; affiche désormais un message ponctuel, sans perturber le reste
 - Journal : mise en page de la ligne de bivouac (police des heures, icône) alignée sur le reste de
@@ -95,7 +143,7 @@
 
 - Le calcul automatique de vitesse/pénalité D+ (Réglages, mode Auto ou Sélection) pouvait varier
   fortement selon les randonnées présentes dans le Journal ou la sélection, surtout avec peu de
-  randonnées (une dizaine ou moins) — corrigé par un calcul plus robuste, à l'intérieur de chaque
+  randonnées (une dizaine ou moins) : corrigé par un calcul plus robuste, à l'intérieur de chaque
   randonnée plutôt qu'en comparant les randonnées entre elles.
 
 ## V2.0
@@ -197,7 +245,7 @@
 
 - Import d'une trace directement depuis une autre application (ouverture d'un fichier `.gpx` ou
   partage vers l'app), en plus du sélecteur système
-- Sélecteur de fonds de carte (Standard, Randonnée OpenTopoMap, Satellite Esri World Imagery —
+- Sélecteur de fonds de carte (Standard, Randonnée OpenTopoMap, Satellite Esri World Imagery,
   Randonnée par défaut)
 - Bouton de recentrage sur la trace, qui tient compte de la zone effectivement visible au-dessus
   du tiroir (pas centré sur tout l'écran s'il est en partie masqué)
