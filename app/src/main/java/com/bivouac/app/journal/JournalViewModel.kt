@@ -501,6 +501,13 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _photoPlacementTarget = MutableStateFlow<LoggedTrackPhotoEntity?>(null)
     val photoPlacementTarget: StateFlow<LoggedTrackPhotoEntity?> = _photoPlacementTarget.asStateFlow()
 
+    // RIC-183 : l'entrée du brouillon de position que portait la cible AU MOMENT d'entrer dans le
+    // mode placement courant (absente : null). C'est ce que « Annuler » restaure : rien de plus
+    // ancien (un Terminé précédent dans la même édition reste acquis, voir cancelPhotoPlacement),
+    // rien de la base (un glissement validé par la disquette n'existe déjà plus comme brouillon).
+    // Un var simple et non un StateFlow : pure bookkeeping interne, aucun écran ne l'observe.
+    private var photoPlacementEntrySnapshot: PendingPosition? = null
+
     // RIC-43 : non nul pendant que le sélecteur interne est ouvert, porte les candidats trouvés
     // par MediaStorePhotoQuery (éventuellement une liste vide, un vrai résultat « rien trouvé »
     // différent de « pas encore cherché »). Voir openPhotoPicker.
@@ -960,6 +967,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 // RIC-166 : quitter l'édition en mode placement le termine proprement, disquette
                 // comprise : la position posée par le glissement vient d'être écrite ci-dessus.
                 _photoPlacementTarget.value = null
+                photoPlacementEntrySnapshot = null
                 if (photoFailures > 0) {
                     _photoError.value = if (photoFailures == 1) {
                         "Une photo n'a pas pu être enregistrée."
@@ -1196,6 +1204,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _pendingPhotoPositions.value = emptyMap()
         _photoCaptionTarget.value = null
         _photoPlacementTarget.value = null
+        photoPlacementEntrySnapshot = null
         if (discarded.isEmpty()) return
         viewModelScope.launch {
             withContext(NonCancellable + Dispatchers.IO) { repository.discardPendingPhotos(discarded) }
@@ -1445,8 +1454,12 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * RIC-166 : « Repositionner sur la trace ». N'ouvre que le mode placement côté carte : la
      * fermeture de la visionneuse est un geste d'écran (voir JournalScreen), ce ViewModel ne porte
      * que la cible.
+     *
+     * RIC-183 : mémorise au passage l'entrée de brouillon de la photo à cet instant précis
+     * (présente ou absente), pour que [cancelPhotoPlacement] sache quoi restaurer.
      */
     fun requestPhotoPlacement(photo: LoggedTrackPhotoEntity) {
+        photoPlacementEntrySnapshot = _pendingPhotoPositions.value[photo.id]
         _photoPlacementTarget.value = photo
     }
 
@@ -1513,6 +1526,24 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      */
     fun exitPhotoPlacement() {
         _photoPlacementTarget.value = null
+        photoPlacementEntrySnapshot = null
+    }
+
+    /**
+     * RIC-183 : « Annuler » du mode placement. Restaure le brouillon de position exactement comme
+     * il était à l'entrée DE CE mode (voir requestPhotoPlacement) : remis à sa valeur d'alors s'il y
+     * en avait une, retiré du brouillon sinon. Un déplacement déjà validé par un « Terminé »
+     * précédent dans la même édition n'est pas concerné, seul le dernier geste l'est.
+     */
+    fun cancelPhotoPlacement() {
+        val target = _photoPlacementTarget.value ?: return
+        val snapshot = photoPlacementEntrySnapshot
+        _pendingPhotoPositions.value = if (snapshot != null) {
+            _pendingPhotoPositions.value + (target.id to snapshot)
+        } else {
+            _pendingPhotoPositions.value - target.id
+        }
+        exitPhotoPlacement()
     }
 
     fun dismissPhotoDeleteConfirmation() {
@@ -1538,7 +1569,10 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _pendingPhotoCaptions.value = _pendingPhotoCaptions.value - target.id
         _pendingPhotoShownOnMap.value = _pendingPhotoShownOnMap.value - target.id
         _pendingPhotoPositions.value = _pendingPhotoPositions.value - target.id
-        if (_photoPlacementTarget.value?.id == target.id) _photoPlacementTarget.value = null
+        if (_photoPlacementTarget.value?.id == target.id) {
+            _photoPlacementTarget.value = null
+            photoPlacementEntrySnapshot = null
+        }
         val pendingAdd = _pendingPhotoAdds.value.find { it.displayId == target.id }
         if (pendingAdd != null) {
             _pendingPhotoAdds.value = _pendingPhotoAdds.value - pendingAdd
