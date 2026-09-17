@@ -64,7 +64,9 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
+import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.data.photo.PhotoAdjustments
+import com.bivouac.app.data.photo.PhotoPositionCorrelator
 import com.bivouac.app.data.photo.PhotoStorageMode
 import com.bivouac.app.data.photo.adjustedBy
 import com.bivouac.app.data.photo.adjustments
@@ -100,6 +102,13 @@ internal fun PhotoViewerDialog(
     // la carte du détail Journal en mode placement : c'est l'appelant (JournalScreen) qui porte les
     // deux gestes, cette visionneuse ne connaît que la demande.
     onRepositionClick: (LoggedTrackPhotoEntity) -> Unit = {},
+    // RIC-178 : points de la trace ouverte, pour rejouer PhotoPositionCorrelator sur la photo
+    // COURANTE du pager et décider du libellé de « Replacer à la position GPS / selon l'heure de
+    // prise de vue » (voir autoPositionMenuEntry). Vide par défaut : les écrans qui ne portent pas
+    // de trace (aucun aujourd'hui, mais le patron `resolveOriginal` ci-dessus s'y prête déjà) n'ont
+    // rien à fournir, et cette entrée du menu reste alors absente plutôt que de planter.
+    trackPoints: List<TrackPoint> = emptyList(),
+    onRestoreAutoPositionClick: (LoggedTrackPhotoEntity) -> Unit = {},
     // RIC-171 : « Retirer de la carte » / « Replacer sur la carte », même menu Position.
     onToggleShownOnMap: (LoggedTrackPhotoEntity) -> Unit = {},
     // RIC-170 : tap sur la zone légende (ou sur « Ajouter une légende » si elle est vide).
@@ -204,10 +213,24 @@ internal fun PhotoViewerDialog(
                     // RIC-161 : en mode édition SEULEMENT. Hors édition, rien ne change : ni barre,
                     // ni geste sur la vignette.
                     if (editing) {
+                        // RIC-178 : rejoué à chaque page affichée, pas mémoïsé au-delà de remember :
+                        // PhotoPositionCorrelator.correlate est une passe sur la trace, pas une
+                        // requête, et se recalcule aussi vite qu'un swipe de pager.
+                        val autoPositionEntry = remember(currentPhoto, trackPoints) {
+                            autoPositionMenuEntry(
+                                correlated = PhotoPositionCorrelator.correlate(
+                                    trackPoints, currentPhoto.latitude, currentPhoto.longitude, currentPhoto.takenAtMillis,
+                                ),
+                                currentPointIndex = currentPhoto.positionPointIndex,
+                                currentApproximate = currentPhoto.positionApproximate,
+                            )
+                        }
                         PhotoViewerActionBar(
                             shownOnMap = currentPhoto.shownOnMap,
+                            autoPositionEntry = autoPositionEntry,
                             onAdjustClick = { onAdjustClick(currentPhoto) },
                             onRepositionClick = { onRepositionClick(currentPhoto) },
+                            onRestoreAutoPositionClick = { onRestoreAutoPositionClick(currentPhoto) },
                             onToggleShownOnMap = { onToggleShownOnMap(currentPhoto) },
                             onDeleteClick = { onDeleteClick(currentPhoto) },
                         )
@@ -250,14 +273,57 @@ private fun PhotoCaptionOverlay(
 }
 
 /**
+ * RIC-178 : ce que le menu Position doit montrer pour l'entrée « retour à la position automatique »,
+ * en plus de « Repositionner sur la trace » (glissement manuel) et « Retirer/Replacer sur la carte ».
+ *
+ * [HIDDEN] quand [PhotoPositionCorrelator] ne trouve aucune position (Position.NONE) : l'entrée est
+ * alors absente du menu plutôt que désactivée sans rien à proposer. Les quatre autres croisent le
+ * type de corrélation (GPS certain / horodatage approximatif) avec « la photo y est-elle déjà ? »
+ * (même index ET même marquage approximatif/certain) : une entrée déjà atteinte est grisée plutôt
+ * que masquée, pour que l'utilisateur voie qu'elle existe sans pouvoir la déclencher pour rien.
+ */
+internal enum class AutoPositionMenuEntry {
+    HIDDEN,
+    GPS_ENABLED,
+    GPS_ALREADY_THERE,
+    TIME_ENABLED,
+    TIME_ALREADY_THERE,
+}
+
+/**
+ * RIC-178 : la règle de libellé/absence/grisage du menu Position, extraite pour être vérifiable
+ * sans monter d'écran (voir AutoPositionMenuEntryTest), même patron que [pagerIndexAfterRemoval] et
+ * [deservesQualityUpgrade] juste au-dessus.
+ *
+ * [correlated] est le résultat de rejouer [PhotoPositionCorrelator.correlate] sur les métadonnées
+ * d'origine de la photo (latitude/longitude/takenAtMillis) ; [currentPointIndex]/[currentApproximate]
+ * sont sa position ACTUELLE (brouillon compris, voir JournalViewModel.currentPhotos), celle à
+ * laquelle on compare pour décider du grisage.
+ */
+internal fun autoPositionMenuEntry(
+    correlated: PhotoPositionCorrelator.Position,
+    currentPointIndex: Int?,
+    currentApproximate: Boolean,
+): AutoPositionMenuEntry {
+    val pointIndex = correlated.pointIndex ?: return AutoPositionMenuEntry.HIDDEN
+    val alreadyThere = pointIndex == currentPointIndex && correlated.approximate == currentApproximate
+    return when {
+        correlated.approximate -> if (alreadyThere) AutoPositionMenuEntry.TIME_ALREADY_THERE else AutoPositionMenuEntry.TIME_ENABLED
+        else -> if (alreadyThere) AutoPositionMenuEntry.GPS_ALREADY_THERE else AutoPositionMenuEntry.GPS_ENABLED
+    }
+}
+
+/**
  * RIC-161 : la barre d'actions de la visionneuse en mode édition, écran 2 de la maquette validée le
  * 2026-09-16 : trois entrées icône + libellé, fond #2F312C, 80 dp de haut.
  */
 @Composable
 private fun PhotoViewerActionBar(
     shownOnMap: Boolean,
+    autoPositionEntry: AutoPositionMenuEntry,
     onAdjustClick: () -> Unit,
     onRepositionClick: () -> Unit,
+    onRestoreAutoPositionClick: () -> Unit,
     onToggleShownOnMap: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
@@ -268,9 +334,9 @@ private fun PhotoViewerActionBar(
     ) {
         ViewerActionButton(icon = Icons.Default.Crop, label = "Ajuster", onClick = onAdjustClick)
 
-        // RIC-171/166 : une seule entrée « Position » ouvre un menu à deux choix, plutôt que deux
-        // boutons séparés dans une barre qui n'en a que trois : c'est la même hiérarchie que la
-        // maquette (écran 3), le tap révèle l'un OU l'autre selon ce qu'on veut faire.
+        // RIC-171/166/178 : une seule entrée « Position » ouvre un menu, plutôt que des boutons
+        // séparés dans une barre qui n'en a que trois : c'est la même hiérarchie que la maquette
+        // (écran 3), le tap révèle les choix disponibles selon ce qu'on veut faire.
         var positionMenuExpanded by remember { mutableStateOf(false) }
         Box {
             ViewerActionButton(
@@ -283,6 +349,24 @@ private fun PhotoViewerActionBar(
                     text = { Text("Repositionner sur la trace") },
                     onClick = { positionMenuExpanded = false; onRepositionClick() },
                 )
+                // RIC-178 : sous « Repositionner sur la trace », absente quand la routine ne trouve
+                // rien (voir autoPositionMenuEntry), grisée quand la photo y est déjà.
+                if (autoPositionEntry != AutoPositionMenuEntry.HIDDEN) {
+                    val alreadyThere = autoPositionEntry == AutoPositionMenuEntry.GPS_ALREADY_THERE ||
+                        autoPositionEntry == AutoPositionMenuEntry.TIME_ALREADY_THERE
+                    val label = if (autoPositionEntry == AutoPositionMenuEntry.TIME_ENABLED ||
+                        autoPositionEntry == AutoPositionMenuEntry.TIME_ALREADY_THERE
+                    ) {
+                        "Replacer selon l'heure de prise de vue"
+                    } else {
+                        "Replacer à la position GPS"
+                    }
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        enabled = !alreadyThere,
+                        onClick = { positionMenuExpanded = false; onRestoreAutoPositionClick() },
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text(if (shownOnMap) "Retirer de la carte" else "Replacer sur la carte") },
                     onClick = { positionMenuExpanded = false; onToggleShownOnMap() },

@@ -13,6 +13,7 @@ import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.db.PendingPhotoAdd
 import com.bivouac.app.data.db.PhotoAddReport
 import com.bivouac.app.data.db.PhotoDisplayOrder
+import com.bivouac.app.data.db.PhotoPositionUpdate
 import com.bivouac.app.data.db.PreparedImport
 import com.bivouac.app.data.db.SystemTag
 import com.bivouac.app.data.gpx.SpeedCalibration
@@ -27,6 +28,7 @@ import com.bivouac.app.data.photo.MediaStorePhotoQuery
 import com.bivouac.app.data.photo.PhotoAdjustments
 import com.bivouac.app.data.photo.PhotoOriginalResolution
 import com.bivouac.app.data.photo.PhotoPickerScope
+import com.bivouac.app.data.photo.PhotoPositionCorrelator
 import com.bivouac.app.data.photo.PhotoStorageMode
 import com.bivouac.app.data.photo.PhotoStoragePolicy
 import com.bivouac.app.data.photo.adjustments
@@ -171,10 +173,19 @@ data class PhotoOperationProgress(val phase: PhotoOperationPhase, val done: Int,
  * dans [JournalViewModel.currentPhotos]) : cette classe n'est qu'un panier de transport, elle ne
  * porte aucune règle.
  */
+/**
+ * RIC-166/178 : une position en attente, glissement manuel OU retour à la position automatique du
+ * menu Position. [approximate] doit voyager avec l'index depuis RIC-178 : un simple `Map<Long, Int>`
+ * ne pouvait porter qu'un repositionnement manuel (toujours confirmé, donc toujours certain) ; « …
+ * selon l'heure de prise de vue » écrit désormais une position que la carte doit pouvoir afficher
+ * comme approximative (voir positionUncertain).
+ */
+private data class PendingPosition(val pointIndex: Int, val approximate: Boolean)
+
 private data class PendingPhotoPlacementEdits(
     val captions: Map<Long, String?> = emptyMap(),
     val shownOnMap: Map<Long, Boolean> = emptyMap(),
-    val positions: Map<Long, Int> = emptyMap(),
+    val positions: Map<Long, PendingPosition> = emptyMap(),
 )
 
 /** RIC-149/170/171/166 : le panier intermédiaire de [JournalViewModel.currentPhotos], même raison. */
@@ -333,7 +344,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * du glissement réécrit directement cette carte (pas de distinction aperçu/validé, voir
      * [requestPhotoPlacementDrag]), et c'est la disquette qui la rend définitive.
      */
-    private val _pendingPhotoPositions = MutableStateFlow<Map<Long, Int>>(emptyMap())
+    private val _pendingPhotoPositions = MutableStateFlow<Map<Long, PendingPosition>>(emptyMap())
 
     // RIC-170/171/166 : les trois cartes du lot 2 combinées en une seule fois, pour que
     // currentPhotos ci-dessous reste à cinq flux combinés (limite de l'overload combine() à cinq
@@ -403,7 +414,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                             overlaid = overlaid.copy(shownOnMap = it)
                         }
                         state.placementEdits.positions[photo.id]?.let {
-                            overlaid = overlaid.copy(positionPointIndex = it, positionApproximate = false)
+                            overlaid = overlaid.copy(positionPointIndex = it.pointIndex, positionApproximate = it.approximate)
                         }
                         overlaid
                     }
@@ -876,7 +887,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             if (add.displayId in pendingCaptions) updated = updated.copy(caption = pendingCaptions[add.displayId])
             pendingShownOnMap[add.displayId]?.let { updated = updated.copy(shownOnMap = it) }
             pendingPositions[add.displayId]?.let {
-                updated = updated.copy(positionPointIndex = it, positionApproximate = false)
+                updated = updated.copy(positionPointIndex = it.pointIndex, positionApproximate = it.approximate)
             }
             updated
         }
@@ -888,6 +899,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         val savedCaptions = pendingCaptions.filterKeys { id -> id > 0 && id !in deletions }
         val savedShownOnMap = pendingShownOnMap.filterKeys { id -> id > 0 && id !in deletions }
         val savedPositions = pendingPositions.filterKeys { id -> id > 0 && id !in deletions }
+            .mapValues { (_, pending) -> PhotoPositionUpdate(pending.pointIndex, pending.approximate) }
         val photoWork = deletions.size + additions.size + savedAdjustments.size +
             savedCaptions.size + savedShownOnMap.size + savedPositions.size
         val inFlightPaths = additions.map { it.transitPath }
@@ -1446,17 +1458,53 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * [pagerIndexAfterRemoval] côté visionneuse suit le même principe (voir PhotoViewerDialog).
      */
     fun updatePhotoPlacementPosition(photoId: Long, pointIndex: Int) {
+        setPendingPosition(photoId, PendingPosition(pointIndex, approximate = false))
+    }
+
+    /**
+     * RIC-178 : « Replacer à la position GPS » / « Replacer selon l'heure de prise de vue », menu
+     * Position de la visionneuse (option C décidée par Seb). Rejoue [PhotoPositionCorrelator] sur
+     * les métadonnées d'origine de [photo] (latitude/longitude/takenAtMillis, jamais touchées par un
+     * repositionnement manuel, voir LoggedTrackPhotoEntity) : rien à relire en base au-delà de ce
+     * qui l'est déjà, la routine rend exactement le résultat qu'aurait donné l'import.
+     *
+     * Même brouillon que le glissement manuel (_pendingPhotoPositions) : Annuler restaure, la
+     * disquette rend définitif. Ne fait rien si la routine ne trouve aucune position
+     * (PhotoPositionCorrelator.Position.NONE) : l'entrée correspondante est alors absente du menu
+     * (voir PhotoViewerDialog.autoPositionMenuEntry), cette fonction ne devrait donc jamais être
+     * appelée dans ce cas ; le garde-fou est silencieux plutôt qu'une exception, comme le reste des
+     * actions photo de ce ViewModel.
+     */
+    fun restorePhotoAutoPosition(photo: LoggedTrackPhotoEntity) {
+        val track = (_uiState.value as? JournalUiState.Detail)?.track ?: return
+        val position = PhotoPositionCorrelator.correlate(track.points, photo.latitude, photo.longitude, photo.takenAtMillis)
+        val pointIndex = position.pointIndex ?: return
+        setPendingPosition(photo.id, PendingPosition(pointIndex, position.approximate))
+    }
+
+    /**
+     * RIC-166/178 : les deux sources d'un brouillon de position (glissement manuel, retour
+     * automatique) convergent ici. Retire l'entrée en attente plutôt que d'écrire un no-op quand la
+     * position ET son marquage approximatif/certain retombent EXACTEMENT sur ce que la photo porte
+     * déjà hors brouillon : sans le marquage dans cette comparaison, reposer par horodatage une
+     * photo déjà à ce point de trace (mais confirmée manuellement, donc certaine) aurait semblé
+     * n'avoir rien à enregistrer alors que la pastille d'approximation, elle, doit apparaître.
+     */
+    private fun setPendingPosition(photoId: Long, position: PendingPosition) {
         val current = _pendingPhotoPositions.value
-        _pendingPhotoPositions.value = if (pointIndex == storedPositionIndex(photoId)) {
-            current - photoId
-        } else {
-            current + (photoId to pointIndex)
-        }
+        val alreadyThere = position.pointIndex == storedPositionIndex(photoId) &&
+            position.approximate == storedPositionApproximate(photoId)
+        _pendingPhotoPositions.value = if (alreadyThere) current - photoId else current + (photoId to position)
     }
 
     private fun storedPositionIndex(photoId: Long): Int? =
         _currentPhotos.value.find { it.id == photoId }?.positionPointIndex
             ?: _pendingPhotoAdds.value.find { it.displayId == photoId }?.positionPointIndex
+
+    private fun storedPositionApproximate(photoId: Long): Boolean =
+        _currentPhotos.value.find { it.id == photoId }?.positionApproximate
+            ?: _pendingPhotoAdds.value.find { it.displayId == photoId }?.positionApproximate
+            ?: false
 
     /**
      * RIC-166 : sortie du mode placement, sans rien perdre : le brouillon de position déjà posé par
