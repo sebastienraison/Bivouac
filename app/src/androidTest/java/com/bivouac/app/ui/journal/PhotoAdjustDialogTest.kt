@@ -1,6 +1,8 @@
 package com.bivouac.app.ui.journal
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -113,5 +115,33 @@ class PhotoAdjustDialogTest {
         // 3 + 1 = 4 quarts de tour, ramenés à 0 : l'éditeur repart bien de l'état existant, il ne
         // recommence pas à zéro.
         assertEquals(PhotoAdjustments(rotationQuarterTurns = 0), confirmed)
+    }
+
+    @Test
+    fun reinitialiserEstGriseTantQuAucunAjustementNAEteFait() {
+        composeTestRule.setContent {
+            PhotoAdjustDialog(photo = photo, onCancel = {}, onConfirm = {})
+        }
+
+        composeTestRule.onNodeWithText("Réinitialiser").assertIsNotEnabled()
+    }
+
+    @Test
+    fun reinitialiserSActiveApresUneRotationEtRameneANone() {
+        var confirmed: PhotoAdjustments? = null
+        composeTestRule.setContent {
+            PhotoAdjustDialog(photo = photo, onCancel = {}, onConfirm = { confirmed = it })
+        }
+
+        composeTestRule.onNodeWithContentDescription("Tourner à droite").performClick()
+        composeTestRule.onNodeWithText("Réinitialiser").assertIsEnabled()
+
+        composeTestRule.onNodeWithText("Réinitialiser").performClick()
+        composeTestRule.onNodeWithText("Réinitialiser").assertIsNotEnabled()
+
+        // Le retour à l'identité ne se voit pas qu'au bouton : OK doit désormais rendre NONE, comme
+        // si la rotation n'avait jamais eu lieu.
+        composeTestRule.onNodeWithText("OK").performClick()
+        assertEquals(PhotoAdjustments.NONE, confirmed)
     }
 }
