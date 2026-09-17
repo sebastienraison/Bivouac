@@ -1,6 +1,7 @@
 package com.bivouac.app.ui.journal
 
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -12,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 
@@ -47,6 +49,9 @@ internal fun PhotoCaptionDialog(
                 value = text,
                 onValueChange = { text = it },
                 placeholder = { Text("Ajouter une légende") },
+                // RIC-176 : majuscule automatique en début de phrase, comme le champ de note de
+                // JournalScreen (même nature de texte libre, saisi au clavier).
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier.fillMaxWidth(),
             )
         },

@@ -203,20 +203,45 @@ internal fun PhotoAdjustDialog(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
-                    RotationButton(
-                        icon = Icons.Default.RotateLeft,
-                        label = "Tourner à gauche",
-                        onClick = { adjustments = adjustments.rotatedLeft() },
-                    )
-                    RotationButton(
-                        icon = Icons.Default.RotateRight,
-                        label = "Tourner à droite",
-                        onClick = { adjustments = adjustments.rotatedRight() },
-                    )
+                // RIC-180 : « Réinitialiser » n'a de sens que si l'éditeur porte un ajustement, donc
+                // grisé sur `isIdentity` (le même test que ce que la base considère comme « rien à
+                // enregistrer », voir PhotoAdjustments.isIdentity), et non une égalité stricte à
+                // NONE qui laisserait passer un compte de rotation non normalisé (ex. 4 quarts de
+                // tour, visuellement identique à 0 mais différent par egalité de data class).
+                val canReset = !adjustments.isIdentity
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
+                        RotationButton(
+                            icon = Icons.Default.RotateLeft,
+                            label = "Tourner à gauche",
+                            onClick = { adjustments = adjustments.rotatedLeft() },
+                        )
+                        RotationButton(
+                            icon = Icons.Default.RotateRight,
+                            label = "Tourner à droite",
+                            onClick = { adjustments = adjustments.rotatedRight() },
+                        )
+                    }
+                    // RIC-180 : remet rotation et cadre à l'identité DANS L'ÉDITEUR seulement. OK
+                    // valide ensuite cet état, Annuler restaure l'ajustement précédent : ce bouton ne
+                    // touche à rien au-delà de `adjustments`, exactement comme les deux boutons de
+                    // rotation à sa gauche.
+                    TextButton(onClick = { adjustments = PhotoAdjustments.NONE }, enabled = canReset) {
+                        Text(
+                            "Réinitialiser",
+                            color = if (canReset) Color.White else Color.White.copy(alpha = 0.38f),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
                 }
                 Text(
-                    "Coins : les proportions sont conservées · Côtés : recadrage libre",
+                    // RIC-179 : « Intérieur » ajouté au texte d'aide, même style de séparateur
+                    // (point médian) que les deux autres, pour annoncer le troisième geste.
+                    "Coins : proportions conservées · Côtés : recadrage libre · Intérieur : déplacer",
                     color = Color(0xFFC8C9BC),
                     style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,

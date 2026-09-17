@@ -569,6 +569,9 @@ fun JournalScreen(
                     value = name,
                     onValueChange = { name = it },
                     singleLine = true,
+                    // RIC-176 : majuscule automatique en début de phrase, comme le champ de note ;
+                    // un nom de trace est du texte libre, pas un identifiant.
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     modifier = Modifier.fillMaxWidth(),
                 )
             },

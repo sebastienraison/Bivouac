@@ -242,17 +242,14 @@ internal fun PhotoPickerDialog(
                                 selected = if (allShownSelected) selected - candidates.toSet() else selected + candidates
                             },
                         ) {
-                            Text(if (allShownSelected) "Tout désélectionner" else "Tout sélectionner")
+                            Text(if (allShownSelected) "Tout désélectionner" else "Tout sélectionner", maxLines = 1)
                         }
-                        Text(
-                            if (selected.isEmpty()) "Aucune sélection" else "${selected.size} sélectionnée(s)",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        // RIC-162 : le bouton porte désormais le compte, comme sur la maquette
-                        // validée ("Ajouter (3)") ; le texte au milieu de la ligne, lui, reste tel
-                        // quel, le retirer irait au-delà de ce que le ticket demande.
+                        // RIC-175 : le texte « n sélectionnée(s) » au milieu de la ligne est retiré
+                        // (le bouton porte déjà le compte) : à 21 photos et plus il faisait replier
+                        // « Ajouter (21) » sur trois lignes et déborder du dialogue. `maxLines = 1`
+                        // sur les deux boutons empêche tout repli futur, quel que soit le compte.
                         Button(onClick = { onConfirm(selected.toList()) }, enabled = selected.isNotEmpty()) {
-                            Text(if (selected.isEmpty()) "Ajouter" else "Ajouter (${selected.size})")
+                            Text(if (selected.isEmpty()) "Ajouter" else "Ajouter (${selected.size})", maxLines = 1)
                         }
                     }
                 }
