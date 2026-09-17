@@ -59,6 +59,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
+import com.bivouac.app.data.db.PhotoDisplayOrder
 import com.bivouac.app.data.gpx.TrackGeometry
 import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.DayJunctions
@@ -185,6 +186,16 @@ internal interface MapDragStateHandle {
 
 private class CursorDragState(override var isDragging: Boolean = false) : MapDragStateHandle
 
+// RIC-181 : le cluster actuellement ouvert dans la bulle du curseur, s'il y en a un. Vit pour la
+// durée de vie du MapView, comme CursorDragState : un tap sur un cluster le pose (voir
+// photoClusterMarker), un tap ailleurs (marqueur simple, trace, glissement du curseur lui-même) ou
+// la croix de la bulle le lève. renderTrack le lit pour savoir si la bulle doit montrer TOUT le
+// groupe (voir cursorBubbleContent) plutôt que le rayon habituel, et pour reconstruire le carrousel
+// avec la MÊME liste quand le balayage déplace seulement le curseur à l'intérieur de ce groupe : le
+// carrousel ne repart donc jamais de zéro (curseur -> renderTrack -> bulle -> carrousel), voir
+// CursorInfoWindow.onCarouselPhotoChanged.
+private class ActiveClusterState(var photoIds: Set<Long>? = null)
+
 // osmdroid's CopyrightOverlay draws its notice with a single Canvas.drawText call, which never
 // wraps: fine for Mapnik's short "© OpenStreetMap contributors" but runs off the right edge of
 // the screen with OpenTopo's much longer bilingual notice (BIV-56). This mirrors
@@ -303,6 +314,7 @@ fun HikeMapView(
     }
     val cursorInfoWindow = remember(mapView) { CursorInfoWindow(mapView) }
     val cursorDragState = remember(mapView) { CursorDragState() }
+    val activeClusterState = remember(mapView) { ActiveClusterState() }
     // RIC-43 (perf) : deux caches à la durée de vie du MapView, voir leurs classes respectives.
     val distanceCache = remember(mapView) { TrackDistanceCache() }
     val photoIconCache = remember(mapView) { PhotoMarkerIconCache() }
@@ -418,7 +430,7 @@ fun HikeMapView(
                 renderTrack(
                     view, track, bivouacPoints, bivouacsReadOnly, dayBoundaryIndices, shouldFit, visibleHeightPx,
                     onTrackTapped, onBivouacMoved, onBivouacDragPreview,
-                    cursorIndex, onCursorChanged, cursorInfoWindow, cursorDragState,
+                    cursorIndex, onCursorChanged, cursorInfoWindow, cursorDragState, activeClusterState,
                     distanceCache, photoIconCache,
                     photos, missingPhotoIds, onCursorCleared, onPhotoBubbleClick,
                     photoPlacementTarget, onPhotoPlacementDrag,
@@ -493,6 +505,7 @@ private fun renderTrack(
     onCursorChanged: (Int) -> Unit,
     cursorInfoWindow: CursorInfoWindow,
     cursorDragState: CursorDragState,
+    activeClusterState: ActiveClusterState,
     distanceCache: TrackDistanceCache,
     iconCache: PhotoMarkerIconCache,
     photos: List<LoggedTrackPhotoEntity>,
@@ -544,6 +557,16 @@ private fun renderTrack(
     val points = track.points
     val geoPoints = points.map { GeoPoint(it.latitude, it.longitude) }
 
+    // RIC-181 : tout ce qui pose le curseur AILLEURS que par un balayage du carrousel d'un cluster
+    // déjà ouvert (trace, marqueur simple, glissement du curseur lui-même) referme ce cluster : sans
+    // ça, un ancien groupe resterait actif en mémoire et pourrait, par coïncidence, se voir réutilisé
+    // par un futur balayage sans rapport. Seul photoClusterMarker pose activeClusterState : tout le
+    // reste passe par cette variante qui le referme d'abord.
+    val onCursorChangedClearingCluster: (Int) -> Unit = { index ->
+        activeClusterState.photoIds = null
+        onCursorChanged(index)
+    }
+
     // Without a listener, Polyline falls back to osmdroid's default onClick behavior (opening an
     // empty default info window) on any tap that lands on the line but misses trackTapOverlay's
     // (tighter, nearest-vertex) tolerance. trackTapOverlay is added after these and so gets first
@@ -592,7 +615,15 @@ private fun renderTrack(
         val bridge = listOf(geoPoints[gapEnd], geoPoints[gapEnd + 1])
         mapView.overlays.add(strokedPolyline(bridge, R.color.track_line, 3f, dashed = true))
     }
-    mapView.overlays.add(trackTapOverlay(mapView, points, geoPoints, density, onTrackTapped))
+    // RIC-181 : onTrackTapped n'est pas forcément onCursorChanged (la Planification l'utilise pour
+    // poser un bivouac, sans notion de cluster) ; refermer ici, inconditionnellement, ne change donc
+    // jamais son propre comportement et évite un cluster resté actif par coïncidence là où le
+    // concept a un sens (le Journal, seul écran qui branche onTrackTapped sur onCursorChanged).
+    val trackTapClearingCluster: (Int) -> Unit = { index ->
+        activeClusterState.photoIds = null
+        onTrackTapped(index)
+    }
+    mapView.overlays.add(trackTapOverlay(mapView, points, geoPoints, density, trackTapClearingCluster))
 
     // Cadrage AVANT les marqueurs, et non plus tout à la fin : clusterPhotos regroupe les photos
     // selon leur distance en pixels d'écran, donc il lit mapView.projection. Cadrer après lui, au
@@ -634,10 +665,13 @@ private fun renderTrack(
 
     clusterPhotos(mapView, geoPoints, clusterablePhotos, density).forEach { cluster ->
         if (cluster.photos.size == 1) {
-            photoMarker(mapView, geoPoints, cluster.photos.first(), onCursorChanged, iconCache)
+            // RIC-181 : « le tap sur un marqueur simple garde le comportement actuel » (spec) : pas
+            // de groupe à ouvrir, mais on referme quand même un cluster resté actif d'un tap
+            // précédent ailleurs sur la carte, même raison que trackTapClearingCluster ci-dessus.
+            photoMarker(mapView, geoPoints, cluster.photos.first(), onCursorChangedClearingCluster, iconCache)
                 ?.let { mapView.overlays.add(it) }
         } else {
-            mapView.overlays.add(photoClusterMarker(mapView, cluster, onCursorChanged, iconCache))
+            mapView.overlays.add(photoClusterMarker(mapView, cluster, onCursorChanged, activeClusterState, iconCache))
         }
     }
 
@@ -680,15 +714,24 @@ private fun renderTrack(
         // Assigné avant de construire cursorMarker ci-dessous : son drag peut ouvrir la bulle
         // bien avant le postDelayed plus bas, ce callback doit déjà être le bon à ce moment-là.
         cursorInfoWindow.onPhotoClick = onPhotoBubbleClick
-        cursorInfoWindow.onCloseClick = onCursorCleared
+        // RIC-181 : referme le cluster actif, même raison que trackTapClearingCluster : fermer la
+        // bulle quitte le contexte « je regarde ce groupe », un futur curseur ne doit pas en hériter.
+        cursorInfoWindow.onCloseClick = { activeClusterState.photoIds = null; onCursorCleared() }
+        // RIC-181 : balayer le carrousel DANS un cluster ouvert déplace le curseur pour que
+        // distance/altitude suivent la photo affichée (spec), sans passer par
+        // onCursorChangedClearingCluster : le cluster doit rester actif pendant qu'on le feuillette,
+        // c'est tout le sujet du ticket (voir ActiveClusterState).
+        cursorInfoWindow.onCarouselPhotoChanged = onCursorChanged
         mapView.overlays.add(
             cursorMarker(
-                mapView, points, geoPoints, cursorIndex, density, onCursorChanged,
+                mapView, points, geoPoints, cursorIndex, density, onCursorChangedClearingCluster,
                 cursorInfoWindow, cursorDragState, distanceCache, mapVisiblePhotos, missingPhotoIds,
             ),
         )
-        val bubbleContent =
-            cursorBubbleContent(context, points, cursorIndex, distanceCache, mapVisiblePhotos, missingPhotoIds)
+        val bubbleContent = cursorBubbleContent(
+            context, points, cursorIndex, distanceCache, mapVisiblePhotos, missingPhotoIds,
+            explicitPhotoIds = activeClusterState.photoIds,
+        )
         val bubblePosition = geoPoints[cursorIndex]
         // A tap can be dispatched to an overlay that existed before this recomposition and open
         // its default InfoWindow after renderTrack returns. Re-open ours on the next UI frame so
@@ -880,14 +923,23 @@ private fun clusterPhotos(
     return groups.map { group -> PhotoCluster(group, geoPoints[group.first().positionPointIndex!!]) }
 }
 
-// Un seul marqueur pour tout le cluster, tap -> curseur sur la première photo du groupe. Pas de
-// choix individuel depuis la carte pour l'instant : le bandeau et la galerie du Journal donnent
-// déjà accès à chaque photo une à une, ce marqueur groupé n'a besoin que de situer le cluster sur
-// la trace.
+/**
+ * Un seul marqueur pour tout le cluster, curseur posé sur la première photo du groupe (ordre
+ * [PhotoDisplayOrder], déjà celui de `cluster.photos` : voir clusterPhotos, qui préserve l'ordre de
+ * la liste reçue).
+ *
+ * RIC-181 : un tap ouvre désormais la bulle sur TOUT le groupe, pas seulement les photos tombées
+ * dans le rayon réel de [CURSOR_BUBBLE_PHOTO_RADIUS_METERS] autour de la première (à un zoom
+ * éloigné, un cluster est un regroupement en PIXELS D'ÉCRAN, les autres membres peuvent tomber
+ * n'importe où réellement sur la trace, c'était le bug remonté). [activeClusterState] mémorise ce
+ * groupe pour la durée où sa bulle reste ouverte : voir [ActiveClusterState] et
+ * [cursorBubbleContent].
+ */
 private fun photoClusterMarker(
     mapView: MapView,
     cluster: PhotoCluster,
     onCursorChanged: (Int) -> Unit,
+    activeClusterState: ActiveClusterState,
     iconCache: PhotoMarkerIconCache,
 ): Marker {
     val marker = Marker(mapView)
@@ -896,7 +948,12 @@ private fun photoClusterMarker(
     marker.icon = iconCache.get(mapView.context, clusterBadgeText(cluster.photos.size))
     marker.setInfoWindow(null)
     val targetIndex = cluster.photos.first().positionPointIndex!!
-    marker.setOnMarkerClickListener { _, _ -> onCursorChanged(targetIndex); true }
+    val photoIds = cluster.photos.mapTo(mutableSetOf()) { it.id }
+    marker.setOnMarkerClickListener { _, _ ->
+        activeClusterState.photoIds = photoIds
+        onCursorChanged(targetIndex)
+        true
+    }
     marker.isDraggable = false
     return marker
 }
@@ -1238,7 +1295,7 @@ private fun cursorMarker(
  * Mémorisé pour la durée de vie du MapView (voir HikeMapView), jamais touché hors du thread
  * principal.
  */
-private class TrackDistanceCache {
+internal class TrackDistanceCache {
     private var cachedPoints: List<TrackPoint>? = null
     private var cachedDistances: DoubleArray = DoubleArray(0)
 
@@ -1277,47 +1334,82 @@ private const val CURSOR_BUBBLE_PHOTO_RADIUS_METERS = 20.0
  * photoClusterMarker), et le rayon reprend alors exactement les mêmes, sans que la bulle ait
  * besoin de connaître le regroupement, qui est une affaire de pixels d'écran, donc de zoom.
  *
- * L'ordre est celui de [photos], c'est-à-dire celui du bandeau et de la galerie (chronologique) :
- * feuilleter ici et feuilleter là-bas doivent donner la même suite. La photo la plus proche du
- * curseur est celle affichée en premier, pas forcément la première du lot.
+ * RIC-181 : ce raisonnement au rayon tenait pour un marqueur simple, mais pas pour un CLUSTER : à
+ * un zoom éloigné, deux photos regroupées à l'écran (quelques dizaines de pixels) peuvent être
+ * distantes de bien plus que [CURSOR_BUBBLE_PHOTO_RADIUS_METERS] sur le terrain réel, et le rayon
+ * n'en montrait alors qu'une poignée, jamais tout le groupe. [explicitPhotoIds], posé par
+ * [photoClusterMarker] via [ActiveClusterState], court-circuite le rayon dans ce cas : la bulle
+ * montre alors EXACTEMENT ce groupe, dans l'ordre [PhotoDisplayOrder], quelle que soit la distance
+ * réelle entre ses membres.
+ *
+ * L'ordre est celui de [photos] (rayon) ou de [PhotoDisplayOrder] (cluster), c'est-à-dire celui du
+ * bandeau et de la galerie (chronologique) : feuilleter ici et feuilleter là-bas doivent donner la
+ * même suite.
  */
-private fun cursorBubbleContent(
+internal fun cursorBubbleContent(
     context: Context,
     points: List<TrackPoint>,
     index: Int,
     distanceCache: TrackDistanceCache,
     photos: List<LoggedTrackPhotoEntity>,
     missingPhotoIds: Set<Long>,
+    explicitPhotoIds: Set<Long>? = null,
 ): CursorBubbleContent {
     val text = cursorBubbleText(points, index, distanceCache)
     if (photos.isEmpty()) return CursorBubbleContent(text)
-    val cumulative = distanceCache.distancesFor(points)
-    val cursorDistance = cumulative[index]
-    val nearby = photos.mapNotNull { photo ->
-        val pointIndex = photo.positionPointIndex?.takeIf { it in cumulative.indices } ?: return@mapNotNull null
-        val gap = abs(cumulative[pointIndex] - cursorDistance)
-        if (gap > CURSOR_BUBBLE_PHOTO_RADIUS_METERS) null else photo to gap
+
+    // present : les photos à montrer, déjà dans l'ordre d'affichage voulu, expurgées de celles dont
+    // la copie locale a disparu. closestId : celle qui doit s'ouvrir en premier.
+    val present: List<LoggedTrackPhotoEntity>
+    val closestId: Long
+    val anyMatchedBeforeMissingFilter: Boolean
+    if (explicitPhotoIds != null) {
+        // positionPointIndex != null en plus de l'appartenance au groupe : une photo a pu perdre
+        // sa position (repositionnement, retrait de la carte) entre le tap qui a ouvert ce cluster
+        // et ce rendu-ci ; sans cette garde elle resterait dans `present` mais sans quoi construire
+        // photoPointIndices plus bas.
+        val cluster = photos.filter { it.id in explicitPhotoIds && it.positionPointIndex != null }
+            .sortedWith(PhotoDisplayOrder)
+        anyMatchedBeforeMissingFilter = cluster.isNotEmpty()
+        present = cluster.filterNot { it.id in missingPhotoIds }
+        // La photo actuellement au curseur (voir photoClusterMarker/onCarouselPhotoChanged) plutôt
+        // que systématiquement la première du groupe : après un balayage, c'est elle qui doit
+        // rester affichée, pas celle par laquelle le cluster s'est ouvert.
+        closestId = present.firstOrNull { it.positionPointIndex == index }?.id ?: present.firstOrNull()?.id ?: -1L
+    } else {
+        val cumulative = distanceCache.distancesFor(points)
+        val cursorDistance = cumulative[index]
+        val nearby = photos.mapNotNull { photo ->
+            val pointIndex = photo.positionPointIndex?.takeIf { it in cumulative.indices } ?: return@mapNotNull null
+            val gap = abs(cumulative[pointIndex] - cursorDistance)
+            if (gap > CURSOR_BUBBLE_PHOTO_RADIUS_METERS) null else photo to gap
+        }
+        anyMatchedBeforeMissingFilter = nearby.isNotEmpty()
+        val closest = nearby.minByOrNull { (_, gap) -> gap }?.first
+        present = nearby.map { (photo, _) -> photo }.filterNot { it.id in missingPhotoIds }
+        closestId = closest?.id ?: -1L
     }
-    if (nearby.isEmpty()) return CursorBubbleContent(text)
-    val present = nearby.filterNot { (photo, _) -> photo.id in missingPhotoIds }
+    if (!anyMatchedBeforeMissingFilter) return CursorBubbleContent(text)
     // RIC-43 : plus rien à montrer, mais il y avait bien une photo ici. La bulle le dit au lieu de
     // se taire : un silence serait indiscernable de « il n'y en a jamais eu ».
     if (present.isEmpty()) return CursorBubbleContent(text, photoMissing = true)
-    val closest = present.minByOrNull { (_, gap) -> gap }!!.first
     return CursorBubbleContent(
         text = text,
-        photoFiles = present.map { (photo, _) -> LoggedTrackPhotoStore.resolve(context, photo.filePath) },
+        photoFiles = present.map { photo -> LoggedTrackPhotoStore.resolve(context, photo.filePath) },
         // RIC-143/144 : parallèle à photoFiles, comme photoTimes juste en dessous. La bulle affiche
         // la zone recadrée et rien d'autre, au même titre que les vignettes et la visionneuse : une
         // photo recadrée dans le bandeau mais entière sur la carte serait deux photos différentes.
-        photoAdjustments = present.map { (photo, _) -> photo.adjustments },
+        photoAdjustments = present.map { photo -> photo.adjustments },
         // Parallèle à photoFiles, un élément par photo du lot : c'est ce qui permet à l'heure
         // affichée de suivre le carrousel sans que la bulle ait à retenir les entités.
-        photoTimes = present.map { (photo, _) -> photo.takenAtMillis?.let(::formatPhotoTimeOfDay) },
+        photoTimes = present.map { photo -> photo.takenAtMillis?.let(::formatPhotoTimeOfDay) },
         // RIC-170 : même principe, pour la légende sous la vignette. Une entrée nulle ou blanche
         // vaut « pas de légende », la bulle la masque alors (voir CursorInfoWindow.showCurrentPhoto).
-        photoCaptions = present.map { (photo, _) -> photo.caption },
-        initialPhotoIndex = present.indexOfFirst { (photo, _) -> photo.id == closest.id }.coerceAtLeast(0),
+        photoCaptions = present.map { photo -> photo.caption },
+        // RIC-181 : uniquement pour un cluster (voir CursorInfoWindow.onCarouselPhotoChanged) : un
+        // marqueur simple garde le comportement d'avant, le balayage n'y déplace jamais le curseur.
+        photoPointIndices = if (explicitPhotoIds != null) present.map { photo -> photo.positionPointIndex!! } else emptyList(),
+        initialPhotoIndex = present.indexOfFirst { photo -> photo.id == closestId }.coerceAtLeast(0),
     )
 }
 
@@ -1342,7 +1434,7 @@ private val PHOTO_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm", Locale.F
 // rendered height, so the bubble sits above the pin instead of covering it (and blocking drags).
 private fun cursorBubbleOffsetY(density: Float): Int = -(CURSOR_MARKER_HEIGHT_DP * density).toInt()
 
-private data class CursorBubbleContent(
+internal data class CursorBubbleContent(
     val text: String,
     // Vide quand aucune photo n'est assez proche. Plusieurs entrées quand plusieurs le sont : la
     // vignette devient alors parcourable, avec un compteur.
@@ -1357,6 +1449,11 @@ private data class CursorBubbleContent(
     // RIC-170 : même taille et même ordre que photoFiles, une entrée nulle ou blanche valant
     // « pas de légende ».
     val photoCaptions: List<String?> = emptyList(),
+    // RIC-181 : même taille et même ordre que photoFiles, l'index de trace de chaque photo.
+    // Peuplée SEULEMENT quand la bulle vient d'un cluster (voir cursorBubbleContent) : c'est ce qui
+    // permet à CursorInfoWindow de déplacer le curseur quand on balaie le carrousel, sans changer le
+    // comportement du carrousel d'un marqueur simple (liste vide, voir onCarouselPhotoChanged).
+    val photoPointIndices: List<Int> = emptyList(),
     val initialPhotoIndex: Int = 0,
     val photoMissing: Boolean = false,
 )
@@ -1400,10 +1497,18 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
     var onPhotoClick: (File) -> Unit = {}
     var onCloseClick: () -> Unit = {}
 
+    // RIC-181 : balayer le carrousel d'un cluster déplace le curseur sur la photo affichée (spec) :
+    // c'est cet appel qui prévient renderTrack, exactement comme onCursorChanged le fait pour un
+    // glissement du marqueur curseur. Vide (photoPointIndices) pour un carrousel de marqueur simple,
+    // voir cursorBubbleContent : ce callback n'y est alors jamais invoqué.
+    var onCarouselPhotoChanged: (Int) -> Unit = {}
+
     // Le lot courant du carrousel et la page affichée. Rechargés à chaque onOpen, c'est-à-dire à
     // chaque déplacement du curseur : changer d'endroit sur la trace, c'est changer de lot.
     private var photoFiles: List<File> = emptyList()
     private var photoAdjustments: List<PhotoAdjustments> = emptyList()
+    // RIC-181 : parallèle à photoFiles, voir CursorBubbleContent.photoPointIndices.
+    private var photoPointIndices: List<Int> = emptyList()
     private var photoIndex = 0
 
     // RIC-43 : la ligne distance/altitude nue, et les heures de prise de vue du lot. Retenues
@@ -1482,6 +1587,11 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
                             // extrémités doivent se sentir comme des extrémités.
                             photoIndex = (photoIndex + if (dx < 0) 1 else -1).coerceIn(photoFiles.indices)
                             showCurrentPhoto()
+                            // RIC-181 : carrousel d'un cluster (photoPointIndices non vide, voir
+                            // cursorBubbleContent) : le curseur suit la photo affichée. getOrNull et
+                            // non l'index direct : un marqueur simple laisse cette liste vide, et
+                            // c'est justement ce qui garde son comportement d'avant (rien à suivre).
+                            photoPointIndices.getOrNull(photoIndex)?.let(onCarouselPhotoChanged)
                         } else if (abs(dx) <= pagingSlop && abs(dy) <= pagingSlop) {
                             view.performClick()
                         }
@@ -1544,6 +1654,7 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
         photoAdjustments = content.photoAdjustments
         photoTimes = content.photoTimes
         photoCaptions = content.photoCaptions
+        photoPointIndices = content.photoPointIndices
         photoIndex = content.initialPhotoIndex.coerceIn(0, (content.photoFiles.size - 1).coerceAtLeast(0))
         // Posé tout de suite : les deux branches sans photo affichable en restent là, et celle qui
         // en a une le repose avec l'heure via showCurrentPhoto.
