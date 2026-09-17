@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -416,6 +417,15 @@ internal fun ImmersiveBlackWindow() {
  * (PhotoSelectionViewerDialog, sur des URIs MediaStore) de réutiliser exactement ce pager zoomable
  * sans dupliquer sa mécanique de geste. [overlayUri] y reste toujours `null`, cette visionneuse-là
  * n'ayant pas de montée en qualité à faire : ses candidates sont déjà les fichiers originaux.
+ *
+ * RIC-182 : [onTap], nul par défaut, ne change rien pour les visionneuses qui ne le fournissent pas
+ * (PhotoViewerDialog, PhotoGalleryDialog) : le second `pointerInput` n'est posé QUE si l'appelant
+ * en a besoin, plutôt que d'installer un détecteur de tap inutile partout. Seule
+ * PhotoSelectionViewerDialog le fournit, pour basculer la sélection d'un tap sur la photo. Un
+ * `pointerInput` séparé de celui du pincement, et non une branche de plus dans sa boucle
+ * manuelle : `detectTapGestures` sait déjà, tout seul, ne rien faire tant qu'un second doigt se
+ * pose ou que le contact dérive en glissement, ce qui est exactement le comportement voulu pour
+ * cohabiter avec le pincement ci-dessous et le balayage du pager.
  */
 @Composable
 internal fun ZoomableAsyncPhoto(
@@ -426,6 +436,7 @@ internal fun ZoomableAsyncPhoto(
     // MediaStore qui n'ont pas encore de ligne en base, donc pas d'ajustements à appliquer.
     adjustments: PhotoAdjustments = PhotoAdjustments.NONE,
     onZoomedChanged: (Boolean) -> Unit,
+    onTap: (() -> Unit)? = null,
 ) {
     var scale by remember(model) { mutableFloatStateOf(1f) }
     var offset by remember(model) { mutableStateOf(Offset.Zero) }
@@ -462,7 +473,13 @@ internal fun ZoomableAsyncPhoto(
                         }
                     } while (event.changes.any { it.pressed })
                 }
-            },
+            }
+            // RIC-182 : détecteur de tap séparé, posé seulement quand l'appelant fournit [onTap].
+            // `detectTapGestures` arbitre déjà tout seul avec ses voisins : un second doigt ou un
+            // déplacement au-delà du seuil de glissement annule la détection de tap sans rien
+            // consommer à sa place, donc le pincement ci-dessus et le balayage du pager parent
+            // continuent de fonctionner sans changement.
+            .let { base -> if (onTap != null) base.pointerInput(model) { detectTapGestures(onTap = { onTap() }) } else base },
         contentAlignment = Alignment.Center,
     ) {
         // Le zoom est porté par le conteneur des deux images : elles se superposent au pixel près
