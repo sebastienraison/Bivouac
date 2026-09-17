@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -136,20 +137,24 @@ private fun MissingPhotoPlaceholder(modifier: Modifier = Modifier) {
  * discret plutôt qu'un libellé : la vignette la plus petite fait 72 dp, un texte y serait
  * illisible, et la même pastille sert à toutes les tailles. Le sens reste accessible par la
  * description de contenu.
+ *
+ * RIC-177 : fond noir translucide et icône blanche plutôt que les couleurs de thème d'origine
+ * (`secondaryContainer` clair sur icône teintée), qui se fondaient dans une photo claire. Même
+ * famille que [RemovedFromMapBadge] : taille et style identiques, pour que les deux se lisent
+ * comme un seul jeu de pastilles quelle que soit la photo dessous, claire ou sombre.
  */
 @Composable
 private fun ApproximatePositionBadge(modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        tonalElevation = 2.dp,
+        color = PhotoBadgeBackgroundColor,
     ) {
         Icon(
             Icons.Default.LocationSearching,
             contentDescription = "Positionnement approximatif",
-            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(2.dp).size(12.dp),
+            tint = Color.White,
+            modifier = Modifier.padding(PhotoBadgePadding).size(PhotoBadgeIconSize),
         )
     }
 }
@@ -159,20 +164,33 @@ private fun ApproximatePositionBadge(modifier: Modifier = Modifier) {
  * carrousel), tout en restant présente ici, dans le bandeau, la grille et la visionneuse. La
  * position, elle, est conservée en base (voir shownOnMap) : ce badge dit seulement « pas montrée
  * là-bas en ce moment », pas « sans position ».
+ *
+ * RIC-177 : même correctif que [ApproximatePositionBadge], et mêmes constantes de taille et de
+ * couleur : les deux pastilles (bas gauche et bas droite) forment une famille, y compris sur une
+ * photo qui porte les deux à la fois.
  */
 @Composable
 private fun RemovedFromMapBadge(modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        tonalElevation = 2.dp,
+        color = PhotoBadgeBackgroundColor,
     ) {
         Icon(
             Icons.Default.LocationOff,
             contentDescription = "Retirée de la carte",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(2.dp).size(12.dp),
+            tint = Color.White,
+            modifier = Modifier.padding(PhotoBadgePadding).size(PhotoBadgeIconSize),
         )
     }
 }
+
+/**
+ * RIC-177 : constantes partagées des deux pastilles de [PhotoTile], pour qu'elles restent
+ * cohérentes si l'une évolue. Icône 18 dp (contre 12 dp à l'origine, illisible en pratique) dans
+ * un disque de 4 dp de marge, soit 26 dp de diamètre : net sur la plus petite vignette de l'app
+ * (bandeau, 72 dp) sans dévorer un quart de sa surface.
+ */
+private val PhotoBadgeBackgroundColor = Color.Black.copy(alpha = 0.55f)
+private val PhotoBadgeIconSize = 18.dp
+private val PhotoBadgePadding = 4.dp
