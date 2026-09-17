@@ -429,6 +429,7 @@ fun JournalScreen(
                         photoPlacementPreviewIndex = pointIndex
                     },
                     onPhotoPlacementDone = viewModel::exitPhotoPlacement,
+                    onPhotoPlacementCancel = viewModel::cancelPhotoPlacement,
                     nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
                 )
                 ThreeStopJournalDetail(
@@ -465,6 +466,10 @@ fun JournalScreen(
                     photoPermissionDenied = photoPermissionDenied,
                     onOpenAppSettingsClick = { journalContext.openAppSettings() },
                     onEditingChanged = { isEditingDetail = it },
+                    // RIC-183 : pour que le retour arrière (BackHandler plus bas) se comporte
+                    // comme Annuler pendant le mode placement.
+                    photoPlacementActive = photoPlacementTarget != null,
+                    onPhotoPlacementCancel = viewModel::cancelPhotoPlacement,
                 )
             }
         }
@@ -1059,6 +1064,7 @@ private fun JournalMap(
     photoPlacementTarget: LoggedTrackPhotoEntity? = null,
     onPhotoPlacementDrag: (Int) -> Unit = {},
     onPhotoPlacementDone: () -> Unit = {},
+    onPhotoPlacementCancel: () -> Unit = {},
     multiTracks: List<ColoredTrack> = emptyList(),
     highlightedTrackId: String? = null,
     onTraceTapped: (String) -> Unit = {},
@@ -1112,6 +1118,7 @@ private fun JournalMap(
         if (photoPlacementTarget != null) {
             PhotoPlacementBanner(
                 onDone = onPhotoPlacementDone,
+                onCancel = onPhotoPlacementCancel,
                 modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(16.dp),
             )
         }
@@ -1123,9 +1130,13 @@ private fun JournalMap(
  * non TopCenter : les contrôles de couche/section occupent déjà tout le TopEnd (voir ci-dessus), et
  * la note Esri du satellite le TopStart en fond de carte, jamais visible ici puisque le mode
  * placement est propre au détail Journal, qui n'affiche pas cette attribution.
+ *
+ * RIC-183 : « Annuler » à gauche de « Terminé », seule façon de quitter le mode sans garder le
+ * déplacement (auparavant il fallait abandonner toute l'édition). Texte d'aide raccourci pour
+ * laisser la place aux deux boutons sur une ligne à 360 dp, la plus étroite des largeurs visées.
  */
 @Composable
-private fun PhotoPlacementBanner(onDone: () -> Unit, modifier: Modifier = Modifier) {
+private fun PhotoPlacementBanner(onDone: () -> Unit, onCancel: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(12.dp),
@@ -1135,14 +1146,17 @@ private fun PhotoPlacementBanner(onDone: () -> Unit, modifier: Modifier = Modifi
         Row(
             modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                "Fais glisser la photo le long de la trace",
+                "Fais glisser la photo sur la trace",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFF1A1C19),
                 modifier = Modifier.weight(1f, fill = false),
             )
+            TextButton(onClick = onCancel) {
+                Text("Annuler")
+            }
             Button(
                 onClick = onDone,
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
@@ -1876,6 +1890,10 @@ internal fun ThreeStopJournalDetail(
     // PhotoViewerDialog et PhotoAdjustDialog. Ce callback est ce qui leur fait suivre l'édition sans
     // dupliquer l'état : appelé partout où isEditing change ci-dessous.
     onEditingChanged: (Boolean) -> Unit = {},
+    // RIC-183 : true pendant le mode placement (photoPlacementTarget non nul côté écran). Sert ici
+    // à aligner le retour arrière (voir BackHandler plus bas) sur Annuler pendant le mode.
+    photoPlacementActive: Boolean = false,
+    onPhotoPlacementCancel: () -> Unit = {},
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = LocalDensity.current
@@ -1968,7 +1986,11 @@ internal fun ThreeStopJournalDetail(
             }
         }
 
-        BackHandler { requestExit(onCloseClick) }
+        // RIC-183 : pendant le mode placement, le retour arrière se comporte comme le bouton
+        // Annuler du bandeau et non comme la sortie de l'écran : sans cette branche, un appui
+        // pendant le mode fermait tout le détail (voire toute la trace) au lieu de simplement
+        // défaire le glissement en cours.
+        BackHandler { if (photoPlacementActive) onPhotoPlacementCancel() else requestExit(onCloseClick) }
         val fullHeightPx = with(density) { maxHeight.toPx() }
         var measuredSummaryHeightPx by remember(entry.id) { mutableIntStateOf(0) }
         val fallbackSummaryHeightPx = with(density) { 150.dp.toPx() }
