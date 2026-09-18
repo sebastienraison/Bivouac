@@ -1,5 +1,6 @@
 package com.bivouac.app.ui.journal
 
+import android.content.Context
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -27,10 +28,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.bivouac.app.R
 
 /**
  * RIC-162 : visionneuse ouverte depuis la grille du sélecteur de photos (icône « étendre » sur une
@@ -93,7 +97,7 @@ internal fun PhotoSelectionViewerDialog(
                 }
             }
             Text(
-                selectionCounterLabel(pagerState.currentPage, photos.size),
+                selectionCounterLabel(LocalContext.current, pagerState.currentPage, photos.size),
                 color = Color.White,
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier
@@ -112,7 +116,11 @@ internal fun PhotoSelectionViewerDialog(
                 // visionneuses peuvent être composées en même temps qu'une grille sous-jacente
                 // (fenêtres de dialogue empilées), et un test qui cible celle-ci doit pouvoir la
                 // distinguer sans dépendre de l'ordre de composition.
-                Icon(Icons.Default.Close, contentDescription = "Fermer la visionneuse", tint = Color.White)
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = stringResource(R.string.photo_gallery_close_selection_viewer_description),
+                    tint = Color.White,
+                )
             }
             // getOrNull et non l'index direct : le pager peut brièvement rendre une page dont
             // l'index n'est plus valide pendant une recomposition (liste de candidates qui change
@@ -125,7 +133,7 @@ internal fun PhotoSelectionViewerDialog(
             if (currentUri != null && isSelected(currentUri)) {
                 Icon(
                     Icons.Default.Check,
-                    contentDescription = "Sélectionnée",
+                    contentDescription = stringResource(R.string.photo_gallery_selected_description),
                     tint = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -144,8 +152,15 @@ internal fun PhotoSelectionViewerDialog(
 /**
  * RIC-162 : libellé "n / N" du compteur, extrait pour être testable sans monter la visionneuse.
  * `page` est un index base 0 (celui du pager) ; affiché en base 1, comme sur la maquette validée.
+ *
+ * RIC-189 (lot 2 i18n) : le libellé vient désormais de photo_gallery_page_counter, d'où le
+ * [context] en premier paramètre. Une ressource et non une interpolation Kotlin, alors que le
+ * motif "%1$d / %2$d" est identique dans les deux langues : c'est la règle du chantier RIC-24,
+ * aucun texte visible ne reste en dur, et une langue à chiffres ou à séparateur différents n'aura
+ * qu'une ligne d'inventaire à changer.
  */
-internal fun selectionCounterLabel(page: Int, total: Int): String = "${page + 1} / $total"
+internal fun selectionCounterLabel(context: Context, page: Int, total: Int): String =
+    context.getString(R.string.photo_gallery_page_counter, page + 1, total)
 
 /**
  * RIC-162 / RIC-182 : bascule la présence de [uri] dans l'ensemble sélectionné. Extrait pour être

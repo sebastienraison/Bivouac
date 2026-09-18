@@ -1,6 +1,8 @@
 package com.bivouac.app.ui.journal
 
+import android.content.Context
 import android.net.Uri
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -15,9 +17,16 @@ import org.robolectric.RobolectricTestRunner
  * Robolectric et non un test JVM pur (contrairement à AddPhotosOutcomeTest) : [toggleSelection]
  * manipule des `android.net.Uri`, et `Uri.parse` n'est pas mocké par défaut hors Robolectric, même
  * convention que le reste de la suite (PhotoOriginalResolverTest, LoggedTrackPhotoRepositoryTest…).
+ *
+ * RIC-189 (lot 2 i18n) : [selectionCounterLabel] prend désormais un Context et lit
+ * photo_gallery_page_counter. Le Context Robolectric déjà nécessaire ici le fournit sans rien
+ * changer aux attentes : le motif "%1$d / %2$d" est le même en français et en anglais, et c'est
+ * bien la ressource réelle qui est exercée, pas une copie du motif dans le test.
  */
 @RunWith(RobolectricTestRunner::class)
 class PhotoSelectionViewerLogicTest {
+
+    private val context = ApplicationProvider.getApplicationContext<Context>()
 
     private val photoA = Uri.parse("content://media/external/images/media/1")
     private val photoB = Uri.parse("content://media/external/images/media/2")
@@ -61,16 +70,16 @@ class PhotoSelectionViewerLogicTest {
 
     @Test
     fun theFirstPageIsDisplayedAsOneNotZero() {
-        assertEquals("1 / 5", selectionCounterLabel(page = 0, total = 5))
+        assertEquals("1 / 5", selectionCounterLabel(context, page = 0, total = 5))
     }
 
     @Test
     fun theLastPageMatchesTheTotal() {
-        assertEquals("5 / 5", selectionCounterLabel(page = 4, total = 5))
+        assertEquals("5 / 5", selectionCounterLabel(context, page = 4, total = 5))
     }
 
     @Test
     fun aSingleCandidateStillShowsOneOverOne() {
-        assertEquals("1 / 1", selectionCounterLabel(page = 0, total = 1))
+        assertEquals("1 / 1", selectionCounterLabel(context, page = 0, total = 1))
     }
 }

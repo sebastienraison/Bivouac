@@ -45,10 +45,12 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import com.bivouac.app.R
 import com.bivouac.app.data.photo.PhotoPickerScope
 
 /**
@@ -98,12 +100,12 @@ internal fun PhotoPickerDialog(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "Ajouter des photos",
+                        stringResource(R.string.photo_gallery_picker_title),
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f),
                     )
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Fermer")
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_close_description))
                     }
                 }
                 Row(
@@ -113,12 +115,12 @@ internal fun PhotoPickerDialog(
                     FilterChip(
                         selected = scope == PhotoPickerScope.TRACK_DATES,
                         onClick = { onScopeChange(PhotoPickerScope.TRACK_DATES) },
-                        label = { Text("Période de la sortie") },
+                        label = { Text(stringResource(R.string.photo_gallery_scope_track_dates_chip)) },
                     )
                     FilterChip(
                         selected = scope == PhotoPickerScope.WHOLE_GALLERY,
                         onClick = { onScopeChange(PhotoPickerScope.WHOLE_GALLERY) },
-                        label = { Text("Toute la galerie") },
+                        label = { Text(stringResource(R.string.photo_gallery_scope_whole_gallery_chip)) },
                     )
                 }
                 if (partialAccess) {
@@ -140,16 +142,16 @@ internal fun PhotoPickerDialog(
                         ) {
                             Text(
                                 if (scope == PhotoPickerScope.TRACK_DATES) {
-                                    "Aucune photo trouvée sur la période de cette sortie."
+                                    stringResource(R.string.photo_msg_empty_track_dates)
                                 } else {
-                                    "Aucune photo accessible dans la galerie."
+                                    stringResource(R.string.photo_msg_empty_whole_gallery)
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             if (scope == PhotoPickerScope.TRACK_DATES) {
                                 TextButton(onClick = { onScopeChange(PhotoPickerScope.WHOLE_GALLERY) }) {
-                                    Text("Chercher dans toute la galerie")
+                                    Text(stringResource(R.string.photo_gallery_search_whole_gallery_button))
                                 }
                             }
                         }
@@ -178,7 +180,7 @@ internal fun PhotoPickerDialog(
                                     Box(modifier = Modifier.fillMaxSize().background(SelectedOverlayColor))
                                     Icon(
                                         Icons.Default.Check,
-                                        contentDescription = "Sélectionnée",
+                                        contentDescription = stringResource(R.string.photo_gallery_selected_description),
                                         tint = MaterialTheme.colorScheme.onPrimary,
                                         modifier = Modifier
                                             .align(Alignment.TopEnd)
@@ -215,7 +217,7 @@ internal fun PhotoPickerDialog(
                                     ) {
                                         Icon(
                                             ExpandPhotoIcon,
-                                            contentDescription = "Agrandir la photo",
+                                            contentDescription = stringResource(R.string.photo_gallery_expand_description),
                                             tint = Color.White,
                                             modifier = Modifier.size(14.dp),
                                         )
@@ -242,14 +244,28 @@ internal fun PhotoPickerDialog(
                                 selected = if (allShownSelected) selected - candidates.toSet() else selected + candidates
                             },
                         ) {
-                            Text(if (allShownSelected) "Tout désélectionner" else "Tout sélectionner", maxLines = 1)
+                            Text(
+                                if (allShownSelected) {
+                                    stringResource(R.string.photo_gallery_deselect_all_button)
+                                } else {
+                                    stringResource(R.string.photo_gallery_select_all_button)
+                                },
+                                maxLines = 1,
+                            )
                         }
                         // RIC-175 : le texte « n sélectionnée(s) » au milieu de la ligne est retiré
                         // (le bouton porte déjà le compte) : à 21 photos et plus il faisait replier
                         // « Ajouter (21) » sur trois lignes et déborder du dialogue. `maxLines = 1`
                         // sur les deux boutons empêche tout repli futur, quel que soit le compte.
                         Button(onClick = { onConfirm(selected.toList()) }, enabled = selected.isNotEmpty()) {
-                            Text(if (selected.isEmpty()) "Ajouter" else "Ajouter (${selected.size})", maxLines = 1)
+                            Text(
+                                if (selected.isEmpty()) {
+                                    stringResource(R.string.common_add_button)
+                                } else {
+                                    stringResource(R.string.photo_gallery_add_button_count, selected.size)
+                                },
+                                maxLines = 1,
+                            )
                         }
                     }
                 }
@@ -336,14 +352,17 @@ private fun PartialAccessBanner(
         if (wholeGallery) {
             Column(modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 4.dp)) {
                 Text(
-                    "Autorisation partielle : même en « Toute la galerie », seules les photos que tu as " +
-                        "sélectionnées sont visibles.",
+                    stringResource(R.string.photo_msg_partial_access_whole_gallery),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = onSelectMorePhotos) { Text("Sélectionner plus de photos") }
-                    TextButton(onClick = onOpenAppSettings) { Text("Accès complet") }
+                    TextButton(onClick = onSelectMorePhotos) {
+                        Text(stringResource(R.string.photo_msg_select_more_photos_button))
+                    }
+                    TextButton(onClick = onOpenAppSettings) {
+                        Text(stringResource(R.string.photo_msg_full_access_button))
+                    }
                 }
             }
         } else {
@@ -352,12 +371,14 @@ private fun PartialAccessBanner(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Seules les photos que tu as autorisées sont visibles.",
+                    stringResource(R.string.photo_msg_partial_access_track_dates),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onSelectMorePhotos) { Text("Sélectionner plus de photos") }
+                TextButton(onClick = onSelectMorePhotos) {
+                    Text(stringResource(R.string.photo_msg_select_more_photos_button))
+                }
             }
         }
     }
