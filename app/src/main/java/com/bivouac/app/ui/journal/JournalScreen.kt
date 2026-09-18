@@ -2368,7 +2368,7 @@ internal fun ThreeStopJournalDetail(
                                 FilterChip(
                                     selected = systemTag.value in draftTags,
                                     onClick = { toggleSystemDraftTag(systemTag) },
-                                    label = { Text(systemTag.label) },
+                                    label = { Text(stringResource(systemTag.labelRes)) },
                                     colors = FilterChipDefaults.filterChipColors(
                                         selectedContainerColor = color.copy(alpha = 0.14f),
                                         selectedLabelColor = color,
@@ -2739,7 +2739,11 @@ private fun tagColor(tag: String): Color = when (tag) {
     else -> FreeTagPalette[(tag.hashCode() and 0x7fffffff) % FreeTagPalette.size]
 }
 
-private fun tagLabel(value: String): String = SystemTag.entries.find { it.value == value }?.label ?: value
+// RIC-191 (lot 4 i18n) : un tag système s'affiche traduit, un tag libre s'affiche tel que
+// l'utilisateur l'a écrit. La valeur stockée en base ne change pas, c'est toujours SystemTag.value.
+@Composable
+private fun tagLabel(value: String): String =
+    SystemTag.entries.find { it.value == value }?.let { stringResource(it.labelRes) } ?: value
 
 @Composable
 private fun ReadOnlyTagChip(label: String, color: Color) {
