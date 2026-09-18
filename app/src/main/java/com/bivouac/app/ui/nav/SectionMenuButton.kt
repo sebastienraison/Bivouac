@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.bivouac.app.R
 
@@ -39,12 +40,18 @@ fun SectionMenuButton(current: AppSection, onSelect: (AppSection) -> Unit, modif
                 contentColor = Color.White,
             ),
         ) {
-            Icon(current.icon, contentDescription = "Changer de section (actuelle : ${current.label})")
+            Icon(
+                current.icon,
+                contentDescription = stringResource(
+                    R.string.nav_section_menu_content_description,
+                    stringResource(current.labelRes),
+                ),
+            )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             AppSection.entries.forEach { section ->
                 DropdownMenuItem(
-                    text = { Text(section.label) },
+                    text = { Text(stringResource(section.labelRes)) },
                     leadingIcon = { Icon(section.icon, contentDescription = null) },
                     trailingIcon = {
                         if (section == current) {

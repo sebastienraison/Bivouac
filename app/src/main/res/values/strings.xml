@@ -290,60 +290,56 @@
     <string name="settings_photo_storage_mode_row_description">Applies to photos added from now on: those already in the Journal keep the format they were saved in.</string>
     <string name="storage_usage_recompression_progress_title">Recompressing photos</string>
     <string name="storage_usage_gallery_access_denied_message">Recompressing requires finding the original photos in the gallery, and Android will no longer prompt for this permission from within the app. Allow gallery access in Android\'s app settings.</string>
-    <string name="storage_usage_recompression_report_recompressed_line">%1$s, %2$s freed.</string>
-    <plurals name="storage_usage_photo_recompressed_count">
-        <item quantity="one">%1$d photo recompressed</item>
-        <item quantity="other">%1$d photos recompressed</item>
+    <plurals name="storage_usage_recompression_report_recompressed_line">
+        <item quantity="one">%1$d photo recompressed, %2$s freed.</item>
+        <item quantity="other">%1$d photos recompressed, %2$s freed.</item>
     </plurals>
     <string name="storage_usage_recompression_report_none">No photos could be recompressed.</string>
-    <string name="storage_usage_recompression_report_kept_line">%1$s in original quality: original not found or modified since import.</string>
-    <plurals name="storage_usage_photo_kept_count">
-        <item quantity="one">%1$d photo kept</item>
-        <item quantity="other">%1$d photos kept</item>
+    <plurals name="storage_usage_recompression_report_kept_line">
+        <item quantity="one">%1$d photo kept in original quality: original not found or modified since import.</item>
+        <item quantity="other">%1$d photos kept in original quality: original not found or modified since import.</item>
     </plurals>
-    <string name="storage_usage_recompression_report_already_reduced_line">%1$s in the lightest format: nothing to gain.</string>
-    <plurals name="storage_usage_photo_already_reduced_count">
-        <item quantity="one">%1$d photo was already</item>
-        <item quantity="other">%1$d photos were already</item>
+    <plurals name="storage_usage_recompression_report_already_reduced_line">
+        <item quantity="one">%1$d photo was already in the lightest format: nothing to gain.</item>
+        <item quantity="other">%1$d photos were already in the lightest format: nothing to gain.</item>
     </plurals>
     <string name="storage_usage_loading_text">Calculating storage usage…</string>
     <string name="storage_usage_total_label">Total used by Bivouac</string>
     <string name="storage_usage_total_description">Tracks, Journal photos and the database, in the app\'s private storage. Original photos in the gallery are not counted here.</string>
     <string name="storage_usage_row_gpx_title">GPX tracks</string>
-    <string name="storage_usage_row_gpx_journal_detail">Journal: %1$s, %2$s</string>
-    <plurals name="storage_usage_file_count">
-        <item quantity="one">%1$d file</item>
-        <item quantity="other">%1$d files</item>
+    <plurals name="storage_usage_row_gpx_journal_detail">
+        <item quantity="one">Journal: %1$d file, %2$s</item>
+        <item quantity="other">Journal: %1$d files, %2$s</item>
     </plurals>
-    <string name="storage_usage_row_gpx_planification_detail">Planning: %1$s, %2$s</string>
-    <string name="storage_usage_row_photos_full_detail">Original quality: %1$s, %2$s</string>
-    <plurals name="storage_usage_photo_count">
-        <item quantity="one">%1$d photo</item>
-        <item quantity="other">%1$d photos</item>
+    <plurals name="storage_usage_row_gpx_planification_detail">
+        <item quantity="one">Planning: %1$d file, %2$s</item>
+        <item quantity="other">Planning: %1$d files, %2$s</item>
     </plurals>
-    <string name="storage_usage_row_photos_reduced_detail">Lightweight: %1$s, %2$s</string>
-    <string name="storage_usage_row_photos_missing_detail">Including %1$s</string>
-    <plurals name="storage_usage_photo_missing_file_count">
-        <item quantity="one">%1$d missing file</item>
-        <item quantity="other">%1$d missing files</item>
+    <plurals name="storage_usage_row_photos_full_detail">
+        <item quantity="one">Original quality: %1$d photo, %2$s</item>
+        <item quantity="other">Original quality: %1$d photos, %2$s</item>
+    </plurals>
+    <plurals name="storage_usage_row_photos_reduced_detail">
+        <item quantity="one">Lightweight: %1$d photo, %2$s</item>
+        <item quantity="other">Lightweight: %1$d photos, %2$s</item>
+    </plurals>
+    <plurals name="storage_usage_row_photos_missing_detail">
+        <item quantity="one">Including %1$d missing file</item>
+        <item quantity="other">Including %1$d missing files</item>
     </plurals>
     <string name="storage_usage_row_database_title">Database</string>
     <string name="storage_usage_row_database_detail">Hikes, days, tags, photo records</string>
     <string name="storage_usage_row_other_title">Other</string>
     <string name="storage_usage_row_other_detail">Settings, map caches, temporary files</string>
     <string name="storage_usage_recompression_card_title">Recompressing could free up ~%1$s</string>
-    <string name="storage_usage_recompression_card_body">%1$s in original quality. Bivouac can replace them with a lighter version, provided the original is found in the gallery: those whose original has disappeared or changed are never touched.</string>
-    <plurals name="storage_usage_photo_kept_full_quality_count">
-        <item quantity="one">%1$d photo is kept</item>
-        <item quantity="other">%1$d photos are kept</item>
+    <plurals name="storage_usage_recompression_card_body">
+        <item quantity="one">%1$d photo is kept in original quality. Bivouac can replace it with a lighter version, provided the original is found in the gallery: if the original has disappeared or changed, it is never touched.</item>
+        <item quantity="other">%1$d photos are kept in original quality. Bivouac can replace them with a lighter version, provided the originals are found in the gallery: those whose original has disappeared or changed are never touched.</item>
     </plurals>
     <string name="storage_usage_recompress_button">Recompress existing photos</string>
     <string name="storage_choice_prompt_title">Storage used by Journal photos</string>
     <string name="storage_choice_prompt_message">Every photo added to a hike is currently copied in original quality, about 4 MB each: a few dozen hikes are enough to take up several hundred MB. Bivouac can now keep only a lightweight version, about ten times smaller and still sharp enough to look back on.</string>
     <string name="storage_choice_prompt_action">Choose now</string>
-    <string name="storage_recompress_offer_count_singular">already imported photo remains</string>
-    <string name="storage_recompress_offer_count_plural">already imported photos remain</string>
-    <string name="storage_recompress_offer_body">%1$s in original quality (~%2$s). Recompress them now?</string>
 
     <!-- Sauvegarde et restauration -->
     <string name="backup_open_destination_failed">Could not open the selected destination.</string>
@@ -492,6 +488,11 @@
     <string name="fmt_bilan_record_value_km_effort">%1$s km-effort</string>
     <string name="fmt_bilan_record_value_vam">%1$s m/h</string>
     <string name="fmt_bilan_record_meta_extra">%1$s km · +%2$s m</string>
+
+    <!-- Navigation et commun -->
+    <string name="format_distance_km">%1$s km</string>
+
+    <!-- Formats (dates, nombres, unités) -->
     <string name="fmt_elevation_profile_km_axis">%1$s</string>
     <string name="fmt_number_km1">%1$s</string>
     <string name="fmt_number_grouped_int">%1$s</string>
@@ -515,6 +516,9 @@
     <string name="settings_manual_penalty_prefix">+1 km / </string>
     <string name="settings_speed_value_format">%1$s km/h</string>
     <string name="settings_penalty_value_format">+1 km / %1$d m</string>
+
+    <!-- Réglages -->
+    <string name="settings_photo_storage_summary">%1$s, %2$s</string>
 
     <!-- Tags système -->
     <string name="tag_system_solo">Solo</string>

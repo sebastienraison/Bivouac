@@ -13,7 +13,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.bivouac.app.R
 
 /**
  * RIC-157 : le dialogue d'une proposition posée après une mise à jour, générique.
@@ -77,7 +79,7 @@ fun PostUpdatePromptDialog(
                 Spacer(Modifier.size(12.dp))
                 TextButton(onClick = onNever) {
                     Text(
-                        "Ne plus me le proposer",
+                        stringResource(R.string.msg_post_update_never),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -85,6 +87,8 @@ fun PostUpdatePromptDialog(
             }
         },
         confirmButton = { TextButton(onClick = { choosing = true }) { Text(actionLabel) } },
-        dismissButton = { TextButton(onClick = onLater) { Text("Peut-être plus tard") } },
+        dismissButton = {
+            TextButton(onClick = onLater) { Text(stringResource(R.string.msg_post_update_later)) }
+        },
     )
 }

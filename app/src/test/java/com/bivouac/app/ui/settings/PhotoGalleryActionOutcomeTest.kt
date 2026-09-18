@@ -1,5 +1,7 @@
 package com.bivouac.app.ui.settings
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import com.bivouac.app.data.db.LoggedTrackRepository
 import java.util.Locale
 import org.junit.After
@@ -7,6 +9,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * RIC-157/151 : ce qu'un appui produit sur les deux actions des Réglages qui vont regarder dans la
@@ -16,16 +21,21 @@ import org.junit.Test
  * quelque chose de visible), et aucune demande de permission galerie quand les photos sont
  * débrayées dans les Réglages (RIC-152).
  *
- * RIC-187 (lot 0 i18n) : theReportSpellsOutTheThreeOutcomesSeparately attend "34,5 Mo" (virgule
- * française), produit par recompressionReportMessage via formatBytes -- qui suivait Locale.FRANCE
- * en dur avant ce lot, donc ce test passait déjà quelle que soit la locale de la machine qui
- * l'exécutait. formatBytes suit maintenant Locale.getDefault() pour le séparateur décimal : la
- * locale FRANCE est donc désormais posée et restaurée explicitement ici, pour que ce test continue
- * de passer sur une machine réglée dans n'importe quelle locale.
+ * RIC-187 (lot 0 i18n) : les rapports attendent "34,5 Mo" (virgule française), d'où la locale
+ * FRANCE posée et restaurée explicitement, pour que ce test passe sur une machine réglée dans
+ * n'importe quelle locale.
+ *
+ * RIC-190 (lot 3 i18n) : les deux rapports lisent leurs phrases dans les ressources et prennent un
+ * Context, d'où Robolectric et @Config(qualifiers = "fr-rFR") sur les tests qui assertent du texte.
+ * Ce qu'ils vérifient reste le même : les issues sont dites séparément, et une passe qui n'a rien
+ * pu faire le dit quand même. Les quatre premiers tests, eux, ne touchent aucune ressource.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(qualifiers = "fr-rFR")
 class PhotoGalleryActionOutcomeTest {
 
     private lateinit var originalLocale: Locale
+    private val context: Context get() = ApplicationProvider.getApplicationContext()
 
     @Before
     fun sauvegarderLocale() {
@@ -87,6 +97,7 @@ class PhotoGalleryActionOutcomeTest {
     @Test
     fun theReportSpellsOutTheThreeOutcomesSeparately() {
         val message = recompressionReportMessage(
+            context,
             LoggedTrackRepository.PhotoRecompressionReport(
                 recompressed = 12,
                 freedBytes = 34_500_000L,
@@ -106,6 +117,7 @@ class PhotoGalleryActionOutcomeTest {
     @Test
     fun aPassThatCouldDoNothingStillSaysSo() {
         val message = recompressionReportMessage(
+            context,
             LoggedTrackRepository.PhotoRecompressionReport(recompressed = 0, freedBytes = 0L, kept = 4, alreadyReduced = 0),
         )
 
@@ -120,23 +132,32 @@ class PhotoGalleryActionOutcomeTest {
     @Test
     fun theRecoveryReportSaysWhatWasFoundAndWhatWasDeliberatelyNotAdopted() {
         val message = photoRecoveryReportMessage(
+            context,
             LoggedTrackRepository.PhotoRecoveryReport(recovered = 5, modifiedNotAdopted = 2, notFound = 1),
         )
 
         assertTrue(message, message.contains("5 photos retrouvées"))
-        assertTrue(message, message.contains("modifiée depuis l'import"))
+        // RIC-190 : au pluriel, c'est TOUTE la phrase qui s'accorde, pas seulement son début. Le
+        // fragment recollé d'avant donnait « 2 photos retrouvées […] mais modifiée depuis
+        // l'import : ce n'est plus le même fichier ».
+        assertTrue(message, message.contains("modifiées depuis l'import"))
+        assertTrue(message, message.contains("ce ne sont plus les mêmes fichiers"))
         assertTrue(message, message.contains("rien n'a été repris"))
         assertTrue(message, message.contains("1 photo reste introuvable"))
+        // Le pluriel porte la phrase entière : au singulier, « Sa fiche est conservée ».
+        assertTrue(message, message.contains("Sa fiche est conservée dans le Journal"))
     }
 
     @Test
     fun aRecoveryThatFoundNothingStillSaysSo() {
         val message = photoRecoveryReportMessage(
+            context,
             LoggedTrackRepository.PhotoRecoveryReport(recovered = 0, modifiedNotAdopted = 0, notFound = 3),
         )
 
         assertTrue(message, message.contains("Aucune photo n'a pu être retrouvée"))
         // La fiche survit à l'échec : c'est ce qui permet de retenter le jour où l'original revient.
-        assertTrue(message, message.contains("conservée dans le Journal"))
+        // 3 introuvables : la forme « other » accorde toute la phrase, pas seulement son début.
+        assertTrue(message, message.contains("Leurs fiches sont conservées dans le Journal"))
     }
 }
