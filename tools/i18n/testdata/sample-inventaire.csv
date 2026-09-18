@@ -1,0 +1,7 @@
+"priorité";"contexte";"fichier";"type";"clé";"fr actuel";"fr neutre proposé";"en proposé";"notes pilotage";"fr validé (Seb)";"en validé (Seb)";"commentaire Seb"
+"1";"Contexte de test";"Fake.kt:1";"libellé";"sample_apostrophe";"Poignée du tiroir";"Poignée du tiroir";"Drawer handle";"";"";"";""
+"1";"Contexte de test";"Fake.kt:2";"format";"sample_percent_with_param";"%1$s (100% fait)";"%1$s (100% fait)";"%1$s (100% complete)";"";"";"";""
+"1";"Contexte de test";"Fake.kt:3";"texte";"sample_percent_no_param";"50% du temps";"50% du temps";"50% of the time";"";"";"";""
+"1";"Contexte de test";"Fake.kt:4";"pluriel";"sample_plural_count";"one: %1$d randonnée | other: %1$d randonnées";"one: %1$d randonnée | other: %1$d randonnées";"one: %1$d hike | other: %1$d hikes";"";"";"";""
+"1";"Contexte de test";"Fake.kt:5";"texte";"sample_validated_override";"Ancien texte";"Neutre non retenu";"Neutral not kept";"";"Texte validé par Seb";"Validated by Seb";""
+"1";"Autre contexte";"Fake.kt:6";"texte";"sample_special_chars";"Titre « spécial » & <balise>";"Titre « spécial » & <balise>";"Special ""title"" & <tag>";"";"";"";""

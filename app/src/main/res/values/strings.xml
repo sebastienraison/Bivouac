@@ -1,3 +1,516 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    FICHIER GENERE, NE PAS EDITER A LA MAIN.
+
+    Source : docs/pilotage/i18n/strings-inventaire-v4.csv (inventaire de l'agent de pilotage,
+    RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
+
+        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v4.csv
+
+    Voir tools/i18n/README.md.
+-->
 <resources>
+    <!-- Nom de l'application (hors inventaire, ressource fixe) -->
     <string name="app_name">Bivouac</string>
+
+    <!-- Navigation et commun -->
+    <string name="common_drawer_handle_description">Drawer handle</string>
+    <string name="planification_drawer_synthese_tab">Overview</string>
+    <string name="planification_drawer_profil_tab">Profile</string>
+    <string name="planification_drawer_details_tab">Details</string>
+    <string name="common_done_button">Done</string>
+    <string name="common_close_description">Close</string>
+    <string name="common_add_button">Add</string>
+    <string name="common_save_button">Save</string>
+    <string name="common_cancel_button">Cancel</string>
+    <string name="common_ok_button">OK</string>
+    <string name="common_delete_button">Delete</string>
+    <string name="map_controls_layer_picker_description">Choose base map (current: %1$s)</string>
+    <string name="map_controls_recenter_description">Center on track</string>
+    <string name="map_layer_satellite_attribution_text">Powered by Esri, Maxar, Earthstar Geographics</string>
+    <string name="map_layer_standard_label">Standard</string>
+    <string name="map_layer_hiking_label">Hiking</string>
+    <string name="map_layer_satellite_label">Satellite</string>
+    <string name="nav_section_planification">Planning</string>
+    <string name="nav_section_menu_content_description">Change section (current: %1$s)</string>
+    <string name="nav_universe_choice_title">Is this track for the Journal or for Planning?</string>
+    <string name="nav_universe_choice_option_journal_subtitle">A completed hike, to archive in the journal</string>
+    <string name="nav_universe_choice_option_planification_subtitle">A track to prepare, with its bivouac points</string>
+    <string name="nav_universe_choice_planification_disabled_subtitle">Opens one file at a time: use the Journal for a batch</string>
+    <string name="common_back_content_description">Back</string>
+
+    <!-- Planification tiroir et segments -->
+    <string name="planification_default_track_name">Track</string>
+    <string name="planification_delete_target_fallback_name">this track</string>
+    <plurals name="planification_bivouac_count_description">
+        <item quantity="one">bivouac point</item>
+        <item quantity="other">bivouac points</item>
+    </plurals>
+    <string name="planification_untitled_track_title">Untitled track</string>
+    <string name="planification_menu_duplicate">Duplicate</string>
+    <string name="planification_menu_export">Export</string>
+    <string name="planification_close_track_description">Close the track</string>
+    <string name="planification_segment_export_description">Download this segment as GPX</string>
+    <string name="planification_bivouac_point_description">Bivouac point</string>
+    <string name="planification_bivouac_remove_description">Remove this bivouac point</string>
+    <string name="planification_bivouac_weather_description">Weather at the bivouac point</string>
+
+    <!-- Import GPX -->
+    <string name="gpximport_empty_title">No track being planned</string>
+    <string name="gpximport_empty_subtitle">Open a track to start placing bivouac points.</string>
+    <string name="gpximport_open_track_button">Open a track</string>
+
+    <!-- Journal liste -->
+    <string name="journal_list_screen_title">Journal</string>
+    <string name="journal_list_add_track_button">Add a track</string>
+    <string name="journal_list_empty_title">No hikes yet</string>
+    <string name="journal_list_empty_subtitle">Add a track to start the journal: completed hikes will live here.</string>
+    <plurals name="journal_list_total_hikes_count">
+        <item quantity="one">%1$d hike in total</item>
+        <item quantity="other">%1$d hikes in total</item>
+    </plurals>
+    <string name="journal_list_filter_empty_title">No hikes match</string>
+    <string name="journal_list_filter_empty_hint">Try a different filter.</string>
+    <string name="journal_list_confirm_selection_button">Confirm selection (%1$d)</string>
+    <string name="journal_list_show_results_on_map_button">one: Show %1$d result on map | other: Show %1$d results on map</string>
+    <string name="journal_list_show_selection_on_map_button">Show selection (%1$d)</string>
+    <string name="journal_list_cancel_selection_description">Cancel selection</string>
+    <string name="journal_list_min_selection_hint">Choose at least 2 tracks to confirm.</string>
+    <plurals name="journal_list_year_header_count">
+        <item quantity="one">%1$d · %2$d hike</item>
+        <item quantity="other">%1$d · %2$d hikes</item>
+    </plurals>
+    <plurals name="journal_list_bivouac_nights_description">
+        <item quantity="one">bivouac night</item>
+        <item quantity="other">bivouac nights</item>
+    </plurals>
+    <string name="journal_list_note_icon_description">note</string>
+    <string name="journal_list_photos_icon_description">photos</string>
+    <plurals name="journal_list_multitrack_header_count">
+        <item quantity="one">%1$d track shown</item>
+        <item quantity="other">%1$d tracks shown</item>
+    </plurals>
+    <string name="journal_list_multitrack_no_legend">Too many tracks for a detailed legend: all shown the same way.</string>
+
+    <!-- Journal détail (tiroir) -->
+    <string name="journal_detail_duplicate_name_prefix">Copy of %1$s</string>
+    <string name="journal_detail_bivouac_night_description">Bivouac night</string>
+    <string name="journal_detail_total_label">Total</string>
+    <string name="journal_detail_day_fallback_label">Day %1$d</string>
+    <string name="journal_detail_tags_title">Tags</string>
+    <string name="journal_detail_save_dirty_description">Save (unsaved changes)</string>
+    <string name="journal_detail_edit_description">Edit</string>
+    <string name="journal_detail_add_tag_placeholder">Add a tag</string>
+    <string name="journal_detail_notes_title">Notes</string>
+    <string name="journal_detail_note_placeholder">A few words about this hike…</string>
+    <string name="journal_detail_empty_notebook_hint">Tap the icon to add details.</string>
+    <string name="journal_detail_menu_description">Menu</string>
+    <string name="journal_detail_menu_rename">Rename</string>
+    <string name="journal_detail_menu_duplicate">Duplicate to Planning</string>
+    <string name="journal_detail_rename_dialog_title">Rename track</string>
+
+    <!-- Journal photos (bandeau, grille, sélecteur) -->
+    <string name="journal_error_photo_add_failed">Unable to add these photos. Try again from the gallery.</string>
+    <string name="journal_error_gallery_browse_failed">Unable to browse the gallery. Check the photo access permission in Android settings.</string>
+    <string name="journal_photos_placement_banner_hint">Drag the photo onto the track</string>
+    <string name="journal_photos_view_all_link">· view all</string>
+    <string name="journal_photos_permission_required_hint">Adding photos requires access to the gallery.</string>
+    <string name="journal_photos_open_app_settings_button">Open app settings</string>
+    <string name="journal_photos_empty_hint">No photos yet.</string>
+    <string name="photo_gallery_caption_dialog_title">Caption</string>
+    <string name="photo_gallery_caption_placeholder">Add a caption</string>
+    <string name="photo_gallery_title_count">Photos (%1$d)</string>
+    <string name="photo_gallery_picker_title">Add photos</string>
+    <string name="photo_gallery_scope_track_dates_chip">Hike dates</string>
+    <string name="photo_gallery_scope_whole_gallery_chip">Whole gallery</string>
+    <string name="photo_gallery_search_whole_gallery_button">Search the whole gallery</string>
+    <string name="photo_gallery_selected_description">Selected</string>
+    <string name="photo_gallery_expand_description">Expand photo</string>
+    <string name="photo_gallery_deselect_all_button">Deselect all</string>
+    <string name="photo_gallery_select_all_button">Select all</string>
+    <string name="photo_gallery_add_button_count">Add (%1$d)</string>
+    <string name="photo_gallery_close_selection_viewer_description">Close the viewer</string>
+    <string name="photo_gallery_page_counter">%1$d / %2$d</string>
+    <string name="photo_gallery_approximate_position_description">Approximate position</string>
+    <string name="photo_gallery_removed_from_map_description">Hidden from map</string>
+
+    <!-- Visionneuse et éditeur Ajuster -->
+    <string name="photo_adjust_dialog_title">Crop</string>
+    <string name="photo_adjust_rotate_left_button">Rotate left</string>
+    <string name="photo_adjust_rotate_right_button">Rotate right</string>
+    <string name="photo_adjust_reset_button">Reset</string>
+    <string name="photo_adjust_gesture_hint">Corners: keep aspect ratio · Edges: free crop · Inside: move</string>
+    <string name="photo_adjust_action_bar_position">Position</string>
+    <string name="photo_adjust_menu_reposition">Move along the track</string>
+    <string name="photo_adjust_menu_restore_time">Restore position from capture time</string>
+    <string name="photo_adjust_menu_restore_gps">Restore GPS position</string>
+    <string name="photo_adjust_menu_remove_from_map">Hide from map</string>
+    <string name="photo_adjust_menu_restore_on_map">Show on map</string>
+
+    <!-- Mode placement et bulle carte -->
+    <string name="map_cluster_badge_overflow_text">9+</string>
+    <string name="map_cursor_bubble_text_with_time_format">%1$s · %2$s</string>
+    <string name="map_cursor_bubble_photo_counter_format">%1$d/%2$d</string>
+
+    <!-- Bilan -->
+    <string name="bilan_record_label_km_effort">km-effort, single hike</string>
+    <string name="bilan_record_label_vam">best climb rate</string>
+    <string name="bilan_record_label_max_altitude">highest altitude reached</string>
+    <string name="bilan_record_label_highest_bivouac">highest bivouac</string>
+    <string name="bilan_record_label_max_distance_day">max distance, single day</string>
+    <string name="bilan_record_label_max_gain_day">max ascent, single day</string>
+    <string name="bilan_record_label_biggest_trek">longest trek</string>
+    <plurals name="bilan_record_value_biggest_trek">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <plurals name="bilan_insight_most_active_month">
+        <item quantity="one">Most active month: %1$s (%2$d hike since %3$d)</item>
+        <item quantity="other">Most active month: %1$s (%2$d hikes since %3$d)</item>
+    </plurals>
+    <plurals name="bilan_totals_label">
+        <item quantity="one">%1$d hike in total</item>
+        <item quantity="other">%1$d hikes in total</item>
+    </plurals>
+    <string name="bilan_section_progression_label">Progress</string>
+    <string name="bilan_section_records_label">Records</string>
+    <string name="bilan_screen_title">Stats</string>
+    <string name="bilan_empty_title">No stats yet</string>
+    <string name="bilan_empty_subtitle">Import a first hike into the Journal to see stats here.</string>
+    <string name="bilan_empty_button_go_journal">Go to Journal</string>
+    <string name="bilan_metric_label_sorties">Hikes</string>
+    <string name="bilan_metric_chart_title_sorties">Hikes per month</string>
+    <string name="bilan_metric_label_km">Km</string>
+    <string name="bilan_metric_chart_title_km">Km per month</string>
+    <string name="bilan_metric_label_dplus">Ascent</string>
+    <string name="bilan_metric_chart_title_dplus">Ascent per month</string>
+    <string name="bilan_metric_label_vitesse">Speed</string>
+    <string name="bilan_metric_chart_title_vitesse">Calibrated flat speed per month</string>
+    <string name="bilan_metric_label_bivouacs">Bivouacs</string>
+    <string name="bilan_metric_chart_title_bivouacs">Bivouacs per month</string>
+    <string name="bilan_totals_label_distance">Distance</string>
+    <string name="bilan_totals_label_gain">Total ascent</string>
+    <string name="bilan_totals_label_duration">Walking time</string>
+
+    <!-- Réglages -->
+    <string name="settings_credits_esri_name">Esri</string>
+    <string name="settings_credits_osm_name">OpenStreetMap</string>
+    <string name="settings_credits_opentopo_name">OpenTopoMap</string>
+    <string name="settings_credits_meteoblue_name">Meteoblue</string>
+    <string name="settings_credits_osmdroid_name">osmdroid</string>
+    <string name="settings_credits_jpx_name">JPX</string>
+    <string name="settings_credits_aaltoxml_name">aalto-xml</string>
+    <string name="settings_credits_staxapi_name">stax-api</string>
+    <string name="settings_credits_license_name">GPLv3</string>
+    <string name="settings_credits_section_title">Credits</string>
+    <string name="settings_credits_maps_label">Map layers</string>
+    <string name="settings_credits_weather_label">Weather</string>
+    <string name="settings_credits_libraries_label">Libraries</string>
+    <string name="settings_credits_dev_label">Development</string>
+    <string name="settings_credits_dev_value">Sébastien Raison, with Claude (Anthropic)</string>
+    <string name="settings_credits_license_label">License</string>
+    <string name="settings_credits_github_link">Source code on GitHub</string>
+    <string name="settings_screen_title">Settings</string>
+    <string name="settings_version_build_info">Version %1$s · built on %2$s</string>
+    <string name="settings_speed_calibration_section_title">Custom speed</string>
+    <string name="settings_speed_calibration_mode_label">Calculation mode</string>
+    <string name="settings_speed_calibration_mode_description">Used to estimate hike duration</string>
+    <string name="settings_speed_calibration_modes_locked_hint">Auto and Selection require at least 2 hikes in the Journal.</string>
+    <string name="settings_speed_calibration_manual_hint">Entered directly, never recalculated automatically.</string>
+    <string name="settings_speed_calibration_auto_hint">Calculated from every hike in the Journal, recalculated with each new import.</string>
+    <string name="settings_speed_calibration_selection_hint_empty">No track selected yet: default calibration used in the meantime.</string>
+    <string name="settings_speed_calibration_selection_hint_one">Calculated from a single track: the speed adjusts, but the ascent penalty cannot be isolated from a single data point and stays at its default value. Choose at least 2 hikes with different profiles (flat and steep) to refine it too.</string>
+    <string name="settings_speed_calibration_selection_hint_many">Calculated from %1$d tracks selected in the Journal.</string>
+    <string name="settings_speed_calibration_choose_tracks_button">Choose tracks</string>
+    <string name="settings_speed_calibration_dplus_preview">Typical 15 km hike with 600 m of ascent → %1$s (of which %2$s from the ascent)</string>
+    <string name="settings_speed_calibration_pause_preview">Hike estimated at 6 h of walking → %1$s with this allowance</string>
+    <string name="settings_pause_slider_label">Breaks while walking</string>
+    <string name="settings_pause_percent_value">%1$d%%</string>
+    <string name="settings_pause_slider_min_label">Few or no breaks</string>
+    <string name="settings_pause_slider_mid_label">A few breaks</string>
+    <string name="settings_pause_slider_max_label">Many breaks</string>
+    <string name="settings_speed_mode_manual_label">Manual</string>
+    <string name="settings_speed_mode_auto_label">Auto</string>
+    <string name="settings_speed_mode_selection_label">Selection</string>
+    <string name="settings_manual_speed_field_label">Flat speed</string>
+    <string name="settings_manual_penalty_field_label">Ascent penalty</string>
+    <string name="settings_nonfree_section_title">Non-free features</string>
+    <string name="settings_nonfree_toggle_label">Disable non-free features</string>
+    <string name="settings_nonfree_toggle_description">Turns off the Esri satellite layer and the Meteoblue weather link</string>
+
+    <!-- Stockage et espace utilisé -->
+    <string name="photo_purge_progress_title">Deleting photos</string>
+    <string name="photo_recovery_progress_title">Searching for missing photos</string>
+    <string name="settings_photo_storage_mode_full_label">Original quality</string>
+    <string name="settings_photo_storage_mode_reduced_label">Lightweight</string>
+    <string name="settings_photo_storage_mode_full_explanation">Each photo is copied as is: nothing is lost, but the Journal grows quickly (about 4 MB per photo).</string>
+    <string name="settings_photo_storage_mode_reduced_explanation">Recommended: Bivouac saves a copy resized to %1$d px on its longest side, about ten times lighter and more than enough for display in the app. The original in the gallery is never touched: the viewer reloads it automatically whenever it is still available.</string>
+    <string name="settings_missing_photos_row_label">Find missing photos</string>
+    <plurals name="settings_missing_photos_row_description">
+        <item quantity="one">%1$d photo in the Journal no longer has a local file, after a restore or a storage cleanup. Bivouac can recover it from the gallery, provided the exact original is still there.</item>
+        <item quantity="other">%1$d photos in the Journal no longer have a local file, after a restore or a storage cleanup. Bivouac can recover them from the gallery, provided the exact originals are still there.</item>
+    </plurals>
+    <string name="settings_photo_purge_button">Delete photos (%1$s)</string>
+    <plurals name="settings_photo_recovery_recovered_line">
+        <item quantity="one">%1$d photo found and restored.</item>
+        <item quantity="other">%1$d photos found and restored.</item>
+    </plurals>
+    <string name="settings_photo_recovery_none_line">No photos could be found.</string>
+    <plurals name="settings_photo_recovery_modified_line">
+        <item quantity="one">%1$d photo found in the gallery but modified since import: it is no longer the same file, nothing was reused.</item>
+        <item quantity="other">%1$d photos found in the gallery but modified since import: they are no longer the same files, nothing was reused.</item>
+    </plurals>
+    <plurals name="settings_photo_recovery_notfound_line">
+        <item quantity="one">%1$d photo is still missing from the gallery. Its entry is kept in the Journal in case the original comes back.</item>
+        <item quantity="other">%1$d photos are still missing from the gallery. Their entries are kept in the Journal in case the originals come back.</item>
+    </plurals>
+    <plurals name="settings_photo_count_label">
+        <item quantity="one">%1$d photo</item>
+        <item quantity="other">%1$d photos</item>
+    </plurals>
+    <string name="settings_storage_usage_row_label">Storage usage</string>
+    <string name="settings_storage_usage_row_description">What tracks, photos and the database take up on the phone</string>
+    <string name="settings_photo_purge_confirm_title">Delete photos?</string>
+    <string name="settings_photo_purge_confirm_message">%1$s will be permanently deleted from the Journal, files included. Original photos in the gallery are not affected. This action cannot be undone.</string>
+    <string name="settings_photo_purge_confirm_button">Delete</string>
+    <string name="settings_photo_purge_error_title">Deletion failed</string>
+    <string name="settings_photo_recovery_report_title">Search complete</string>
+    <string name="settings_photo_recovery_error_title">Search failed</string>
+    <string name="settings_photos_section_title">Journal photos</string>
+    <string name="settings_photos_toggle_label">Attach photos to hikes</string>
+    <string name="settings_photos_toggle_description">Add photos to a hike, place them on the track and look back at them. When disabled, no photos appear and gallery access is never requested; nothing is deleted, everything comes back when re-enabled.</string>
+    <string name="settings_photo_storage_mode_row_label">Photo storage</string>
+    <string name="settings_photo_storage_mode_row_description">Applies to photos added from now on: those already in the Journal keep the format they were saved in.</string>
+    <string name="storage_usage_recompression_progress_title">Recompressing photos</string>
+    <string name="storage_usage_gallery_access_denied_message">Recompressing requires finding the original photos in the gallery, and Android will no longer prompt for this permission from within the app. Allow gallery access in Android\'s app settings.</string>
+    <string name="storage_usage_recompression_report_recompressed_line">%1$s, %2$s freed.</string>
+    <plurals name="storage_usage_photo_recompressed_count">
+        <item quantity="one">%1$d photo recompressed</item>
+        <item quantity="other">%1$d photos recompressed</item>
+    </plurals>
+    <string name="storage_usage_recompression_report_none">No photos could be recompressed.</string>
+    <string name="storage_usage_recompression_report_kept_line">%1$s in original quality: original not found or modified since import.</string>
+    <plurals name="storage_usage_photo_kept_count">
+        <item quantity="one">%1$d photo kept</item>
+        <item quantity="other">%1$d photos kept</item>
+    </plurals>
+    <string name="storage_usage_recompression_report_already_reduced_line">%1$s in the lightest format: nothing to gain.</string>
+    <plurals name="storage_usage_photo_already_reduced_count">
+        <item quantity="one">%1$d photo was already</item>
+        <item quantity="other">%1$d photos were already</item>
+    </plurals>
+    <string name="storage_usage_loading_text">Calculating storage usage…</string>
+    <string name="storage_usage_total_label">Total used by Bivouac</string>
+    <string name="storage_usage_total_description">Tracks, Journal photos and the database, in the app\'s private storage. Original photos in the gallery are not counted here.</string>
+    <string name="storage_usage_row_gpx_title">GPX tracks</string>
+    <string name="storage_usage_row_gpx_journal_detail">Journal: %1$s, %2$s</string>
+    <plurals name="storage_usage_file_count">
+        <item quantity="one">%1$d file</item>
+        <item quantity="other">%1$d files</item>
+    </plurals>
+    <string name="storage_usage_row_gpx_planification_detail">Planning: %1$s, %2$s</string>
+    <string name="storage_usage_row_photos_full_detail">Original quality: %1$s, %2$s</string>
+    <plurals name="storage_usage_photo_count">
+        <item quantity="one">%1$d photo</item>
+        <item quantity="other">%1$d photos</item>
+    </plurals>
+    <string name="storage_usage_row_photos_reduced_detail">Lightweight: %1$s, %2$s</string>
+    <string name="storage_usage_row_photos_missing_detail">Including %1$s</string>
+    <plurals name="storage_usage_photo_missing_file_count">
+        <item quantity="one">%1$d missing file</item>
+        <item quantity="other">%1$d missing files</item>
+    </plurals>
+    <string name="storage_usage_row_database_title">Database</string>
+    <string name="storage_usage_row_database_detail">Hikes, days, tags, photo records</string>
+    <string name="storage_usage_row_other_title">Other</string>
+    <string name="storage_usage_row_other_detail">Settings, map caches, temporary files</string>
+    <string name="storage_usage_recompression_card_title">Recompressing could free up ~%1$s</string>
+    <string name="storage_usage_recompression_card_body">%1$s in original quality. Bivouac can replace them with a lighter version, provided the original is found in the gallery: those whose original has disappeared or changed are never touched.</string>
+    <plurals name="storage_usage_photo_kept_full_quality_count">
+        <item quantity="one">%1$d photo is kept</item>
+        <item quantity="other">%1$d photos are kept</item>
+    </plurals>
+    <string name="storage_usage_recompress_button">Recompress existing photos</string>
+    <string name="storage_choice_prompt_title">Storage used by Journal photos</string>
+    <string name="storage_choice_prompt_message">Every photo added to a hike is currently copied in original quality, about 4 MB each: a few dozen hikes are enough to take up several hundred MB. Bivouac can now keep only a lightweight version, about ten times smaller and still sharp enough to look back on.</string>
+    <string name="storage_choice_prompt_action">Choose now</string>
+    <string name="storage_recompress_offer_count_singular">already imported photo remains</string>
+    <string name="storage_recompress_offer_count_plural">already imported photos remain</string>
+    <string name="storage_recompress_offer_body">%1$s in original quality (~%2$s). Recompress them now?</string>
+
+    <!-- Sauvegarde et restauration -->
+    <string name="backup_open_destination_failed">Could not open the selected destination.</string>
+    <string name="backup_incomplete_write_message">The backup was not fully written (%1$d bytes out of %2$d). Check the available space on the destination, then try again.</string>
+    <string name="restore_missing_database_message">This archive does not contain a Bivouac database (bivouac.db missing).</string>
+    <string name="restore_corrupted_database_message">The archive contains a corrupted or unreadable database: restore canceled, current data is intact.</string>
+    <string name="restore_generic_failure_message">Restore failed.</string>
+    <string name="restore_rollback_move_file_failed">Could not set %1$s aside before replacing it.</string>
+    <string name="restore_rollback_move_dir_failed">Could not set the %1$s folder aside before replacing it.</string>
+    <string name="restore_read_source_failed">Could not read the selected file.</string>
+    <string name="restore_truncated_backup_message">This backup is incomplete: it lists %1$d files but contains only %2$d. It was probably interrupted while being created. Restore canceled, current data is intact.</string>
+    <string name="backup_progress_title">Backing up</string>
+    <string name="restore_extraction_progress_title">Reading backup</string>
+    <string name="restore_replacement_progress_title">Restoring</string>
+    <string name="backup_generic_failure_message">Backup failed.</string>
+    <string name="settings_data_section_title">Data</string>
+    <string name="settings_backup_row_label">Database backup</string>
+    <string name="settings_backup_last_date">Last backup: %1$s</string>
+    <string name="settings_backup_never">No backup made yet</string>
+    <string name="settings_backup_button">Back up</string>
+    <string name="settings_backup_error_title">Backup failed</string>
+    <string name="settings_restore_confirm_title">Restore this backup?</string>
+    <string name="settings_restore_confirm_message">Current hikes and settings will be replaced by the content of this backup. This action cannot be undone.</string>
+    <string name="settings_restore_confirm_button">Restore</string>
+    <string name="settings_restore_done_title">Restore complete</string>
+    <string name="settings_restore_done_message">The database has been restored. The app will restart to apply the changes.</string>
+    <string name="settings_restore_done_restart_button">Restart</string>
+    <string name="settings_restore_version_too_new_title">Backup from a newer version</string>
+    <string name="settings_restore_version_too_new_message">This backup comes from a newer version of the app (schema %1$s, current version: schema %2$s). Update Bivouac before restoring it.</string>
+    <string name="settings_restore_error_title">Restore failed</string>
+
+    <!-- Messages et erreurs -->
+    <string name="journal_error_duplicate_track_name">“%1$s” is already in the Journal.</string>
+    <string name="journal_error_track_not_found">Track not found.</string>
+    <string name="journal_error_track_unreadable">Invalid track or unreadable file.</string>
+    <string name="journal_error_photo_save_failed_one">A photo could not be saved.</string>
+    <string name="journal_error_photo_save_failed_other">%1$d photos could not be saved.</string>
+    <string name="journal_error_ongoing_operation_default_label">another operation</string>
+    <string name="journal_error_operation_in_progress">Not possible right now: %1$s is in progress. Try again once it finishes.</string>
+    <string name="msg_blocking_progress_counter">%1$d of %2$d…</string>
+    <string name="msg_blocking_progress_indeterminate">Please wait…</string>
+    <string name="messages_replace_dirty_body">The open track has unsaved changes. The copy of “%1$s” will open next.</string>
+    <string name="messages_replace_never_saved_body">The current track has never been saved: it will be lost if not saved. The copy of “%1$s” will open next.</string>
+    <string name="messages_replace_current_track_title">Replace the current track?</string>
+    <string name="messages_save_then_open_button">Save and open</string>
+    <string name="messages_cancel_duplicate_button">Cancel duplication</string>
+    <string name="messages_dirty_title">Track modified</string>
+    <string name="messages_dirty_body">This track has unsaved changes.</string>
+    <string name="messages_never_saved_title">Track not saved</string>
+    <string name="messages_never_saved_body">Warning: this track has not been saved in Bivouac yet.</string>
+    <string name="messages_name_dialog_title">Name the track</string>
+    <string name="messages_delete_confirm_body">“%1$s” will be permanently deleted. This action cannot be undone.</string>
+    <string name="journal_msg_duplicate_single_day_body">This day is already in “%1$s” (%2$s). Import anyway?</string>
+    <string name="journal_msg_duplicate_one_shared_day_body">One day of this trek is already in “%1$s” (%2$s). Import anyway?</string>
+    <string name="journal_msg_duplicate_multi_shared_days_body">%1$d days of this trek are already in “%2$s” (%3$s). Import anyway?</string>
+    <string name="journal_msg_duplicate_track_body">“%1$s” (%2$s) has a very similar date and distance. Import anyway?</string>
+    <plurals name="journal_msg_tracks_imported_count">
+        <item quantity="one">%1$d track imported.</item>
+        <item quantity="other">%1$d tracks imported.</item>
+    </plurals>
+    <plurals name="journal_msg_files_duplicates_skipped_count">
+        <item quantity="one">%1$d file skipped (already in the Journal).</item>
+        <item quantity="other">%1$d files skipped (already in the Journal).</item>
+    </plurals>
+    <plurals name="journal_msg_files_failed_count">
+        <item quantity="one">%1$d file could not be read.</item>
+        <item quantity="other">%1$d files could not be read.</item>
+    </plurals>
+    <string name="journal_msg_probable_duplicate_bullet">• %1$s</string>
+    <plurals name="journal_msg_probable_duplicate_more">
+        <item quantity="one">• and %1$d more</item>
+        <item quantity="other">• and %1$d more</item>
+    </plurals>
+    <string name="journal_msg_probable_duplicate_single">Worth checking: this track looks like a hike already in the Journal (same date, very similar distance) and was imported anyway.\\n%1$s</string>
+    <string name="journal_msg_probable_duplicate_multi">Worth checking: these tracks look like hikes already in the Journal (same date, very similar distance) and were imported anyway.\\n%1$s</string>
+    <string name="journal_msg_unsaved_changes_title">Unsaved changes</string>
+    <string name="journal_msg_unsaved_changes_body">Current changes (tags, note, photos) will not be kept.</string>
+    <string name="journal_msg_discard_button">Don\'t save</string>
+    <string name="journal_msg_import_failed_title">Import failed</string>
+    <string name="journal_msg_open_failed_title">Unable to open</string>
+    <string name="journal_msg_duplicate_day_title">Day already in the Journal</string>
+    <string name="journal_msg_duplicate_track_title">Track possibly already in the Journal</string>
+    <string name="journal_msg_import_anyway_button">Import anyway</string>
+    <string name="journal_msg_delete_track_title">Delete this track?</string>
+    <string name="journal_msg_delete_track_body">“%1$s” will be permanently deleted from the Journal. This action cannot be undone.</string>
+    <string name="journal_msg_delete_photo_title">Delete this photo?</string>
+    <string name="journal_msg_delete_photo_body">Only the copy in Bivouac is deleted, not the original in the gallery.</string>
+    <string name="journal_msg_photo_access_denied_title">Photo access denied</string>
+    <string name="journal_msg_photo_access_denied_body">Android will no longer ask for this permission from within the app. To add photos, allow gallery access in Android\'s app settings.</string>
+    <string name="journal_msg_open_settings_button">Open settings</string>
+    <string name="journal_msg_photo_import_progress_title">Importing photos</string>
+    <string name="journal_msg_photo_commit_progress_title">Saving photos</string>
+    <string name="journal_msg_photo_error_title">Photos</string>
+    <string name="journal_msg_photo_add_report_title">Photos added</string>
+    <plurals name="journal_msg_photos_added_count">
+        <item quantity="one">%1$d photo added, pending save.</item>
+        <item quantity="other">%1$d photos added, pending save.</item>
+    </plurals>
+    <plurals name="journal_msg_photos_duplicates_skipped_count">
+        <item quantity="one">%1$d photo skipped (already on this hike).</item>
+        <item quantity="other">%1$d photos skipped (already on this hike).</item>
+    </plurals>
+    <plurals name="journal_msg_photos_failed_count">
+        <item quantity="one">%1$d photo could not be read and was not added.</item>
+        <item quantity="other">%1$d photos could not be read and were not added.</item>
+    </plurals>
+    <string name="journal_msg_multi_import_choice_title">How should these %1$d tracks be added?</string>
+    <string name="journal_msg_multi_import_nothing_yet">Nothing is imported until a choice is made.</string>
+    <string name="journal_msg_multi_import_separate_title">Separate hikes</string>
+    <string name="journal_msg_multi_import_separate_subtitle">%1$d independent hikes, one entry each in the Journal</string>
+    <string name="journal_msg_multi_import_multiday_title">One multi-day trek</string>
+    <string name="journal_msg_multi_import_multiday_subtitle">One file = one day, combined into a single multi-day hike</string>
+    <string name="journal_msg_multi_import_cancel_button">Cancel import</string>
+    <string name="journal_msg_import_progress_title">Importing</string>
+    <string name="journal_msg_import_calibrating">Updating custom speed…</string>
+    <string name="journal_msg_import_reading_single">Reading track…</string>
+    <string name="journal_msg_import_reading_start">Reading %1$d files…</string>
+    <string name="journal_msg_import_reading_progress">File %1$d of %2$d…</string>
+    <string name="photo_msg_empty_track_dates">No photos found within this hike\'s dates.</string>
+    <string name="photo_msg_empty_whole_gallery">No photos accessible in the gallery.</string>
+    <string name="photo_msg_partial_access_whole_gallery">Partial access: even with “Whole gallery”, only the selected photos are visible.</string>
+    <string name="photo_msg_select_more_photos_button">Select more photos</string>
+    <string name="photo_msg_full_access_button">Full access</string>
+    <string name="photo_msg_partial_access_track_dates">Only the selected photos are visible.</string>
+    <string name="photo_msg_missing_photo">Photo missing</string>
+    <string name="settings_photo_recompress_offer_title">Recompress photos?</string>
+    <plurals name="settings_photo_recompress_offer_message">
+        <item quantity="one">%1$d photo already imported is still in original quality (~%2$s). Recompress it now?</item>
+        <item quantity="other">%1$d photos already imported are still in original quality (~%2$s). Recompress them now?</item>
+    </plurals>
+    <string name="settings_photo_recompress_offer_confirm_button">Recompress</string>
+    <string name="settings_photo_recompress_offer_dismiss_button">Later</string>
+    <string name="settings_photo_recompress_report_title">Recompression complete</string>
+    <string name="settings_photo_recompress_error_title">Recompression failed</string>
+    <string name="settings_photo_permission_blocked_message">This action needs to fetch the original photos from the gallery, and Android will no longer prompt for this permission from within the app. Allow gallery access in Android\'s app settings.</string>
+    <string name="msg_elevation_backfill_progress">Update in progress: %1$d/%2$d…</string>
+    <string name="msg_elevation_backfill_title">Updating the database</string>
+    <string name="msg_post_update_never">Don\'t ask again</string>
+    <string name="msg_post_update_later">Maybe later</string>
+
+    <!-- Formats (dates, nombres, unités) -->
+    <string name="fmt_bilan_month_year">%1$s %2$d</string>
+    <string name="fmt_bilan_record_value_km_effort">%1$s km-effort</string>
+    <string name="fmt_bilan_record_value_vam">%1$s m/h</string>
+    <string name="fmt_bilan_record_meta_extra">%1$s km · +%2$s m</string>
+    <string name="fmt_elevation_profile_km_axis">%1$s</string>
+    <string name="fmt_number_km1">%1$s</string>
+    <string name="fmt_number_grouped_int">%1$s</string>
+    <string name="fmt_stats_rows_gain">+%1$s m</string>
+    <string name="fmt_stats_rows_loss">-%1$s m</string>
+    <string name="fmt_stats_rows_duration">%1$dh %2$sm</string>
+    <string name="gpximport_saved_today_format">today at %1$s</string>
+    <string name="gpximport_saved_date_format">MMMM d</string>
+    <string name="planification_bivouac_elevation_format">%1$d m</string>
+    <string name="format_elevation_meters">%1$s m</string>
+    <string name="format_bivouac_arrival_departure">%1$s → %2$s</string>
+    <string name="format_time_of_day_pattern">HH:mm</string>
+    <string name="format_day_label_pattern">EEEE d (example: Monday 12)</string>
+    <string name="format_started_at_pattern">MMMM d, yyyy (example: September 17, 2026)</string>
+    <string name="format_started_at_with_time_pattern">MMMM d, yyyy \'at\' HH:mm (example: September 17, 2026 at 14:30)</string>
+    <string name="map_cursor_bubble_distance_km_format">%1$s km</string>
+    <string name="map_cursor_bubble_distance_altitude_format">%1$s · %2$s m</string>
+    <string name="settings_format_bytes_go">%1$s GB</string>
+    <string name="settings_format_bytes_mo">%1$s MB</string>
+    <string name="settings_format_bytes_ko">%1$s kB</string>
+    <string name="settings_format_bytes_o">%1$d B</string>
+    <string name="settings_backup_timestamp_pattern">MMMM d \'at\' HH:mm</string>
+    <string name="settings_unit_kmh">km/h</string>
+    <string name="settings_unit_meters">m</string>
+    <string name="settings_manual_penalty_prefix">+1 km / </string>
+    <string name="settings_speed_value_format">%1$s km/h</string>
+    <string name="settings_penalty_value_format">+1 km / %1$d m</string>
+
+    <!-- Tags système -->
+    <string name="tag_system_solo">Solo</string>
+    <string name="tag_system_groupe">Group</string>
 </resources>

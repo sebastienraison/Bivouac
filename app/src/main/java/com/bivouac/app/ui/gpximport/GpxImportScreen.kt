@@ -89,6 +89,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.util.Locale
 import kotlinx.coroutines.flow.first
 
@@ -715,12 +716,22 @@ private fun BankedTrackRow(
 // "aujourd'hui à 14:32" when saved today (the realistic case for several saves the same day:
 // disambiguates them without cluttering older entries with a time nobody needs), otherwise just
 // the date ("3 août").
-private fun formatSavedAt(epochMillis: Long): String {
+//
+// RIC-187 (lot 0 i18n) : "aujourd'hui à " reste en dur (texte d'écran, migration lots 1 à 4,
+// gpximport_saved_today_format dans l'inventaire), mais l'heure et la date qui l'accompagnent
+// suivent maintenant la locale de l'appareil plutôt que Locale.FRANCE. Le motif jour+mois (sans
+// année) est le seul de ce fichier où l'ORDRE des champs dépend de la locale ("3 août" en français,
+// "August 3" et non "3 August" en anglais) : ofLocalizedDate(FormatStyle) n'a pas de style
+// "jour+mois sans année" tout fait, donc motif choisi à la main selon la langue, comme
+// TrekDatesFormatter.dayNumber le fait déjà pour "1er".
+internal fun formatSavedAt(epochMillis: Long): String {
     val zone = ZoneId.systemDefault()
     val instant = Instant.ofEpochMilli(epochMillis)
+    val locale = Locale.getDefault()
     return if (instant.atZone(zone).toLocalDate() == LocalDate.now(zone)) {
-        "aujourd'hui à " + DateTimeFormatter.ofPattern("HH:mm").withZone(zone).format(instant)
+        "aujourd'hui à " + DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale).withZone(zone).format(instant)
     } else {
-        DateTimeFormatter.ofPattern("d MMMM", Locale.FRANCE).withZone(zone).format(instant)
+        val dayMonthPattern = if (locale.language == "fr") "d MMMM" else "MMMM d"
+        DateTimeFormatter.ofPattern(dayMonthPattern, locale).withZone(zone).format(instant)
     }
 }
