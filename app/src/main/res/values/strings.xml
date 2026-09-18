@@ -51,6 +51,7 @@
     <string name="planification_menu_export">Export</string>
     <string name="planification_close_track_description">Close the track</string>
     <string name="planification_segment_export_description">Download this segment as GPX</string>
+    <string name="planification_segment_export_name_format">%1$s - Day %2$d</string>
     <string name="planification_bivouac_point_description">Bivouac point</string>
     <string name="planification_bivouac_remove_description">Remove this bivouac point</string>
     <string name="planification_bivouac_weather_description">Weather at the bivouac point</string>
@@ -151,6 +152,7 @@
     <string name="map_cluster_badge_overflow_text">9+</string>
     <string name="map_cursor_bubble_text_with_time_format">%1$s · %2$s</string>
     <string name="map_cursor_bubble_photo_counter_format">%1$d/%2$d</string>
+    <string name="map_cursor_bubble_close_description">Close the cursor</string>
 
     <!-- Bilan -->
     <string name="bilan_record_label_km_effort">km-effort, single hike</string>
@@ -490,7 +492,6 @@
     <string name="fmt_stats_rows_duration">%1$dh %2$sm</string>
     <string name="gpximport_saved_today_format">today at %1$s</string>
     <string name="gpximport_saved_date_format">MMMM d</string>
-    <string name="planification_bivouac_elevation_format">%1$d m</string>
     <string name="format_elevation_meters">%1$s m</string>
     <string name="format_bivouac_arrival_departure">%1$s → %2$s</string>
     <string name="format_time_of_day_pattern">HH:mm</string>
