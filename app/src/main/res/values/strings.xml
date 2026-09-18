@@ -72,7 +72,10 @@
     <string name="journal_list_filter_empty_title">No hikes match</string>
     <string name="journal_list_filter_empty_hint">Try a different filter.</string>
     <string name="journal_list_confirm_selection_button">Confirm selection (%1$d)</string>
-    <string name="journal_list_show_results_on_map_button">one: Show %1$d result on map | other: Show %1$d results on map</string>
+    <plurals name="journal_list_show_results_on_map_button">
+        <item quantity="one">Show %1$d result on map</item>
+        <item quantity="other">Show %1$d results on map</item>
+    </plurals>
     <string name="journal_list_show_selection_on_map_button">Show selection (%1$d)</string>
     <string name="journal_list_cancel_selection_description">Cancel selection</string>
     <string name="journal_list_min_selection_hint">Choose at least 2 tracks to confirm.</string>
@@ -96,6 +99,7 @@
     <string name="journal_detail_duplicate_name_prefix">Copy of %1$s</string>
     <string name="journal_detail_bivouac_night_description">Bivouac night</string>
     <string name="journal_detail_total_label">Total</string>
+    <string name="journal_detail_days_title">Days</string>
     <string name="journal_detail_day_fallback_label">Day %1$d</string>
     <string name="journal_detail_tags_title">Tags</string>
     <string name="journal_detail_save_dirty_description">Save (unsaved changes)</string>
@@ -113,6 +117,7 @@
     <string name="journal_error_photo_add_failed">Unable to add these photos. Try again from the gallery.</string>
     <string name="journal_error_gallery_browse_failed">Unable to browse the gallery. Check the photo access permission in Android settings.</string>
     <string name="journal_photos_placement_banner_hint">Drag the photo onto the track</string>
+    <string name="journal_photos_section_title">Photos</string>
     <string name="journal_photos_view_all_link">· view all</string>
     <string name="journal_photos_permission_required_hint">Adding photos requires access to the gallery.</string>
     <string name="journal_photos_open_app_settings_button">Open app settings</string>
@@ -397,6 +402,7 @@
         <item quantity="one">%1$d track imported.</item>
         <item quantity="other">%1$d tracks imported.</item>
     </plurals>
+    <string name="journal_msg_no_tracks_imported">No tracks imported.</string>
     <plurals name="journal_msg_files_duplicates_skipped_count">
         <item quantity="one">%1$d file skipped (already in the Journal).</item>
         <item quantity="other">%1$d files skipped (already in the Journal).</item>
@@ -430,11 +436,13 @@
     <string name="journal_msg_photo_import_progress_title">Importing photos</string>
     <string name="journal_msg_photo_commit_progress_title">Saving photos</string>
     <string name="journal_msg_photo_error_title">Photos</string>
+    <string name="journal_msg_separate_import_report_title">Import complete</string>
     <string name="journal_msg_photo_add_report_title">Photos added</string>
     <plurals name="journal_msg_photos_added_count">
         <item quantity="one">%1$d photo added, pending save.</item>
         <item quantity="other">%1$d photos added, pending save.</item>
     </plurals>
+    <string name="journal_msg_no_photos_added">No photos added.</string>
     <plurals name="journal_msg_photos_duplicates_skipped_count">
         <item quantity="one">%1$d photo skipped (already on this hike).</item>
         <item quantity="other">%1$d photos skipped (already on this hike).</item>
