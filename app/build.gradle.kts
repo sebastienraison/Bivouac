@@ -92,6 +92,13 @@ android {
     // cas avant de la laisser filer.
     lint {
         warning += "ImpliedQuantity"
+        // RIC-187 (lot 0 i18n) : garde-fou du chantier RIC-24 -- une ressource ajoutee dans
+        // values/strings.xml (anglais, langue par defaut) sans son equivalent dans
+        // values-fr/strings.xml casserait le francais, la locale de Seb et donc celle testee en
+        // premier. MissingTranslation est desactive par defaut dans le gabarit Android Studio ;
+        // remonte ici en erreur bloquante des le lot 0, avant qu'aucun ecran ne consomme encore
+        // ces ressources (lots 1 a 4).
+        error += "MissingTranslation"
     }
     sourceSets {
         getByName("androidTest").assets.srcDirs("$projectDir/schemas")
