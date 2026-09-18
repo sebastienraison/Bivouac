@@ -1,5 +1,8 @@
 package com.bivouac.app.data.operations
 
+import android.content.Context
+import androidx.annotation.StringRes
+import com.bivouac.app.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,40 +16,45 @@ import kotlinx.coroutines.flow.asStateFlow
  * différent de celui qui a lancé l'opération (Réglages refuse à cause du Journal, et
  * réciproquement).
  *
+ * RIC-191 (lot 4 i18n) : l'enum ne porte plus de texte, seulement l'identifiant de la ressource.
+ * Le libellé est résolu à l'endroit et au moment où la phrase de refus est composée (voir les
+ * `exclusiveOperationRefusalMessage()` des ViewModels) : une valeur d'enum vit tout le process,
+ * elle ne peut pas porter une chaîne figée dans la langue qui avait cours à son chargement.
+ *
  * RIC-158 étend le registre à la purge des photos et à tout ce qui écrit dans gpx/ ou
  * gpx-planif/ à l'occasion d'un import : mêmes fichiers, même risque de chevauchement avec une
  * sauvegarde ou une restauration en cours.
  */
-enum class ExclusiveOperation(val label: String) {
-    BACKUP("une sauvegarde"),
-    RESTORE("une restauration"),
-    PHOTO_IMPORT("un import de photos"),
-    PHOTO_COMMIT("un enregistrement de photos"),
+enum class ExclusiveOperation(@StringRes val labelRes: Int) {
+    BACKUP(R.string.exclusive_operation_backup_label),
+    RESTORE(R.string.exclusive_operation_restore_label),
+    PHOTO_IMPORT(R.string.exclusive_operation_photo_import_label),
+    PHOTO_COMMIT(R.string.exclusive_operation_photo_commit_label),
 
     // RIC-158 : supprime en masse les fichiers de photos/ : aussi bien touché par une sauvegarde
     // (qui les zippe) qu'une restauration (qui remplace le répertoire en bloc).
-    PHOTO_PURGE("une purge de photos"),
+    PHOTO_PURGE(R.string.exclusive_operation_photo_purge_label),
 
     // RIC-157 : la recompression du stock RÉÉCRIT photos/ fichier par fichier (une copie réduite
     // remplace la copie intégrale) et met les lignes à jour dans la foulée. Même classe de danger
     // que la purge : une sauvegarde qui zipperait pendant ce remplacement archiverait un mélange
     // d'anciens et de nouveaux fichiers, et une restauration ramènerait des lignes qui ne
     // désignent plus rien.
-    PHOTO_RECOMPRESS("une recompression des photos"),
+    PHOTO_RECOMPRESS(R.string.exclusive_operation_photo_recompress_label),
 
     // RIC-151 : la re-acquisition écrit dans photos/ les fichiers manquants et réécrit leur ligne.
     // Même raisonnement que ci-dessus, et en plus elle ne doit pas croiser une recompression, qui
     // déplacerait sous elle les fichiers qu'elle vient d'écrire.
-    PHOTO_RECOVERY("une recherche des photos manquantes"),
+    PHOTO_RECOVERY(R.string.exclusive_operation_photo_recovery_label),
 
     // RIC-158 : tout import du Journal qui écrit dans gpx/ : un seul fichier, un trek multi-jours
     // (plusieurs fichiers pour une seule sortie) ou un lot de sorties séparées.
-    JOURNAL_IMPORT("un import du Journal"),
+    JOURNAL_IMPORT(R.string.exclusive_operation_journal_import_label),
 
     // RIC-158 : tout ce qui fait atterrir du contenu nouveau dans gpx-planif/ en dehors d'une
     // édition ordinaire : l'import d'un fichier GPX externe et la duplication d'une sortie du
     // Journal vers la Planification (RIC-40), qui écrit elle aussi dans ce répertoire.
-    PLANIFICATION_IMPORT("un import en Planification"),
+    PLANIFICATION_IMPORT(R.string.exclusive_operation_planification_import_label),
 }
 
 /**
@@ -103,4 +111,26 @@ object ExclusiveOperations {
     fun resetForTests() = synchronized(this) {
         _current.value = null
     }
+}
+
+/**
+ * RIC-191 (lot 4 i18n) : ce que l'utilisateur lit quand un geste est refusé parce qu'une autre
+ * opération longue tourne. Voir [ExclusiveOperations] pour ce que ce verrou protège.
+ *
+ * Une seule implémentation pour les cinq points d'appel (Journal, Planification, Réglages, Espace
+ * utilisé, proposition de recompression au démarrage) : la phrase était recopiée cinq fois en dur,
+ * cinq occasions de diverger. Le libellé de l'opération est résolu ICI, pas à la pose du verrou :
+ * l'opération peut avoir démarré depuis un autre écran, il y a plusieurs secondes.
+ *
+ * Limite connue et acceptée : un message déjà émis reste dans la langue qu'avait l'appareil au
+ * moment de son émission. Un changement de langue pendant qu'un message d'erreur est affiché le
+ * laisse donc dans l'ancienne langue jusqu'à ce qu'il soit refermé. Le prix à payer pour que les
+ * ViewModels continuent d'exposer des `String` aux écrans plutôt qu'un couple (ressource,
+ * arguments) que chaque écran devrait résoudre.
+ */
+fun exclusiveOperationRefusalMessage(context: Context): String {
+    val ongoing = ExclusiveOperations.current.value
+        ?.let { context.getString(it.labelRes) }
+        ?: context.getString(R.string.journal_error_ongoing_operation_default_label)
+    return context.getString(R.string.journal_error_operation_in_progress, ongoing)
 }

@@ -19,6 +19,7 @@ import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
+import com.bivouac.app.data.operations.exclusiveOperationRefusalMessage
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
@@ -521,10 +522,8 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
      * JournalViewModel.exclusiveOperationRefusalMessage : voir ExclusiveOperations pour ce que ce
      * verrou protège.
      */
-    private fun exclusiveOperationRefusalMessage(): String {
-        val ongoing = ExclusiveOperations.current.value?.label ?: "une autre opération"
-        return "Impossible pour l'instant : $ongoing est en cours. Attends qu'elle se termine, puis recommence."
-    }
+    private fun exclusiveOperationRefusalMessage(): String =
+        exclusiveOperationRefusalMessage(getApplication())
 
     // Restores the trace saved from the previous session, if any: called once on a fresh start
     // (not after an incoming-GPX import already handled it), so a restart doesn't lose the plan.

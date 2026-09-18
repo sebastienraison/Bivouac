@@ -14,6 +14,7 @@ import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
+import com.bivouac.app.data.operations.exclusiveOperationRefusalMessage
 import com.bivouac.app.data.photo.PhotoRecompression
 import com.bivouac.app.data.photo.PhotoStorageMode
 import com.bivouac.app.data.photo.PhotoStoragePolicy
@@ -541,10 +542,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
      * opération tourne. Il reste écrit, et nommé, parce qu'un chemin oublié doit refuser proprement
      * plutôt que de laisser deux écritures se croiser sur les mêmes fichiers.
      */
-    private fun refusalMessage(): String {
-        val ongoing = ExclusiveOperations.current.value?.label ?: "une autre opération"
-        return "Impossible pour l'instant : $ongoing est en cours. Attends qu'elle se termine, puis recommence."
-    }
+    private fun refusalMessage(): String = exclusiveOperationRefusalMessage(getApplication())
 
     fun dismissRestoreOutcome() {
         _restoreOutcome.value = null

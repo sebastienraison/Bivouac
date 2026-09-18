@@ -23,6 +23,7 @@ import com.bivouac.app.BuildConfig
 import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
+import com.bivouac.app.data.operations.exclusiveOperationRefusalMessage
 import com.bivouac.app.data.photo.PhotoLibraryPermission
 import com.bivouac.app.data.photo.PhotoRecompression
 import com.bivouac.app.data.photo.PhotoStorageMode
@@ -217,10 +218,9 @@ class PhotoStorageChoiceViewModel(application: Application) : AndroidViewModel(a
 
     // Censé inatteignable à cet instant du process (rien d'autre ne tourne au démarrage), même
     // politique défensive que les autres verrous de l'app pour un chemin oublié.
-    private fun refusalMessage(): String {
-        val ongoing = ExclusiveOperations.current.value?.label ?: "une autre opération"
-        return "Impossible pour l'instant : $ongoing est en cours. Attends qu'elle se termine, puis recommence."
-    }
+    // RIC-191 (lot 4 i18n) : seul changement apporté à ce fichier du lot 3, imposé par la
+    // disparition d'ExclusiveOperation.label au profit d'un identifiant de ressource.
+    private fun refusalMessage(): String = exclusiveOperationRefusalMessage(getApplication())
 
     companion object {
         /**

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
+import com.bivouac.app.data.operations.exclusiveOperationRefusalMessage
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.data.storage.AppStorageUsage
 import com.bivouac.app.data.storage.AppStorageUsageCalculator
@@ -120,10 +121,7 @@ class StorageUsageViewModel(application: Application) : AndroidViewModel(applica
 
     // Censé inatteignable, le bouton étant grisé dès qu'une opération tourne : reste écrit pour la
     // même raison défensive que dans SettingsViewModel.
-    private fun refusalMessage(): String {
-        val ongoing = ExclusiveOperations.current.value?.label ?: "une autre opération"
-        return "Impossible pour l'instant : $ongoing est en cours. Attends qu'elle se termine, puis recommence."
-    }
+    private fun refusalMessage(): String = exclusiveOperationRefusalMessage(getApplication())
 }
 
 /**

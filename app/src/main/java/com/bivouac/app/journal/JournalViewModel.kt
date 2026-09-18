@@ -24,6 +24,7 @@ import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
+import com.bivouac.app.data.operations.exclusiveOperationRefusalMessage
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
 import com.bivouac.app.data.photo.PhotoAdjustments
 import com.bivouac.app.data.photo.PhotoOriginalResolution
@@ -988,11 +989,12 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     /**
      * RIC-156 : ce que l'utilisateur lit quand un geste est refusé parce qu'une autre opération
      * longue tourne. Voir ExclusiveOperations pour ce que ce verrou protège.
+     *
+     * RIC-191 (lot 4 i18n) : la phrase et le libellé de l'opération viennent des ressources ; la
+     * composition est commune aux cinq points d'appel de l'app.
      */
-    private fun exclusiveOperationRefusalMessage(): String {
-        val ongoing = ExclusiveOperations.current.value?.label ?: "une autre opération"
-        return "Impossible pour l'instant : $ongoing est en cours. Attends qu'elle se termine, puis recommence."
-    }
+    private fun exclusiveOperationRefusalMessage(): String =
+        exclusiveOperationRefusalMessage(getApplication())
 
     private fun currentEntry(): LoggedTrackEntity? = when (val state = _uiState.value) {
         is JournalUiState.Detail -> state.entry
