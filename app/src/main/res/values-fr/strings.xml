@@ -202,7 +202,7 @@
     <string name="bilan_metric_label_sorties">Randos</string>
     <string name="bilan_metric_chart_title_sorties">Randos par mois</string>
     <string name="bilan_metric_label_km">Distance</string>
-    <string name="bilan_metric_chart_title_km">Km par mois</string>
+    <string name="bilan_metric_chart_title_km">Distance par mois</string>
     <string name="bilan_metric_label_dplus">D+</string>
     <string name="bilan_metric_chart_title_dplus">D+ par mois</string>
     <string name="bilan_metric_label_vitesse">Vitesse</string>
