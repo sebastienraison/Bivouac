@@ -25,10 +25,12 @@ val localProperties = Properties().apply {
 val esriApiKey: String = localProperties.getProperty("esri.apiKey", "")
 
 // RIC-133 : horodatage figé à la compilation (pas au runtime), affiché en bas de Réglages pour
-// savoir exactement quelle build tourne sur un appareil donné. Format non localisé (jj/MM/aaaa) :
-// une build reste identique quel que soit l'appareil qui l'exécute, sa date ne devrait pas varier
-// avec la locale du téléphone.
-val buildDate: String = SimpleDateFormat("dd/MM/yyyy").format(Date())
+// savoir exactement quelle build tourne sur un appareil donné. Format non localisé, ISO 8601
+// (aaaa-MM-jj, RIC-193) : une build reste identique quel que soit l'appareil qui l'exécute, sa date
+// ne devrait pas varier avec la locale du téléphone -- jj/MM/aaaa était ambigu en anglais (le 18e
+// mois) et jamais explicitement daté par une locale, alors qu'ISO 8601 est sans ambiguïté dans les
+// deux langues.
+val buildDate: String = SimpleDateFormat("yyyy-MM-dd").format(Date())
 
 android {
     namespace = "com.bivouac.app"

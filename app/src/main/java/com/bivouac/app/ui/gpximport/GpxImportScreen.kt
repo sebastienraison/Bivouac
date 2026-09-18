@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
@@ -81,6 +82,7 @@ import com.bivouac.app.data.weather.MeteoblueLink
 import com.bivouac.app.gpximport.CloseConfirmationReason
 import com.bivouac.app.gpximport.GpxImportUiState
 import com.bivouac.app.gpximport.GpxImportViewModel
+import com.bivouac.app.gpximport.NameDialogPurpose
 import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.ui.components.FullScreenEmptyState
 import com.bivouac.app.ui.components.StatsRows
@@ -146,6 +148,20 @@ internal fun planificationScreenMode(
     !bankedTracesLoaded -> PlanificationScreenMode.LOADING
     uiState is GpxImportUiState.Idle && bankedTracesEmpty -> PlanificationScreenMode.EMPTY
     else -> PlanificationScreenMode.BANK
+}
+
+// RIC-193 : le dialogue de nom du Planning sert à la fois au premier nommage (FIRST_SAVE à
+// l'import, SAVE_THEN_CLOSE à la fermeture) et à la duplication (DUPLICATE), où rien n'existe
+// encore à renommer -- titre générique messages_name_dialog_title ("Nommer la trace") -- et au
+// renommage d'une trace déjà banquée (RENAME depuis la trace ouverte, RENAME_FROM_LIST depuis la
+// liste), qui porte déjà un nom : titre dédié gpximport_rename_dialog_title ("Renommer la trace"),
+// aligné sur celui du Journal (journal_detail_rename_dialog_title). Fonction pure extraite du
+// Composable pour rester testable sans Compose (GpxImportRenameDialogTitleTest).
+@StringRes
+internal fun nameDialogTitleRes(purpose: NameDialogPurpose): Int = when (purpose) {
+    NameDialogPurpose.RENAME, NameDialogPurpose.RENAME_FROM_LIST -> R.string.gpximport_rename_dialog_title
+    NameDialogPurpose.FIRST_SAVE, NameDialogPurpose.SAVE_THEN_CLOSE, NameDialogPurpose.DUPLICATE ->
+        R.string.messages_name_dialog_title
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -555,7 +571,7 @@ fun GpxImportScreen(
         var name by remember(request) { mutableStateOf(request.suggestedName) }
         AlertDialog(
             onDismissRequest = viewModel::dismissNameDialog,
-            title = { Text(stringResource(R.string.messages_name_dialog_title)) },
+            title = { Text(stringResource(nameDialogTitleRes(request.purpose))) },
             text = {
                 OutlinedTextField(
                     value = name,
