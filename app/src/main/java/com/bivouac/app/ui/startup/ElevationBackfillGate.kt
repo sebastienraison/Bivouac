@@ -14,12 +14,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -94,14 +96,20 @@ fun ElevationBackfillGate(
             AlertDialog(
                 onDismissRequest = {},
                 properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-                title = { Text("Mise à jour de la base de données") },
+                title = { Text(stringResource(R.string.msg_elevation_backfill_title)) },
                 text = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
-                        Text("Mise à jour en cours : ${current.done}/${current.total}…")
+                        Text(
+                            stringResource(
+                                R.string.msg_elevation_backfill_progress,
+                                current.done,
+                                current.total,
+                            ),
+                        )
                     }
                 },
                 confirmButton = {},

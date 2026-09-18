@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
@@ -218,6 +219,12 @@ class PhotoStorageChoiceViewModel(application: Application) : AndroidViewModel(a
 
     // Censé inatteignable à cet instant du process (rien d'autre ne tourne au démarrage), même
     // politique défensive que les autres verrous de l'app pour un chemin oublié.
+    //
+    // RIC-190 (lot 3 i18n) : SEUL texte de ce fichier laissé en dur. Il est le triplé exact de
+    // ceux de JournalViewModel, GpxImportViewModel et SettingsViewModel, et son %1$s est le
+    // libellé d'ExclusiveOperation, défini hors de tout écran : les quatre se migrent ensemble,
+    // avec ce libellé, au lot 4 (clés journal_error_operation_in_progress et
+    // journal_error_ongoing_operation_default_label, déjà dans l'inventaire).
     private fun refusalMessage(): String {
         val ongoing = ExclusiveOperations.current.value?.label ?: "une autre opération"
         return "Impossible pour l'instant : $ongoing est en cours. Attends qu'elle se termine, puis recommence."
@@ -292,12 +299,9 @@ fun PhotoStorageChoicePrompt(viewModel: PhotoStorageChoiceViewModel = viewModel(
         val selected = PhotoStorageMode.valueOf(selectedName)
 
         PostUpdatePromptDialog(
-            title = "Le poids des photos du Journal",
-            message = "Chaque photo ajoutée à une sortie est aujourd'hui copiée en qualité d'origine, " +
-                "soit environ 4 Mo pièce : quelques dizaines de sorties suffisent à occuper plusieurs " +
-                "centaines de Mo. Bivouac sait désormais n'en garder qu'une version allégée, une " +
-                "dizaine de fois plus légère et largement assez nette pour les revoir.",
-            actionLabel = "Choisir maintenant",
+            title = stringResource(R.string.storage_choice_prompt_title),
+            message = stringResource(R.string.storage_choice_prompt_message),
+            actionLabel = stringResource(R.string.storage_choice_prompt_action),
             onLater = viewModel::later,
             onNever = viewModel::never,
         ) { onDone ->
@@ -310,7 +314,7 @@ fun PhotoStorageChoicePrompt(viewModel: PhotoStorageChoiceViewModel = viewModel(
                     },
                     modifier = Modifier.align(Alignment.End),
                 ) {
-                    Text("Enregistrer")
+                    Text(stringResource(R.string.common_save_button))
                 }
             }
         }
@@ -323,7 +327,7 @@ fun PhotoStorageChoicePrompt(viewModel: PhotoStorageChoiceViewModel = viewModel(
     recompressionOffer?.let { estimate ->
         AlertDialog(
             onDismissRequest = viewModel::dismissRecompressionOffer,
-            title = { Text("Recompresser tes photos ?") },
+            title = { Text(stringResource(R.string.settings_photo_recompress_offer_title)) },
             text = {
                 // RIC-190 (lot 3 i18n) : la MÊME ressource que la proposition des Réglages, dont ce
                 // dialogue reprenait déjà le texte au caractère près (settings_photo_recompress_
@@ -338,9 +342,15 @@ fun PhotoStorageChoicePrompt(viewModel: PhotoStorageChoiceViewModel = viewModel(
                     ),
                 )
             },
-            confirmButton = { TextButton(onClick = onRecompressClick) { Text("Recompresser") } },
+            confirmButton = {
+                TextButton(onClick = onRecompressClick) {
+                    Text(stringResource(R.string.settings_photo_recompress_offer_confirm_button))
+                }
+            },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissRecompressionOffer) { Text("Plus tard") }
+                TextButton(onClick = viewModel::dismissRecompressionOffer) {
+                    Text(stringResource(R.string.settings_photo_recompress_offer_dismiss_button))
+                }
             },
         )
     }
@@ -356,39 +366,47 @@ fun PhotoStorageChoicePrompt(viewModel: PhotoStorageChoiceViewModel = viewModel(
     recompressionReport?.let { report ->
         AlertDialog(
             onDismissRequest = viewModel::dismissRecompressionReport,
-            title = { Text("Recompression terminée") },
+            title = { Text(stringResource(R.string.settings_photo_recompress_report_title)) },
             text = { Text(recompressionReportMessage(context, report)) },
-            confirmButton = { TextButton(onClick = viewModel::dismissRecompressionReport) { Text("OK") } },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissRecompressionReport) {
+                    Text(stringResource(R.string.common_ok_button))
+                }
+            },
         )
     }
 
     recompressionError?.let { message ->
         AlertDialog(
             onDismissRequest = viewModel::dismissRecompressionError,
-            title = { Text("Recompression impossible") },
+            title = { Text(stringResource(R.string.settings_photo_recompress_error_title)) },
             text = { Text(message) },
-            confirmButton = { TextButton(onClick = viewModel::dismissRecompressionError) { Text("OK") } },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissRecompressionError) {
+                    Text(stringResource(R.string.common_ok_button))
+                }
+            },
         )
     }
 
     if (blockedDialog) {
         AlertDialog(
             onDismissRequest = { blockedDialog = false },
-            title = { Text("Accès aux photos refusé") },
-            text = {
-                Text(
-                    "Recompresser demande de retrouver tes photos d'origine dans la galerie, et " +
-                        "Android ne redemandera plus l'autorisation depuis l'application. " +
-                        "Autorise l'accès à la galerie dans les réglages de l'application.",
-                )
-            },
+            title = { Text(stringResource(R.string.journal_msg_photo_access_denied_title)) },
+            // Même message que l'écran « Espace utilisé » : c'est la même action, refusée pour la
+            // même raison, et l'inventaire ne prévoit qu'une ressource pour les deux.
+            text = { Text(stringResource(R.string.storage_usage_gallery_access_denied_message)) },
             confirmButton = {
                 TextButton(onClick = {
                     blockedDialog = false
                     context.openApplicationSettings()
-                }) { Text("Ouvrir les réglages") }
+                }) { Text(stringResource(R.string.journal_msg_open_settings_button)) }
             },
-            dismissButton = { TextButton(onClick = { blockedDialog = false }) { Text("Annuler") } },
+            dismissButton = {
+                TextButton(onClick = { blockedDialog = false }) {
+                    Text(stringResource(R.string.common_cancel_button))
+                }
+            },
         )
     }
 }
