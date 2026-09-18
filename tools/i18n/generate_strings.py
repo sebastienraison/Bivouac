@@ -200,8 +200,9 @@ def render_string(key: str, value: str) -> str:
     return f'    <string name="{key}">{escaped}</string>'
 
 
-def render_plurals(key: str, forms: dict[str, str]) -> str:
+def render_plurals(key: str, forms: dict[str, str], lang: str) -> str:
     has_params = any(PARAM_PATTERN.search(v) for v in forms.values())
+    forms = expand_french_many(forms, lang)
     lines = [f'    <plurals name="{key}">']
     for quantity in PLURAL_QUANTITIES:
         if quantity in forms:
@@ -211,25 +212,49 @@ def render_plurals(key: str, forms: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-HEADER = """<?xml version="1.0" encoding="utf-8"?>
+def expand_french_many(forms: dict[str, str], lang: str) -> dict[str, str]:
+    """RIC-191 : ajoute au francais la quantite CLDR "many", identique a "other".
+
+    Lint Android (MissingQuantity) exige les quantites que CLDR declare pour la langue du dossier,
+    et le francais en compte une de plus que l'anglais : "many". Elle ne couvre QUE les multiples
+    d'un million ecrits en toutes lettres ("un million de photos" et non "un millions de photos") :
+    aucune valeur atteignable par Bivouac, qui compte des photos, des fichiers et des sorties. La
+    forme est donc identique a "other" -- ce n'est pas une approximation linguistique, c'est le seul
+    rendu correct pour les valeurs que l'app peut produire, et cela retire 29 avertissements Lint qui
+    masquaient le reste.
+
+    Jamais ajoutee a l'anglais : CLDR n'y definit que "one" et "other", et un item "many" dans
+    values/ serait ignore au mieux, signale au pire (UnusedQuantity).
+    """
+    if lang != "fr" or "other" not in forms or "many" in forms:
+        return forms
+    return {**forms, "many": forms["other"]}
+
+
+HEADER_TEMPLATE = """<?xml version="1.0" encoding="utf-8"?>
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : docs/pilotage/i18n/strings-inventaire-v4.csv (inventaire de l'agent de pilotage,
+    Source : {source} (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v4.csv
+        python3 tools/i18n/generate_strings.py {source}
 
     Voir tools/i18n/README.md.
 -->
 <resources>
 """
 
+# RIC-191 : chemin de l'inventaire reellement utilise, et non un "v4" fige dans le script. Les
+# fichiers generes annoncaient encore v4 alors que les lots 1 et 2 avaient regenere depuis v6 :
+# un en-tete faux envoie corriger le mauvais fichier.
+DEFAULT_SOURCE_LABEL = "docs/pilotage/i18n/strings-inventaire.csv"
+
 FOOTER = "</resources>\n"
 
 
-def render_resources(entries: list[StringEntry], lang: str) -> str:
-    parts = [HEADER]
+def render_resources(entries: list[StringEntry], lang: str, source_label: str = DEFAULT_SOURCE_LABEL) -> str:
+    parts = [HEADER_TEMPLATE.format(source=source_label)]
     parts.append("    <!-- Nom de l'application (hors inventaire, ressource fixe) -->\n")
     for key, fr, en in FIXED_ENTRIES:
         value = fr if lang == "fr" else en
@@ -242,7 +267,7 @@ def render_resources(entries: list[StringEntry], lang: str) -> str:
             parts.append(f"\n    <!-- {current_context} -->\n")
         value = entry.fr if lang == "fr" else entry.en
         if entry.kind == "plurals":
-            parts.append(render_plurals(entry.key, value) + "\n")  # type: ignore[arg-type]
+            parts.append(render_plurals(entry.key, value, lang) + "\n")  # type: ignore[arg-type]
         else:
             parts.append(render_string(entry.key, value) + "\n")  # type: ignore[arg-type]
 
@@ -250,7 +275,7 @@ def render_resources(entries: list[StringEntry], lang: str) -> str:
     return "".join(parts)
 
 
-def generate(csv_path: Path) -> tuple[str, str]:
+def generate(csv_path: Path, source_label: str | None = None) -> tuple[str, str]:
     rows = read_csv_rows(csv_path)
     entries: list[StringEntry] = []
     seen_keys: set[str] = set()
@@ -273,7 +298,8 @@ def generate(csv_path: Path) -> tuple[str, str]:
     if errors:
         raise GeneratorError("\n".join(errors))
 
-    return render_resources(entries, "en"), render_resources(entries, "fr")
+    label = source_label or DEFAULT_SOURCE_LABEL
+    return render_resources(entries, "en", label), render_resources(entries, "fr", label)
 
 
 def main(argv: list[str]) -> int:
@@ -289,8 +315,15 @@ def main(argv: list[str]) -> int:
     repo_root = Path(__file__).resolve().parents[2]
     res_dir = repo_root / "app" / "src" / "main" / "res"
 
+    # Chemin tel qu'il a ete tape, releve au depot quand c'est possible : c'est ce que l'en-tete des
+    # fichiers generes montrera a qui voudra les corriger.
     try:
-        en_xml, fr_xml = generate(csv_path)
+        source_label = str(csv_path.resolve().relative_to(repo_root))
+    except ValueError:
+        source_label = str(csv_path)
+
+    try:
+        en_xml, fr_xml = generate(csv_path, source_label)
     except GeneratorError as exc:
         print(f"[generate_strings] erreur :\n{exc}", file=sys.stderr)
         return 1

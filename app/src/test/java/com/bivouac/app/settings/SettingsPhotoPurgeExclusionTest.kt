@@ -44,6 +44,10 @@ class SettingsPhotoPurgeExclusionTest {
     private lateinit var repository: LoggedTrackRepository
     private lateinit var viewModel: SettingsViewModel
 
+    // RIC-191 (lot 4 i18n) : libellé visé par ressource, pas en français en dur.
+    private fun labelOf(operation: ExclusiveOperation): String =
+        application.getString(operation.labelRes)
+
     private val trackId = "ric158-purge"
 
     @Before
@@ -79,7 +83,7 @@ class SettingsPhotoPurgeExclusionTest {
         assertEquals(
             "le refus doit être annoncé à l'écran",
             true,
-            viewModel.photoPurgeError.value?.contains("une restauration") ?: false,
+            viewModel.photoPurgeError.value?.contains(labelOf(ExclusiveOperation.RESTORE)) ?: false,
         )
         assertEquals(
             "rien n'a dû être purgé",

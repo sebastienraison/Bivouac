@@ -3,6 +3,7 @@ package com.bivouac.app.data.operations
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -90,11 +91,18 @@ class ExclusiveOperationsTest {
         assertFalse(ExclusiveOperations.tryStart(ExclusiveOperation.RESTORE))
     }
 
-    /** Le libellé alimente le message de refus : il doit rester lisible dans une phrase. */
+    /**
+     * Le libellé alimente le message de refus : chaque opération doit en désigner un.
+     *
+     * RIC-191 (lot 4 i18n) : l'enum porte un identifiant de ressource et non plus le texte. Ce test
+     * reste un test JVM pur et ne vérifie donc que le câblage (aucune valeur laissée à 0) ; que la
+     * ressource existe vraiment et donne une phrase lisible dans les deux langues est vérifié par
+     * ExclusiveOperationLabelResolutionTest, qui a besoin d'un contexte Android.
+     */
     @Test
-    fun chaqueOperationPorteUnLibelleNonVide() {
+    fun chaqueOperationDesigneUneRessourceDeLibelle() {
         for (operation in ExclusiveOperation.entries) {
-            assertTrue(operation.name, operation.label.isNotBlank())
+            assertNotEquals(operation.name, 0, operation.labelRes)
         }
     }
 }

@@ -1743,7 +1743,10 @@ private fun JournalTrackRow(
             val bivouacCount = dayInfo?.bivouacCount ?: 0
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = (TrekDatesFormatter.format(dayInfo?.dates.orEmpty()) ?: formatStartedAt(entry.startedAt)) +
+                    text = (
+                        TrekDatesFormatter.format(LocalContext.current, dayInfo?.dates.orEmpty())
+                            ?: formatStartedAt(entry.startedAt)
+                        ) +
                         if (bivouacCount > 0) " · $bivouacCount" else "",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2221,7 +2224,8 @@ internal fun ThreeStopJournalDetail(
                                 // dénormalisées, la trace étant de toute façon parsée pour être
                                 // affichée.
                                 Text(
-                                    text = TrekDatesFormatter.format(dayStartDates) ?: formatStartedAt(entry.startedAt),
+                                    text = TrekDatesFormatter.format(LocalContext.current, dayStartDates)
+                                        ?: formatStartedAt(entry.startedAt),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -2368,7 +2372,7 @@ internal fun ThreeStopJournalDetail(
                                 FilterChip(
                                     selected = systemTag.value in draftTags,
                                     onClick = { toggleSystemDraftTag(systemTag) },
-                                    label = { Text(systemTag.label) },
+                                    label = { Text(stringResource(systemTag.labelRes)) },
                                     colors = FilterChipDefaults.filterChipColors(
                                         selectedContainerColor = color.copy(alpha = 0.14f),
                                         selectedLabelColor = color,
@@ -2739,7 +2743,11 @@ private fun tagColor(tag: String): Color = when (tag) {
     else -> FreeTagPalette[(tag.hashCode() and 0x7fffffff) % FreeTagPalette.size]
 }
 
-private fun tagLabel(value: String): String = SystemTag.entries.find { it.value == value }?.label ?: value
+// RIC-191 (lot 4 i18n) : un tag système s'affiche traduit, un tag libre s'affiche tel que
+// l'utilisateur l'a écrit. La valeur stockée en base ne change pas, c'est toujours SystemTag.value.
+@Composable
+private fun tagLabel(value: String): String =
+    SystemTag.entries.find { it.value == value }?.let { stringResource(it.labelRes) } ?: value
 
 @Composable
 private fun ReadOnlyTagChip(label: String, color: Color) {

@@ -4,6 +4,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.bivouac.app.R
 import com.bivouac.app.data.db.BivouacDatabase
 import com.bivouac.app.data.db.LoggedTrackDayEntity
 import com.bivouac.app.data.db.LoggedTrackEntity
@@ -453,9 +454,19 @@ class BackupManagerTest {
         val result = BackupManager.restore(context, Uri.fromFile(truncated))
         truncated.delete()
         assertTrue("une archive incomplète doit être refusée", result is RestoreResult.Error)
-        assertTrue(
+        // RIC-191 (lot 4 i18n) : le message vient des ressources, donc de la langue de l'appareil,
+        // et le GMD tourne en en-US : chercher « incomplète » n'y trouvait plus rien. Comparé au
+        // gabarit de la ressource, chiffres neutralisés : ce que ce test doit prouver, c'est que la
+        // restauration a choisi CE message-là et pas un échec générique, pas quels nombres il porte
+        // (ils sont vérifiés par la moitié précédente du test).
+        val digits = Regex("\\d+")
+        val expected = context.resources
+            .getQuantityString(R.plurals.restore_truncated_backup_message, 2, 0, 0)
+            .replace(digits, "#")
+        assertEquals(
             "le message doit dire pourquoi : ${(result as RestoreResult.Error).message}",
-            result.message.contains("incomplète"),
+            expected,
+            result.message.replace(digits, "#"),
         )
         val photosAfterRefusal = BivouacDatabase.getInstance(context).loggedTrackDao().getPhotos("t1")
         assertEquals("les photos en place doivent survivre au refus", 2, photosAfterRefusal.size)

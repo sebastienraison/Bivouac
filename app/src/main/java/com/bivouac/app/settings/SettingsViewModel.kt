@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.bivouac.app.R
 import com.bivouac.app.data.backup.AppRestart
 import com.bivouac.app.data.backup.BackupManager
 import com.bivouac.app.data.backup.RestorePhase
@@ -14,6 +15,7 @@ import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
+import com.bivouac.app.data.operations.exclusiveOperationRefusalMessage
 import com.bivouac.app.data.photo.PhotoRecompression
 import com.bivouac.app.data.photo.PhotoStorageMode
 import com.bivouac.app.data.photo.PhotoStoragePolicy
@@ -30,35 +32,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-/**
- * RIC-156 : les trois temps que le dialogue bloquant des Réglages sait annoncer.
- *
- * La restauration en a deux, et non un seul : l'extraction est la phase longue et dénombrable, le
- * remplacement est court et ne l'est pas : les fondre donnerait un compteur qui se fige à la fin
- * sans que rien n'explique pourquoi.
- */
-enum class DataOperationPhase(val title: String) {
-    BACKUP("Sauvegarde en cours"),
-    RESTORE_EXTRACTION("Lecture de la sauvegarde"),
-    RESTORE_REPLACEMENT("Restauration en cours"),
-
-    // RIC-158 : la purge des photos peut porter sur des centaines de Mo, assez long pour mériter
-    // le même dialogue bloquant que la sauvegarde et la restauration, cohérence oblige.
-    PHOTO_PURGE("Purge des photos en cours"),
-
-    // RIC-151 : une recherche dans la galerie et un réencodage par photo manquante : c'est
-    // l'opération la plus lente des quatre, et de loin celle qui a le plus besoin d'un compteur.
-    PHOTO_RECOVERY("Recherche des photos manquantes"),
-
-    // RIC-157 : même titre que le bouton dédié de l'écran « Espace utilisé » (StorageUsageScreen) :
-    // c'est la même opération, seulement déclenchée d'un second endroit (la proposition posée à la
-    // bascule vers la copie réduite), et son dialogue bloquant ne doit pas se distinguer de l'autre.
-    PHOTO_RECOMPRESS("Recompression en cours"),
-}
-
-/** RIC-156 : où en est la sauvegarde ou la restauration. [total] est null quand le travail n'est pas dénombrable. */
-data class DataOperationProgress(val phase: DataOperationPhase, val done: Int, val total: Int?)
 
 /** Result of a completed restore, held until the user acknowledges the "app is about to restart" dialog. */
 sealed interface RestoreOutcome {
@@ -501,7 +474,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             // d'erreur s'ouvrirait derrière lui. Il reste une fenêtre résiduelle, le temps que la
             // durée minimale d'affichage s'écoule, mais le dialogue posé en dernier passe devant.
             result.onFailure {
-                _backupError.value = it.message ?: "Échec de la sauvegarde."
+                // RIC-191 : le message de l'exception vient de BackupManager, qui le compose
+                // désormais lui-même à partir des ressources ; ce repli ne sert qu'aux exceptions
+                // muettes (OOM, IO sans message).
+                _backupError.value = it.message
+                    ?: getApplication<Application>().getString(R.string.backup_generic_failure_message)
             }
         }
     }
@@ -541,10 +518,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
      * opération tourne. Il reste écrit, et nommé, parce qu'un chemin oublié doit refuser proprement
      * plutôt que de laisser deux écritures se croiser sur les mêmes fichiers.
      */
-    private fun refusalMessage(): String {
-        val ongoing = ExclusiveOperations.current.value?.label ?: "une autre opération"
-        return "Impossible pour l'instant : $ongoing est en cours. Attends qu'elle se termine, puis recommence."
-    }
+    private fun refusalMessage(): String = exclusiveOperationRefusalMessage(getApplication())
 
     fun dismissRestoreOutcome() {
         _restoreOutcome.value = null

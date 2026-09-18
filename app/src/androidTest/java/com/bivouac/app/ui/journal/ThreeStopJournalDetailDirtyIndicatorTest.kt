@@ -18,7 +18,10 @@ import org.junit.runner.RunWith
 /**
  * RIC-189 (lot 2 i18n) : les descriptions de contenu visées viennent des ressources. Le GMD tourne
  * en en-US, donc l'app y est en anglais et un test écrit sur « Modifier » ne trouverait plus rien.
- * Seul « Solo » reste un littéral : c'est un libellé de SystemTag (data/db), pas encore migré.
+ *
+ * RIC-191 (lot 4 i18n) : le dernier littéral, « Solo », est lui aussi passé en ressource. Le
+ * libellé de SystemTag est désormais traduit à l'affichage, sa valeur stockée en base restant
+ * « solo » : c'est bien le libellé traduit que le test doit chercher à l'écran.
  */
 @RunWith(AndroidJUnit4::class)
 class ThreeStopJournalDetailDirtyIndicatorTest {
@@ -78,7 +81,7 @@ class ThreeStopJournalDetailDirtyIndicatorTest {
         composeRule.onNodeWithContentDescription(string(R.string.common_save_button)).assertIsDisplayed()
 
         // Toggling a system tag makes the draft diverge from the saved state.
-        composeRule.onNodeWithText("Solo").performClick()
+        composeRule.onNodeWithText(string(R.string.tag_system_solo)).performClick()
 
         // Dirty: orange-tinted save icon with the accessibility label reflecting unsaved changes.
         composeRule.onNodeWithContentDescription(string(R.string.journal_detail_save_dirty_description))

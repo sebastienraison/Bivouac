@@ -1,5 +1,7 @@
 package com.bivouac.app.data.model
 
+import android.content.Context
+import com.bivouac.app.R
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
@@ -9,8 +11,11 @@ import java.util.Locale
  * 1er et 2 avril 2026 ». Jusqu'ici une sortie de trois jours s'y affichait comme une sortie d'un
  * jour, avec la seule date de départ, et rien ne la distinguait.
  *
- * Objet pur, sans dépendance Android, pour être testable hors appareil : même raison que
- * [com.bivouac.app.data.db.ImportDayOrdering] et [DayJunctions].
+ * RIC-191 (lot 4 i18n) : l'objet prend un [Context] et n'est donc plus testable hors Android,
+ * contrairement à [com.bivouac.app.data.db.ImportDayOrdering] et [DayJunctions]. C'était la
+ * condition pour sortir la phrase du code : le lot 0 avait explicitement gardé Locale.FRANCE ici
+ * plutôt que de produire un résultat mi-français mi-anglais (« 12 et 13 May 2025 ») sur un appareil
+ * anglais. Le test correspondant est passé sous Robolectric, avec les deux langues.
  */
 object TrekDatesFormatter {
 
@@ -31,46 +36,74 @@ object TrekDatesFormatter {
      *
      * Deux jours se citent (« 12 et 13 mai 2025 »), au-delà on encadre (« du 3 au 6 mars 2026 »).
      *
-     * RIC-187 (lot 0 i18n) : Locale.FRANCE volontairement PAS remplacé par Locale.getDefault(),
-     * contrairement au reste du chantier de ce lot. Cette fonction ne se contente pas de nommer un
-     * mois dans une locale : elle compose une vraie phrase française codée en dur (le connecteur
-     * "et", le encadrement "du ... au ..."), en dehors de tout stringResource. Faire suivre
-     * seulement le nom du mois à la locale de l'appareil sans traduire ces connecteurs produirait un
-     * résultat mêlant les deux langues sur un appareil anglais ("12 et 13 May 2025") : pire que le
-     * tout-français actuel. À corriger avec la migration de l'écran Journal (lots 1 à 4), quand "et"
-     * et "du ... au ..." deviendront eux-mêmes des ressources de chaînes ; le paramètre [locale]
-     * reste ici pour que les tests existants (TrekDatesFormatterTest) continuent de fixer le
-     * français explicitement, indépendamment de la locale par défaut de la machine qui les exécute.
+     * RIC-191 : QUATRE ressources et non des connecteurs isolés (« et », « du », « au ») assemblés
+     * par du code commun. L'anglais ne place ni le mois ni l'année au même endroit que le français :
+     * un assemblage commun donnerait « 3 and March 6, 2026 ». Chaque langue compose donc sa phrase
+     * entière, à partir des mêmes morceaux (jour, mois, année).
+     *
+     * Le premier jour ne porte son mois que si celui d'arrivée diffère, et jamais son année :
+     * « du 3 mars au 6 mars 2026 » rallonge sans rien ajouter, alors que « du 30 mars au
+     * 1er avril 2020 » a besoin des deux mois. L'année de départ est toujours tue, y compris à
+     * cheval sur deux années : une sortie ne dure pas onze mois, donc un changement d'année ne peut
+     * être que décembre vers janvier, et « du 31 décembre au 2 janvier 2021 » ne se lit pas
+     * autrement.
+     *
+     * [locale] pilote le nom des mois ; les ressources, elles, sont choisies par la configuration
+     * de [context]. Les deux entrées sont distinctes, d'où le paramètre : un test peut fixer l'une
+     * et l'autre indépendamment (voir TrekDatesFormatterTest).
      */
-    fun format(days: List<LocalDate>, locale: Locale = Locale.FRANCE): String? {
+    fun format(
+        context: Context,
+        days: List<LocalDate>,
+        locale: Locale = Locale.getDefault(),
+    ): String? {
         val distinct = days.distinct().sorted()
         if (distinct.size < 2) return null
         val first = distinct.first()
         val last = distinct.last()
-        // Le premier jour ne porte son mois que si celui d'arrivée diffère, et jamais son année.
-        // « du 3 mars au 6 mars 2026 » rallonge sans rien ajouter, alors que « du 30 mars au
-        // 1er avril 2020 » a besoin des deux mois.
-        //
-        // L'année de départ est toujours tue, y compris à cheval sur deux années : une sortie ne
-        // dure pas onze mois, donc un changement d'année ne peut être que décembre vers janvier,
-        // et « du 31 décembre au 2 janvier 2021 » ne se lit pas autrement.
-        val start = if (first.month == last.month && first.year == last.year) {
-            dayNumber(first, locale)
+        val sameMonth = first.month == last.month && first.year == last.year
+        val framed = distinct.size > MAX_ENUMERATED_DAYS
+
+        val firstDay = dayNumber(context, first)
+        val lastDay = dayNumber(context, last)
+        val year = last.year
+
+        return if (sameMonth) {
+            val month = monthName(last, locale)
+            val template = if (framed) {
+                R.string.journal_trek_dates_range_same_month
+            } else {
+                R.string.journal_trek_dates_pair_same_month
+            }
+            context.getString(template, firstDay, lastDay, month, year)
         } else {
-            dayAndMonth(first, locale)
+            val template = if (framed) {
+                R.string.journal_trek_dates_range_cross_month
+            } else {
+                R.string.journal_trek_dates_pair_cross_month
+            }
+            context.getString(
+                template,
+                firstDay,
+                monthName(first, locale),
+                lastDay,
+                monthName(last, locale),
+                year,
+            )
         }
-        val end = full(last, locale)
-        return if (distinct.size <= MAX_ENUMERATED_DAYS) "$start et $end" else "du $start au $end"
     }
 
-    private fun full(day: LocalDate, locale: Locale): String =
-        "${dayAndMonth(day, locale)} ${day.year}"
-
-    private fun dayAndMonth(day: LocalDate, locale: Locale): String =
-        "${dayNumber(day, locale)} ${day.month.getDisplayName(TextStyle.FULL, locale)}"
+    private fun monthName(day: LocalDate, locale: Locale): String =
+        day.month.getDisplayName(TextStyle.FULL, locale)
 
     // « 1er » et non « 1 » : c'est la forme ordinale attendue en français pour le premier du mois,
-    // et elle seule. Les autres langues n'ont pas cette exception, d'où le test sur la locale.
-    private fun dayNumber(day: LocalDate, locale: Locale): String =
-        if (day.dayOfMonth == 1 && locale.language == "fr") "1er" else day.dayOfMonth.toString()
+    // et elle seule. RIC-191 : l'exception est devenue une ressource (« 1er » en français, « 1 » en
+    // anglais), ce qui retire du code le test locale.language == "fr" : une langue ajoutée plus
+    // tard n'aura qu'à renseigner sa propre forme.
+    private fun dayNumber(context: Context, day: LocalDate): String =
+        if (day.dayOfMonth == 1) {
+            context.getString(R.string.journal_trek_dates_first_day_of_month)
+        } else {
+            day.dayOfMonth.toString()
+        }
 }

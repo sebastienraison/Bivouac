@@ -65,6 +65,14 @@ class EscapingTest(unittest.TestCase):
         self.assertIn('<item quantity="one">%1$d hike</item>', self.en_xml)
         self.assertIn('<item quantity="other">%1$d hikes</item>', self.en_xml)
 
+    def test_forme_many_ajoutee_au_francais_seulement(self) -> None:
+        # RIC-191 : Lint (MissingQuantity) exige "many" en francais, que CLDR reserve aux multiples
+        # d'un million. Identique a "other", et jamais ajoutee a l'anglais, qui ne la connait pas.
+        self.assertIn('<item quantity="many">%1$d randonnées</item>', self.fr_xml)
+        self.assertNotIn('quantity="many"', self.en_xml)
+        # L'ajout se fait au rendu, pas dans l'inventaire : celui-ci garde les memes quantites dans
+        # les deux langues, ce que build_entry() continue d'exiger.
+
     def test_valeur_validee_prevaut_sur_proposee(self) -> None:
         self.assertIn(
             '<string name="sample_validated_override">Texte validé par Seb</string>', self.fr_xml

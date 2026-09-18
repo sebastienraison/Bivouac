@@ -40,6 +40,12 @@ class GpxImportExclusionTest {
     private val application: Application = ApplicationProvider.getApplicationContext()
     private lateinit var viewModel: GpxImportViewModel
 
+    // RIC-191 (lot 4 i18n) : le libellé de l'opération vient des ressources, donc de la langue de
+    // l'appareil de test. Le viser par ressource et non en français en dur, sans quoi ce test ne
+    // passerait que sur une machine configurée en fr.
+    private fun labelOf(operation: ExclusiveOperation): String =
+        application.getString(operation.labelRes)
+
     @Before
     fun setUp() {
         BivouacDatabase.closeAndReset()
@@ -68,7 +74,7 @@ class GpxImportExclusionTest {
         assertTrue("un refus doit se traduire par un état Error", state is GpxImportUiState.Error)
         assertTrue(
             "le message doit nommer l'opération en cours",
-            (state as GpxImportUiState.Error).message.contains("une sauvegarde"),
+            (state as GpxImportUiState.Error).message.contains(labelOf(ExclusiveOperation.BACKUP)),
         )
         assertEquals(
             "aucun fichier de session ne doit avoir été écrit",
@@ -108,7 +114,7 @@ class GpxImportExclusionTest {
         val state = viewModel.uiState.value
         assertTrue("un refus doit se traduire par un état Error", state is GpxImportUiState.Error)
         assertTrue(
-            (state as GpxImportUiState.Error).message.contains("une restauration"),
+            (state as GpxImportUiState.Error).message.contains(labelOf(ExclusiveOperation.RESTORE)),
         )
         assertEquals(emptyList<String>(), savedSessionFiles())
         assertEquals(ExclusiveOperation.RESTORE, ExclusiveOperations.current.value)

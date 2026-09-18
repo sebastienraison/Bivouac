@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : docs/pilotage/i18n/strings-inventaire-v4.csv (inventaire de l'agent de pilotage,
+    Source : docs/pilotage/i18n/strings-inventaire-v8.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v4.csv
+        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v8.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -42,6 +42,11 @@
     <!-- Planification tiroir et segments -->
     <string name="planification_default_track_name">Track</string>
     <string name="planification_delete_target_fallback_name">this track</string>
+
+    <!-- Planification (import GPX) -->
+    <string name="gpximport_error_open_file_failed">Could not open the selected file.</string>
+
+    <!-- Planification tiroir et segments -->
     <plurals name="planification_bivouac_count_description">
         <item quantity="one">bivouac point</item>
         <item quantity="other">bivouac points</item>
@@ -350,7 +355,10 @@
     <string name="restore_rollback_move_file_failed">Could not set %1$s aside before replacing it.</string>
     <string name="restore_rollback_move_dir_failed">Could not set the %1$s folder aside before replacing it.</string>
     <string name="restore_read_source_failed">Could not read the selected file.</string>
-    <string name="restore_truncated_backup_message">This backup is incomplete: it lists %1$d files but contains only %2$d. It was probably interrupted while being created. Restore canceled, current data is intact.</string>
+    <plurals name="restore_truncated_backup_message">
+        <item quantity="one">This backup is incomplete: it lists %1$d file but contains only %2$d. It was probably interrupted while being created. Restore canceled, current data is intact.</item>
+        <item quantity="other">This backup is incomplete: it lists %1$d files but contains only %2$d. It was probably interrupted while being created. Restore canceled, current data is intact.</item>
+    </plurals>
     <string name="backup_progress_title">Backing up</string>
     <string name="restore_extraction_progress_title">Reading backup</string>
     <string name="restore_replacement_progress_title">Restoring</string>
@@ -375,8 +383,19 @@
     <string name="journal_error_duplicate_track_name">“%1$s” is already in the Journal.</string>
     <string name="journal_error_track_not_found">Track not found.</string>
     <string name="journal_error_track_unreadable">Invalid track or unreadable file.</string>
-    <string name="journal_error_photo_save_failed_one">A photo could not be saved.</string>
-    <string name="journal_error_photo_save_failed_other">%1$d photos could not be saved.</string>
+    <plurals name="journal_error_photo_save_failed">
+        <item quantity="one">A photo could not be saved.</item>
+        <item quantity="other">%1$d photos could not be saved.</item>
+    </plurals>
+    <string name="exclusive_operation_backup_label">a backup</string>
+    <string name="exclusive_operation_restore_label">a restore</string>
+    <string name="exclusive_operation_photo_import_label">a photo import</string>
+    <string name="exclusive_operation_photo_commit_label">a photo save</string>
+    <string name="exclusive_operation_photo_purge_label">a photo deletion</string>
+    <string name="exclusive_operation_photo_recompress_label">a photo recompression</string>
+    <string name="exclusive_operation_photo_recovery_label">a search for missing photos</string>
+    <string name="exclusive_operation_journal_import_label">a Journal import</string>
+    <string name="exclusive_operation_planification_import_label">a Planification import</string>
     <string name="journal_error_ongoing_operation_default_label">another operation</string>
     <string name="journal_error_operation_in_progress">Not possible right now: %1$s is in progress. Try again once it finishes.</string>
     <string name="msg_blocking_progress_counter">%1$d of %2$d…</string>
@@ -499,6 +518,11 @@
     <string name="gpximport_saved_today_format">today at %1$s</string>
     <string name="gpximport_saved_date_format">MMMM d</string>
     <string name="gpximport_saved_at_with_bivouac_count_format">%1$s · %2$d</string>
+    <string name="journal_trek_dates_pair_same_month">%3$s %1$s and %2$s, %4$d</string>
+    <string name="journal_trek_dates_pair_cross_month">%2$s %1$s and %4$s %3$s, %5$d</string>
+    <string name="journal_trek_dates_range_same_month">%3$s %1$s to %2$s, %4$d</string>
+    <string name="journal_trek_dates_range_cross_month">%2$s %1$s to %4$s %3$s, %5$d</string>
+    <string name="journal_trek_dates_first_day_of_month">1</string>
     <string name="format_elevation_meters">%1$s m</string>
     <string name="format_bivouac_arrival_departure">%1$s → %2$s</string>
     <string name="map_cursor_bubble_distance_km_format">%1$s km</string>

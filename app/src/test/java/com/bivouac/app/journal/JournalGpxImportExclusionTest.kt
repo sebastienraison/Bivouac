@@ -44,6 +44,11 @@ class JournalGpxImportExclusionTest {
     private lateinit var repository: LoggedTrackRepository
     private lateinit var viewModel: JournalViewModel
 
+    // RIC-191 (lot 4 i18n) : libellé visé par ressource, pas en français en dur : il suit désormais
+    // la langue de l'appareil de test.
+    private fun labelOf(operation: ExclusiveOperation): String =
+        application.getString(operation.labelRes)
+
     @Before
     fun setUp() {
         BivouacDatabase.closeAndReset()
@@ -82,7 +87,7 @@ class JournalGpxImportExclusionTest {
         assertEquals(
             "le refus doit être annoncé à l'écran",
             true,
-            viewModel.importError.value?.contains("une sauvegarde") ?: false,
+            viewModel.importError.value?.contains(labelOf(ExclusiveOperation.BACKUP)) ?: false,
         )
         assertEquals("rien n'a dû être importé", 0, runBlocking { repository.list() }.size)
         assertEquals(
@@ -122,7 +127,7 @@ class JournalGpxImportExclusionTest {
         assertEquals(
             "le refus doit être annoncé à l'écran",
             true,
-            viewModel.importError.value?.contains("une restauration") ?: false,
+            viewModel.importError.value?.contains(labelOf(ExclusiveOperation.RESTORE)) ?: false,
         )
         assertEquals("rien n'a dû être importé", 0, runBlocking { repository.list() }.size)
         assertEquals(

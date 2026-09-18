@@ -26,6 +26,7 @@ import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
+import com.bivouac.app.data.operations.exclusiveOperationRefusalMessage
 import com.bivouac.app.data.photo.PhotoLibraryPermission
 import com.bivouac.app.data.photo.PhotoRecompression
 import com.bivouac.app.data.photo.PhotoStorageMode
@@ -225,10 +226,10 @@ class PhotoStorageChoiceViewModel(application: Application) : AndroidViewModel(a
     // libellé d'ExclusiveOperation, défini hors de tout écran : les quatre se migrent ensemble,
     // avec ce libellé, au lot 4 (clés journal_error_operation_in_progress et
     // journal_error_ongoing_operation_default_label, déjà dans l'inventaire).
-    private fun refusalMessage(): String {
-        val ongoing = ExclusiveOperations.current.value?.label ?: "une autre opération"
-        return "Impossible pour l'instant : $ongoing est en cours. Attends qu'elle se termine, puis recommence."
-    }
+    //
+    // RIC-191 (lot 4 i18n) : c'est fait, et les quatre copies sont fondues en une seule fonction,
+    // posée à côté du verrou qu'elle explique.
+    private fun refusalMessage(): String = exclusiveOperationRefusalMessage(getApplication())
 
     companion object {
         /**
@@ -359,7 +360,7 @@ fun PhotoStorageChoicePrompt(viewModel: PhotoStorageChoiceViewModel = viewModel(
     // opération (StorageUsageScreen, Réglages) : voir recompressionReportMessage.
     BlockingProgressDialog(
         progress = recompressionProgress?.let {
-            BlockingProgress(title = it.phase.title, done = it.done, total = it.total)
+            BlockingProgress(title = stringResource(it.phase.titleRes), done = it.done, total = it.total)
         },
     )
 
