@@ -31,10 +31,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import com.bivouac.app.R
 import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -207,6 +209,8 @@ internal fun rememberThreeStopDrawerState(
 /** Poignée du tiroir : un tap avance d'un cran (Synthèse → Profil → Détails → Synthèse). */
 @Composable
 internal fun ThreeStopDrawerHandle(state: ThreeStopDrawerState, modifier: Modifier = Modifier) {
+    // RIC-188 : la lambda de semantics n'est pas composable, la ressource est donc lue ici.
+    val handleDescription = stringResource(R.string.common_drawer_handle_description)
     Box(
         modifier = modifier
             .padding(top = 10.dp, bottom = 4.dp)
@@ -214,7 +218,7 @@ internal fun ThreeStopDrawerHandle(state: ThreeStopDrawerState, modifier: Modifi
             .clip(RoundedCornerShape(2.dp))
             .background(MaterialTheme.colorScheme.onSurfaceVariant)
             .graphicsLayer { alpha = 0.45f }
-            .semantics { contentDescription = "Poignée du tiroir" }
+            .semantics { contentDescription = handleDescription }
             .clickable {
                 state.animateTo(
                     when (state.stop) {
@@ -238,11 +242,13 @@ internal fun ThreeStopDrawerStopRow(state: ThreeStopDrawerState) {
             val enabled = candidate != DrawerStop.DETAIL || state.detailEnabled
             TextButton(onClick = { state.animateTo(candidate) }, enabled = enabled) {
                 Text(
-                    when (candidate) {
-                        DrawerStop.SUMMARY -> "Synthèse"
-                        DrawerStop.PROFILE -> "Profil"
-                        DrawerStop.DETAIL -> "Détails"
-                    },
+                    stringResource(
+                        when (candidate) {
+                            DrawerStop.SUMMARY -> R.string.planification_drawer_synthese_tab
+                            DrawerStop.PROFILE -> R.string.planification_drawer_profil_tab
+                            DrawerStop.DETAIL -> R.string.planification_drawer_details_tab
+                        },
+                    ),
                     // La couleur est posée explicitement sur le Text, donc l'état désactivé du
                     // TextButton ne suffit pas à griser : alpha 38 % à la main (convention M3).
                     color = when {
