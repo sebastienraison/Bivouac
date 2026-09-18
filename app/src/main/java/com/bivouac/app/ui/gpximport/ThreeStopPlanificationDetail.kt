@@ -54,6 +54,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.bivouac.app.R
@@ -221,7 +222,7 @@ internal fun ThreeStopPlanificationDetail(
                         verticalAlignment = Alignment.Top,
                     ) {
                         Text(
-                            text = track.name ?: "Trace sans nom",
+                            text = track.name ?: stringResource(R.string.planification_untitled_track_title),
                             style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.weight(1f).padding(end = 8.dp),
                         )
@@ -238,7 +239,7 @@ internal fun ThreeStopPlanificationDetail(
                     }
                     if (bivouacPoints.isNotEmpty()) {
                         Text(
-                            text = "Total",
+                            text = stringResource(R.string.journal_detail_total_label),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -315,7 +316,9 @@ private fun TrackActionsRow(
         IconButton(onClick = onSaveClick) {
             Icon(
                 Icons.Default.Save,
-                contentDescription = if (dirty) "Enregistrer (modifications non sauvegardées)" else "Enregistrer",
+                contentDescription = stringResource(
+                    if (dirty) R.string.journal_detail_save_dirty_description else R.string.common_save_button,
+                ),
                 // Orange (GainIconColor) rather than the error/red role: an unsaved change isn't
                 // a critical error, just a state: red is reserved for destructive actions
                 // (delete), matching Material 3's role guidance.
@@ -324,27 +327,27 @@ private fun TrackActionsRow(
         }
         Box {
             IconButton(onClick = { menuExpanded = true }) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+                Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.journal_detail_menu_description))
             }
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                 DropdownMenuItem(
-                    text = { Text("Renommer") },
+                    text = { Text(stringResource(R.string.journal_detail_menu_rename)) },
                     leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
                     enabled = isBanked,
                     onClick = { menuExpanded = false; onRenameClick() },
                 )
                 DropdownMenuItem(
-                    text = { Text("Dupliquer") },
+                    text = { Text(stringResource(R.string.planification_menu_duplicate)) },
                     leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
                     onClick = { menuExpanded = false; onDuplicateClick() },
                 )
                 DropdownMenuItem(
-                    text = { Text("Exporter") },
+                    text = { Text(stringResource(R.string.planification_menu_export)) },
                     leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) },
                     onClick = { menuExpanded = false; onExportClick() },
                 )
                 DropdownMenuItem(
-                    text = { Text("Supprimer") },
+                    text = { Text(stringResource(R.string.common_delete_button)) },
                     leadingIcon = {
                         Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                     },
@@ -354,7 +357,7 @@ private fun TrackActionsRow(
             }
         }
         IconButton(onClick = onCloseClick) {
-            Icon(Icons.Default.Close, contentDescription = "Fermer la trace")
+            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.planification_close_track_description))
         }
     }
 }
@@ -379,11 +382,14 @@ private fun SegmentsList(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(text = "Jour ${index + 1}", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        text = stringResource(R.string.journal_detail_day_fallback_label, index + 1),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
                     IconButton(onClick = { onExportSegment(index, segment) }, modifier = Modifier.size(32.dp)) {
                         Icon(
                             Icons.Default.FileDownload,
-                            contentDescription = "Télécharger ce segment en GPX",
+                            contentDescription = stringResource(R.string.planification_segment_export_description),
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -416,13 +422,13 @@ private fun BivouacRow(trackPoint: TrackPoint, onWeatherClick: () -> Unit, onRem
     ) {
         Image(
             painter = painterResource(R.drawable.ic_bivouac_badge),
-            contentDescription = "Point de bivouac",
+            contentDescription = stringResource(R.string.planification_bivouac_point_description),
             modifier = Modifier.size(24.dp),
         )
         val elevation = trackPoint.elevationMeters
         if (elevation != null) {
             InfoText(
-                text = "${formatGroupedInt(elevation.roundToInt())} m",
+                text = stringResource(R.string.format_elevation_meters, formatGroupedInt(elevation.roundToInt())),
                 icon = Icons.Default.Terrain,
                 iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -432,7 +438,7 @@ private fun BivouacRow(trackPoint: TrackPoint, onWeatherClick: () -> Unit, onRem
         IconButton(onClick = onRemove, modifier = Modifier.padding(start = 6.dp)) {
             Icon(
                 Icons.Default.Delete,
-                contentDescription = "Supprimer ce point de bivouac",
+                contentDescription = stringResource(R.string.planification_bivouac_remove_description),
                 tint = MaterialTheme.colorScheme.error,
             )
         }
@@ -447,7 +453,7 @@ private fun ComposedWeatherIconButton(onClick: () -> Unit) {
         Box(modifier = Modifier.size(22.dp)) {
             Icon(
                 Icons.Default.Cloud,
-                contentDescription = "Météo au point de bivouac",
+                contentDescription = stringResource(R.string.planification_bivouac_weather_description),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .size(16.dp)

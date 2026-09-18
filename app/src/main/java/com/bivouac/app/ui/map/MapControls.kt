@@ -20,7 +20,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.bivouac.app.R
 
 @Composable
 fun MapControls(
@@ -50,12 +52,18 @@ fun MapControls(
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
             ) {
-                Icon(selectedLayer.icon, contentDescription = "Choisir le fond de carte (actuel : ${selectedLayer.label})")
+                Icon(
+                    selectedLayer.icon,
+                    contentDescription = stringResource(
+                        R.string.map_controls_layer_picker_description,
+                        stringResource(selectedLayer.labelRes),
+                    ),
+                )
             }
             DropdownMenu(expanded = layerMenuExpanded, onDismissRequest = { layerMenuExpanded = false }) {
                 availableLayers.forEach { layer ->
                     DropdownMenuItem(
-                        text = { Text(layer.label) },
+                        text = { Text(stringResource(layer.labelRes)) },
                         leadingIcon = { Icon(layer.icon, contentDescription = null) },
                         trailingIcon = {
                             if (layer == selectedLayer) {
@@ -80,7 +88,7 @@ fun MapControls(
                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             ),
         ) {
-            Icon(Icons.Default.MyLocation, contentDescription = "Recentrer sur la trace")
+            Icon(Icons.Default.MyLocation, contentDescription = stringResource(R.string.map_controls_recenter_description))
         }
     }
 }

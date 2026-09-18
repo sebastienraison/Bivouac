@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
@@ -468,7 +469,11 @@ fun HikeMapView(
 
 @Composable
 private fun EsriAttributionLink(modifier: Modifier = Modifier) {
-    val notice = MapLayer.SATELLITE.tileSource.copyrightNotice ?: return
+    // RIC-188 (lot 1 i18n) : la mention affichée vient de la ressource et non plus de la métadonnée
+    // de la source de tuiles. Même valeur dans les deux langues, Esri l'exige telle quelle (BIV-63),
+    // mais elle vit désormais au même endroit que tous les autres textes d'écran. Voir le commentaire
+    // en regard dans MapLayers.kt pour pourquoi la source de tuiles garde sa propre copie.
+    val notice = stringResource(R.string.map_layer_satellite_attribution_text)
     val linkStart = notice.indexOf("Esri")
     if (linkStart < 0) return
     val linkEnd = linkStart + "Esri".length
@@ -1042,7 +1047,7 @@ private fun photoClusterMarker(
     val marker = Marker(mapView)
     marker.position = cluster.position
     marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-    marker.icon = iconCache.get(mapView.context, clusterBadgeText(cluster.photos.size))
+    marker.icon = iconCache.get(mapView.context, clusterBadgeText(mapView.context, cluster.photos.size))
     marker.setInfoWindow(null)
     val targetIndex = cluster.photos.first().positionPointIndex!!
     val photoIds = cluster.photos.mapTo(mutableSetOf()) { it.id }
@@ -1058,7 +1063,10 @@ private fun photoClusterMarker(
 
 // Au-delà de 9, le badge dirait "12" dans un rond de 18 dp : le compte exact n'apporte rien à cette
 // taille, seul l'ordre de grandeur compte.
-private fun clusterBadgeText(count: Int): String = if (count > 9) "9+" else count.toString()
+// RIC-188 : le "9+" vient d'une ressource (le compte exact, lui, reste un simple Int.toString(),
+// déjà localisé par NumberFormat côté appelant quand il compte).
+private fun clusterBadgeText(context: Context, count: Int): String =
+    if (count > 9) context.getString(R.string.map_cluster_badge_overflow_text) else count.toString()
 
 /**
  * RIC-43 : les icônes de marqueur photo déjà fabriquées, réutilisées d'un rendu à l'autre.
@@ -1460,11 +1468,28 @@ internal class TrackDistanceCache {
     }
 }
 
-private fun cursorBubbleText(points: List<TrackPoint>, index: Int, distanceCache: TrackDistanceCache): String {
+// RIC-188 (lot 1 i18n) : les deux niveaux restent deux ressources et non une seule, parce que le
+// format de la distance seule (map_cursor_bubble_distance_km_format) est partagé avec le Bilan,
+// StatsRows et TotalsCapsule : les fusionner ici obligerait à le dupliquer là-bas. Chacun est
+// désormais un vrai format à trous, plus aucune concaténation Kotlin.
+private fun cursorBubbleText(
+    context: Context,
+    points: List<TrackPoint>,
+    index: Int,
+    distanceCache: TrackDistanceCache,
+): String {
     val distanceKm = distanceCache.distancesFor(points)[index] / 1000.0
     val altitude = points[index].elevationMeters?.roundToInt()
-    val distanceText = "${formatKm1(distanceKm)} km"
-    return if (altitude != null) "$distanceText · ${formatGroupedInt(altitude)} m" else distanceText
+    val distanceText = context.getString(R.string.map_cursor_bubble_distance_km_format, formatKm1(distanceKm))
+    return if (altitude != null) {
+        context.getString(
+            R.string.map_cursor_bubble_distance_altitude_format,
+            distanceText,
+            formatGroupedInt(altitude),
+        )
+    } else {
+        distanceText
+    }
 }
 
 // RIC-43 : distance en mètres réels (pas en points de trace, dont la densité varie) : une photo
@@ -1507,7 +1532,7 @@ internal fun cursorBubbleContent(
     missingPhotoIds: Set<Long>,
     explicitPhotoIds: Set<Long>? = null,
 ): CursorBubbleContent {
-    val text = cursorBubbleText(points, index, distanceCache)
+    val text = cursorBubbleText(context, points, index, distanceCache)
     if (photos.isEmpty()) return CursorBubbleContent(text)
 
     // present : les photos à montrer, déjà dans l'ordre d'affichage voulu, expurgées de celles dont
@@ -1769,7 +1794,11 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
      */
     private fun renderBubbleText() {
         val time = photoTimes.getOrNull(photoIndex)
-        textView.text = if (time == null) baseText else "$baseText · $time"
+        textView.text = if (time == null) {
+            baseText
+        } else {
+            mView.context.getString(R.string.map_cursor_bubble_text_with_time_format, baseText, time)
+        }
     }
 
     private fun showCurrentPhoto() {
@@ -1788,7 +1817,11 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
         photoView.contentDescription = null
         if (photoFiles.size > 1) {
             counterView.visibility = View.VISIBLE
-            counterView.text = "${photoIndex + 1}/${photoFiles.size}"
+            counterView.text = mView.context.getString(
+                R.string.map_cursor_bubble_photo_counter_format,
+                photoIndex + 1,
+                photoFiles.size,
+            )
         } else {
             counterView.visibility = View.GONE
         }
@@ -1828,7 +1861,7 @@ private class CursorInfoWindow(mapView: MapView) : InfoWindow(R.layout.map_curso
                 captionView.visibility = View.GONE
                 photoView.scaleType = ImageView.ScaleType.CENTER_INSIDE
                 photoView.setImageResource(R.drawable.ic_photo_missing)
-                photoView.contentDescription = "Photo absente"
+                photoView.contentDescription = mView.context.getString(R.string.photo_msg_missing_photo)
                 photoView.isClickable = false
             }
             else -> {

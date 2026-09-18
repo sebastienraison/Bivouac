@@ -1,5 +1,6 @@
 package com.bivouac.app.ui.gpximport
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -64,6 +65,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -270,6 +273,11 @@ fun GpxImportScreen(
     val sheetScrollState = rememberScrollState()
     val bottomSheetScaffoldState = rememberBottomSheetScaffoldState()
 
+    // RIC-188 : les deux textes du nom de fichier exporte, lus ici pour que les lambdas d'export
+    // ci-dessous n'aient plus qu'a les composer (voir onExportSegment).
+    val defaultTrackName = stringResource(R.string.planification_default_track_name)
+    val segmentExportNameFormat = stringResource(R.string.planification_segment_export_name_format)
+
     val loaded = uiState as? GpxImportUiState.Loaded
     // RIC-105 (revu) : la banque vide n'a plus de carte du tout, plein écran dédié : même
     // traitement que le tout premier lancement du Journal, confirmé en revue. La carte ne
@@ -296,9 +304,9 @@ fun GpxImportScreen(
         Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             FullScreenEmptyState(
                 icon = Icons.Default.Route,
-                title = "Aucune trace en préparation",
-                subtitle = "Ouvre une trace pour commencer à placer tes points de bivouac.",
-                buttonText = "Ouvrir une trace",
+                title = stringResource(R.string.gpximport_empty_title),
+                subtitle = stringResource(R.string.gpximport_empty_subtitle),
+                buttonText = stringResource(R.string.gpximport_open_track_button),
                 onButtonClick = onOpenClick,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -385,10 +393,10 @@ fun GpxImportScreen(
                     icon = {
                         Icon(
                             Icons.Default.Add,
-                            contentDescription = if (expanded) null else "Ouvrir une trace",
+                            contentDescription = if (expanded) null else stringResource(R.string.gpximport_open_track_button),
                         )
                     },
-                    text = { Text("Ouvrir une trace") },
+                    text = { Text(stringResource(R.string.gpximport_open_track_button)) },
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .navigationBarsPadding()
@@ -455,12 +463,17 @@ fun GpxImportScreen(
                 onDeleteClick = viewModel::requestDelete,
                 onRemovePoint = viewModel::removeBivouacPoint,
                 onExportSegment = { index, segment ->
-                    val baseName = loaded.track.name ?: "Trace"
-                    val dayName = "$baseName - Jour ${index + 1}"
+                    // RIC-188 : le nom porte par le GPX exporte est visible, il passe donc par des
+                    // ressources et non plus par une concatenation. Lues hors de la lambda (via
+                    // stringResource et non context.getString) : c'est la lecture qui suit les
+                    // changements de configuration, cf. Lint LocalContextGetResourceValueCall.
+                    val baseName = loaded.track.name ?: defaultTrackName
+                    val dayName = String.format(Locale.getDefault(), segmentExportNameFormat, baseName, index + 1)
                     context.startActivity(GpxExporter.openIntent(context, segment.points, dayName))
                 },
                 onExportTrack = {
-                    context.startActivity(GpxExporter.openIntent(context, loaded.track.points, loaded.track.name ?: "Trace"))
+                    val name = loaded.track.name ?: defaultTrackName
+                    context.startActivity(GpxExporter.openIntent(context, loaded.track.points, name))
                 },
                 onWeatherClick = { point ->
                     val url = MeteoblueLink.forCoordinates(point.latitude, point.longitude)
@@ -480,17 +493,16 @@ fun GpxImportScreen(
         // qui abandonne toute la duplication : c'est ce contresens que ce cas dédié ferme.
         val duplicateSourceName = pendingDuplicateName
         if (duplicateSourceName != null) {
-            val message = when (reason) {
-                CloseConfirmationReason.DIRTY ->
-                    "La trace ouverte a des modifications non enregistrées. " +
-                        "La copie de « $duplicateSourceName » s'ouvrira ensuite."
-                CloseConfirmationReason.NEVER_SAVED ->
-                    "La trace en cours n'a jamais été enregistrée : elle sera perdue si tu ne " +
-                        "l'enregistres pas. La copie de « $duplicateSourceName » s'ouvrira ensuite."
-            }
+            val message = stringResource(
+                when (reason) {
+                    CloseConfirmationReason.DIRTY -> R.string.messages_replace_dirty_body
+                    CloseConfirmationReason.NEVER_SAVED -> R.string.messages_replace_never_saved_body
+                },
+                duplicateSourceName,
+            )
             AlertDialog(
                 onDismissRequest = viewModel::dismissCloseConfirmation,
-                title = { Text("Remplacer la trace en cours ?") },
+                title = { Text(stringResource(R.string.messages_replace_current_track_title)) },
                 text = { Text(message) },
                 // Les trois issues empilées et non alignées sur une ligne : Material prescrit
                 // l'empilement dès que les libellés ne tiennent pas côte à côte, et « Enregistrer
@@ -499,35 +511,39 @@ fun GpxImportScreen(
                 // confirmButton, seul moyen de garder les trois dans le même empilement.
                 confirmButton = {
                     Column(horizontalAlignment = Alignment.End) {
-                        TextButton(onClick = viewModel::saveAndClose) { Text("Enregistrer puis ouvrir") }
+                        TextButton(onClick = viewModel::saveAndClose) {
+                            Text(stringResource(R.string.messages_save_then_open_button))
+                        }
                         TextButton(onClick = viewModel::discardAndClose) {
-                            Text("Ne pas enregistrer", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(R.string.journal_msg_discard_button), color = MaterialTheme.colorScheme.error)
                         }
                         TextButton(onClick = viewModel::dismissCloseConfirmation) {
-                            Text("Annuler la duplication")
+                            Text(stringResource(R.string.messages_cancel_duplicate_button))
                         }
                     }
                 },
             )
         } else {
-            val (title, message) = when (reason) {
+            val (titleRes, messageRes) = when (reason) {
                 CloseConfirmationReason.DIRTY ->
-                    "Trace modifiée" to "Cette trace a des modifications non enregistrées."
+                    R.string.messages_dirty_title to R.string.messages_dirty_body
                 CloseConfirmationReason.NEVER_SAVED ->
-                    "Trace non enregistrée" to "Attention, cette trace n'a pas encore été enregistrée dans Bivouac."
+                    R.string.messages_never_saved_title to R.string.messages_never_saved_body
             }
             AlertDialog(
                 onDismissRequest = viewModel::dismissCloseConfirmation,
-                title = { Text(title) },
-                text = { Text(message) },
+                title = { Text(stringResource(titleRes)) },
+                text = { Text(stringResource(messageRes)) },
                 confirmButton = {
-                    TextButton(onClick = viewModel::saveAndClose) { Text("Enregistrer") }
+                    TextButton(onClick = viewModel::saveAndClose) { Text(stringResource(R.string.common_save_button)) }
                 },
                 dismissButton = {
                     Row {
-                        TextButton(onClick = viewModel::dismissCloseConfirmation) { Text("Annuler") }
+                        TextButton(onClick = viewModel::dismissCloseConfirmation) {
+                            Text(stringResource(R.string.common_cancel_button))
+                        }
                         TextButton(onClick = viewModel::discardAndClose) {
-                            Text("Ne pas enregistrer", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(R.string.journal_msg_discard_button), color = MaterialTheme.colorScheme.error)
                         }
                     }
                 },
@@ -539,7 +555,7 @@ fun GpxImportScreen(
         var name by remember(request) { mutableStateOf(request.suggestedName) }
         AlertDialog(
             onDismissRequest = viewModel::dismissNameDialog,
-            title = { Text("Nommer la trace") },
+            title = { Text(stringResource(R.string.messages_name_dialog_title)) },
             text = {
                 OutlinedTextField(
                     value = name,
@@ -552,10 +568,12 @@ fun GpxImportScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { viewModel.confirmNameDialog(name) }) { Text("Enregistrer") }
+                TextButton(onClick = { viewModel.confirmNameDialog(name) }) {
+                    Text(stringResource(R.string.common_save_button))
+                }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissNameDialog) { Text("Annuler") }
+                TextButton(onClick = viewModel::dismissNameDialog) { Text(stringResource(R.string.common_cancel_button)) }
             },
         )
     }
@@ -563,15 +581,17 @@ fun GpxImportScreen(
     deleteTarget?.let { target ->
         AlertDialog(
             onDismissRequest = viewModel::dismissDeleteConfirmation,
-            title = { Text("Supprimer cette trace ?") },
-            text = { Text("« ${target.name} » sera définitivement supprimée. Cette action est irréversible.") },
+            title = { Text(stringResource(R.string.journal_msg_delete_track_title)) },
+            text = { Text(stringResource(R.string.messages_delete_confirm_body, target.name)) },
             confirmButton = {
                 TextButton(onClick = viewModel::confirmDelete) {
-                    Text("Supprimer", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.common_delete_button), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissDeleteConfirmation) { Text("Annuler") }
+                TextButton(onClick = viewModel::dismissDeleteConfirmation) {
+                    Text(stringResource(R.string.common_cancel_button))
+                }
             },
         )
     }
@@ -580,9 +600,11 @@ fun GpxImportScreen(
     bankOpenError?.let { message ->
         AlertDialog(
             onDismissRequest = viewModel::dismissBankOpenError,
-            title = { Text("Ouverture impossible") },
+            title = { Text(stringResource(R.string.journal_msg_open_failed_title)) },
             text = { Text(message) },
-            confirmButton = { TextButton(onClick = viewModel::dismissBankOpenError) { Text("OK") } },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissBankOpenError) { Text(stringResource(R.string.common_ok_button)) }
+            },
         )
     }
 }
@@ -641,7 +663,7 @@ private fun TrackSheetContent(
                 Button(onClick = onOpenClick, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Ouvrir une trace")
+                    Text(stringResource(R.string.gpximport_open_track_button))
                 }
             }
             is GpxImportUiState.Loaded -> Unit
@@ -658,6 +680,7 @@ private fun BankedTrackRow(
     onDelete: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val bivouacCount = entry.bivouacTrackPointIndices.split(",").count { it.isNotBlank() }
     Column(
         modifier = Modifier
@@ -676,14 +699,29 @@ private fun BankedTrackRow(
                 Text(text = entry.name, style = MaterialTheme.typography.titleSmall)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = formatSavedAt(entry.savedAt) + if (bivouacCount > 0) " · $bivouacCount" else "",
+                        text = formatSavedAt(context, entry.savedAt).let { savedAt ->
+                            // RIC-188 : le point median et le compte sont un format a trous, pas
+                            // une concatenation : le separateur appartient a la langue.
+                            if (bivouacCount == 0) {
+                                savedAt
+                            } else {
+                                stringResource(
+                                    R.string.gpximport_saved_at_with_bivouac_count_format,
+                                    savedAt,
+                                    bivouacCount,
+                                )
+                            }
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     if (bivouacCount > 0) {
                         Image(
                             painter = painterResource(R.drawable.ic_bivouac_badge),
-                            contentDescription = "point${if (bivouacCount != 1) "s" else ""} de bivouac",
+                            contentDescription = pluralStringResource(
+                                R.plurals.planification_bivouac_count_description,
+                                bivouacCount,
+                            ),
                             modifier = Modifier.size(14.dp),
                         )
                     }
@@ -691,16 +729,20 @@ private fun BankedTrackRow(
             }
             Box {
                 IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "Menu", modifier = Modifier.size(20.dp))
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = stringResource(R.string.journal_detail_menu_description),
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                     DropdownMenuItem(
-                        text = { Text("Renommer") },
+                        text = { Text(stringResource(R.string.journal_detail_menu_rename)) },
                         leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
                         onClick = { menuExpanded = false; onRename() },
                     )
                     DropdownMenuItem(
-                        text = { Text("Supprimer") },
+                        text = { Text(stringResource(R.string.common_delete_button)) },
                         leadingIcon = {
                             Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                         },
@@ -717,21 +759,21 @@ private fun BankedTrackRow(
 // disambiguates them without cluttering older entries with a time nobody needs), otherwise just
 // the date ("3 août").
 //
-// RIC-187 (lot 0 i18n) : "aujourd'hui à " reste en dur (texte d'écran, migration lots 1 à 4,
-// gpximport_saved_today_format dans l'inventaire), mais l'heure et la date qui l'accompagnent
-// suivent maintenant la locale de l'appareil plutôt que Locale.FRANCE. Le motif jour+mois (sans
-// année) est le seul de ce fichier où l'ORDRE des champs dépend de la locale ("3 août" en français,
-// "August 3" et non "3 August" en anglais) : ofLocalizedDate(FormatStyle) n'a pas de style
-// "jour+mois sans année" tout fait, donc motif choisi à la main selon la langue, comme
-// TrekDatesFormatter.dayNumber le fait déjà pour "1er".
-internal fun formatSavedAt(epochMillis: Long): String {
+// RIC-188 (lot 1 i18n) : le prefixe "aujourd'hui a" devient un format a trous
+// (gpximport_saved_today_format), et le motif jour+mois passe lui aussi par une ressource
+// (gpximport_saved_date_format) au lieu du test sur locale.language pose au lot 0 : c'est le seul
+// motif du fichier dont l'ORDRE des champs depend de la langue ("3 aout" en francais, "August 3"
+// en anglais), et ofLocalizedDate(FormatStyle) n'a pas de style "jour+mois sans annee" tout fait.
+// D'ou le Context : cette fonction n'est pas composable, elle est appelee depuis BankedTrackRow.
+internal fun formatSavedAt(context: Context, epochMillis: Long): String {
     val zone = ZoneId.systemDefault()
     val instant = Instant.ofEpochMilli(epochMillis)
     val locale = Locale.getDefault()
     return if (instant.atZone(zone).toLocalDate() == LocalDate.now(zone)) {
-        "aujourd'hui à " + DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale).withZone(zone).format(instant)
+        val time = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale).withZone(zone).format(instant)
+        context.getString(R.string.gpximport_saved_today_format, time)
     } else {
-        val dayMonthPattern = if (locale.language == "fr") "d MMMM" else "MMMM d"
+        val dayMonthPattern = context.getString(R.string.gpximport_saved_date_format)
         DateTimeFormatter.ofPattern(dayMonthPattern, locale).withZone(zone).format(instant)
     }
 }

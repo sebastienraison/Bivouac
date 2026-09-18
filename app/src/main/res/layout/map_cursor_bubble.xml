@@ -40,7 +40,7 @@
             android:scaleType="fitCenter"
             android:clickable="true"
             android:focusable="true"
-            android:contentDescription="Fermer le curseur" />
+            android:contentDescription="@string/map_cursor_bubble_close_description" />
 
     </LinearLayout>
 
