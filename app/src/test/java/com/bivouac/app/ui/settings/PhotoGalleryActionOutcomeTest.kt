@@ -1,8 +1,11 @@
 package com.bivouac.app.ui.settings
 
 import com.bivouac.app.data.db.LoggedTrackRepository
+import java.util.Locale
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 /**
@@ -12,8 +15,28 @@ import org.junit.Test
  * Deux règles se vérifient ici sans monter d'écran : aucune issue muette (le bouton fait toujours
  * quelque chose de visible), et aucune demande de permission galerie quand les photos sont
  * débrayées dans les Réglages (RIC-152).
+ *
+ * RIC-187 (lot 0 i18n) : theReportSpellsOutTheThreeOutcomesSeparately attend "34,5 Mo" (virgule
+ * française), produit par recompressionReportMessage via formatBytes -- qui suivait Locale.FRANCE
+ * en dur avant ce lot, donc ce test passait déjà quelle que soit la locale de la machine qui
+ * l'exécutait. formatBytes suit maintenant Locale.getDefault() pour le séparateur décimal : la
+ * locale FRANCE est donc désormais posée et restaurée explicitement ici, pour que ce test continue
+ * de passer sur une machine réglée dans n'importe quelle locale.
  */
 class PhotoGalleryActionOutcomeTest {
+
+    private lateinit var originalLocale: Locale
+
+    @Before
+    fun sauvegarderLocale() {
+        originalLocale = Locale.getDefault()
+        Locale.setDefault(Locale.FRANCE)
+    }
+
+    @After
+    fun restaurerLocale() {
+        Locale.setDefault(originalLocale)
+    }
 
     @Test
     fun withThePermissionGrantedItRunsStraightAway() {
