@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : docs/pilotage/i18n/strings-inventaire-v4.csv (inventaire de l'agent de pilotage,
+    Source : docs/pilotage/i18n/strings-inventaire-v6.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v4.csv
+        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v6.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -42,8 +42,14 @@
     <!-- Planification tiroir et segments -->
     <string name="planification_default_track_name">Trace</string>
     <string name="planification_delete_target_fallback_name">cette trace</string>
+
+    <!-- Planification (import GPX) -->
+    <string name="gpximport_error_open_file_failed">Impossible d\'ouvrir le fichier sélectionné.</string>
+
+    <!-- Planification tiroir et segments -->
     <plurals name="planification_bivouac_count_description">
         <item quantity="one">point de bivouac</item>
+        <item quantity="many">points de bivouac</item>
         <item quantity="other">points de bivouac</item>
     </plurals>
     <string name="planification_untitled_track_title">Trace sans nom</string>
@@ -68,6 +74,7 @@
     <string name="journal_list_empty_subtitle">Ajouter une trace pour commencer le carnet : les randos réalisées vivront ici.</string>
     <plurals name="journal_list_total_hikes_count">
         <item quantity="one">%1$d rando au total</item>
+        <item quantity="many">%1$d randos au total</item>
         <item quantity="other">%1$d randos au total</item>
     </plurals>
     <string name="journal_list_filter_empty_title">Aucune rando ne correspond</string>
@@ -75,6 +82,7 @@
     <string name="journal_list_confirm_selection_button">Confirmer la sélection (%1$d)</string>
     <plurals name="journal_list_show_results_on_map_button">
         <item quantity="one">Afficher %1$d résultat sur la carte</item>
+        <item quantity="many">Afficher les %1$d résultats sur la carte</item>
         <item quantity="other">Afficher les %1$d résultats sur la carte</item>
     </plurals>
     <string name="journal_list_show_selection_on_map_button">Afficher la sélection (%1$d)</string>
@@ -82,16 +90,19 @@
     <string name="journal_list_min_selection_hint">Choisir au moins 2 traces pour valider.</string>
     <plurals name="journal_list_year_header_count">
         <item quantity="one">%1$d · %2$d rando</item>
+        <item quantity="many">%1$d · %2$d randos</item>
         <item quantity="other">%1$d · %2$d randos</item>
     </plurals>
     <plurals name="journal_list_bivouac_nights_description">
         <item quantity="one">nuit de bivouac</item>
+        <item quantity="many">nuits de bivouac</item>
         <item quantity="other">nuits de bivouac</item>
     </plurals>
     <string name="journal_list_note_icon_description">note</string>
     <string name="journal_list_photos_icon_description">photos</string>
     <plurals name="journal_list_multitrack_header_count">
         <item quantity="one">%1$d trace affichée</item>
+        <item quantity="many">%1$d traces affichées</item>
         <item quantity="other">%1$d traces affichées</item>
     </plurals>
     <string name="journal_list_multitrack_no_legend">Trop de traces pour une légende détaillée : affichage uniforme.</string>
@@ -169,14 +180,17 @@
     <string name="bilan_record_label_biggest_trek">plus gros trek</string>
     <plurals name="bilan_record_value_biggest_trek">
         <item quantity="one">%1$d jour</item>
+        <item quantity="many">%1$d jours</item>
         <item quantity="other">%1$d jours</item>
     </plurals>
     <plurals name="bilan_insight_most_active_month">
         <item quantity="one">Mois le plus actif : %1$s (%2$d sortie depuis %3$d)</item>
+        <item quantity="many">Mois le plus actif : %1$s (%2$d sorties depuis %3$d)</item>
         <item quantity="other">Mois le plus actif : %1$s (%2$d sorties depuis %3$d)</item>
     </plurals>
     <plurals name="bilan_totals_label">
         <item quantity="one">%1$d rando au total</item>
+        <item quantity="many">%1$d randos au total</item>
         <item quantity="other">%1$d randos au total</item>
     </plurals>
     <string name="bilan_section_progression_label">Progression</string>
@@ -255,24 +269,29 @@
     <string name="settings_missing_photos_row_label">Retrouver les photos manquantes</string>
     <plurals name="settings_missing_photos_row_description">
         <item quantity="one">%1$d photo du Journal n\'a plus de fichier local, après une restauration ou un nettoyage du stockage. Bivouac peut la reprendre depuis la galerie, à condition d\'y retrouver l\'original exact.</item>
+        <item quantity="many">%1$d photos du Journal n\'ont plus de fichier local, après une restauration ou un nettoyage du stockage. Bivouac peut les reprendre depuis la galerie, à condition d\'y retrouver les originaux exacts.</item>
         <item quantity="other">%1$d photos du Journal n\'ont plus de fichier local, après une restauration ou un nettoyage du stockage. Bivouac peut les reprendre depuis la galerie, à condition d\'y retrouver les originaux exacts.</item>
     </plurals>
     <string name="settings_photo_purge_button">Purger les photos (%1$s)</string>
     <plurals name="settings_photo_recovery_recovered_line">
         <item quantity="one">%1$d photo retrouvée et remise en place.</item>
+        <item quantity="many">%1$d photos retrouvées et remises en place.</item>
         <item quantity="other">%1$d photos retrouvées et remises en place.</item>
     </plurals>
     <string name="settings_photo_recovery_none_line">Aucune photo n\'a pu être retrouvée.</string>
     <plurals name="settings_photo_recovery_modified_line">
         <item quantity="one">%1$d photo retrouvée dans la galerie, mais modifiée depuis l\'import : ce n\'est plus le même fichier, rien n\'a été repris.</item>
+        <item quantity="many">%1$d photos retrouvées dans la galerie, mais modifiées depuis l\'import : ce ne sont plus les mêmes fichiers, rien n\'a été repris.</item>
         <item quantity="other">%1$d photos retrouvées dans la galerie, mais modifiées depuis l\'import : ce ne sont plus les mêmes fichiers, rien n\'a été repris.</item>
     </plurals>
     <plurals name="settings_photo_recovery_notfound_line">
         <item quantity="one">%1$d photo reste introuvable dans la galerie. Sa fiche est conservée dans le Journal, au cas où l\'original revienne.</item>
+        <item quantity="many">%1$d photos restent introuvables dans la galerie. Leurs fiches sont conservées dans le Journal, au cas où les originaux reviennent.</item>
         <item quantity="other">%1$d photos restent introuvables dans la galerie. Leurs fiches sont conservées dans le Journal, au cas où les originaux reviennent.</item>
     </plurals>
     <plurals name="settings_photo_count_label">
         <item quantity="one">%1$d photo</item>
+        <item quantity="many">%1$d photos</item>
         <item quantity="other">%1$d photos</item>
     </plurals>
     <string name="settings_storage_usage_row_label">Espace utilisé</string>
@@ -293,17 +312,20 @@
     <string name="storage_usage_recompression_report_recompressed_line">%1$s, %2$s libérés.</string>
     <plurals name="storage_usage_photo_recompressed_count">
         <item quantity="one">%1$d photo recompressée</item>
+        <item quantity="many">%1$d photos recompressées</item>
         <item quantity="other">%1$d photos recompressées</item>
     </plurals>
     <string name="storage_usage_recompression_report_none">Aucune photo n\'a pu être recompressée.</string>
     <string name="storage_usage_recompression_report_kept_line">%1$s en qualité d\'origine : original introuvable ou modifié depuis l\'import.</string>
     <plurals name="storage_usage_photo_kept_count">
         <item quantity="one">%1$d photo conservée</item>
+        <item quantity="many">%1$d photos conservées</item>
         <item quantity="other">%1$d photos conservées</item>
     </plurals>
     <string name="storage_usage_recompression_report_already_reduced_line">%1$s au format le plus léger : rien à y gagner.</string>
     <plurals name="storage_usage_photo_already_reduced_count">
         <item quantity="one">%1$d photo était déjà</item>
+        <item quantity="many">%1$d photos étaient déjà</item>
         <item quantity="other">%1$d photos étaient déjà</item>
     </plurals>
     <string name="storage_usage_loading_text">Calcul de l\'espace occupé…</string>
@@ -313,18 +335,21 @@
     <string name="storage_usage_row_gpx_journal_detail">Journal : %1$s, %2$s</string>
     <plurals name="storage_usage_file_count">
         <item quantity="one">%1$d fichier</item>
+        <item quantity="many">%1$d fichiers</item>
         <item quantity="other">%1$d fichiers</item>
     </plurals>
     <string name="storage_usage_row_gpx_planification_detail">Planification : %1$s, %2$s</string>
     <string name="storage_usage_row_photos_full_detail">Qualité d\'origine : %1$s, %2$s</string>
     <plurals name="storage_usage_photo_count">
         <item quantity="one">%1$d photo</item>
+        <item quantity="many">%1$d photos</item>
         <item quantity="other">%1$d photos</item>
     </plurals>
     <string name="storage_usage_row_photos_reduced_detail">Poids allégé : %1$s, %2$s</string>
     <string name="storage_usage_row_photos_missing_detail">Dont %1$s</string>
     <plurals name="storage_usage_photo_missing_file_count">
         <item quantity="one">%1$d fichier absent</item>
+        <item quantity="many">%1$d fichiers absents</item>
         <item quantity="other">%1$d fichiers absents</item>
     </plurals>
     <string name="storage_usage_row_database_title">Base de données</string>
@@ -335,6 +360,7 @@
     <string name="storage_usage_recompression_card_body">%1$s en qualité d\'origine. Bivouac peut les remplacer par une version allégée, à condition de retrouver l\'original dans la galerie : celles dont l\'original a disparu ou a changé ne sont jamais touchées.</string>
     <plurals name="storage_usage_photo_kept_full_quality_count">
         <item quantity="one">%1$d photo est conservée</item>
+        <item quantity="many">%1$d photos sont conservées</item>
         <item quantity="other">%1$d photos sont conservées</item>
     </plurals>
     <string name="storage_usage_recompress_button">Recompresser les photos existantes</string>
@@ -354,7 +380,11 @@
     <string name="restore_rollback_move_file_failed">Impossible d\'écarter %1$s avant remplacement.</string>
     <string name="restore_rollback_move_dir_failed">Impossible d\'écarter le répertoire %1$s avant remplacement.</string>
     <string name="restore_read_source_failed">Impossible de lire le fichier sélectionné.</string>
-    <string name="restore_truncated_backup_message">Cette sauvegarde est incomplète : elle annonce %1$d fichiers mais n\'en contient que %2$d. Elle a probablement été interrompue pendant sa création. Restauration annulée, les données actuelles sont intactes.</string>
+    <plurals name="restore_truncated_backup_message">
+        <item quantity="one">Cette sauvegarde est incomplète : elle annonce %1$d fichier mais n\'en contient que %2$d. Elle a probablement été interrompue pendant sa création. Restauration annulée, les données actuelles sont intactes.</item>
+        <item quantity="many">Cette sauvegarde est incomplète : elle annonce %1$d fichiers mais n\'en contient que %2$d. Elle a probablement été interrompue pendant sa création. Restauration annulée, les données actuelles sont intactes.</item>
+        <item quantity="other">Cette sauvegarde est incomplète : elle annonce %1$d fichiers mais n\'en contient que %2$d. Elle a probablement été interrompue pendant sa création. Restauration annulée, les données actuelles sont intactes.</item>
+    </plurals>
     <string name="backup_progress_title">Sauvegarde en cours</string>
     <string name="restore_extraction_progress_title">Lecture de la sauvegarde</string>
     <string name="restore_replacement_progress_title">Restauration en cours</string>
@@ -379,8 +409,20 @@
     <string name="journal_error_duplicate_track_name">« %1$s » est déjà dans le Journal.</string>
     <string name="journal_error_track_not_found">Trace introuvable.</string>
     <string name="journal_error_track_unreadable">Trace incorrecte ou fichier illisible.</string>
-    <string name="journal_error_photo_save_failed_one">Une photo n\'a pas pu être enregistrée.</string>
-    <string name="journal_error_photo_save_failed_other">%1$d photos n\'ont pas pu être enregistrées.</string>
+    <plurals name="journal_error_photo_save_failed">
+        <item quantity="one">Une photo n\'a pas pu être enregistrée.</item>
+        <item quantity="many">%1$d photos n\'ont pas pu être enregistrées.</item>
+        <item quantity="other">%1$d photos n\'ont pas pu être enregistrées.</item>
+    </plurals>
+    <string name="exclusive_operation_backup_label">une sauvegarde</string>
+    <string name="exclusive_operation_restore_label">une restauration</string>
+    <string name="exclusive_operation_photo_import_label">un import de photos</string>
+    <string name="exclusive_operation_photo_commit_label">un enregistrement de photos</string>
+    <string name="exclusive_operation_photo_purge_label">une purge de photos</string>
+    <string name="exclusive_operation_photo_recompress_label">une recompression des photos</string>
+    <string name="exclusive_operation_photo_recovery_label">une recherche des photos manquantes</string>
+    <string name="exclusive_operation_journal_import_label">un import du Journal</string>
+    <string name="exclusive_operation_planification_import_label">un import en Planification</string>
     <string name="journal_error_ongoing_operation_default_label">une autre opération</string>
     <string name="journal_error_operation_in_progress">Impossible pour l\'instant : %1$s est en cours. Réessayer une fois l\'opération terminée.</string>
     <string name="msg_blocking_progress_counter">%1$d sur %2$d…</string>
@@ -402,20 +444,24 @@
     <string name="journal_msg_duplicate_track_body">« %1$s » (%2$s) a une date et une distance très proches. Importer quand même ?</string>
     <plurals name="journal_msg_tracks_imported_count">
         <item quantity="one">%1$d trace importée.</item>
+        <item quantity="many">%1$d traces importées.</item>
         <item quantity="other">%1$d traces importées.</item>
     </plurals>
     <string name="journal_msg_no_tracks_imported">Aucune trace importée.</string>
     <plurals name="journal_msg_files_duplicates_skipped_count">
         <item quantity="one">%1$d fichier écarté (déjà dans le Journal).</item>
+        <item quantity="many">%1$d fichiers écartés (déjà dans le Journal).</item>
         <item quantity="other">%1$d fichiers écartés (déjà dans le Journal).</item>
     </plurals>
     <plurals name="journal_msg_files_failed_count">
         <item quantity="one">%1$d fichier illisible.</item>
+        <item quantity="many">%1$d fichiers illisibles.</item>
         <item quantity="other">%1$d fichiers illisibles.</item>
     </plurals>
     <string name="journal_msg_probable_duplicate_bullet">• %1$s</string>
     <plurals name="journal_msg_probable_duplicate_more">
         <item quantity="one">• et %1$d autre</item>
+        <item quantity="many">• et %1$d autres</item>
         <item quantity="other">• et %1$d autres</item>
     </plurals>
     <string name="journal_msg_probable_duplicate_single">À vérifier : cette trace ressemble à une sortie déjà présente (même date, distance très proche) et a quand même été importée.\n%1$s</string>
@@ -442,15 +488,18 @@
     <string name="journal_msg_photo_add_report_title">Ajout terminé</string>
     <plurals name="journal_msg_photos_added_count">
         <item quantity="one">%1$d photo ajoutée, en attente d\'enregistrement.</item>
+        <item quantity="many">%1$d photos ajoutées, en attente d\'enregistrement.</item>
         <item quantity="other">%1$d photos ajoutées, en attente d\'enregistrement.</item>
     </plurals>
     <string name="journal_msg_no_photos_added">Aucune photo ajoutée.</string>
     <plurals name="journal_msg_photos_duplicates_skipped_count">
         <item quantity="one">%1$d photo écartée (déjà sur cette sortie).</item>
+        <item quantity="many">%1$d photos écartées (déjà sur cette sortie).</item>
         <item quantity="other">%1$d photos écartées (déjà sur cette sortie).</item>
     </plurals>
     <plurals name="journal_msg_photos_failed_count">
         <item quantity="one">%1$d photo illisible, non ajoutée.</item>
+        <item quantity="many">%1$d photos illisibles, non ajoutées.</item>
         <item quantity="other">%1$d photos illisibles, non ajoutées.</item>
     </plurals>
     <string name="journal_msg_multi_import_choice_title">Comment ajouter ces %1$d traces ?</string>
@@ -475,6 +524,7 @@
     <string name="settings_photo_recompress_offer_title">Recompresser les photos ?</string>
     <plurals name="settings_photo_recompress_offer_message">
         <item quantity="one">%1$d photo déjà importée reste en qualité d\'origine (~%2$s). La recompresser maintenant ?</item>
+        <item quantity="many">%1$d photos déjà importées restent en qualité d\'origine (~%2$s). Les recompresser maintenant ?</item>
         <item quantity="other">%1$d photos déjà importées restent en qualité d\'origine (~%2$s). Les recompresser maintenant ?</item>
     </plurals>
     <string name="settings_photo_recompress_offer_confirm_button">Recompresser</string>
@@ -501,6 +551,11 @@
     <string name="gpximport_saved_today_format">aujourd\'hui à %1$s</string>
     <string name="gpximport_saved_date_format">d MMMM</string>
     <string name="gpximport_saved_at_with_bivouac_count_format">%1$s · %2$d</string>
+    <string name="journal_trek_dates_pair_same_month">%1$s et %2$s %3$s %4$d</string>
+    <string name="journal_trek_dates_pair_cross_month">%1$s %2$s et %3$s %4$s %5$d</string>
+    <string name="journal_trek_dates_range_same_month">du %1$s au %2$s %3$s %4$d</string>
+    <string name="journal_trek_dates_range_cross_month">du %1$s %2$s au %3$s %4$s %5$d</string>
+    <string name="journal_trek_dates_first_day_of_month">1er</string>
     <string name="format_elevation_meters">%1$s m</string>
     <string name="format_bivouac_arrival_departure">%1$s → %2$s</string>
     <string name="map_cursor_bubble_distance_km_format">%1$s km</string>

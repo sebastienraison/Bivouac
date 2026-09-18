@@ -119,14 +119,23 @@ class StringsResourcesConsistencyTest {
         assertTrue("Paramètres incohérents : $mismatches", mismatches.isEmpty())
     }
 
+    /**
+     * RIC-191 (lot 4 i18n) : le français porte une quantité de plus que l'anglais, "many", que
+     * CLDR y réserve aux multiples d'un million. Le générateur l'ajoute pour values-fr uniquement,
+     * identique à "other", pour satisfaire Lint (MissingQuantity) sans inventer de traduction.
+     * Elle est donc retirée avant de comparer les deux langues, et vérifiée à part ci-dessous.
+     */
+    private val frenchOnlyQuantities = setOf("many")
+
     @Test
     fun `memes quantites et memes parametres pour chaque plurals`() {
         val mismatches = mutableListOf<String>()
         for ((key, en) in enResources) {
             val fr = frResources[key] ?: continue
             if (en is Resource.Plural && fr is Resource.Plural) {
-                if (en.items.keys != fr.items.keys) {
-                    mismatches += "$key : quantités en=${en.items.keys} fr=${fr.items.keys}"
+                val frQuantities = fr.items.keys - frenchOnlyQuantities
+                if (en.items.keys != frQuantities) {
+                    mismatches += "$key : quantités en=${en.items.keys} fr=$frQuantities"
                     continue
                 }
                 for (quantity in en.items.keys) {
@@ -139,6 +148,16 @@ class StringsResourcesConsistencyTest {
             }
         }
         assertTrue("Plurals incohérents : $mismatches", mismatches.isEmpty())
+    }
+
+    @Test
+    fun `chaque plurals francais porte la quantite many`() {
+        // RIC-191 : c'est ce que Lint réclamait (MissingQuantity, 29 avertissements). Le contrôle
+        // est ici plutôt que dans le générateur seul : une régénération oubliée se verrait.
+        val manquants = frResources
+            .filterValues { it is Resource.Plural && "many" !in it.items }
+            .keys
+        assertTrue("Plurals fr sans quantité many : $manquants", manquants.isEmpty())
     }
 
     @Test
