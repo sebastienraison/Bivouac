@@ -4,6 +4,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.ui.theme.BivouacTheme
@@ -23,9 +25,15 @@ import org.junit.runner.RunWith
  * dessus l'écran entier, la croix n'est plus atteignable, mais cette garantie-là repose sur la
  * seule présence d'une fenêtre. Ce test porte sur le second verrou, celui qui tient même si un
  * chemin échappait au dialogue : la sortie elle-même refuse de partir.
+ *
+ * RIC-189 (lot 2 i18n) : la croix est visée par sa ressource de description et non plus par le
+ * littéral « Fermer ». Le GMD tourne en en-US, donc l'app y est en anglais.
  */
 @RunWith(AndroidJUnit4::class)
 class ThreeStopJournalDetailExitGuardTest {
+
+    private fun string(id: Int): String =
+        InstrumentationRegistry.getInstrumentation().targetContext.getString(id)
 
     @get:Rule
     val composeRule = createComposeRule()
@@ -70,7 +78,7 @@ class ThreeStopJournalDetailExitGuardTest {
     fun closingIsRefusedWhileAPhotoOperationIsInFlight() {
         setContent(photoOperationInFlight = true)
 
-        composeRule.onNodeWithContentDescription("Fermer").performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.common_close_description)).performClick()
 
         assertEquals("la croix ne doit pas fermer pendant un import ou un enregistrement", 0, closeCount)
     }
@@ -83,7 +91,7 @@ class ThreeStopJournalDetailExitGuardTest {
     fun closingWorksAsUsualWhenNoPhotoOperationIsRunning() {
         setContent(photoOperationInFlight = false)
 
-        composeRule.onNodeWithContentDescription("Fermer").performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.common_close_description)).performClick()
 
         assertEquals(1, closeCount)
     }
