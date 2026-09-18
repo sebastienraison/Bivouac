@@ -143,9 +143,10 @@ class StringsResourcesConsistencyTest {
 
     @Test
     fun `au moins autant de ressources que l'inventaire en compte`() {
-        // 403 lignes dans l'inventaire moins les clés volontairement non générées
-        // (bilan_month_initials_array, voir generate_strings.py SKIPPED_KEYS), plus app_name fixe.
-        val minimumAttendu = 403 - 1 + 1
+        // 388 lignes dans l'inventaire v4 (RIC-187 : v3 avait 403, 15 clés "OK" fusionnées en une
+        // seule common_ok_button) moins les clés volontairement non générées (bilan_month_initials_
+        // array, voir generate_strings.py SKIPPED_KEYS), plus app_name fixe.
+        val minimumAttendu = 388 - 1 + 1
         if (enResources.size < minimumAttendu) {
             fail("Seulement ${enResources.size} ressources générées, au moins $minimumAttendu attendues.")
         }

@@ -32,7 +32,7 @@ import csv
 import sys
 from pathlib import Path
 
-# Colonnes attendues, dans l'ordre exact du CSV (voir docs/pilotage/i18n/strings-inventaire-v3.csv).
+# Colonnes attendues, dans l'ordre exact du CSV (voir docs/pilotage/i18n/strings-inventaire-v4.csv).
 COL_PRIORITE = 0
 COL_CONTEXTE = 1
 COL_FICHIER = 2
@@ -63,97 +63,6 @@ FIXED_ENTRIES = [
 # directement l'initiale localisee (java.time, disponible des minSdk 26). Tranche au lot 0, geree
 # cote Kotlin dans bilan/BilanFormatting.kt (monthInitial), jamais generee ici.
 SKIPPED_KEYS = {"bilan_month_initials_array"}
-
-# Corrections ponctuelles de lignes de l'inventaire, relevees en construisant ce generateur et en
-# faisant passer Lint (RIC-187) et a corriger a la source dans une prochaine passe de l'inventaire :
-#
-# - map_layer_satellite_attribution_text : la colonne "fr neutre propose" du CSV contient
-#   l'annotation de relecture collee dans la donnee elle-meme ("... (deja neutre, deja en
-#   anglais)"), au lieu de rester dans la colonne "notes pilotage". Cette mention de copyright Esri
-#   ne doit JAMAIS varier d'une locale a l'autre (notes pilotage, BIV-63) : on retombe donc sur la
-#   valeur propre de la colonne "fr actuel", identique a "en propose".
-# - planification_bivouac_count_description : ligne signalee par le pilotage lui-meme comme l'une
-#   des plus difficiles de l'inventaire. Les colonnes "fr neutre propose"/"en propose" decrivent les
-#   deux formes en prose ("point de bivouac (singulier) / points de bivouac (pluriel)", "bivouac
-#   point (one) / bivouac points (other)") plutot que de les fournir au format "one: ... | other:
-#   ...". La forme reelle attendue se deduit sans ambiguite de cette description ; ecrite ici en
-#   toutes lettres plutot que de tenter de la parser depuis la prose. Comme journal_list_bivouac_
-#   nights_description ci-dessous (celle-la deja correcte dans le CSV), aucun chiffre dans le texte :
-#   le contentDescription est concatene avec le compte a cote, pas a l'interieur (note pilotage).
-#
-# - journal_msg_tracks_imported_count et journal_msg_photos_added_count : la note de relecture du
-#   CSV dit elle-meme "la quantite zero d'Android n'est PAS honoree en en ni en fr (CLDR) ... le
-#   plurals ne porte que one/other" -- mais la valeur des colonnes garde quand meme un fragment
-#   "zero: ...". Un <item quantity="zero"> serait mort cote Android (ni l'anglais ni le francais ne
-#   font jamais resoudre la categorie CLDR "zero" pour un compte de 0, qui tombe dans "one" en
-#   francais et "other" en anglais) : suit la note plutot que la donnee, n'emet que one/other. Le
-#   texte "zero" ("Aucune trace importee.") n'a pas de cle dediee dans l'inventaire actuel ; il
-#   reste a la charge de la branche de code explicite pour compte nul, comme la note l'indique, et a
-#   couvrir par une cle a part quand cet ecran sera migre (lots 1 a 4).
-# - journal_msg_tracks_imported_count, journal_msg_files_duplicates_skipped_count,
-#   journal_msg_files_failed_count, journal_msg_photos_added_count,
-#   journal_msg_photos_duplicates_skipped_count, journal_msg_photos_failed_count : la forme "one"
-#   ecrit le compte en dur ("1 fichier ecarte...") au lieu du parametre %1$d pourtant utilise par la
-#   forme "other" juxtaposee. Provoque une vraie erreur Lint (ImpliedQuantity) : en francais, la
-#   categorie CLDR "one" couvre aussi bien 0 que 1, donc un texte "one" sans %1$d afficherait
-#   litteralement "1" pour un compte de 0. Corrige en alignant "one" sur le parametre de "other".
-OVERRIDES: dict[str, dict[str, str]] = {
-    "map_layer_satellite_attribution_text": {
-        "fr": "Powered by Esri, Maxar, Earthstar Geographics",
-    },
-    "planification_bivouac_count_description": {
-        "fr": "one: point de bivouac | other: points de bivouac",
-        "en": "one: bivouac point | other: bivouac points",
-    },
-    "journal_msg_tracks_imported_count": {
-        "fr": "one: %1$d trace importée. | other: %1$d traces importées.",
-        "en": "one: %1$d track imported. | other: %1$d tracks imported.",
-    },
-    "journal_msg_files_duplicates_skipped_count": {
-        "fr": (
-            "one: %1$d fichier écarté (déjà dans le Journal). | "
-            "other: %1$d fichiers écartés (déjà dans le Journal)."
-        ),
-        "en": (
-            "one: %1$d file skipped (already in the Journal). | "
-            "other: %1$d files skipped (already in the Journal)."
-        ),
-    },
-    "journal_msg_files_failed_count": {
-        "fr": "one: %1$d fichier illisible. | other: %1$d fichiers illisibles.",
-        "en": "one: %1$d file could not be read. | other: %1$d files could not be read.",
-    },
-    "journal_msg_photos_added_count": {
-        "fr": (
-            "one: %1$d photo ajoutée, en attente d'enregistrement. | "
-            "other: %1$d photos ajoutées, en attente d'enregistrement."
-        ),
-        "en": (
-            "one: %1$d photo added, pending save. | "
-            "other: %1$d photos added, pending save."
-        ),
-    },
-    "journal_msg_photos_duplicates_skipped_count": {
-        "fr": (
-            "one: %1$d photo écartée (déjà sur cette sortie). | "
-            "other: %1$d photos écartées (déjà sur cette sortie)."
-        ),
-        "en": (
-            "one: %1$d photo skipped (already on this hike). | "
-            "other: %1$d photos skipped (already on this hike)."
-        ),
-    },
-    "journal_msg_photos_failed_count": {
-        "fr": (
-            "one: %1$d photo illisible, non ajoutée. | "
-            "other: %1$d photos illisibles, non ajoutées."
-        ),
-        "en": (
-            "one: %1$d photo could not be read and was not added. | "
-            "other: %1$d photos could not be read and were not added."
-        ),
-    },
-}
 
 
 class GeneratorError(Exception):
@@ -227,11 +136,6 @@ def build_entry(row: list[str]) -> StringEntry | None:
 
     fr_raw = resolve_value(row, COL_FR_NEUTRE, COL_FR_VALIDE)
     en_raw = resolve_value(row, COL_EN_PROPOSE, COL_EN_VALIDE)
-
-    override = OVERRIDES.get(key)
-    if override:
-        fr_raw = override.get("fr", fr_raw)
-        en_raw = override.get("en", en_raw)
 
     if not fr_raw.strip() or not en_raw.strip():
         raise GeneratorError(f"Cle '{key}' : valeur fr ou en vide.")
@@ -311,10 +215,10 @@ HEADER = """<?xml version="1.0" encoding="utf-8"?>
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : docs/pilotage/i18n/strings-inventaire-v3.csv (inventaire de l'agent de pilotage,
+    Source : docs/pilotage/i18n/strings-inventaire-v4.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v3.csv
+        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v4.csv
 
     Voir tools/i18n/README.md.
 -->

@@ -4,25 +4,21 @@ Deux scripts, aucune dépendance externe (Python 3 standard, Bash + coreutils).
 
 ## Régénérer les ressources de chaînes
 
-Source de vérité : `docs/pilotage/i18n/strings-inventaire-v3.csv` (hors dépôt, `docs/` est
+Source de vérité : `docs/pilotage/i18n/strings-inventaire-v4.csv` (hors dépôt, `docs/` est
 ignoré par git). Une correction se fait dans l'inventaire, jamais directement dans les
 `strings.xml` générés (ils portent un en-tête "NE PAS ÉDITER À LA MAIN").
 
 ```bash
-python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v3.csv
+python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v4.csv
 ```
 
 Écrit `app/src/main/res/values/strings.xml` (anglais, langue par défaut) et
 `app/src/main/res/values-fr/strings.xml` (français). Idempotent : deux exécutions sur le même
 CSV produisent des fichiers identiques. Sort en erreur (code 1) sur une clé dupliquée, un jeu de
 paramètres `%n$s`/`%n$d` incohérent entre français et anglais, ou une forme plurielle "other"
-manquante, le détail des erreurs sortant sur stderr.
-
-Le générateur porte une petite table `OVERRIDES` pour les quelques lignes de l'inventaire qui ne
-suivent pas exactement le format attendu (annotation de relecture collée dans la donnée, forme
-plurielle en prose plutôt qu'au format `one: ... | other: ...`) : chacune est commentée dans
-`generate_strings.py` avec la raison et la clé concernée, à corriger dans l'inventaire à la
-prochaine passe plutôt que dans le générateur.
+manquante, le détail des erreurs sortant sur stderr. Aucune donnée hors `app_name` (ressource
+préexistante fixée par le générateur, absente de l'inventaire) ne vit dans le script : une
+correction de contenu se fait toujours dans le CSV, jamais dans `generate_strings.py`.
 
 Tests du générateur (pas des tests JVM, le script est du Python pur) :
 

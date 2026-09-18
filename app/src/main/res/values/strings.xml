@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : docs/pilotage/i18n/strings-inventaire-v3.csv (inventaire de l'agent de pilotage,
+    Source : docs/pilotage/i18n/strings-inventaire-v4.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v3.csv
+        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v4.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -18,7 +18,6 @@
     <string name="planification_drawer_synthese_tab">Overview</string>
     <string name="planification_drawer_profil_tab">Profile</string>
     <string name="planification_drawer_details_tab">Details</string>
-    <string name="common_ok">OK</string>
     <string name="common_done_button">Done</string>
     <string name="common_close_description">Close</string>
     <string name="common_add_button">Add</string>
@@ -26,8 +25,6 @@
     <string name="common_cancel_button">Cancel</string>
     <string name="common_ok_button">OK</string>
     <string name="common_delete_button">Delete</string>
-    <string name="common_ok_button_2">OK</string>
-    <string name="common_ok_button_3">OK</string>
     <string name="map_controls_layer_picker_description">Choose base map (current: %1$s)</string>
     <string name="map_controls_recenter_description">Center on track</string>
     <string name="map_layer_satellite_attribution_text">Powered by Esri, Maxar, Earthstar Geographics</string>
@@ -40,17 +37,7 @@
     <string name="nav_universe_choice_option_journal_subtitle">A completed hike, to archive in the journal</string>
     <string name="nav_universe_choice_option_planification_subtitle">A track to prepare, with its bivouac points</string>
     <string name="nav_universe_choice_planification_disabled_subtitle">Opens one file at a time: use the Journal for a batch</string>
-    <string name="settings_dialog_ok_button">OK</string>
-    <string name="settings_dialog_ok_button_2">OK</string>
-    <string name="settings_dialog_ok_button_3">OK</string>
-    <string name="settings_dialog_ok_button_4">OK</string>
-    <string name="settings_dialog_ok_button_5">OK</string>
-    <string name="settings_dialog_ok_button_6">OK</string>
-    <string name="settings_dialog_ok_button_7">OK</string>
-    <string name="settings_dialog_ok_button_8">OK</string>
     <string name="common_back_content_description">Back</string>
-    <string name="common_button_ok">OK</string>
-    <string name="common_button_ok_2">OK</string>
 
     <!-- Planification tiroir et segments -->
     <string name="planification_default_track_name">Track</string>
@@ -350,8 +337,6 @@
     <string name="storage_recompress_offer_count_singular">already imported photo remains</string>
     <string name="storage_recompress_offer_count_plural">already imported photos remain</string>
     <string name="storage_recompress_offer_body">%1$s in original quality (~%2$s). Recompress them now?</string>
-    <string name="storage_recompress_report_ok">OK</string>
-    <string name="storage_recompress_error_ok">OK</string>
 
     <!-- Sauvegarde et restauration -->
     <string name="backup_open_destination_failed">Could not open the selected destination.</string>
