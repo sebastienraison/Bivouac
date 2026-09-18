@@ -811,6 +811,11 @@ private fun PausePreviewRow(pauseFractionPercent: Double) {
         Text(
             stringResource(
                 R.string.settings_speed_calibration_pause_preview,
+                // RIC-193 : la durée de référence (6 h de marche pure) était codée en dur dans la
+                // phrase à côté d'une durée déjà passée par formatDuration -- deux notations dans
+                // la même phrase ("6 h" puis "7h 04m"). Les deux passent désormais par le même
+                // formateur.
+                formatDuration(PAUSE_PREVIEW_WALKING_MINUTES.roundToInt()),
                 formatDuration(totalMinutes.roundToInt()),
             ),
             style = MaterialTheme.typography.bodySmall,

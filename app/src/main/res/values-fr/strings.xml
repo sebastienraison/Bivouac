@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : docs/pilotage/i18n/strings-inventaire-v9.csv (inventaire de l'agent de pilotage,
+    Source : docs/pilotage/i18n/strings-inventaire-v10.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v9.csv
+        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v10.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -34,7 +34,7 @@
     <string name="nav_section_planification">Planification</string>
     <string name="nav_section_menu_content_description">Changer de section (actuelle : %1$s)</string>
     <string name="nav_universe_choice_title">Cette trace, pour le Journal ou pour Planification ?</string>
-    <string name="nav_universe_choice_option_journal_subtitle">Une rando déjà faite, à archiver dans le carnet</string>
+    <string name="nav_universe_choice_option_journal_subtitle">Une rando déjà faite, à archiver dans le Journal</string>
     <string name="nav_universe_choice_option_planification_subtitle">Une trace à préparer, avec ses points de bivouac</string>
     <string name="nav_universe_choice_planification_disabled_subtitle">N\'ouvre qu\'un fichier à la fois : passer par le Journal pour un lot</string>
     <string name="common_back_content_description">Retour</string>
@@ -71,7 +71,7 @@
     <string name="journal_list_screen_title">Journal</string>
     <string name="journal_list_add_track_button">Ajouter une trace</string>
     <string name="journal_list_empty_title">Aucune rando pour l\'instant</string>
-    <string name="journal_list_empty_subtitle">Ajouter une trace pour commencer le carnet : les randos réalisées vivront ici.</string>
+    <string name="journal_list_empty_subtitle">Ajouter une trace pour commencer le Journal : les randos réalisées vivront ici.</string>
     <plurals name="journal_list_total_hikes_count">
         <item quantity="one">%1$s rando au total</item>
         <item quantity="many">%1$s randos au total</item>
@@ -87,7 +87,7 @@
     </plurals>
     <string name="journal_list_show_selection_on_map_button">Afficher la sélection (%1$s)</string>
     <string name="journal_list_cancel_selection_description">Annuler la sélection</string>
-    <string name="journal_list_min_selection_hint">Choisir au moins 2 traces pour valider.</string>
+    <string name="journal_list_min_selection_hint">Choisir au moins 2 randos pour valider.</string>
     <plurals name="journal_list_year_header_count">
         <item quantity="one">%1$d · %2$s rando</item>
         <item quantity="many">%1$d · %2$s randos</item>
@@ -122,7 +122,7 @@
     <string name="journal_detail_empty_notebook_hint">Appuyer sur l\'icône pour ajouter des détails.</string>
     <string name="journal_detail_menu_description">Menu</string>
     <string name="journal_detail_menu_rename">Renommer</string>
-    <string name="journal_detail_menu_duplicate">Dupliquer vers la planification</string>
+    <string name="journal_detail_menu_duplicate">Dupliquer vers Planification</string>
     <string name="journal_detail_rename_dialog_title">Renommer la trace</string>
 
     <!-- Journal photos (bandeau, grille, sélecteur) -->
@@ -138,7 +138,7 @@
     <string name="photo_gallery_caption_placeholder">Ajouter une légende</string>
     <string name="photo_gallery_title_count">Photos (%1$s)</string>
     <string name="photo_gallery_picker_title">Ajouter des photos</string>
-    <string name="photo_gallery_scope_track_dates_chip">Période de la sortie</string>
+    <string name="photo_gallery_scope_track_dates_chip">Période de la rando</string>
     <string name="photo_gallery_scope_whole_gallery_chip">Toute la galerie</string>
     <string name="photo_gallery_search_whole_gallery_button">Chercher dans toute la galerie</string>
     <string name="photo_gallery_selected_description">Sélectionnée</string>
@@ -156,7 +156,7 @@
     <string name="photo_adjust_rotate_left_button">Tourner à gauche</string>
     <string name="photo_adjust_rotate_right_button">Tourner à droite</string>
     <string name="photo_adjust_reset_button">Réinitialiser</string>
-    <string name="photo_adjust_gesture_hint">Coins : proportions conservées · Côtés : recadrage libre · Intérieur : déplacer</string>
+    <string name="photo_adjust_gesture_hint">Coins : proportions · Côtés : libre · Intérieur : déplacer</string>
     <string name="photo_adjust_action_bar_position">Position</string>
     <string name="photo_adjust_menu_reposition">Repositionner sur la trace</string>
     <string name="photo_adjust_menu_restore_time">Replacer selon l\'heure de prise de vue</string>
@@ -171,7 +171,7 @@
     <string name="map_cursor_bubble_close_description">Fermer le curseur</string>
 
     <!-- Bilan -->
-    <string name="bilan_record_label_km_effort">km-effort, une sortie</string>
+    <string name="bilan_record_label_km_effort">km-effort, une rando</string>
     <string name="bilan_record_label_vam">meilleure VAM</string>
     <string name="bilan_record_label_max_altitude">altitude max atteinte</string>
     <string name="bilan_record_label_highest_bivouac">bivouac le plus haut</string>
@@ -184,9 +184,9 @@
         <item quantity="other">%1$d jours</item>
     </plurals>
     <plurals name="bilan_insight_most_active_month">
-        <item quantity="one">Mois le plus actif : %1$s (%2$s sortie depuis %3$d)</item>
-        <item quantity="many">Mois le plus actif : %1$s (%2$s sorties depuis %3$d)</item>
-        <item quantity="other">Mois le plus actif : %1$s (%2$s sorties depuis %3$d)</item>
+        <item quantity="one">Mois le plus actif : %1$s (%2$s rando depuis %3$d)</item>
+        <item quantity="many">Mois le plus actif : %1$s (%2$s randos depuis %3$d)</item>
+        <item quantity="other">Mois le plus actif : %1$s (%2$s randos depuis %3$d)</item>
     </plurals>
     <plurals name="bilan_totals_label">
         <item quantity="one">%1$s rando au total</item>
@@ -199,9 +199,9 @@
     <string name="bilan_empty_title">Pas encore de bilan</string>
     <string name="bilan_empty_subtitle">Importer une première rando dans le Journal pour voir les statistiques ici.</string>
     <string name="bilan_empty_button_go_journal">Aller au Journal</string>
-    <string name="bilan_metric_label_sorties">Sorties</string>
-    <string name="bilan_metric_chart_title_sorties">Sorties par mois</string>
-    <string name="bilan_metric_label_km">Km</string>
+    <string name="bilan_metric_label_sorties">Randos</string>
+    <string name="bilan_metric_chart_title_sorties">Randos par mois</string>
+    <string name="bilan_metric_label_km">Distance</string>
     <string name="bilan_metric_chart_title_km">Km par mois</string>
     <string name="bilan_metric_label_dplus">D+</string>
     <string name="bilan_metric_chart_title_dplus">D+ par mois</string>
@@ -235,16 +235,16 @@
     <string name="settings_version_build_info">Version %1$s · build du %2$s</string>
     <string name="settings_speed_calibration_section_title">Vitesse personnalisée</string>
     <string name="settings_speed_calibration_mode_label">Mode de calcul</string>
-    <string name="settings_speed_calibration_mode_description">Utilisé pour estimer la durée des randonnées</string>
-    <string name="settings_speed_calibration_modes_locked_hint">Auto et Sélection demandent au moins 2 randonnées dans le Journal.</string>
+    <string name="settings_speed_calibration_mode_description">Utilisé pour estimer la durée des randos</string>
+    <string name="settings_speed_calibration_modes_locked_hint">Auto et Sélection demandent au moins 2 randos dans le Journal.</string>
     <string name="settings_speed_calibration_manual_hint">Saisies directement, jamais recalculées automatiquement.</string>
-    <string name="settings_speed_calibration_auto_hint">Calculées à partir de toutes les randonnées du Journal, recalculées à chaque nouvel import.</string>
-    <string name="settings_speed_calibration_selection_hint_empty">Aucune trace choisie pour l\'instant : calibration par défaut en attendant.</string>
-    <string name="settings_speed_calibration_selection_hint_one">Calculée à partir d\'une seule trace : la vitesse s\'ajuste, mais la pénalité D+ ne peut pas être isolée avec un seul point de mesure et reste à sa valeur par défaut. Choisir au moins 2 randonnées de profils différents (plate et pentue) pour l\'affiner aussi.</string>
-    <string name="settings_speed_calibration_selection_hint_many">Calculées à partir de %1$s traces choisies dans le Journal.</string>
-    <string name="settings_speed_calibration_choose_tracks_button">Choisir les traces</string>
+    <string name="settings_speed_calibration_auto_hint">Calculées à partir de toutes les randos du Journal, recalculées à chaque nouvel import.</string>
+    <string name="settings_speed_calibration_selection_hint_empty">Aucune rando choisie pour l\'instant : calibration par défaut en attendant.</string>
+    <string name="settings_speed_calibration_selection_hint_one">Calculée à partir d\'une seule rando : la vitesse s\'ajuste, mais la pénalité D+ ne peut pas être isolée avec un seul point de mesure et reste à sa valeur par défaut. Choisir au moins 2 randos de profils différents (plate et pentue) pour l\'affiner aussi.</string>
+    <string name="settings_speed_calibration_selection_hint_many">Calculées à partir de %1$s randos choisies dans le Journal.</string>
+    <string name="settings_speed_calibration_choose_tracks_button">Choisir les randos</string>
     <string name="settings_speed_calibration_dplus_preview">Rando type de 15 km, 600 m de D+ → %1$s (dont %2$s dus au D+)</string>
-    <string name="settings_speed_calibration_pause_preview">Rando estimée à 6 h de marche → %1$s avec cette provision</string>
+    <string name="settings_speed_calibration_pause_preview">Rando estimée à %1$s de marche → %2$s avec cette provision</string>
     <string name="settings_pause_slider_label">Pauses pendant la marche</string>
     <string name="settings_pause_percent_value">%1$d %%</string>
     <string name="settings_pause_slider_min_label">Peu ou pas de pauses</string>
@@ -303,8 +303,8 @@
     <string name="settings_photo_recovery_report_title">Recherche terminée</string>
     <string name="settings_photo_recovery_error_title">Recherche impossible</string>
     <string name="settings_photos_section_title">Photos du Journal</string>
-    <string name="settings_photos_toggle_label">Associer des photos aux sorties</string>
-    <string name="settings_photos_toggle_description">Ajouter des photos à une sortie, les placer sur la trace et les revoir. Désactivée, aucune photo n\'apparaît et l\'accès à la galerie n\'est jamais demandé ; rien n\'est supprimé, tout revient en réactivant.</string>
+    <string name="settings_photos_toggle_label">Associer des photos aux randos</string>
+    <string name="settings_photos_toggle_description">Ajouter des photos à une rando, les placer sur la trace et les revoir. Désactivée, aucune photo n\'apparaît et l\'accès à la galerie n\'est jamais demandé ; rien n\'est supprimé, tout revient en réactivant.</string>
     <string name="settings_photo_storage_mode_row_label">Stockage des photos</string>
     <string name="settings_photo_storage_mode_row_description">S\'applique aux photos ajoutées par la suite : celles déjà présentes dans le Journal gardent le format sous lequel elles ont été enregistrées.</string>
     <string name="storage_usage_recompression_progress_title">Recompression en cours</string>
@@ -355,7 +355,7 @@
         <item quantity="other">Dont %1$s fichiers absents</item>
     </plurals>
     <string name="storage_usage_row_database_title">Base de données</string>
-    <string name="storage_usage_row_database_detail">Sorties, jours, tags, fiches photo</string>
+    <string name="storage_usage_row_database_detail">Randos, jours, tags, fiches photo</string>
     <string name="storage_usage_row_other_title">Autres</string>
     <string name="storage_usage_row_other_detail">Réglages, caches de la carte, fichiers temporaires</string>
     <string name="storage_usage_recompression_card_title">Recompresser pourrait libérer ~%1$s</string>
@@ -366,7 +366,7 @@
     </plurals>
     <string name="storage_usage_recompress_button">Recompresser les photos existantes</string>
     <string name="storage_choice_prompt_title">Le poids des photos du Journal</string>
-    <string name="storage_choice_prompt_message">Chaque photo ajoutée à une sortie est aujourd\'hui copiée en qualité d\'origine, soit environ 4 Mo pièce : quelques dizaines de sorties suffisent à occuper plusieurs centaines de Mo. Bivouac sait désormais n\'en garder qu\'une version allégée, une dizaine de fois plus légère et largement assez nette pour les revoir.</string>
+    <string name="storage_choice_prompt_message">Chaque photo ajoutée à une rando est aujourd\'hui copiée en qualité d\'origine, soit environ 4 Mo pièce : quelques dizaines de randos suffisent à occuper plusieurs centaines de Mo. Bivouac sait désormais n\'en garder qu\'une version allégée, une dizaine de fois plus légère et largement assez nette pour les revoir.</string>
     <string name="storage_choice_prompt_action">Choisir maintenant</string>
 
     <!-- Sauvegarde et restauration -->
@@ -394,7 +394,7 @@
     <string name="settings_backup_button">Sauvegarder</string>
     <string name="settings_backup_error_title">Sauvegarde impossible</string>
     <string name="settings_restore_confirm_title">Restaurer cette sauvegarde ?</string>
-    <string name="settings_restore_confirm_message">Les randonnées et réglages actuels seront remplacés par le contenu de cette sauvegarde. Cette action est irréversible.</string>
+    <string name="settings_restore_confirm_message">Les randos et réglages actuels seront remplacés par le contenu de cette sauvegarde. Cette action est irréversible.</string>
     <string name="settings_restore_confirm_button">Restaurer</string>
     <string name="settings_restore_done_title">Restauration terminée</string>
     <string name="settings_restore_done_message">La base a été restaurée. L\'application va redémarrer pour appliquer les changements.</string>
@@ -435,6 +435,7 @@
     <string name="messages_never_saved_title">Trace non enregistrée</string>
     <string name="messages_never_saved_body">Attention, cette trace n\'a pas encore été enregistrée dans Bivouac.</string>
     <string name="messages_name_dialog_title">Nommer la trace</string>
+    <string name="gpximport_rename_dialog_title">Renommer la trace</string>
     <string name="messages_delete_confirm_body">« %1$s » sera définitivement supprimée. Cette action est irréversible.</string>
     <string name="journal_msg_duplicate_single_day_body">Cette journée est déjà dans « %1$s » (%2$s). Importer quand même ?</string>
     <string name="journal_msg_duplicate_one_shared_day_body">Une des journées de ce trek est déjà dans « %1$s » (%2$s). Importer quand même ?</string>
@@ -462,8 +463,8 @@
         <item quantity="many">• et %1$d autres</item>
         <item quantity="other">• et %1$d autres</item>
     </plurals>
-    <string name="journal_msg_probable_duplicate_single">À vérifier : cette trace ressemble à une sortie déjà présente (même date, distance très proche) et a quand même été importée.\n%1$s</string>
-    <string name="journal_msg_probable_duplicate_multi">À vérifier : ces traces ressemblent à des sorties déjà présentes (même date, distance très proche) et ont quand même été importées.\n%1$s</string>
+    <string name="journal_msg_probable_duplicate_single">À vérifier : cette trace ressemble à une rando déjà présente (même date, distance très proche) et a quand même été importée.\n%1$s</string>
+    <string name="journal_msg_probable_duplicate_multi">À vérifier : ces traces ressemblent à des randos déjà présentes (même date, distance très proche) et ont quand même été importées.\n%1$s</string>
     <string name="journal_msg_unsaved_changes_title">Modifications non enregistrées</string>
     <string name="journal_msg_unsaved_changes_body">Les modifications en cours (tags, note, photos) ne seront pas conservées.</string>
     <string name="journal_msg_discard_button">Ne pas enregistrer</string>
@@ -491,9 +492,9 @@
     </plurals>
     <string name="journal_msg_no_photos_added">Aucune photo ajoutée.</string>
     <plurals name="journal_msg_photos_duplicates_skipped_count">
-        <item quantity="one">%1$d photo écartée (déjà sur cette sortie).</item>
-        <item quantity="many">%1$d photos écartées (déjà sur cette sortie).</item>
-        <item quantity="other">%1$d photos écartées (déjà sur cette sortie).</item>
+        <item quantity="one">%1$d photo écartée (déjà sur cette rando).</item>
+        <item quantity="many">%1$d photos écartées (déjà sur cette rando).</item>
+        <item quantity="other">%1$d photos écartées (déjà sur cette rando).</item>
     </plurals>
     <plurals name="journal_msg_photos_failed_count">
         <item quantity="one">%1$d photo illisible, non ajoutée.</item>
@@ -502,17 +503,17 @@
     </plurals>
     <string name="journal_msg_multi_import_choice_title">Comment ajouter ces %1$d traces ?</string>
     <string name="journal_msg_multi_import_nothing_yet">Rien n\'est importé tant qu\'aucun choix n\'est fait.</string>
-    <string name="journal_msg_multi_import_separate_title">Sorties séparées</string>
+    <string name="journal_msg_multi_import_separate_title">Randos séparées</string>
     <string name="journal_msg_multi_import_separate_subtitle">%1$d randos indépendantes, une entrée chacune dans le Journal</string>
     <string name="journal_msg_multi_import_multiday_title">Un seul trek en plusieurs jours</string>
-    <string name="journal_msg_multi_import_multiday_subtitle">Un fichier = un jour, réunis en une seule sortie multi-jours</string>
+    <string name="journal_msg_multi_import_multiday_subtitle">Un fichier = un jour, réunis en une seule rando multi-jours</string>
     <string name="journal_msg_multi_import_cancel_button">Abandonner l\'ajout</string>
     <string name="journal_msg_import_progress_title">Import en cours</string>
     <string name="journal_msg_import_calibrating">Mise à jour de la vitesse personnalisée…</string>
     <string name="journal_msg_import_reading_single">Lecture de la trace…</string>
     <string name="journal_msg_import_reading_start">Lecture de %1$d fichiers…</string>
     <string name="journal_msg_import_reading_progress">Fichier %1$d sur %2$d…</string>
-    <string name="photo_msg_empty_track_dates">Aucune photo trouvée sur la période de cette sortie.</string>
+    <string name="photo_msg_empty_track_dates">Aucune photo trouvée sur la période de cette rando.</string>
     <string name="photo_msg_empty_whole_gallery">Aucune photo accessible dans la galerie.</string>
     <string name="photo_msg_partial_access_whole_gallery">Autorisation partielle : même en « Toute la galerie », seules les photos sélectionnées sont visibles.</string>
     <string name="photo_msg_select_more_photos_button">Sélectionner plus de photos</string>

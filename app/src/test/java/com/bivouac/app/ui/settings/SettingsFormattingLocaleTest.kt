@@ -183,16 +183,17 @@ class SettingsFormattingLocaleTest {
     }
 
     /**
-     * Le compte de traces de la calibration n'était pas dans la liste du pilotage : c'est pourtant
+     * Le compte de randos de la calibration n'était pas dans la liste du pilotage : c'est pourtant
      * le MÊME selectedTrackCount que les boutons de sélection du Journal, il ne peut pas s'écrire
-     * autrement d'un écran à l'autre (RIC-192).
+     * autrement d'un écran à l'autre (RIC-192). RIC-193 : la sélection porte sur des randos du
+     * Journal, pas des traces GPX -- « traces »/« tracks » renommés en « randos »/« hikes ».
      */
     @Test
     @Config(qualifiers = "fr-rFR")
-    fun `le compte de traces de la calibration est groupe en francais`() {
+    fun `le compte de randos de la calibration est groupe en francais`() {
         Locale.setDefault(Locale.FRANCE)
         assertEquals(
-            "Calculées à partir de 1 234 traces choisies dans le Journal.",
+            "Calculées à partir de 1 234 randos choisies dans le Journal.",
             context.getString(R.string.settings_speed_calibration_selection_hint_many, formatGroupedInt(1234))
                 .espacesNormalisees(),
         )
@@ -200,11 +201,37 @@ class SettingsFormattingLocaleTest {
 
     @Test
     @Config(qualifiers = "en-rUS")
-    fun `le compte de traces de la calibration est groupe en anglais`() {
+    fun `le compte de randos de la calibration est groupe en anglais`() {
         Locale.setDefault(Locale.US)
         assertEquals(
-            "Calculated from 1,234 tracks selected in the Journal.",
+            "Calculated from 1,234 hikes selected in the Journal.",
             context.getString(R.string.settings_speed_calibration_selection_hint_many, formatGroupedInt(1234)),
+        )
+    }
+
+    /**
+     * RIC-193 : la durée de référence (6 h de marche pure) était codée en dur dans la phrase,
+     * à côté d'une durée déjà passée par formatDuration -- deux notations dans la même phrase
+     * ("6 h" puis "7h 04m" en anglais). Les deux paramètres viennent maintenant du même formateur
+     * (fmt_stats_rows_duration), donc la même notation des deux côtés de la flèche.
+     */
+    @Test
+    @Config(qualifiers = "fr-rFR")
+    fun `settings_speed_calibration_pause_preview porte la meme notation des deux cotes en francais`() {
+        Locale.setDefault(Locale.FRANCE)
+        assertEquals(
+            "Rando estimée à 6h00 de marche → 7h04 avec cette provision",
+            context.getString(R.string.settings_speed_calibration_pause_preview, "6h00", "7h04"),
+        )
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS")
+    fun `settings_speed_calibration_pause_preview porte la meme notation des deux cotes en anglais`() {
+        Locale.setDefault(Locale.US)
+        assertEquals(
+            "Hike estimated at 6h 00m of walking → 7h 04m with this allowance",
+            context.getString(R.string.settings_speed_calibration_pause_preview, "6h 00m", "7h 04m"),
         )
     }
 

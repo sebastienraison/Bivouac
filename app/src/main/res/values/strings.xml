@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : docs/pilotage/i18n/strings-inventaire-v9.csv (inventaire de l'agent de pilotage,
+    Source : docs/pilotage/i18n/strings-inventaire-v10.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v9.csv
+        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v10.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -34,7 +34,7 @@
     <string name="nav_section_planification">Planning</string>
     <string name="nav_section_menu_content_description">Change section (current: %1$s)</string>
     <string name="nav_universe_choice_title">Is this track for the Journal or for Planning?</string>
-    <string name="nav_universe_choice_option_journal_subtitle">A completed hike, to archive in the journal</string>
+    <string name="nav_universe_choice_option_journal_subtitle">A completed hike, to archive in the Journal</string>
     <string name="nav_universe_choice_option_planification_subtitle">A track to prepare, with its bivouac points</string>
     <string name="nav_universe_choice_planification_disabled_subtitle">Opens one file at a time: use the Journal for a batch</string>
     <string name="common_back_content_description">Back</string>
@@ -70,7 +70,7 @@
     <string name="journal_list_screen_title">Journal</string>
     <string name="journal_list_add_track_button">Add a track</string>
     <string name="journal_list_empty_title">No hikes yet</string>
-    <string name="journal_list_empty_subtitle">Add a track to start the journal: completed hikes will live here.</string>
+    <string name="journal_list_empty_subtitle">Add a track to start the Journal: completed hikes will live here.</string>
     <plurals name="journal_list_total_hikes_count">
         <item quantity="one">%1$s hike in total</item>
         <item quantity="other">%1$s hikes in total</item>
@@ -84,7 +84,7 @@
     </plurals>
     <string name="journal_list_show_selection_on_map_button">Show selection (%1$s)</string>
     <string name="journal_list_cancel_selection_description">Cancel selection</string>
-    <string name="journal_list_min_selection_hint">Choose at least 2 tracks to confirm.</string>
+    <string name="journal_list_min_selection_hint">Choose at least 2 hikes to confirm.</string>
     <plurals name="journal_list_year_header_count">
         <item quantity="one">%1$d · %2$s hike</item>
         <item quantity="other">%1$d · %2$s hikes</item>
@@ -192,7 +192,7 @@
     <string name="bilan_empty_button_go_journal">Go to Journal</string>
     <string name="bilan_metric_label_sorties">Hikes</string>
     <string name="bilan_metric_chart_title_sorties">Hikes per month</string>
-    <string name="bilan_metric_label_km">Km</string>
+    <string name="bilan_metric_label_km">Distance</string>
     <string name="bilan_metric_chart_title_km">Km per month</string>
     <string name="bilan_metric_label_dplus">Ascent</string>
     <string name="bilan_metric_chart_title_dplus">Ascent per month</string>
@@ -230,12 +230,12 @@
     <string name="settings_speed_calibration_modes_locked_hint">Auto and Selection require at least 2 hikes in the Journal.</string>
     <string name="settings_speed_calibration_manual_hint">Entered directly, never recalculated automatically.</string>
     <string name="settings_speed_calibration_auto_hint">Calculated from every hike in the Journal, recalculated with each new import.</string>
-    <string name="settings_speed_calibration_selection_hint_empty">No track selected yet: default calibration used in the meantime.</string>
-    <string name="settings_speed_calibration_selection_hint_one">Calculated from a single track: the speed adjusts, but the ascent penalty cannot be isolated from a single data point and stays at its default value. Choose at least 2 hikes with different profiles (flat and steep) to refine it too.</string>
-    <string name="settings_speed_calibration_selection_hint_many">Calculated from %1$s tracks selected in the Journal.</string>
-    <string name="settings_speed_calibration_choose_tracks_button">Choose tracks</string>
+    <string name="settings_speed_calibration_selection_hint_empty">No hike selected yet: default calibration used in the meantime.</string>
+    <string name="settings_speed_calibration_selection_hint_one">Calculated from a single hike: the speed adjusts, but the ascent penalty cannot be isolated from a single data point and stays at its default value. Choose at least 2 hikes with different profiles (flat and steep) to refine it too.</string>
+    <string name="settings_speed_calibration_selection_hint_many">Calculated from %1$s hikes selected in the Journal.</string>
+    <string name="settings_speed_calibration_choose_tracks_button">Choose hikes</string>
     <string name="settings_speed_calibration_dplus_preview">Typical 15 km hike with 600 m of ascent → %1$s (of which %2$s from the ascent)</string>
-    <string name="settings_speed_calibration_pause_preview">Hike estimated at 6 h of walking → %1$s with this allowance</string>
+    <string name="settings_speed_calibration_pause_preview">Hike estimated at %1$s of walking → %2$s with this allowance</string>
     <string name="settings_pause_slider_label">Breaks while walking</string>
     <string name="settings_pause_percent_value">%1$d%%</string>
     <string name="settings_pause_slider_min_label">Few or no breaks</string>
@@ -395,7 +395,7 @@
     <string name="exclusive_operation_photo_recompress_label">a photo recompression</string>
     <string name="exclusive_operation_photo_recovery_label">a search for missing photos</string>
     <string name="exclusive_operation_journal_import_label">a Journal import</string>
-    <string name="exclusive_operation_planification_import_label">a Planification import</string>
+    <string name="exclusive_operation_planification_import_label">a Planning import</string>
     <string name="journal_error_ongoing_operation_default_label">another operation</string>
     <string name="journal_error_operation_in_progress">Not possible right now: %1$s is in progress. Try again once it finishes.</string>
     <string name="msg_blocking_progress_counter">%1$d of %2$d…</string>
@@ -410,6 +410,7 @@
     <string name="messages_never_saved_title">Track not saved</string>
     <string name="messages_never_saved_body">Warning: this track has not been saved in Bivouac yet.</string>
     <string name="messages_name_dialog_title">Name the track</string>
+    <string name="gpximport_rename_dialog_title">Rename the track</string>
     <string name="messages_delete_confirm_body">“%1$s” will be permanently deleted. This action cannot be undone.</string>
     <string name="journal_msg_duplicate_single_day_body">This day is already in “%1$s” (%2$s). Import anyway?</string>
     <string name="journal_msg_duplicate_one_shared_day_body">One day of this trek is already in “%1$s” (%2$s). Import anyway?</string>
@@ -436,7 +437,7 @@
     <string name="journal_msg_probable_duplicate_single">Worth checking: this track looks like a hike already in the Journal (same date, very similar distance) and was imported anyway.\n%1$s</string>
     <string name="journal_msg_probable_duplicate_multi">Worth checking: these tracks look like hikes already in the Journal (same date, very similar distance) and were imported anyway.\n%1$s</string>
     <string name="journal_msg_unsaved_changes_title">Unsaved changes</string>
-    <string name="journal_msg_unsaved_changes_body">Current changes (tags, note, photos) will not be kept.</string>
+    <string name="journal_msg_unsaved_changes_body">Current changes (tags, notes, photos) will be lost.</string>
     <string name="journal_msg_discard_button">Don\'t save</string>
     <string name="journal_msg_import_failed_title">Import failed</string>
     <string name="journal_msg_open_failed_title">Unable to open</string>

@@ -76,13 +76,13 @@ class BilanFormattingLocaleTest {
         assertEquals("J", monthInitial(Month.JUNE, Locale.US))
     }
 
-    /** Une seule sortie : la forme "one" du pluriel, et le mois dans la langue de l'appareil. */
+    /** Une seule rando : la forme "one" du pluriel, et le mois dans la langue de l'appareil. */
     @Test
     @Config(qualifiers = "fr-rFR")
     fun `formatInsight au singulier en francais`() {
         Locale.setDefault(Locale.FRANCE)
         assertEquals(
-            "Mois le plus actif : juillet (1 sortie depuis 2021)",
+            "Mois le plus actif : juillet (1 rando depuis 2021)",
             formatInsight(context, MostActiveMonthInsight(monthOfYear = 7, cumulativeCount = 1, sinceYear = 2021)),
         )
     }
@@ -92,7 +92,7 @@ class BilanFormattingLocaleTest {
     fun `formatInsight au pluriel en francais`() {
         Locale.setDefault(Locale.FRANCE)
         assertEquals(
-            "Mois le plus actif : juillet (12 sorties depuis 2021)",
+            "Mois le plus actif : juillet (12 randos depuis 2021)",
             formatInsight(context, MostActiveMonthInsight(monthOfYear = 7, cumulativeCount = 12, sinceYear = 2021)),
         )
     }
@@ -113,7 +113,7 @@ class BilanFormattingLocaleTest {
     }
 
     /**
-     * Un cumul à 4 chiffres, le seul cas qui distingue « 1 234 sorties » de « 1234 sorties ».
+     * Un cumul à 4 chiffres, le seul cas qui distingue « 1 234 randos » de « 1234 randos ».
      * L'année « depuis 2021 » prouve au passage qu'elle n'a PAS été groupée.
      */
     @Test
@@ -121,7 +121,7 @@ class BilanFormattingLocaleTest {
     fun `formatInsight groupe les milliers du cumul en francais`() {
         Locale.setDefault(Locale.FRANCE)
         assertEquals(
-            "Mois le plus actif : juillet (1 234 sorties depuis 2021)",
+            "Mois le plus actif : juillet (1 234 randos depuis 2021)",
             formatInsight(context, MostActiveMonthInsight(monthOfYear = 7, cumulativeCount = 1234, sinceYear = 2021))
                 .espacesNormalisees(),
         )
