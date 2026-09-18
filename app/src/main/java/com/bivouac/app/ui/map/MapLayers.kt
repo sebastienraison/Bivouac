@@ -11,7 +11,28 @@ import com.bivouac.app.R
 import org.osmdroid.tileprovider.tilesource.ITileSource
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.MapTileIndex
+
+// RIC-193 : copie de TileSourceFactory.OpenTopo (osmdroid 6.1.20, vérifié via javap sur le jar
+// runtime du build : mêmes URLs, même plage de zoom 0-17, même taille de tuile 256, même extension
+// .png), avec un seul champ changé : copyrightNotice, codé en ALLEMAND en dur dans osmdroid
+// ("Kartendaten: © OpenStreetMap-Mitwirkende, SRTM | Kartendarstellung: © OpenTopoMap (CC-BY-SA)").
+// i18n-ok : texte d'attribution identique en français et en anglais par exigence des fournisseurs
+// (même traitement que EsriWorldImagery ci-dessus pour la couche Satellite).
+private val OpenTopoEnglish: ITileSource = XYTileSource(
+    "OpenTopoMap",
+    0,
+    17,
+    256,
+    ".png",
+    arrayOf(
+        "https://a.tile.opentopomap.org/",
+        "https://b.tile.opentopomap.org/",
+        "https://c.tile.opentopomap.org/",
+    ),
+    "Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)",
+)
 
 // Esri's tile REST endpoint expects z/y/x, unlike the z/x/y convention osmdroid's built-in
 // XYTileSource always builds: confirmed against both sources rather than assumed, since the two
@@ -53,6 +74,6 @@ private val EsriWorldImagery: ITileSource = object : OnlineTileSourceBase(
 // bouton sur UNE seule ressource par fond de carte.
 enum class MapLayer(@StringRes val labelRes: Int, val tileSource: ITileSource, val icon: ImageVector) {
     STANDARD(R.string.map_layer_standard_label, TileSourceFactory.MAPNIK, Icons.Default.Map),
-    HIKING(R.string.map_layer_hiking_label, TileSourceFactory.OpenTopo, Icons.Default.Terrain),
+    HIKING(R.string.map_layer_hiking_label, OpenTopoEnglish, Icons.Default.Terrain),
     SATELLITE(R.string.map_layer_satellite_label, EsriWorldImagery, Icons.Default.Satellite),
 }
