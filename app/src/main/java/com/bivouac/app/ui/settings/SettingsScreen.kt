@@ -319,7 +319,7 @@ fun SettingsScreen(
     // chemins du seul fait qu'il suit l'état du ViewModel.
     BlockingProgressDialog(
         progress = dataOperationProgress?.let {
-            BlockingProgress(title = it.phase.title, done = it.done, total = it.total)
+            BlockingProgress(title = stringResource(it.phase.titleRes), done = it.done, total = it.total)
         },
     )
 

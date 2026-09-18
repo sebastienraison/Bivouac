@@ -90,6 +90,11 @@ android {
     // precises, dont le texte ne pretend justement pas porter le nombre. Passe en avertissement
     // plutot que desactive : les lots 1 a 4 devront verifier chaque nouvelle occurrence au cas par
     // cas avant de la laisser filer.
+    //
+    // RIC-191 (lot 4) : verifie, une TROISIEME occurrence, journal_error_photo_save_failed. Elle est
+    // deliberee : la forme "one" dit "Une photo n'a pas pu etre enregistree", qui se lit mieux que
+    // "1 photo n'a pas pu etre enregistree" et reste juste pour zero (cas qui ne se produit pas, le
+    // message n'etant compose que si le compte est strictement positif).
     lint {
         warning += "ImpliedQuantity"
         // RIC-187 (lot 0 i18n) : garde-fou du chantier RIC-24 -- une ressource ajoutee dans

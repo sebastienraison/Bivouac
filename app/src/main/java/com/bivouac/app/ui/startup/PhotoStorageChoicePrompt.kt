@@ -360,7 +360,7 @@ fun PhotoStorageChoicePrompt(viewModel: PhotoStorageChoiceViewModel = viewModel(
     // opération (StorageUsageScreen, Réglages) : voir recompressionReportMessage.
     BlockingProgressDialog(
         progress = recompressionProgress?.let {
-            BlockingProgress(title = it.phase.title, done = it.done, total = it.total)
+            BlockingProgress(title = stringResource(it.phase.titleRes), done = it.done, total = it.total)
         },
     )
 
