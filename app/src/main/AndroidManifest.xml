@@ -40,7 +40,12 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:localeConfig="@xml/locales_config">
+        <!-- RIC-187 (lot 0 du chantier i18n RIC-24) : declare en/fr aux reglages systeme
+             « Langues de l'application » (API 33+). Pas de selecteur in-app ni
+             d'AppCompatDelegate : l'app suit la locale de l'appareil, voir locales_config.xml. -->
+
 
         <!-- adjustResize, et pas le adjustUnspecified par défaut : sans lui le système part en
              adjustPan, translate la fenêtre entière à sa façon, et surtout WindowInsets.ime reste

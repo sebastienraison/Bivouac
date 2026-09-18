@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  RIC-187 (lot 0 du chantier i18n RIC-24) : declare a Android les locales que l'app sait servir,
+  pour que les reglages systeme « Langues de l'application » (par app, depuis Android 13) et le
+  Play Store proposent le bon choix. Anglais en tete : c'est la langue par defaut de values/, le
+  francais vit dans values-fr/ (RIC-24).
+
+  Volontairement PAS d'AppCompatDelegate.setApplicationLocales ici : pas de selecteur de langue
+  dans l'app, elle suit la locale de l'appareil (decision RIC-24). Ce fichier ne fait que declarer
+  les locales disponibles ; localeConfig sur <application> dans AndroidManifest.xml l'active.
+-->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="en" />
+    <locale android:name="fr" />
+</locale-config>
