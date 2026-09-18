@@ -39,3 +39,8 @@ key.properties
 
 # Personal GPX tracks used as real-world test data — not meant to be published
 /traces réelles/
+
+# RIC-187 : cache de tools/i18n/generate_strings.py (script Python, premiere introduction de
+# Python dans le projet)
+__pycache__/
+*.pyc
