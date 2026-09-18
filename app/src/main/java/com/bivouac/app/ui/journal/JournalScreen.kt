@@ -167,6 +167,7 @@ import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -2677,25 +2678,37 @@ private fun JournalDetailMenu(onRenameClick: () -> Unit, onDuplicateClick: () ->
     }
 }
 
-// Heure locale d'un instant GPX, pour encadrer une nuit de bivouac.
-private fun formatTimeOfDay(instant: Instant): String =
-    DateTimeFormatter.ofPattern("HH:mm", Locale.FRANCE)
+// RIC-187 (lot 0 i18n) : les quatre formateurs ci-dessous étaient figés sur Locale.FRANCE, avec un
+// motif de date en dur ("d MMMM yyyy", 'à' littéral) qui ne veut plus rien dire en anglais.
+// Remplacés par Locale.getDefault() (locale de l'appareil, cohérent avec le reste du chantier) et
+// des styles localisés (DateTimeFormatter.ofLocalizedDate/DateTime) plutôt que des motifs écrits à
+// la main : FormatStyle.LONG pour la date (mois en toutes lettres dans les deux langues, "14 avril
+// 2026" / "April 14, 2026") et FormatStyle.SHORT pour l'heure (respecte le 24h français / 12h AM-PM
+// anglais). internal (pas private) : testé directement par JournalScreenLocaleFormattingTest.
+// visible=internal pour être appelable depuis le module de test.
+internal fun formatTimeOfDay(instant: Instant): String =
+    DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
+        .withLocale(Locale.getDefault())
         .withZone(ZoneId.systemDefault())
         .format(instant)
 
-// RIC-112 : jour de semaine + quantième d'un jour de trek, ex. "Lundi 12".
-private fun formatDayLabel(instant: Instant): String =
-    DateTimeFormatter.ofPattern("EEEE d", Locale.FRANCE)
+// RIC-112 : jour de semaine + quantième d'un jour de trek, ex. "Lundi 12" / "Monday 12". Motif
+// "EEEE d" gardé tel quel (deux champs sans mois, pas d'ambiguïté d'ordre entre locales) ; seule la
+// locale du nom de jour et de la majuscule change.
+internal fun formatDayLabel(instant: Instant): String =
+    DateTimeFormatter.ofPattern("EEEE d", Locale.getDefault())
         .withZone(ZoneId.systemDefault())
         .format(instant)
-        .replaceFirstChar { it.titlecase(Locale.FRANCE) }
+        .replaceFirstChar { it.titlecase(Locale.getDefault()) }
 
-private fun formatStartedAt(epochMillis: Long): String =
-    DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.FRANCE)
+internal fun formatStartedAt(epochMillis: Long): String =
+    DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG)
+        .withLocale(Locale.getDefault())
         .withZone(ZoneId.systemDefault())
         .format(Instant.ofEpochMilli(epochMillis))
 
-private fun formatStartedAtWithTime(epochMillis: Long): String =
-    DateTimeFormatter.ofPattern("d MMMM yyyy 'à' HH:mm", Locale.FRANCE)
+internal fun formatStartedAtWithTime(epochMillis: Long): String =
+    DateTimeFormatter.ofLocalizedDateTime(FormatStyle.LONG, FormatStyle.SHORT)
+        .withLocale(Locale.getDefault())
         .withZone(ZoneId.systemDefault())
         .format(Instant.ofEpochMilli(epochMillis))

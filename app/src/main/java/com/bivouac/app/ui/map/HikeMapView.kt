@@ -74,6 +74,7 @@ import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -1568,18 +1569,21 @@ internal fun cursorBubbleContent(
  * RIC-43 : l'heure de prise de vue telle que la bulle du curseur la montre.
  *
  * Même forme que partout ailleurs dans l'app (JournalScreen.formatTimeOfDay, les jours de trek,
- * les dates de sortie) : « HH:mm », dans le fuseau du téléphone. Rien n'est affiché quand
- * takenAtMillis est nul : une photo sans EXIF exploitable ne doit pas se voir attribuer une heure
- * qui serait celle de son import.
+ * les dates de sortie) : heure courte localisée, dans le fuseau du téléphone (« 19:00 » en
+ * français, « 7:00 PM » en anglais depuis RIC-187). Rien n'est affiché quand takenAtMillis est nul
+ * : une photo sans EXIF exploitable ne doit pas se voir attribuer une heure qui serait celle de son
+ * import.
  *
  * Le fuseau est appliqué à chaque appel plutôt que figé dans le formateur : celui-ci vit aussi
  * longtemps que le process, et l'app peut très bien changer de fuseau entre deux (voyage, passage
- * à l'heure d'été) sans être relancée.
+ * à l'heure d'été) sans être relancée. RIC-187 : la locale l'est aussi, pour la même raison (un
+ * changement de langue dans les réglages système n'a pas besoin de relancer l'app pour se voir ici).
  */
-private fun formatPhotoTimeOfDay(takenAtMillis: Long): String =
-    PHOTO_TIME_FORMATTER.withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(takenAtMillis))
-
-private val PHOTO_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm", Locale.FRANCE)
+internal fun formatPhotoTimeOfDay(takenAtMillis: Long): String =
+    DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
+        .withLocale(Locale.getDefault())
+        .withZone(ZoneId.systemDefault())
+        .format(Instant.ofEpochMilli(takenAtMillis))
 
 // Negative: lifts the bubble's anchor above the marker's own geo point by roughly the pin's
 // rendered height, so the bubble sits above the pin instead of covering it (and blocking drags).

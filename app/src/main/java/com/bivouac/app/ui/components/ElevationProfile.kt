@@ -88,12 +88,14 @@ private fun evenlySpacedRoundMarks(
         .filter { it > min && it < max }
 }
 
+// RIC-187 (lot 0 i18n) : Locale.FRANCE figé remplacé par Locale.getDefault(), comme dans
+// NumberFormatting.kt et TotalsCapsule.kt.
 private fun formatKm(km: Double): String {
     val rounded = (km * 10).roundToInt() / 10.0
     return if (rounded == rounded.toInt().toDouble()) {
         "${rounded.toInt()}"
     } else {
-        String.format(Locale.FRANCE, "%.1f", rounded)
+        String.format(Locale.getDefault(), "%.1f", rounded)
     }
 }
 

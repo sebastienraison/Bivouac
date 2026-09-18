@@ -20,25 +20,22 @@ import java.util.Locale
 // formatKm1/formatGroupedInt : RIC-136 les a fait migrer vers ui.components.NumberFormatting,
 // partagées avec StatsRows et le reste de l'app plutôt que dupliquées ici.
 
-internal fun formatMonthYear(millis: Long, zone: ZoneId = ZoneId.systemDefault()): String {
+// RIC-187 (lot 0 i18n) : Locale.FRENCH figé remplacé par Locale.getDefault() (mois en toutes
+// lettres dans la locale de l'appareil, "avril 2026" / "April 2026" : pas d'ambiguïté d'ordre, un
+// seul mot puis l'année).
+internal fun formatMonthYear(millis: Long, zone: ZoneId = ZoneId.systemDefault(), locale: Locale = Locale.getDefault()): String {
     val date = Instant.ofEpochMilli(millis).atZone(zone)
-    return "${date.month.getDisplayName(TextStyle.FULL, Locale.FRENCH)} ${date.year}"
+    return "${date.month.getDisplayName(TextStyle.FULL, locale)} ${date.year}"
 }
 
-internal fun monthInitial(month: Month): String = when (month) {
-    Month.JANUARY -> "J"
-    Month.FEBRUARY -> "F"
-    Month.MARCH -> "M"
-    Month.APRIL -> "A"
-    Month.MAY -> "M"
-    Month.JUNE -> "J"
-    Month.JULY -> "J"
-    Month.AUGUST -> "A"
-    Month.SEPTEMBER -> "S"
-    Month.OCTOBER -> "O"
-    Month.NOVEMBER -> "N"
-    Month.DECEMBER -> "D"
-}
+// RIC-187 (lot 0 i18n) : le when-expression figé sur le français ("J F M A M J J A S O N D") est
+// remplacé par Month.getDisplayName(TextStyle.NARROW, locale), qui donne directement l'initiale
+// CLDR de la locale (identiques en français et en anglais pour ce jeu de 12 mois, sauf août -> A vs
+// August -> A, en réalité déjà identiques ici aussi). Tranché par la note de relecture de
+// l'inventaire i18n (clé bilan_month_initials_array, volontairement non générée en ressource, voir
+// tools/i18n/generate_strings.py) : pas de <string-array>, java.time suffit (minSdk 26).
+internal fun monthInitial(month: Month, locale: Locale = Locale.getDefault()): String =
+    month.getDisplayName(TextStyle.NARROW, locale)
 
 internal fun recordLabel(kind: BilanRecordKind): String = when (kind) {
     BilanRecordKind.KM_EFFORT -> "km-effort, une sortie"
@@ -89,6 +86,14 @@ internal fun recordColor(kind: BilanRecordKind): Color = when (kind) {
 
 // RIC-19 §2 : "Tu sors surtout en juillet (12 sorties cumulées depuis 2021)" : formulation exacte
 // de la maquette.
+//
+// RIC-187 (lot 0 i18n) : Locale.FRENCH volontairement PAS remplacé ici, contrairement au reste du
+// fichier. Le nom du mois n'est qu'un fragment d'une phrase française codée en dur ("Tu sors
+// surtout en ...", accord du pluriel "s" ajouté à la main) : rendre le mois localisable sans
+// traduire la phrase qui l'entoure donnerait un résultat mêlant les deux langues ("You mostly go
+// out en juillet" sur un appareil anglais), pire que le tout-français actuel. Même famille de
+// décision que TrekDatesFormatter.format (data/model/TrekDatesFormatter.kt) : à traiter avec la
+// migration de l'écran Bilan (lots 1 à 4), pas au lot 0 qui ne touche aucun écran.
 internal fun formatInsight(insight: MostActiveMonthInsight): String {
     val monthName = Month.of(insight.monthOfYear).getDisplayName(TextStyle.FULL, Locale.FRENCH)
     val plural = if (insight.cumulativeCount > 1) "s" else ""

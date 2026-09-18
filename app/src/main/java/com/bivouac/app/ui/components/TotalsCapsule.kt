@@ -126,12 +126,15 @@ private fun TotalsStatItem(value: String, label: String, icon: ImageVector, colo
     }
 }
 
-// Séparateur de milliers façon française (espace fine insécable, cohérent avec NumberFormat.FRANCE)
-// : les totaux cumulés du Bilan passent couramment les 4-5 chiffres (D+ cumulé, altitude...),
+// Séparateur de milliers cohérent avec NumberFormatting.kt (même piège RIC-136, mêmes valeurs) :
+// les totaux cumulés du Bilan passent couramment les 4-5 chiffres (D+ cumulé, altitude...),
 // contrairement aux stats d'une sortie unique de StatsRows qui n'en ont jamais eu besoin.
+//
+// RIC-187 (lot 0 i18n) : Locale.FRANCE figé remplacé par Locale.getDefault(), comme dans
+// NumberFormatting.kt et ElevationProfile.kt.
 private fun formatDistanceKm(distanceMeters: Double): String {
-    val format = NumberFormat.getNumberInstance(Locale.FRANCE).apply { minimumFractionDigits = 1; maximumFractionDigits = 1 }
+    val format = NumberFormat.getNumberInstance(Locale.getDefault()).apply { minimumFractionDigits = 1; maximumFractionDigits = 1 }
     return "${format.format(distanceMeters / 1000)} km"
 }
 
-private fun formatGrouped(value: Double): String = NumberFormat.getIntegerInstance(Locale.FRANCE).format(value.toInt())
+private fun formatGrouped(value: Double): String = NumberFormat.getIntegerInstance(Locale.getDefault()).format(value.toInt())

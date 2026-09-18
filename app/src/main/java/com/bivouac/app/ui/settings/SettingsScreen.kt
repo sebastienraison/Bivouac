@@ -69,6 +69,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -93,6 +94,7 @@ import com.bivouac.app.ui.nav.AppSection
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -904,10 +906,18 @@ private fun formatNumber(value: Double): String =
 
 @Composable
 private fun CalibrationStatGrid(calibration: SpeedCalibration) {
+    // RIC-187 (lot 0 i18n) : Locale.FRANCE figé remplacé par la locale COMPOSABLE
+    // (LocalLocale.current), pas Locale.getDefault() comme ailleurs dans le chantier. Lint
+    // (NonObservableLocale, androidx.compose.ui) refuse Locale.getDefault() dans une fonction
+    // @Composable : cet appel ne s'abonne à rien, donc un changement de langue par appareil sans
+    // relancer l'app (réglages système "Langues de l'application", API 33+) ne redéclenche pas de
+    // recomposition et cet écran resterait figé sur l'ancienne langue tant qu'un autre état ne le
+    // recompose pas par ailleurs. LocalLocale.current EST un état observable de Compose.
+    val locale = LocalLocale.current.platformLocale
     Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         StatBox(
             label = "Vitesse à plat",
-            value = String.format(Locale.FRANCE, "%.1f km/h", calibration.walkingSpeedKmh),
+            value = String.format(locale, "%.1f km/h", calibration.walkingSpeedKmh),
             modifier = Modifier.weight(1f),
         )
         StatBox(
@@ -1081,10 +1091,15 @@ internal fun formatPhotoStorage(storage: PhotoStorageSummary): String {
  * d'Android l'affichent, et non en Mio, qui donnerait un chiffre différent de celui que le système
  * annonce pour la même app, sans que personne puisse expliquer l'écart.
  */
+// RIC-187 (lot 0 i18n) : Locale.FRANCE figé remplacé par Locale.getDefault() pour le SÉPARATEUR
+// DÉCIMAL uniquement (virgule en français, point en anglais). Les unités "Go"/"Mo"/"Ko"/"o"
+// restent en dur : ce sont des chaînes d'écran (settings_format_bytes_go/mo/ko/o dans
+// l'inventaire i18n), leur traduction ("GB"/"MB"/"kB"/"B") attend la migration de cet écran
+// (lots 1 à 4), hors périmètre du lot 0 qui ne touche aucun écran.
 internal fun formatBytes(bytes: Long): String = when {
-    bytes >= 1_000_000_000L -> String.format(Locale.FRANCE, "%.1f Go", bytes / 1_000_000_000.0)
-    bytes >= 1_000_000L -> String.format(Locale.FRANCE, "%.1f Mo", bytes / 1_000_000.0)
-    bytes >= 1_000L -> String.format(Locale.FRANCE, "%.0f Ko", bytes / 1_000.0)
+    bytes >= 1_000_000_000L -> String.format(Locale.getDefault(), "%.1f Go", bytes / 1_000_000_000.0)
+    bytes >= 1_000_000L -> String.format(Locale.getDefault(), "%.1f Mo", bytes / 1_000_000.0)
+    bytes >= 1_000L -> String.format(Locale.getDefault(), "%.0f Ko", bytes / 1_000.0)
     else -> "$bytes o"
 }
 
@@ -1158,8 +1173,15 @@ private fun DataSection(
     }
 }
 
-private fun formatBackupTimestamp(epochMillis: Long): String =
-    DateTimeFormatter.ofPattern("d MMMM 'à' HH:mm", Locale.FRANCE)
+// RIC-187 (lot 0 i18n) : motif en dur ("d MMMM 'à' HH:mm", Locale.FRANCE) remplacé par un style
+// localisé, comme JournalScreen.formatStartedAtWithTime (même choix : FormatStyle.LONG pour la
+// date, SHORT pour l'heure). Gagne l'année au passage ("14 avril 2026 19:00" au lieu de "14 avril
+// à 19:00", qui n'en portait aucune) : écart mineur assumé, pas de style "jour+mois+heure sans
+// année" tout fait en FormatStyle, et l'année en plus est plutôt utile sur un écran de réglages
+// qui affiche la date de la dernière sauvegarde.
+internal fun formatBackupTimestamp(epochMillis: Long): String =
+    DateTimeFormatter.ofLocalizedDateTime(FormatStyle.LONG, FormatStyle.SHORT)
+        .withLocale(Locale.getDefault())
         .withZone(ZoneId.systemDefault())
         .format(Instant.ofEpochMilli(epochMillis))
 

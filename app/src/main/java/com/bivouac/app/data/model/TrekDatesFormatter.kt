@@ -30,6 +30,17 @@ object TrekDatesFormatter {
      * date de départ seule est déjà affichée par ailleurs, la répéter n'apprendrait rien.
      *
      * Deux jours se citent (« 12 et 13 mai 2025 »), au-delà on encadre (« du 3 au 6 mars 2026 »).
+     *
+     * RIC-187 (lot 0 i18n) : Locale.FRANCE volontairement PAS remplacé par Locale.getDefault(),
+     * contrairement au reste du chantier de ce lot. Cette fonction ne se contente pas de nommer un
+     * mois dans une locale : elle compose une vraie phrase française codée en dur (le connecteur
+     * "et", le encadrement "du ... au ..."), en dehors de tout stringResource. Faire suivre
+     * seulement le nom du mois à la locale de l'appareil sans traduire ces connecteurs produirait un
+     * résultat mêlant les deux langues sur un appareil anglais ("12 et 13 May 2025") : pire que le
+     * tout-français actuel. À corriger avec la migration de l'écran Journal (lots 1 à 4), quand "et"
+     * et "du ... au ..." deviendront eux-mêmes des ressources de chaînes ; le paramètre [locale]
+     * reste ici pour que les tests existants (TrekDatesFormatterTest) continuent de fixer le
+     * français explicitement, indépendamment de la locale par défaut de la machine qui les exécute.
      */
     fun format(days: List<LocalDate>, locale: Locale = Locale.FRANCE): String? {
         val distinct = days.distinct().sorted()
