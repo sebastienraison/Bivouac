@@ -21,9 +21,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 
 // RIC-43 : galerie plate en complément du placement sur la trace : pour qui veut juste feuilleter
@@ -42,12 +44,12 @@ internal fun PhotoGalleryDialog(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "Photos (${photos.size})",
+                        stringResource(R.string.photo_gallery_title_count, photos.size),
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f),
                     )
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Fermer")
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_close_description))
                     }
                 }
                 LazyVerticalGrid(

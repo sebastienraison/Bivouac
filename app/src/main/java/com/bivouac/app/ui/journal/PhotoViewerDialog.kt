@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,6 +64,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
 import com.bivouac.app.data.model.TrackPoint
@@ -197,7 +199,11 @@ internal fun PhotoViewerDialog(
                 // croix serait à moitié illisible.
                 modifier = Modifier.align(Alignment.TopEnd).safeDrawingPadding().padding(4.dp),
             ) {
-                Icon(Icons.Default.Close, contentDescription = "Fermer", tint = Color.White)
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = stringResource(R.string.common_close_description),
+                    tint = Color.White,
+                )
             }
 
             // RIC-161/170 : légende et barre d'actions portent sur la photo COURANTE du pager, pas
@@ -264,7 +270,7 @@ private fun PhotoCaptionOverlay(
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         Text(
-            text = caption.ifEmpty { "Ajouter une légende" },
+            text = caption.ifEmpty { stringResource(R.string.photo_gallery_caption_placeholder) },
             color = if (caption.isEmpty()) Color.White.copy(alpha = 0.7f) else Color.White,
             fontSize = 14.sp,
             maxLines = 2,
@@ -333,7 +339,11 @@ private fun PhotoViewerActionBar(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ViewerActionButton(icon = Icons.Default.Crop, label = "Ajuster", onClick = onAdjustClick)
+        ViewerActionButton(
+            icon = Icons.Default.Crop,
+            label = stringResource(R.string.photo_adjust_dialog_title),
+            onClick = onAdjustClick,
+        )
 
         // RIC-171/166/178 : une seule entrée « Position » ouvre un menu, plutôt que des boutons
         // séparés dans une barre qui n'en a que trois : c'est la même hiérarchie que la maquette
@@ -342,12 +352,12 @@ private fun PhotoViewerActionBar(
         Box {
             ViewerActionButton(
                 icon = Icons.Default.PinDrop,
-                label = "Position",
+                label = stringResource(R.string.photo_adjust_action_bar_position),
                 onClick = { positionMenuExpanded = true },
             )
             DropdownMenu(expanded = positionMenuExpanded, onDismissRequest = { positionMenuExpanded = false }) {
                 DropdownMenuItem(
-                    text = { Text("Repositionner sur la trace") },
+                    text = { Text(stringResource(R.string.photo_adjust_menu_reposition)) },
                     onClick = { positionMenuExpanded = false; onRepositionClick() },
                 )
                 // RIC-178 : sous « Repositionner sur la trace », absente quand la routine ne trouve
@@ -358,9 +368,9 @@ private fun PhotoViewerActionBar(
                     val label = if (autoPositionEntry == AutoPositionMenuEntry.TIME_ENABLED ||
                         autoPositionEntry == AutoPositionMenuEntry.TIME_ALREADY_THERE
                     ) {
-                        "Replacer selon l'heure de prise de vue"
+                        stringResource(R.string.photo_adjust_menu_restore_time)
                     } else {
-                        "Replacer à la position GPS"
+                        stringResource(R.string.photo_adjust_menu_restore_gps)
                     }
                     DropdownMenuItem(
                         text = { Text(label) },
@@ -369,7 +379,15 @@ private fun PhotoViewerActionBar(
                     )
                 }
                 DropdownMenuItem(
-                    text = { Text(if (shownOnMap) "Retirer de la carte" else "Replacer sur la carte") },
+                    text = {
+                        Text(
+                            if (shownOnMap) {
+                                stringResource(R.string.photo_adjust_menu_remove_from_map)
+                            } else {
+                                stringResource(R.string.photo_adjust_menu_restore_on_map)
+                            },
+                        )
+                    },
                     onClick = { positionMenuExpanded = false; onToggleShownOnMap() },
                 )
             }
@@ -378,7 +396,12 @@ private fun PhotoViewerActionBar(
         // Couleur d'erreur fixée en dur et non MaterialTheme.colorScheme.error : cette visionneuse
         // pose ses couleurs en dur sur fond noir, comme le reste de l'écran (voir ACCENT dans
         // PhotoAdjustDialog) : un rouge de thème clair y serait illisible.
-        ViewerActionButton(icon = Icons.Default.Delete, label = "Supprimer", tint = ERROR_ON_DARK, onClick = onDeleteClick)
+        ViewerActionButton(
+            icon = Icons.Default.Delete,
+            label = stringResource(R.string.common_delete_button),
+            tint = ERROR_ON_DARK,
+            onClick = onDeleteClick,
+        )
     }
 }
 

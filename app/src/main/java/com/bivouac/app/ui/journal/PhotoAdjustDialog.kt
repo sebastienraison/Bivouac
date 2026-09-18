@@ -43,6 +43,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -50,6 +51,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
+import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
 import com.bivouac.app.data.photo.NormalizedCropRect
@@ -111,15 +113,27 @@ internal fun PhotoAdjustDialog(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 TextButton(onClick = onCancel) {
-                    Text("Annuler", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        stringResource(R.string.common_cancel_button),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
                 }
-                Text("Ajuster", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                Text(
+                    stringResource(R.string.photo_adjust_dialog_title),
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleLarge,
+                )
                 TextButton(
                     onClick = {
                         onConfirm(adjustments)
                     },
                 ) {
-                    Text("OK", color = ACCENT, style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        stringResource(R.string.common_ok_button),
+                        color = ACCENT,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
                 }
             }
 
@@ -217,12 +231,12 @@ internal fun PhotoAdjustDialog(
                     Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
                         RotationButton(
                             icon = Icons.Default.RotateLeft,
-                            label = "Tourner à gauche",
+                            label = stringResource(R.string.photo_adjust_rotate_left_button),
                             onClick = { adjustments = adjustments.rotatedLeft() },
                         )
                         RotationButton(
                             icon = Icons.Default.RotateRight,
-                            label = "Tourner à droite",
+                            label = stringResource(R.string.photo_adjust_rotate_right_button),
                             onClick = { adjustments = adjustments.rotatedRight() },
                         )
                     }
@@ -232,7 +246,7 @@ internal fun PhotoAdjustDialog(
                     // rotation à sa gauche.
                     TextButton(onClick = { adjustments = PhotoAdjustments.NONE }, enabled = canReset) {
                         Text(
-                            "Réinitialiser",
+                            stringResource(R.string.photo_adjust_reset_button),
                             color = if (canReset) Color.White else Color.White.copy(alpha = 0.38f),
                             style = MaterialTheme.typography.labelLarge,
                         )
@@ -241,7 +255,7 @@ internal fun PhotoAdjustDialog(
                 Text(
                     // RIC-179 : « Intérieur » ajouté au texte d'aide, même style de séparateur
                     // (point médian) que les deux autres, pour annoncer le troisième geste.
-                    "Coins : proportions conservées · Côtés : recadrage libre · Intérieur : déplacer",
+                    stringResource(R.string.photo_adjust_gesture_hint),
                     color = Color(0xFFC8C9BC),
                     style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,
