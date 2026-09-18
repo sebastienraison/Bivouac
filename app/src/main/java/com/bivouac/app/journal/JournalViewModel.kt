@@ -3,8 +3,10 @@ package com.bivouac.app.journal
 import android.app.Application
 import android.net.Uri
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.bivouac.app.R
 import com.bivouac.app.bilan.JournalOpenRequest
 import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
@@ -681,7 +683,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     fun openTrackById(id: String, dayIndex: Int? = null) {
         val entry = _tracks.value.find { it.id == id } ?: run {
             Log.w("JournalViewModel", "openTrackById: trace $id introuvable (supprimée depuis ?)")
-            _uiState.value = JournalUiState.Error("Trace introuvable.")
+            _uiState.value = JournalUiState.Error(string(R.string.journal_error_track_not_found))
             return
         }
         openTrackInternal(entry, dayIndex)
@@ -713,11 +715,11 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                     }
                     JournalUiState.Detail(entry, detail.track, detail.daySegments, cursor)
                 } else {
-                    JournalUiState.Error("Trace introuvable.")
+                    JournalUiState.Error(string(R.string.journal_error_track_not_found))
                 }
             }.onFailure {
                 Log.e("JournalViewModel", "Échec de l'ouverture d'une trace du journal", it)
-                _uiState.value = JournalUiState.Error("Trace incorrecte ou fichier illisible.")
+                _uiState.value = JournalUiState.Error(string(R.string.journal_error_track_unreadable))
             }
         }
     }
@@ -734,7 +736,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         return DuplicatePlanRequest(
             track = state.track,
             bivouacPoints = junctions.map { BivouacPoint(id = UUID.randomUUID().toString(), trackPointIndex = it) },
-            suggestedName = "Copie de ${state.entry.name}",
+            suggestedName = string(R.string.journal_detail_duplicate_name_prefix, state.entry.name),
             sourceName = state.entry.name,
         )
     }
@@ -820,7 +822,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.value = JournalUiState.MultiTrack(loaded)
             }.onFailure {
                 Log.e("JournalViewModel", "Échec de l'affichage multi-traces sur la carte", it)
-                _uiState.value = JournalUiState.Error("Trace incorrecte ou fichier illisible.")
+                _uiState.value = JournalUiState.Error(string(R.string.journal_error_track_unreadable))
             }
         }
     }
@@ -970,11 +972,13 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 _photoPlacementTarget.value = null
                 photoPlacementEntrySnapshot = null
                 if (photoFailures > 0) {
-                    _photoError.value = if (photoFailures == 1) {
-                        "Une photo n'a pas pu être enregistrée."
-                    } else {
-                        "$photoFailures photos n'ont pas pu être enregistrées."
-                    }
+                    // RIC-191 (lot 4 i18n) : vrai <plurals> et non plus un if sur le compte, la
+                    // règle d'accord n'étant pas la même d'une langue à l'autre.
+                    _photoError.value = getApplication<Application>().resources.getQuantityString(
+                        R.plurals.journal_error_photo_save_failed,
+                        photoFailures,
+                        photoFailures,
+                    )
                 }
                 _currentTags.value = tags.toList()
                 _tagsByTrackId.value = _tagsByTrackId.value + (entry.id to tags.toList())
@@ -995,6 +999,20 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      */
     private fun exclusiveOperationRefusalMessage(): String =
         exclusiveOperationRefusalMessage(getApplication())
+
+    /**
+     * RIC-191 (lot 4 i18n) : raccourci de résolution des textes de ce ViewModel.
+     *
+     * Il reste un AndroidViewModel qui expose des `String` à son écran, plutôt que d'exposer des
+     * couples (ressource, arguments) que JournalScreen aurait à résoudre : les messages d'erreur
+     * d'ici traversent trois états d'IHM différents (uiState.Error, _photoError, _importError) et
+     * le changement aurait touché tout l'écran, hors périmètre de ce lot.
+     *
+     * Limite connue et acceptée : un message déjà émis reste dans la langue qu'avait l'appareil au
+     * moment de son émission, jusqu'à ce qu'il soit refermé.
+     */
+    private fun string(@StringRes id: Int, vararg args: Any): String =
+        getApplication<Application>().getString(id, *args)
 
     private fun currentEntry(): LoggedTrackEntity? = when (val state = _uiState.value) {
         is JournalUiState.Detail -> state.entry
@@ -1138,7 +1156,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                     _pendingPhotoAdds.value = _pendingPhotoAdds.value + batch.staged
                 }.onFailure {
                     Log.e("JournalViewModel", "Échec de l'ajout de photos", it)
-                    _photoError.value = "Impossible d'ajouter ces photos. Réessaie depuis la galerie."
+                    _photoError.value = string(R.string.journal_error_photo_add_failed)
                 }.getOrNull()
                 val report = batch?.report
                 if (report != null && (report.duplicatesSkipped > 0 || report.failed > 0)) {
@@ -1328,8 +1346,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 // automatique d'une app inutilisée).
                 Log.e("JournalViewModel", "Échec de la recherche de photos", e)
                 _photoPickerCandidates.value = null
-                _photoError.value = "Impossible de parcourir la galerie. " +
-                    "Vérifie l'autorisation d'accès aux photos dans les réglages d'Android."
+                _photoError.value = string(R.string.journal_error_gallery_browse_failed)
             } finally {
                 _photoPickerLoading.value = false
             }
@@ -1678,7 +1695,10 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 }.onSuccess { (prepared, duplicate) ->
                     when (duplicate) {
                         is DuplicateMatch.Exact ->
-                            _importError.value = "« ${duplicate.existing.name} » est déjà dans le journal."
+                            _importError.value = string(
+                                R.string.journal_error_duplicate_track_name,
+                                duplicate.existing.name,
+                            )
                         is DuplicateMatch.Probable, is DuplicateMatch.SharedDay -> {
                             pendingImport = prepared
                             _duplicateWarning.value = duplicate
@@ -1687,7 +1707,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                     }
                 }.onFailure {
                     Log.e("JournalViewModel", "Échec de l'import GPX (Journal)", it)
-                    _importError.value = "Trace incorrecte ou fichier illisible."
+                    _importError.value = string(R.string.journal_error_track_unreadable)
                 }
                 // Après le commit et sa calibration, donc après l'opération entière : ce qui suit
                 // (avertissement de doublon, erreur, vue détail) est de nouveau manipulable.

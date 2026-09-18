@@ -4,8 +4,10 @@ import android.app.Application
 import android.content.ContentResolver
 import android.net.Uri
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.bivouac.app.R
 import com.bivouac.app.data.db.BankedTrackEntity
 import com.bivouac.app.data.db.BankedTrackRepository
 import com.bivouac.app.data.db.SavedTrackRepository
@@ -187,8 +189,12 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun requestDuplicate() {
         val state = _uiState.value as? GpxImportUiState.Loaded ?: return
-        val baseName = state.track.name?.takeIf { it.isNotBlank() } ?: "Trace"
-        _nameDialogRequest.value = NameDialogRequest("Copie de $baseName", NameDialogPurpose.DUPLICATE)
+        val baseName = state.track.name?.takeIf { it.isNotBlank() }
+            ?: string(R.string.planification_default_track_name)
+        _nameDialogRequest.value = NameDialogRequest(
+            string(R.string.journal_detail_duplicate_name_prefix, baseName),
+            NameDialogPurpose.DUPLICATE,
+        )
     }
 
     // Same convention as the open-trace toolbar, applied to a list row: renames that specific
@@ -282,7 +288,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
                 // Reste sur la liste (Idle) plutôt que GpxImportUiState.Error : les autres
                 // traces de la banque restent valides, pas de raison de les faire disparaître.
                 _uiState.value = GpxImportUiState.Idle
-                _bankOpenError.value = "Trace incorrecte ou fichier illisible."
+                _bankOpenError.value = string(R.string.journal_error_track_unreadable)
                 return@launch
             }
             val opened = result.getOrNull()
@@ -301,7 +307,8 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun requestDelete() {
         val id = _currentBankedId.value ?: return
-        val name = (_uiState.value as? GpxImportUiState.Loaded)?.track?.name ?: "cette trace"
+        val name = (_uiState.value as? GpxImportUiState.Loaded)?.track?.name
+            ?: string(R.string.planification_delete_target_fallback_name)
         _deleteTarget.value = DeleteTarget.Current(id, name)
     }
 
@@ -498,6 +505,9 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
                 val result = runCatching {
                     withContext(Dispatchers.IO) {
                         val track = resolver.openInputStream(uri)?.use { GpxParser.parse(it) }
+                            // i18n-ok : message d'exception technique, attrapé six lignes plus bas
+                            // et remplacé à l'écran par journal_error_track_unreadable. Il ne
+                            // remonte qu'au logcat, il n'a pas à être traduit (RIC-191).
                             ?: throw IOException("Impossible d'ouvrir le fichier sélectionné")
                         track to TrackStatsCalculator.compute(track.points, activeCalibration.value)
                     }
@@ -506,7 +516,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
                     onSuccess = { (track, stats) -> GpxImportUiState.Loaded(track, stats) },
                     onFailure = {
                         Log.e("GpxImportViewModel", "Échec de l'import GPX", it)
-                        GpxImportUiState.Error("Trace incorrecte ou fichier illisible.")
+                        GpxImportUiState.Error(string(R.string.journal_error_track_unreadable))
                     },
                 )
                 persistCurrentStateNow()
@@ -525,6 +535,14 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
     private fun exclusiveOperationRefusalMessage(): String =
         exclusiveOperationRefusalMessage(getApplication())
 
+    /**
+     * RIC-191 (lot 4 i18n) : raccourci de résolution des textes de ce ViewModel, même pattern et
+     * même limite que JournalViewModel.string : le ViewModel continue d'exposer des `String` à son
+     * écran, et un message déjà émis garde la langue de son émission.
+     */
+    private fun string(@StringRes id: Int, vararg args: Any): String =
+        getApplication<Application>().getString(id, *args)
+
     // Restores the trace saved from the previous session, if any: called once on a fresh start
     // (not after an incoming-GPX import already handled it), so a restart doesn't lose the plan.
     // RIC-135 : restored.bankedId (persisted alongside the auto-save since the same commit that
@@ -540,7 +558,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
             val result = runCatching { withContext(Dispatchers.IO) { repository.loadLast() } }
             if (result.isFailure) {
                 Log.e("GpxImportViewModel", "Échec de la restauration de la session précédente", result.exceptionOrNull())
-                _uiState.value = GpxImportUiState.Error("Trace incorrecte ou fichier illisible.")
+                _uiState.value = GpxImportUiState.Error(string(R.string.journal_error_track_unreadable))
                 return@launch
             }
             val restored = result.getOrNull()

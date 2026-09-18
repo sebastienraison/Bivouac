@@ -50,6 +50,10 @@ class StorageUsageRecompressionExclusionTest {
     private lateinit var repository: LoggedTrackRepository
     private lateinit var viewModel: StorageUsageViewModel
 
+    // RIC-191 (lot 4 i18n) : libellé visé par ressource, pas en français en dur.
+    private fun labelOf(operation: ExclusiveOperation): String =
+        application.getString(operation.labelRes)
+
     private val trackId = "ric157-exclusion"
     private val photoBytes = ByteArray(2_048) { (it * 13).toByte() }
 
@@ -87,7 +91,7 @@ class StorageUsageRecompressionExclusionTest {
 
         assertTrue(
             "le refus doit être annoncé à l'écran",
-            viewModel.recompressionError.value?.contains("une sauvegarde") ?: false,
+            viewModel.recompressionError.value?.contains(labelOf(ExclusiveOperation.BACKUP)) ?: false,
         )
         assertNull("aucun dialogue bloquant ne doit s'ouvrir sur un refus", viewModel.recompressionProgress.value)
         assertEquals(
