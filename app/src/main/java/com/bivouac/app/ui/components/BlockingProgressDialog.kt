@@ -15,8 +15,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import com.bivouac.app.R
 import kotlinx.coroutines.delay
 
 /**
@@ -177,7 +179,14 @@ fun BlockingProgressDialog(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
-                Text(blockingProgressLabel(shown.done, shown.total))
+                val counted = countableProgress(shown.done, shown.total)
+                Text(
+                    if (counted != null) {
+                        stringResource(R.string.msg_blocking_progress_counter, counted.first, counted.second)
+                    } else {
+                        stringResource(R.string.msg_blocking_progress_indeterminate)
+                    },
+                )
             }
         },
         confirmButton = {},
@@ -185,8 +194,13 @@ fun BlockingProgressDialog(
 }
 
 /**
- * RIC-156 : « 3 sur 12… » quand le travail est dénombrable, une phrase d'attente sinon. Interne
- * plutôt que privée pour rester vérifiable en test.
+ * RIC-156 : le couple à afficher dans « 3 sur 12… » quand le travail est dénombrable, null sinon
+ * (le dialogue affiche alors sa phrase d'attente). Interne plutôt que privée pour rester vérifiable
+ * en test.
+ *
+ * RIC-190 (lot 3 i18n) : cette fonction rendait la phrase elle-même ; elle ne rend plus que la
+ * décision, le texte venant des ressources au point d'affichage. C'est ce qui garde son test en
+ * JVM pur, sans Robolectric ni Context.
  */
-internal fun blockingProgressLabel(done: Int?, total: Int?): String =
-    if (done != null && total != null && total > 0) "$done sur $total…" else "Patiente un instant…"
+internal fun countableProgress(done: Int?, total: Int?): Pair<Int, Int>? =
+    if (done != null && total != null && total > 0) done to total else null

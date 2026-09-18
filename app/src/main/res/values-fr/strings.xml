@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : docs/pilotage/i18n/strings-inventaire-v6.csv (inventaire de l'agent de pilotage,
+    Source : docs/pilotage/i18n/strings-inventaire-v8.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v6.csv
+        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v8.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -309,67 +309,65 @@
     <string name="settings_photo_storage_mode_row_description">S\'applique aux photos ajoutées par la suite : celles déjà présentes dans le Journal gardent le format sous lequel elles ont été enregistrées.</string>
     <string name="storage_usage_recompression_progress_title">Recompression en cours</string>
     <string name="storage_usage_gallery_access_denied_message">Recompresser demande de retrouver les photos d\'origine dans la galerie, et Android ne redemandera plus l\'autorisation depuis l\'application. Autoriser l\'accès à la galerie dans les réglages de l\'application.</string>
-    <string name="storage_usage_recompression_report_recompressed_line">%1$s, %2$s libérés.</string>
-    <plurals name="storage_usage_photo_recompressed_count">
-        <item quantity="one">%1$d photo recompressée</item>
-        <item quantity="many">%1$d photos recompressées</item>
-        <item quantity="other">%1$d photos recompressées</item>
+    <plurals name="storage_usage_recompression_report_recompressed_line">
+        <item quantity="one">%1$d photo recompressée, %2$s libérés.</item>
+        <item quantity="many">%1$d photos recompressées, %2$s libérés.</item>
+        <item quantity="other">%1$d photos recompressées, %2$s libérés.</item>
     </plurals>
     <string name="storage_usage_recompression_report_none">Aucune photo n\'a pu être recompressée.</string>
-    <string name="storage_usage_recompression_report_kept_line">%1$s en qualité d\'origine : original introuvable ou modifié depuis l\'import.</string>
-    <plurals name="storage_usage_photo_kept_count">
-        <item quantity="one">%1$d photo conservée</item>
-        <item quantity="many">%1$d photos conservées</item>
-        <item quantity="other">%1$d photos conservées</item>
+    <plurals name="storage_usage_recompression_report_kept_line">
+        <item quantity="one">%1$d photo conservée en qualité d\'origine : original introuvable ou modifié depuis l\'import.</item>
+        <item quantity="many">%1$d photos conservées en qualité d\'origine : original introuvable ou modifié depuis l\'import.</item>
+        <item quantity="other">%1$d photos conservées en qualité d\'origine : original introuvable ou modifié depuis l\'import.</item>
     </plurals>
-    <string name="storage_usage_recompression_report_already_reduced_line">%1$s au format le plus léger : rien à y gagner.</string>
-    <plurals name="storage_usage_photo_already_reduced_count">
-        <item quantity="one">%1$d photo était déjà</item>
-        <item quantity="many">%1$d photos étaient déjà</item>
-        <item quantity="other">%1$d photos étaient déjà</item>
+    <plurals name="storage_usage_recompression_report_already_reduced_line">
+        <item quantity="one">%1$d photo était déjà au format le plus léger : rien à y gagner.</item>
+        <item quantity="many">%1$d photos étaient déjà au format le plus léger : rien à y gagner.</item>
+        <item quantity="other">%1$d photos étaient déjà au format le plus léger : rien à y gagner.</item>
     </plurals>
     <string name="storage_usage_loading_text">Calcul de l\'espace occupé…</string>
     <string name="storage_usage_total_label">Total occupé par Bivouac</string>
     <string name="storage_usage_total_description">Traces, photos du Journal et base de données, dans le stockage privé de l\'application. Les photos d\'origine, dans la galerie, ne sont pas comptées ici.</string>
     <string name="storage_usage_row_gpx_title">Traces GPX</string>
-    <string name="storage_usage_row_gpx_journal_detail">Journal : %1$s, %2$s</string>
-    <plurals name="storage_usage_file_count">
-        <item quantity="one">%1$d fichier</item>
-        <item quantity="many">%1$d fichiers</item>
-        <item quantity="other">%1$d fichiers</item>
+    <plurals name="storage_usage_row_gpx_journal_detail">
+        <item quantity="one">Journal : %1$d fichier, %2$s</item>
+        <item quantity="many">Journal : %1$d fichiers, %2$s</item>
+        <item quantity="other">Journal : %1$d fichiers, %2$s</item>
     </plurals>
-    <string name="storage_usage_row_gpx_planification_detail">Planification : %1$s, %2$s</string>
-    <string name="storage_usage_row_photos_full_detail">Qualité d\'origine : %1$s, %2$s</string>
-    <plurals name="storage_usage_photo_count">
-        <item quantity="one">%1$d photo</item>
-        <item quantity="many">%1$d photos</item>
-        <item quantity="other">%1$d photos</item>
+    <plurals name="storage_usage_row_gpx_planification_detail">
+        <item quantity="one">Planification : %1$d fichier, %2$s</item>
+        <item quantity="many">Planification : %1$d fichiers, %2$s</item>
+        <item quantity="other">Planification : %1$d fichiers, %2$s</item>
     </plurals>
-    <string name="storage_usage_row_photos_reduced_detail">Poids allégé : %1$s, %2$s</string>
-    <string name="storage_usage_row_photos_missing_detail">Dont %1$s</string>
-    <plurals name="storage_usage_photo_missing_file_count">
-        <item quantity="one">%1$d fichier absent</item>
-        <item quantity="many">%1$d fichiers absents</item>
-        <item quantity="other">%1$d fichiers absents</item>
+    <plurals name="storage_usage_row_photos_full_detail">
+        <item quantity="one">Qualité d\'origine : %1$d photo, %2$s</item>
+        <item quantity="many">Qualité d\'origine : %1$d photos, %2$s</item>
+        <item quantity="other">Qualité d\'origine : %1$d photos, %2$s</item>
+    </plurals>
+    <plurals name="storage_usage_row_photos_reduced_detail">
+        <item quantity="one">Poids allégé : %1$d photo, %2$s</item>
+        <item quantity="many">Poids allégé : %1$d photos, %2$s</item>
+        <item quantity="other">Poids allégé : %1$d photos, %2$s</item>
+    </plurals>
+    <plurals name="storage_usage_row_photos_missing_detail">
+        <item quantity="one">Dont %1$d fichier absent</item>
+        <item quantity="many">Dont %1$d fichiers absents</item>
+        <item quantity="other">Dont %1$d fichiers absents</item>
     </plurals>
     <string name="storage_usage_row_database_title">Base de données</string>
     <string name="storage_usage_row_database_detail">Sorties, jours, tags, fiches photo</string>
     <string name="storage_usage_row_other_title">Autres</string>
     <string name="storage_usage_row_other_detail">Réglages, caches de la carte, fichiers temporaires</string>
     <string name="storage_usage_recompression_card_title">Recompresser pourrait libérer ~%1$s</string>
-    <string name="storage_usage_recompression_card_body">%1$s en qualité d\'origine. Bivouac peut les remplacer par une version allégée, à condition de retrouver l\'original dans la galerie : celles dont l\'original a disparu ou a changé ne sont jamais touchées.</string>
-    <plurals name="storage_usage_photo_kept_full_quality_count">
-        <item quantity="one">%1$d photo est conservée</item>
-        <item quantity="many">%1$d photos sont conservées</item>
-        <item quantity="other">%1$d photos sont conservées</item>
+    <plurals name="storage_usage_recompression_card_body">
+        <item quantity="one">%1$d photo est conservée en qualité d\'origine. Bivouac peut la remplacer par une version allégée, à condition de retrouver l\'original dans la galerie : si l\'original a disparu ou a changé, elle n\'est jamais touchée.</item>
+        <item quantity="many">%1$d photos sont conservées en qualité d\'origine. Bivouac peut les remplacer par une version allégée, à condition de retrouver l\'original dans la galerie : celles dont l\'original a disparu ou a changé ne sont jamais touchées.</item>
+        <item quantity="other">%1$d photos sont conservées en qualité d\'origine. Bivouac peut les remplacer par une version allégée, à condition de retrouver l\'original dans la galerie : celles dont l\'original a disparu ou a changé ne sont jamais touchées.</item>
     </plurals>
     <string name="storage_usage_recompress_button">Recompresser les photos existantes</string>
     <string name="storage_choice_prompt_title">Le poids des photos du Journal</string>
     <string name="storage_choice_prompt_message">Chaque photo ajoutée à une sortie est aujourd\'hui copiée en qualité d\'origine, soit environ 4 Mo pièce : quelques dizaines de sorties suffisent à occuper plusieurs centaines de Mo. Bivouac sait désormais n\'en garder qu\'une version allégée, une dizaine de fois plus légère et largement assez nette pour les revoir.</string>
     <string name="storage_choice_prompt_action">Choisir maintenant</string>
-    <string name="storage_recompress_offer_count_singular">photo déjà importée reste</string>
-    <string name="storage_recompress_offer_count_plural">photos déjà importées restent</string>
-    <string name="storage_recompress_offer_body">%1$s en qualité d\'origine (~%2$s). Les recompresser maintenant ?</string>
 
     <!-- Sauvegarde et restauration -->
     <string name="backup_open_destination_failed">Impossible d\'ouvrir la destination sélectionnée.</string>
@@ -542,9 +540,11 @@
     <string name="fmt_bilan_record_value_km_effort">%1$s km-eff.</string>
     <string name="fmt_bilan_record_value_vam">%1$s m/h</string>
     <string name="fmt_bilan_record_meta_extra">%1$s km · %2$s m D+</string>
-    <string name="fmt_elevation_profile_km_axis">%1$s</string>
-    <string name="fmt_number_km1">%1$s</string>
-    <string name="fmt_number_grouped_int">%1$s</string>
+
+    <!-- Navigation et commun -->
+    <string name="format_distance_km">%1$s km</string>
+
+    <!-- Formats (dates, nombres, unités) -->
     <string name="fmt_stats_rows_gain">D+ %1$s m</string>
     <string name="fmt_stats_rows_loss">D- %1$s m</string>
     <string name="fmt_stats_rows_duration">%1$dh%2$s</string>
@@ -564,12 +564,14 @@
     <string name="settings_format_bytes_mo">%1$s Mo</string>
     <string name="settings_format_bytes_ko">%1$s Ko</string>
     <string name="settings_format_bytes_o">%1$d o</string>
-    <string name="settings_backup_timestamp_pattern">d MMMM \'à\' HH:mm</string>
     <string name="settings_unit_kmh">km/h</string>
     <string name="settings_unit_meters">m</string>
     <string name="settings_manual_penalty_prefix">+1 km / </string>
     <string name="settings_speed_value_format">%1$s km/h</string>
     <string name="settings_penalty_value_format">+1 km / %1$d m</string>
+
+    <!-- Réglages -->
+    <string name="settings_photo_storage_summary">%1$s, %2$s</string>
 
     <!-- Tags système -->
     <string name="tag_system_solo">Solo</string>

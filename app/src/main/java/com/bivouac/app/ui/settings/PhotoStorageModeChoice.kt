@@ -1,5 +1,6 @@
 package com.bivouac.app.ui.settings
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,7 +14,9 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.bivouac.app.R
 import com.bivouac.app.data.photo.PhotoStorageMode
 import com.bivouac.app.data.photo.PhotoStoragePolicy
 
@@ -45,7 +48,7 @@ internal fun PhotoStorageModeChoice(
                     selected = candidate == mode,
                     onClick = { onModeSelected(candidate) },
                     shape = SegmentedButtonDefaults.itemShape(index = index, count = PhotoStorageMode.entries.size),
-                    label = { Text(candidate.label(), maxLines = 1) },
+                    label = { Text(stringResource(candidate.labelRes()), maxLines = 1) },
                 )
             }
         }
@@ -62,9 +65,13 @@ internal fun PhotoStorageModeChoice(
 // L'ordre de déclaration de l'enum est celui des boutons : FULL d'abord (le comportement
 // historique), REDUCED ensuite. Les libellés, eux, ne suivent pas les noms techniques : personne
 // n'a à savoir que la valeur stockée s'appelle FULL.
-internal fun PhotoStorageMode.label(): String = when (this) {
-    PhotoStorageMode.FULL -> "Qualité d'origine"
-    PhotoStorageMode.REDUCED -> "Poids allégé"
+//
+// RIC-190 (lot 3 i18n) : un id de ressource et non une chaîne, résolu par l'appelant : le mode de
+// stockage est une valeur persistée (data.photo), son enum ne porte aucun texte.
+@StringRes
+internal fun PhotoStorageMode.labelRes(): Int = when (this) {
+    PhotoStorageMode.FULL -> R.string.settings_photo_storage_mode_full_label
+    PhotoStorageMode.REDUCED -> R.string.settings_photo_storage_mode_reduced_label
 }
 
 /**
@@ -72,14 +79,11 @@ internal fun PhotoStorageMode.label(): String = when (this) {
  * fidélité, dans cet ordre : c'est le poids qui motive le ticket, mais c'est la fidélité qu'on
  * craint de perdre.
  */
+@Composable
 internal fun PhotoStorageMode.explanation(): String = when (this) {
-    PhotoStorageMode.FULL ->
-        "Chaque photo est copiée à l'identique : rien n'est perdu, mais le Journal grossit vite " +
-            "(environ 4 Mo par photo)."
-    PhotoStorageMode.REDUCED ->
-        "Recommandé : Bivouac enregistre une copie redimensionnée à " +
-            "${PhotoStoragePolicy.REDUCED_LONG_SIDE_PX} px sur son grand côté, environ dix fois plus " +
-            "légère et largement suffisante pour l'affichage dans l'app. L'original de ta galerie, " +
-            "lui, n'est jamais touché : la visionneuse le recharge automatiquement quand il est " +
-            "encore disponible."
+    PhotoStorageMode.FULL -> stringResource(R.string.settings_photo_storage_mode_full_explanation)
+    PhotoStorageMode.REDUCED -> stringResource(
+        R.string.settings_photo_storage_mode_reduced_explanation,
+        PhotoStoragePolicy.REDUCED_LONG_SIDE_PX,
+    )
 }

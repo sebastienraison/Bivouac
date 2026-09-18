@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import com.bivouac.app.R
@@ -72,15 +73,15 @@ fun TotalsCapsule(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             TotalsStatItem(
-                value = formatDistanceKm(stats.distanceMeters),
-                label = "Distance",
+                value = stringResource(R.string.format_distance_km, formatDistanceKm(stats.distanceMeters)),
+                label = stringResource(R.string.bilan_totals_label_distance),
                 icon = Icons.Filled.Route,
                 color = DistanceIconColor,
                 modifier = Modifier.weight(1f),
             )
             TotalsStatItem(
-                value = "${formatGrouped(stats.elevationGainMeters)} m",
-                label = "D+ cumulé",
+                value = stringResource(R.string.format_elevation_meters, formatGrouped(stats.elevationGainMeters)),
+                label = stringResource(R.string.bilan_totals_label_gain),
                 icon = Icons.AutoMirrored.Filled.TrendingUp,
                 color = GainIconColor,
                 modifier = Modifier.weight(1f),
@@ -92,14 +93,14 @@ fun TotalsCapsule(
         ) {
             TotalsStatItem(
                 value = formatDuration(stats.estimatedDurationMinutes),
-                label = "Temps de marche",
+                label = stringResource(R.string.bilan_totals_label_duration),
                 icon = Icons.Filled.Schedule,
                 color = DurationIconColor,
                 modifier = Modifier.weight(1f),
             )
             TotalsStatItem(
                 value = "$bivouacCount",
-                label = "Bivouacs",
+                label = stringResource(R.string.bilan_metric_label_bivouacs),
                 icon = ImageVector.vectorResource(R.drawable.ic_tent_outline),
                 color = BivouacIconColor,
                 modifier = Modifier.weight(1f),
@@ -132,9 +133,11 @@ private fun TotalsStatItem(value: String, label: String, icon: ImageVector, colo
 //
 // RIC-187 (lot 0 i18n) : Locale.FRANCE figé remplacé par Locale.getDefault(), comme dans
 // NumberFormatting.kt et ElevationProfile.kt.
+// RIC-190 (lot 3 i18n) : l'unité « km » est sortie d'ici, elle vient désormais de
+// R.string.format_distance_km au point d'affichage ; cette fonction ne rend plus que le nombre.
 private fun formatDistanceKm(distanceMeters: Double): String {
     val format = NumberFormat.getNumberInstance(Locale.getDefault()).apply { minimumFractionDigits = 1; maximumFractionDigits = 1 }
-    return "${format.format(distanceMeters / 1000)} km"
+    return format.format(distanceMeters / 1000)
 }
 
 private fun formatGrouped(value: Double): String = NumberFormat.getIntegerInstance(Locale.getDefault()).format(value.toInt())

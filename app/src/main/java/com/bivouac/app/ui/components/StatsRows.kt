@@ -16,7 +16,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.bivouac.app.R
 import com.bivouac.app.data.gpx.TrackStats
 
 // Shared between the open-trace toolbar (Planification), the banked-trace list rows, and the
@@ -41,12 +43,24 @@ fun StatsRows(stats: TrackStats, muted: Boolean = false) {
     val lossColor = if (muted) neutral else LossIconColor
 
     Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-        InfoText("${formatKm1(stats.distanceMeters / 1000)} km", Icons.Filled.Route, distanceColor)
+        InfoText(
+            stringResource(R.string.format_distance_km, formatKm1(stats.distanceMeters / 1000)),
+            Icons.Filled.Route,
+            distanceColor,
+        )
         InfoText(formatDuration(stats.estimatedDurationMinutes), Icons.Filled.Schedule, durationColor)
     }
     Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-        InfoText("D+ ${formatGroupedInt(stats.elevationGainMeters)} m", Icons.AutoMirrored.Filled.TrendingUp, gainColor)
-        InfoText("D- ${formatGroupedInt(stats.elevationLossMeters)} m", Icons.AutoMirrored.Filled.TrendingDown, lossColor)
+        InfoText(
+            stringResource(R.string.fmt_stats_rows_gain, formatGroupedInt(stats.elevationGainMeters)),
+            Icons.AutoMirrored.Filled.TrendingUp,
+            gainColor,
+        )
+        InfoText(
+            stringResource(R.string.fmt_stats_rows_loss, formatGroupedInt(stats.elevationLossMeters)),
+            Icons.AutoMirrored.Filled.TrendingDown,
+            lossColor,
+        )
     }
 }
 
@@ -58,8 +72,13 @@ fun InfoText(text: String, icon: ImageVector, iconTint: Color) {
     }
 }
 
-fun formatDuration(totalMinutes: Int): String {
-    val hours = totalMinutes / 60
-    val minutes = totalMinutes % 60
-    return "${hours}h${minutes.toString().padStart(2, '0')}"
-}
+// RIC-190 (lot 3 i18n) : @Composable pour lire la ressource au point d'appel. La notation n'est pas
+// la même dans les deux langues (« 5h32 » en français, « 5h 32m » dans les apps anglophones), donc
+// ce n'est pas qu'un séparateur : c'est bien un format de ressource. Les minutes restent sur deux
+// chiffres, posées ici et non par la ressource.
+@Composable
+fun formatDuration(totalMinutes: Int): String = stringResource(
+    R.string.fmt_stats_rows_duration,
+    totalMinutes / 60,
+    (totalMinutes % 60).toString().padStart(2, '0'),
+)

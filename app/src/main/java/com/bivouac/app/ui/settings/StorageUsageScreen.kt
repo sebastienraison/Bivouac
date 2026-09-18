@@ -47,16 +47,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.photo.PhotoLibraryPermission
 import com.bivouac.app.data.storage.AppStorageUsage
 import com.bivouac.app.settings.StorageUsageViewModel
 import com.bivouac.app.ui.components.BlockingProgress
 import com.bivouac.app.ui.components.BlockingProgressDialog
-import com.bivouac.app.ui.components.formatGroupedInt
 
 /**
  * RIC-140 : où passe la place que Bivouac occupe sur le téléphone.
@@ -125,10 +127,14 @@ fun StorageUsageScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("Espace utilisé") },
+                // Même libellé que la ligne des Réglages qui mène ici : une seule ressource.
+                title = { Text(stringResource(R.string.settings_storage_usage_row_label)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.common_back_content_description),
+                        )
                     }
                 },
             )
@@ -170,7 +176,11 @@ fun StorageUsageScreen(
     // remplace des fichiers de photos/ et met les lignes à jour dans la foulée.
     BlockingProgressDialog(
         progress = recompressionProgress?.let {
-            BlockingProgress(title = "Recompression en cours", done = it.done, total = it.total)
+            BlockingProgress(
+                title = stringResource(R.string.storage_usage_recompression_progress_title),
+                done = it.done,
+                total = it.total,
+            )
         },
     )
 
@@ -178,18 +188,26 @@ fun StorageUsageScreen(
     recompressionReport?.let { report ->
         AlertDialog(
             onDismissRequest = viewModel::dismissRecompressionReport,
-            title = { Text("Recompression terminée") },
-            text = { Text(recompressionReportMessage(report)) },
-            confirmButton = { TextButton(onClick = viewModel::dismissRecompressionReport) { Text("OK") } },
+            title = { Text(stringResource(R.string.settings_photo_recompress_report_title)) },
+            text = { Text(recompressionReportMessage(context, report)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissRecompressionReport) {
+                    Text(stringResource(R.string.common_ok_button))
+                }
+            },
         )
     }
 
     recompressionError?.let { message ->
         AlertDialog(
             onDismissRequest = viewModel::dismissRecompressionError,
-            title = { Text("Recompression impossible") },
+            title = { Text(stringResource(R.string.settings_photo_recompress_error_title)) },
             text = { Text(message) },
-            confirmButton = { TextButton(onClick = viewModel::dismissRecompressionError) { Text("OK") } },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissRecompressionError) {
+                    Text(stringResource(R.string.common_ok_button))
+                }
+            },
         )
     }
 
@@ -198,21 +216,19 @@ fun StorageUsageScreen(
     if (blockedDialog) {
         AlertDialog(
             onDismissRequest = { blockedDialog = false },
-            title = { Text("Accès aux photos refusé") },
-            text = {
-                Text(
-                    "Recompresser demande de retrouver tes photos d'origine dans la galerie, et " +
-                        "Android ne redemandera plus l'autorisation depuis l'application. " +
-                        "Autorise l'accès à la galerie dans les réglages de l'application.",
-                )
-            },
+            title = { Text(stringResource(R.string.journal_msg_photo_access_denied_title)) },
+            text = { Text(stringResource(R.string.storage_usage_gallery_access_denied_message)) },
             confirmButton = {
                 TextButton(onClick = {
                     blockedDialog = false
                     context.openApplicationSettings()
-                }) { Text("Ouvrir les réglages") }
+                }) { Text(stringResource(R.string.journal_msg_open_settings_button)) }
             },
-            dismissButton = { TextButton(onClick = { blockedDialog = false }) { Text("Annuler") } },
+            dismissButton = {
+                TextButton(onClick = { blockedDialog = false }) {
+                    Text(stringResource(R.string.common_cancel_button))
+                }
+            },
         )
     }
 }
@@ -249,21 +265,37 @@ internal fun photoGalleryActionOutcome(
  * « conservées » est réversible (l'original peut revenir), « déjà au format réduit » est définitif,
  * et le total libéré est le seul chiffre que l'utilisateur était venu chercher.
  */
-internal fun recompressionReportMessage(report: LoggedTrackRepository.PhotoRecompressionReport): String {
+internal fun recompressionReportMessage(
+    context: Context,
+    report: LoggedTrackRepository.PhotoRecompressionReport,
+): String {
     val lines = mutableListOf<String>()
+    // RIC-190 (lot 3 i18n) : chaque ligne est un <plurals> portant la phrase ENTIÈRE, et non plus
+    // un format auquel countLabel() recollait un fragment. Un fragment ne dit pas à Android quel
+    // accord choisir pour le reste de la phrase.
     if (report.recompressed > 0) {
-        lines += "${countLabel(report.recompressed, "photo recompressée", "photos recompressées")}, " +
-            "${formatBytes(report.freedBytes)} libérés."
+        lines += context.resources.getQuantityString(
+            R.plurals.storage_usage_recompression_report_recompressed_line,
+            report.recompressed,
+            report.recompressed,
+            formatBytes(context, report.freedBytes),
+        )
     } else {
-        lines += "Aucune photo n'a pu être recompressée."
+        lines += context.getString(R.string.storage_usage_recompression_report_none)
     }
     if (report.kept > 0) {
-        lines += "${countLabel(report.kept, "photo conservée", "photos conservées")} en qualité " +
-            "d'origine : original introuvable ou modifié depuis l'import."
+        lines += context.resources.getQuantityString(
+            R.plurals.storage_usage_recompression_report_kept_line,
+            report.kept,
+            report.kept,
+        )
     }
     if (report.alreadyReduced > 0) {
-        lines += "${countLabel(report.alreadyReduced, "photo était déjà", "photos étaient déjà")} " +
-            "au format le plus léger : rien à y gagner."
+        lines += context.resources.getQuantityString(
+            R.plurals.storage_usage_recompression_report_already_reduced_line,
+            report.alreadyReduced,
+            report.alreadyReduced,
+        )
     }
     return lines.joinToString("\n\n")
 }
@@ -296,7 +328,7 @@ private fun LoadingState(modifier: Modifier = Modifier) {
         CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
         Spacer(Modifier.height(16.dp))
         Text(
-            "Calcul de l'espace occupé…",
+            stringResource(R.string.storage_usage_loading_text),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -308,20 +340,19 @@ private fun TotalCard(usage: AppStorageUsage) {
     ElevatedCard(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text(
-                "Total occupé par Bivouac",
+                stringResource(R.string.storage_usage_total_label),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                formatBytes(usage.totalBytes),
+                formatBytes(LocalContext.current, usage.totalBytes),
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.padding(top = 4.dp),
             )
             // La photothèque du Journal, pas la pellicule : la nuance compte, personne ne doit
             // craindre que ce chiffre parle de ses photos d'origine.
             Text(
-                "Traces, photos du Journal et base de données, dans le stockage privé de " +
-                    "l'application. Tes photos d'origine, dans la galerie, ne sont pas comptées ici.",
+                stringResource(R.string.storage_usage_total_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),
@@ -368,51 +399,77 @@ private fun usageSlices(usage: AppStorageUsage): List<Pair<Long, Color>> = listO
 
 @Composable
 private fun BreakdownCard(usage: AppStorageUsage) {
+    val context = LocalContext.current
     ElevatedCard(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(vertical = 6.dp)) {
             UsageRow(
                 color = MaterialTheme.colorScheme.primary,
-                title = "Traces GPX",
-                value = formatBytes(usage.gpxBytes),
+                title = stringResource(R.string.storage_usage_row_gpx_title),
+                value = formatBytes(context, usage.gpxBytes),
+                // RIC-190 (lot 3 i18n) : chaque détail est un <plurals> portant la ligne entière
+                // (libellé, compte, taille), au lieu d'un countLabel recollé dans une chaîne.
                 details = listOf(
-                    "Journal : ${countLabel(usage.gpxJournalFileCount, "fichier", "fichiers")}, " +
-                        formatBytes(usage.gpxJournalBytes),
-                    "Planification : ${countLabel(usage.gpxPlanificationFileCount, "fichier", "fichiers")}, " +
-                        formatBytes(usage.gpxPlanificationBytes),
+                    pluralStringResource(
+                        R.plurals.storage_usage_row_gpx_journal_detail,
+                        usage.gpxJournalFileCount,
+                        usage.gpxJournalFileCount,
+                        formatBytes(context, usage.gpxJournalBytes),
+                    ),
+                    pluralStringResource(
+                        R.plurals.storage_usage_row_gpx_planification_detail,
+                        usage.gpxPlanificationFileCount,
+                        usage.gpxPlanificationFileCount,
+                        formatBytes(context, usage.gpxPlanificationBytes),
+                    ),
                 ),
             )
             UsageRow(
                 color = MaterialTheme.colorScheme.tertiary,
-                title = "Photos du Journal",
-                value = formatBytes(usage.photos.directoryBytes),
+                // Même libellé que la section Photos des Réglages : une seule ressource.
+                title = stringResource(R.string.settings_photos_section_title),
+                value = formatBytes(context, usage.photos.directoryBytes),
                 details = buildList {
                     add(
-                        "Qualité d'origine : ${countLabel(usage.photos.fullCount, "photo", "photos")}, " +
-                            formatBytes(usage.photos.fullBytes),
+                        pluralStringResource(
+                            R.plurals.storage_usage_row_photos_full_detail,
+                            usage.photos.fullCount,
+                            usage.photos.fullCount,
+                            formatBytes(context, usage.photos.fullBytes),
+                        ),
                     )
                     add(
-                        "Poids allégé : ${countLabel(usage.photos.reducedCount, "photo", "photos")}, " +
-                            formatBytes(usage.photos.reducedBytes),
+                        pluralStringResource(
+                            R.plurals.storage_usage_row_photos_reduced_detail,
+                            usage.photos.reducedCount,
+                            usage.photos.reducedCount,
+                            formatBytes(context, usage.photos.reducedBytes),
+                        ),
                     )
                     // Dit ici parce que c'est ici que le chiffre surprend : des photos comptées
                     // dans le Journal qui ne pèsent rien. L'action qui les rattrape est dans les
                     // Réglages (RIC-151), cet écran ne fait que constater.
                     if (usage.photos.missingCount > 0) {
-                        add("Dont ${countLabel(usage.photos.missingCount, "fichier absent", "fichiers absents")}")
+                        add(
+                            pluralStringResource(
+                                R.plurals.storage_usage_row_photos_missing_detail,
+                                usage.photos.missingCount,
+                                usage.photos.missingCount,
+                            ),
+                        )
                     }
                 },
             )
             UsageRow(
                 color = MaterialTheme.colorScheme.secondary,
-                title = "Base de données",
-                value = formatBytes(usage.databaseBytes),
-                details = listOf("Sorties, jours, tags, fiches photo"),
+                title = stringResource(R.string.storage_usage_row_database_title),
+                value = formatBytes(context, usage.databaseBytes),
+                details = listOf(stringResource(R.string.storage_usage_row_database_detail)),
             )
             UsageRow(
                 color = MaterialTheme.colorScheme.outline,
-                title = "Autres",
-                value = formatBytes(usage.otherBytes),
-                details = listOf("Réglages, caches de la carte, fichiers temporaires"),
+                title = stringResource(R.string.storage_usage_row_other_title),
+                value = formatBytes(context, usage.otherBytes),
+                details = listOf(stringResource(R.string.storage_usage_row_other_detail)),
             )
         }
     }
@@ -455,12 +512,15 @@ private fun UsageRow(color: Color, title: String, value: String, details: List<S
 private fun RecompressionCard(freedBytes: Long, photoCount: Int, onRecompressClick: () -> Unit, locked: Boolean) {
     ElevatedCard(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(20.dp)) {
-            Text("Recompresser pourrait libérer ~${formatBytes(freedBytes)}", style = MaterialTheme.typography.titleMedium)
             Text(
-                "${countLabel(photoCount, "photo est conservée", "photos sont conservées")} en qualité " +
-                    "d'origine. Bivouac peut les remplacer par une version allégée, à condition de " +
-                    "retrouver l'original dans ta galerie : celles dont l'original a disparu ou a " +
-                    "changé ne sont jamais touchées.",
+                stringResource(
+                    R.string.storage_usage_recompression_card_title,
+                    formatBytes(LocalContext.current, freedBytes),
+                ),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                pluralStringResource(R.plurals.storage_usage_recompression_card_body, photoCount, photoCount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),
@@ -472,12 +532,9 @@ private fun RecompressionCard(freedBytes: Long, photoCount: Int, onRecompressCli
             ) {
                 Icon(Icons.Default.Compress, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Recompresser les photos existantes")
+                Text(stringResource(R.string.storage_usage_recompress_button))
             }
         }
     }
 }
 
-/** « 1 photo » / « 12 photos », avec le séparateur de milliers des grands nombres (RIC-136). */
-internal fun countLabel(count: Int, singular: String, plural: String): String =
-    if (count == 1) "1 $singular" else "${formatGroupedInt(count)} $plural"

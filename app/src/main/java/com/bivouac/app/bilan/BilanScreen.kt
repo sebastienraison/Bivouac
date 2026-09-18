@@ -38,9 +38,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bivouac.app.R
 import com.bivouac.app.ui.components.BivouacIconColor
 import com.bivouac.app.ui.components.DistanceIconColor
 import com.bivouac.app.ui.components.DurationIconColor
@@ -73,7 +77,13 @@ fun BilanScreen(
     Scaffold(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { AppScreenHeader(title = "Bilan", currentSection = currentSection, onSectionSelected = onSectionSelected) },
+        topBar = {
+            AppScreenHeader(
+                title = stringResource(R.string.bilan_screen_title),
+                currentSection = currentSection,
+                onSectionSelected = onSectionSelected,
+            )
+        },
     ) { paddingValues ->
         val current = stats
         when {
@@ -82,9 +92,9 @@ fun BilanScreen(
             }
             current == null || current.totalCount == 0 -> FullScreenEmptyState(
                 icon = Icons.AutoMirrored.Filled.TrendingUp,
-                title = "Pas encore de bilan",
-                subtitle = "Importe ta première rando dans le Journal pour voir tes statistiques ici.",
-                buttonText = "Aller au Journal",
+                title = stringResource(R.string.bilan_empty_title),
+                subtitle = stringResource(R.string.bilan_empty_subtitle),
+                buttonText = stringResource(R.string.bilan_empty_button_go_journal),
                 onButtonClick = { onSectionSelected(AppSection.JOURNAL) },
                 modifier = Modifier.padding(paddingValues).fillMaxSize(),
             )
@@ -110,7 +120,8 @@ private fun BilanContent(stats: BilanStats, onOpenJournalEntry: (JournalOpenRequ
         verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
         TotalsCapsule(
-            totalLabel = "${stats.totalCount} rando${if (stats.totalCount > 1) "s" else ""} au total",
+            // RIC-190 (lot 3 i18n) : le "s" conditionnel devient un vrai <plurals> Android.
+            totalLabel = pluralStringResource(R.plurals.bilan_totals_label, stats.totalCount, stats.totalCount),
             stats = stats.totals,
             bivouacCount = stats.bivouacCount,
         )
@@ -138,8 +149,9 @@ private fun ProgressionSection(
     onMetricSelected: (ProgressionMetric) -> Unit,
 ) {
     val series = progression.first { it.metric == selectedMetric }
+    val context = LocalContext.current
     Column {
-        SectionLabel("Progression")
+        SectionLabel(stringResource(R.string.bilan_section_progression_label))
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -147,7 +159,7 @@ private fun ProgressionSection(
                 .padding(16.dp),
         ) {
             Text(
-                text = selectedMetric.chartTitle,
+                text = stringResource(selectedMetric.chartTitleRes),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -165,7 +177,7 @@ private fun ProgressionSection(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        text = formatInsight(insight),
+                        text = formatInsight(context, insight),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -205,7 +217,7 @@ private fun MetricSelector(selected: ProgressionMetric, onSelected: (Progression
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = metric.label,
+                    text = stringResource(metric.labelRes),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (isSelected) {
                         MaterialTheme.colorScheme.onPrimaryContainer
@@ -226,7 +238,7 @@ private fun HeroRecordsSection(stats: BilanStats, onOpenJournalEntry: (JournalOp
     val records = listOfNotNull(stats.kmEffortRecord, stats.vamRecord, stats.maxAltitudeRecord, stats.highestBivouacRecord)
     if (records.isEmpty()) return
     Column {
-        SectionLabel("Records")
+        SectionLabel(stringResource(R.string.bilan_section_records_label))
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             records.chunked(2).forEach { rowRecords ->
                 // IntrinsicSize.Max + fillMaxHeight sur chaque carte : sans ça, une carte dont le
@@ -249,6 +261,7 @@ private fun HeroRecordsSection(stats: BilanStats, onOpenJournalEntry: (JournalOp
 @Composable
 private fun HeroRecordCard(record: BilanRecord, onOpenJournalEntry: (JournalOpenRequest) -> Unit, modifier: Modifier = Modifier) {
     val color = recordColor(record.kind)
+    val context = LocalContext.current
     Row(
         modifier = modifier
             .clickable { onOpenJournalEntry(JournalOpenRequest(record.trackId, record.dayIndex)) }
@@ -261,15 +274,15 @@ private fun HeroRecordCard(record: BilanRecord, onOpenJournalEntry: (JournalOpen
                 .background(color, RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)),
         )
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(text = recordValueText(record), style = MaterialTheme.typography.titleMedium, color = color)
+            Text(text = recordValueText(context, record), style = MaterialTheme.typography.titleMedium, color = color)
             Spacer(Modifier.height(2.dp))
             Text(
-                text = recordLabel(record.kind),
+                text = stringResource(recordLabelRes(record.kind)),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(3.dp))
-            recordMetaLines(record).forEach { line ->
+            recordMetaLines(context, record).forEach { line ->
                 Text(
                     text = line,
                     style = MaterialTheme.typography.labelSmall,
@@ -298,6 +311,7 @@ private fun SecondaryRecordsSection(stats: BilanStats, onOpenJournalEntry: (Jour
 
 @Composable
 private fun SecondaryRecordRow(record: BilanRecord, onOpenJournalEntry: (JournalOpenRequest) -> Unit, showDivider: Boolean) {
+    val context = LocalContext.current
     if (showDivider) {
         Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
     }
@@ -315,8 +329,8 @@ private fun SecondaryRecordRow(record: BilanRecord, onOpenJournalEntry: (Journal
                 .background(recordColor(record.kind), RoundedCornerShape(50)),
         )
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = recordLabel(record.kind), style = MaterialTheme.typography.bodyMedium)
-            recordMetaLines(record).forEach { line ->
+            Text(text = stringResource(recordLabelRes(record.kind)), style = MaterialTheme.typography.bodyMedium)
+            recordMetaLines(context, record).forEach { line ->
                 Text(
                     text = line,
                     style = MaterialTheme.typography.labelSmall,
@@ -324,7 +338,7 @@ private fun SecondaryRecordRow(record: BilanRecord, onOpenJournalEntry: (Journal
                 )
             }
         }
-        Text(text = recordValueText(record), style = MaterialTheme.typography.titleSmall)
+        Text(text = recordValueText(context, record), style = MaterialTheme.typography.titleSmall)
         Icon(
             Icons.Filled.ChevronRight,
             contentDescription = null,
