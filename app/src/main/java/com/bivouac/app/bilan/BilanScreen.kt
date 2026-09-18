@@ -51,6 +51,7 @@ import com.bivouac.app.ui.components.DurationIconColor
 import com.bivouac.app.ui.components.FullScreenEmptyState
 import com.bivouac.app.ui.components.GainIconColor
 import com.bivouac.app.ui.components.TotalsCapsule
+import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.nav.AppScreenHeader
 import com.bivouac.app.ui.nav.AppSection
 
@@ -121,7 +122,12 @@ private fun BilanContent(stats: BilanStats, onOpenJournalEntry: (JournalOpenRequ
     ) {
         TotalsCapsule(
             // RIC-190 (lot 3 i18n) : le "s" conditionnel devient un vrai <plurals> Android.
-            totalLabel = pluralStringResource(R.plurals.bilan_totals_label, stats.totalCount, stats.totalCount),
+            // RIC-192 : le total porte le séparateur de milliers de la locale.
+            totalLabel = pluralStringResource(
+                R.plurals.bilan_totals_label,
+                stats.totalCount,
+                formatGroupedInt(stats.totalCount),
+            ),
             stats = stats.totals,
             bivouacCount = stats.bivouacCount,
         )

@@ -1391,7 +1391,13 @@ private fun JournalBilanCard(
     modifier: Modifier = Modifier,
 ) {
     TotalsCapsule(
-        totalLabel = pluralStringResource(R.plurals.journal_list_total_hikes_count, total, total),
+        // RIC-192 : le total porte le séparateur de milliers de la locale, l'entier choisissant
+        // toujours la forme plurielle.
+        totalLabel = pluralStringResource(
+            R.plurals.journal_list_total_hikes_count,
+            total,
+            formatGroupedInt(total),
+        ),
         stats = stats,
         bivouacCount = bivouacCount,
         modifier = modifier,
@@ -1529,20 +1535,22 @@ private fun JournalPopulatedList(
                         selectedTrackIds.size >= SpeedCalibrationCalculator.MIN_TRACKS_FOR_CALIBRATION,
                     modifier = Modifier.weight(1f),
                 ) {
+                    // RIC-192 : les trois libellés de ce même bouton portent le séparateur de
+                    // milliers de la locale, sinon le compte changerait de forme selon la branche.
                     Text(
                         when {
                             calibrationSelectionActive -> stringResource(
                                 R.string.journal_list_confirm_selection_button,
-                                selectedTrackIds.size,
+                                formatGroupedInt(selectedTrackIds.size),
                             )
                             selectedTrackIds.isEmpty() -> pluralStringResource(
                                 R.plurals.journal_list_show_results_on_map_button,
                                 filteredTracks.size,
-                                filteredTracks.size,
+                                formatGroupedInt(filteredTracks.size),
                             )
                             else -> stringResource(
                                 R.string.journal_list_show_selection_on_map_button,
-                                selectedTrackIds.size,
+                                formatGroupedInt(selectedTrackIds.size),
                             )
                         },
                     )
@@ -1688,11 +1696,13 @@ private fun YearHeader(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
+                // RIC-192 : seul le compte de randos est groupé. L'année reste un entier brut,
+                // « 2 026 » n'aurait aucun sens.
                 text = pluralStringResource(
                     R.plurals.journal_list_year_header_count,
                     group.entries.size,
                     group.year,
-                    group.entries.size,
+                    formatGroupedInt(group.entries.size),
                 ),
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -1857,7 +1867,7 @@ private fun JournalMultiTrackContent(
                 text = pluralStringResource(
                     R.plurals.journal_list_multitrack_header_count,
                     entries.size,
-                    entries.size,
+                    formatGroupedInt(entries.size),
                 ),
                 style = MaterialTheme.typography.titleMedium,
             )

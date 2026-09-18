@@ -2,6 +2,9 @@ package com.bivouac.app.bilan
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.bivouac.app.R
+import com.bivouac.app.i18n.espacesNormalisees
+import com.bivouac.app.ui.components.formatGroupedInt
 import java.time.Month
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -29,6 +32,9 @@ import org.robolectric.annotation.Config
  * (la bonne ressource selon la langue de l'appareil), pas seulement la formule. La locale JVM est
  * posée EN PLUS des qualifiers, parce que les deux entrées ne sont pas la même : les qualifiers
  * choisissent le fichier de ressources, Locale.getDefault() pilote java.time (nom du mois).
+ *
+ * RIC-192 : le cumul de sorties de l'insight et le total du Bilan portent le séparateur de
+ * milliers de la locale. L'année de l'insight (%3$d), elle, reste un entier brut.
  */
 @RunWith(RobolectricTestRunner::class)
 class BilanFormattingLocaleTest {
@@ -103,6 +109,54 @@ class BilanFormattingLocaleTest {
         assertEquals(
             "Most active month: July (12 hikes since 2021)",
             formatInsight(context, MostActiveMonthInsight(monthOfYear = 7, cumulativeCount = 12, sinceYear = 2021)),
+        )
+    }
+
+    /**
+     * Un cumul à 4 chiffres, le seul cas qui distingue « 1 234 sorties » de « 1234 sorties ».
+     * L'année « depuis 2021 » prouve au passage qu'elle n'a PAS été groupée.
+     */
+    @Test
+    @Config(qualifiers = "fr-rFR")
+    fun `formatInsight groupe les milliers du cumul en francais`() {
+        Locale.setDefault(Locale.FRANCE)
+        assertEquals(
+            "Mois le plus actif : juillet (1 234 sorties depuis 2021)",
+            formatInsight(context, MostActiveMonthInsight(monthOfYear = 7, cumulativeCount = 1234, sinceYear = 2021))
+                .espacesNormalisees(),
+        )
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS")
+    fun `formatInsight groupe les milliers du cumul en anglais`() {
+        Locale.setDefault(Locale.US)
+        assertEquals(
+            "Most active month: July (1,234 hikes since 2021)",
+            formatInsight(context, MostActiveMonthInsight(monthOfYear = 7, cumulativeCount = 1234, sinceYear = 2021)),
+        )
+    }
+
+    /** Le total de la capsule est consommé depuis un @Composable : rendu ici comme l'écran le fait. */
+    @Test
+    @Config(qualifiers = "fr-rFR")
+    fun `le total du Bilan est groupe en francais`() {
+        Locale.setDefault(Locale.FRANCE)
+        assertEquals(
+            "1 234 randos au total",
+            context.resources
+                .getQuantityString(R.plurals.bilan_totals_label, 1234, formatGroupedInt(1234))
+                .espacesNormalisees(),
+        )
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS")
+    fun `le total du Bilan est groupe en anglais`() {
+        Locale.setDefault(Locale.US)
+        assertEquals(
+            "1,234 hikes in total",
+            context.resources.getQuantityString(R.plurals.bilan_totals_label, 1234, formatGroupedInt(1234)),
         )
     }
 }

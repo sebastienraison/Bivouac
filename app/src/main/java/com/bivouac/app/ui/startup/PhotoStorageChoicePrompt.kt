@@ -39,6 +39,7 @@ import com.bivouac.app.settings.DataOperationPhase
 import com.bivouac.app.settings.DataOperationProgress
 import com.bivouac.app.ui.components.BlockingProgress
 import com.bivouac.app.ui.components.BlockingProgressDialog
+import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.settings.PhotoGalleryActionOutcome
 import com.bivouac.app.ui.settings.PhotoStorageModeChoice
 import com.bivouac.app.ui.settings.formatBytes
@@ -334,11 +335,12 @@ fun PhotoStorageChoicePrompt(viewModel: PhotoStorageChoiceViewModel = viewModel(
                 // dialogue reprenait déjà le texte au caractère près (settings_photo_recompress_
                 // offer_message). Un <plurals> portant la phrase entière : au singulier, « Les
                 // recompresser » devient « La recompresser ».
+                // RIC-192 : l'entier choisit la quantité, la chaîne formatée s'affiche.
                 Text(
                     pluralStringResource(
                         R.plurals.settings_photo_recompress_offer_message,
                         estimate.photoCount,
-                        estimate.photoCount,
+                        formatGroupedInt(estimate.photoCount),
                         formatBytes(context, estimate.freedBytes),
                     ),
                 )
