@@ -94,6 +94,7 @@ import com.bivouac.app.settings.SettingsViewModel
 import com.bivouac.app.ui.components.BlockingProgress
 import com.bivouac.app.ui.components.BlockingProgressDialog
 import com.bivouac.app.ui.components.formatDuration
+import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.nav.AppScreenHeader
 import com.bivouac.app.ui.nav.AppSection
 import java.time.Instant
@@ -335,11 +336,13 @@ fun SettingsScreen(
                 // RIC-190 (lot 3 i18n) : la phrase entière est un <plurals> portant le compte, au
                 // lieu d'un countLabel recollant un fragment : au singulier, « Les recompresser »
                 // devient « La recompresser », ce qu'un fragment ne savait pas dire.
+                // RIC-192 : l'entier choisit la quantité, la chaîne formatée s'affiche (séparateur
+                // de milliers de la locale, règle RIC-136).
                 Text(
                     pluralStringResource(
                         R.plurals.settings_photo_recompress_offer_message,
                         estimate.photoCount,
-                        estimate.photoCount,
+                        formatGroupedInt(estimate.photoCount),
                         formatBytes(context, estimate.freedBytes),
                     ),
                 )
@@ -715,9 +718,11 @@ private fun SpeedCalibrationSection(
                             // but isn't. Same reasoning applies with more traces if their profil
                             // (rapport dénivelé/distance) est trop similaire d'une trace à l'autre.
                             1 -> stringResource(R.string.settings_speed_calibration_selection_hint_one)
+                            // RIC-192 : même compte que le bouton « Confirmer la sélection » du
+                            // Journal, donc même formatage (séparateur de milliers de la locale).
                             else -> stringResource(
                                 R.string.settings_speed_calibration_selection_hint_many,
-                                selectedTrackCount,
+                                formatGroupedInt(selectedTrackCount),
                             )
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -1112,10 +1117,11 @@ private fun JournalPhotosSection(
                 SettingsRow(
                     icon = Icons.Default.ImageSearch,
                     title = stringResource(R.string.settings_missing_photos_row_label),
+                    // RIC-192 : le compte s'affiche avec le séparateur de milliers de la locale.
                     subtitle = pluralStringResource(
                         R.plurals.settings_missing_photos_row_description,
                         missingPhotoCount,
-                        missingPhotoCount,
+                        formatGroupedInt(missingPhotoCount),
                     ),
                     secondaryAvatar = true,
                 )
@@ -1173,10 +1179,11 @@ internal fun photoRecoveryReportMessage(context: Context, report: LoggedTrackRep
         // RIC-190 (lot 3 i18n) : chaque ligne est un <plurals> portant la phrase ENTIÈRE, et non
         // un fragment recollé : « Sa fiche est conservée » / « Leurs fiches sont conservées » ne
         // s'accorde pas au seul groupe nominal du début.
+        // RIC-192 : l'entier choisit la quantité, la chaîne formatée porte le séparateur.
         context.resources.getQuantityString(
             R.plurals.settings_photo_recovery_recovered_line,
             report.recovered,
-            report.recovered,
+            formatGroupedInt(report.recovered),
         )
     } else {
         context.getString(R.string.settings_photo_recovery_none_line)
@@ -1185,14 +1192,14 @@ internal fun photoRecoveryReportMessage(context: Context, report: LoggedTrackRep
         lines += context.resources.getQuantityString(
             R.plurals.settings_photo_recovery_modified_line,
             report.modifiedNotAdopted,
-            report.modifiedNotAdopted,
+            formatGroupedInt(report.modifiedNotAdopted),
         )
     }
     if (report.notFound > 0) {
         lines += context.resources.getQuantityString(
             R.plurals.settings_photo_recovery_notfound_line,
             report.notFound,
-            report.notFound,
+            formatGroupedInt(report.notFound),
         )
     }
     return lines.joinToString("\n\n")
@@ -1200,10 +1207,11 @@ internal fun photoRecoveryReportMessage(context: Context, report: LoggedTrackRep
 
 /** RIC-152 : « 12 photos, 34,5 Mo » : ce que la purge va retirer, lignes et fichiers. */
 internal fun formatPhotoStorage(context: Context, storage: PhotoStorageSummary): String {
+    // RIC-192 : « 1 234 photos » et non « 1234 photos » (séparateur de milliers de la locale).
     val photos = context.resources.getQuantityString(
         R.plurals.settings_photo_count_label,
         storage.count,
-        storage.count,
+        formatGroupedInt(storage.count),
     )
     return context.getString(R.string.settings_photo_storage_summary, photos, formatBytes(context, storage.totalBytes))
 }

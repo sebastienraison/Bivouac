@@ -13,6 +13,7 @@ import com.bivouac.app.data.db.PlanificationGpxStore
 import com.bivouac.app.data.prefs.MAP_LAYER_DATASTORE_NAME
 import com.bivouac.app.data.prefs.SETTINGS_DATASTORE_NAME
 import com.bivouac.app.data.prefs.SettingsPreferences
+import com.bivouac.app.ui.components.formatGroupedInt
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
@@ -235,8 +236,15 @@ object BackupManager {
                 }
         }.getOrNull() ?: return
         if (reported < bytesWritten) {
+            // RIC-192 : des octets bruts à 8 ou 9 chiffres sont illisibles dans un message
+            // d'erreur. Le compte exact est conservé (c'est lui qui sert au diagnostic), il est
+            // seulement groupé selon la locale.
             throw IOException(
-                context.getString(R.string.backup_incomplete_write_message, reported, bytesWritten),
+                context.getString(
+                    R.string.backup_incomplete_write_message,
+                    formatGroupedInt(reported),
+                    formatGroupedInt(bytesWritten),
+                ),
             )
         }
     }

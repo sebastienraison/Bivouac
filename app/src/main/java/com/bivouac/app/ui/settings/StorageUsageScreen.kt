@@ -59,6 +59,7 @@ import com.bivouac.app.data.storage.AppStorageUsage
 import com.bivouac.app.settings.StorageUsageViewModel
 import com.bivouac.app.ui.components.BlockingProgress
 import com.bivouac.app.ui.components.BlockingProgressDialog
+import com.bivouac.app.ui.components.formatGroupedInt
 
 /**
  * RIC-140 : où passe la place que Bivouac occupe sur le téléphone.
@@ -273,11 +274,13 @@ internal fun recompressionReportMessage(
     // RIC-190 (lot 3 i18n) : chaque ligne est un <plurals> portant la phrase ENTIÈRE, et non plus
     // un format auquel countLabel() recollait un fragment. Un fragment ne dit pas à Android quel
     // accord choisir pour le reste de la phrase.
+    // RIC-192 : le compte passe en %1$s, formaté avec le séparateur de milliers de la locale ;
+    // l'entier reste le premier argument, c'est lui qui choisit la quantité.
     if (report.recompressed > 0) {
         lines += context.resources.getQuantityString(
             R.plurals.storage_usage_recompression_report_recompressed_line,
             report.recompressed,
-            report.recompressed,
+            formatGroupedInt(report.recompressed),
             formatBytes(context, report.freedBytes),
         )
     } else {
@@ -287,14 +290,14 @@ internal fun recompressionReportMessage(
         lines += context.resources.getQuantityString(
             R.plurals.storage_usage_recompression_report_kept_line,
             report.kept,
-            report.kept,
+            formatGroupedInt(report.kept),
         )
     }
     if (report.alreadyReduced > 0) {
         lines += context.resources.getQuantityString(
             R.plurals.storage_usage_recompression_report_already_reduced_line,
             report.alreadyReduced,
-            report.alreadyReduced,
+            formatGroupedInt(report.alreadyReduced),
         )
     }
     return lines.joinToString("\n\n")
@@ -408,17 +411,18 @@ private fun BreakdownCard(usage: AppStorageUsage) {
                 value = formatBytes(context, usage.gpxBytes),
                 // RIC-190 (lot 3 i18n) : chaque détail est un <plurals> portant la ligne entière
                 // (libellé, compte, taille), au lieu d'un countLabel recollé dans une chaîne.
+                // RIC-192 : le compte est formaté avec le séparateur de milliers de la locale.
                 details = listOf(
                     pluralStringResource(
                         R.plurals.storage_usage_row_gpx_journal_detail,
                         usage.gpxJournalFileCount,
-                        usage.gpxJournalFileCount,
+                        formatGroupedInt(usage.gpxJournalFileCount),
                         formatBytes(context, usage.gpxJournalBytes),
                     ),
                     pluralStringResource(
                         R.plurals.storage_usage_row_gpx_planification_detail,
                         usage.gpxPlanificationFileCount,
-                        usage.gpxPlanificationFileCount,
+                        formatGroupedInt(usage.gpxPlanificationFileCount),
                         formatBytes(context, usage.gpxPlanificationBytes),
                     ),
                 ),
@@ -433,7 +437,7 @@ private fun BreakdownCard(usage: AppStorageUsage) {
                         pluralStringResource(
                             R.plurals.storage_usage_row_photos_full_detail,
                             usage.photos.fullCount,
-                            usage.photos.fullCount,
+                            formatGroupedInt(usage.photos.fullCount),
                             formatBytes(context, usage.photos.fullBytes),
                         ),
                     )
@@ -441,7 +445,7 @@ private fun BreakdownCard(usage: AppStorageUsage) {
                         pluralStringResource(
                             R.plurals.storage_usage_row_photos_reduced_detail,
                             usage.photos.reducedCount,
-                            usage.photos.reducedCount,
+                            formatGroupedInt(usage.photos.reducedCount),
                             formatBytes(context, usage.photos.reducedBytes),
                         ),
                     )
@@ -453,7 +457,7 @@ private fun BreakdownCard(usage: AppStorageUsage) {
                             pluralStringResource(
                                 R.plurals.storage_usage_row_photos_missing_detail,
                                 usage.photos.missingCount,
-                                usage.photos.missingCount,
+                                formatGroupedInt(usage.photos.missingCount),
                             ),
                         )
                     }
@@ -520,7 +524,13 @@ private fun RecompressionCard(freedBytes: Long, photoCount: Int, onRecompressCli
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                pluralStringResource(R.plurals.storage_usage_recompression_card_body, photoCount, photoCount),
+                // RIC-192 : compte formaté (séparateur de milliers), la quantité restant pilotée
+                // par l'entier.
+                pluralStringResource(
+                    R.plurals.storage_usage_recompression_card_body,
+                    photoCount,
+                    formatGroupedInt(photoCount),
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),

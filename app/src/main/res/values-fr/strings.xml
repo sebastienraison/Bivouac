@@ -73,25 +73,25 @@
     <string name="journal_list_empty_title">Aucune rando pour l\'instant</string>
     <string name="journal_list_empty_subtitle">Ajouter une trace pour commencer le carnet : les randos réalisées vivront ici.</string>
     <plurals name="journal_list_total_hikes_count">
-        <item quantity="one">%1$d rando au total</item>
-        <item quantity="many">%1$d randos au total</item>
-        <item quantity="other">%1$d randos au total</item>
+        <item quantity="one">%1$s rando au total</item>
+        <item quantity="many">%1$s randos au total</item>
+        <item quantity="other">%1$s randos au total</item>
     </plurals>
     <string name="journal_list_filter_empty_title">Aucune rando ne correspond</string>
     <string name="journal_list_filter_empty_hint">Essayer un autre filtre.</string>
-    <string name="journal_list_confirm_selection_button">Confirmer la sélection (%1$d)</string>
+    <string name="journal_list_confirm_selection_button">Confirmer la sélection (%1$s)</string>
     <plurals name="journal_list_show_results_on_map_button">
-        <item quantity="one">Afficher %1$d résultat sur la carte</item>
-        <item quantity="many">Afficher les %1$d résultats sur la carte</item>
-        <item quantity="other">Afficher les %1$d résultats sur la carte</item>
+        <item quantity="one">Afficher %1$s résultat sur la carte</item>
+        <item quantity="many">Afficher les %1$s résultats sur la carte</item>
+        <item quantity="other">Afficher les %1$s résultats sur la carte</item>
     </plurals>
-    <string name="journal_list_show_selection_on_map_button">Afficher la sélection (%1$d)</string>
+    <string name="journal_list_show_selection_on_map_button">Afficher la sélection (%1$s)</string>
     <string name="journal_list_cancel_selection_description">Annuler la sélection</string>
     <string name="journal_list_min_selection_hint">Choisir au moins 2 traces pour valider.</string>
     <plurals name="journal_list_year_header_count">
-        <item quantity="one">%1$d · %2$d rando</item>
-        <item quantity="many">%1$d · %2$d randos</item>
-        <item quantity="other">%1$d · %2$d randos</item>
+        <item quantity="one">%1$d · %2$s rando</item>
+        <item quantity="many">%1$d · %2$s randos</item>
+        <item quantity="other">%1$d · %2$s randos</item>
     </plurals>
     <plurals name="journal_list_bivouac_nights_description">
         <item quantity="one">nuit de bivouac</item>
@@ -101,9 +101,9 @@
     <string name="journal_list_note_icon_description">note</string>
     <string name="journal_list_photos_icon_description">photos</string>
     <plurals name="journal_list_multitrack_header_count">
-        <item quantity="one">%1$d trace affichée</item>
-        <item quantity="many">%1$d traces affichées</item>
-        <item quantity="other">%1$d traces affichées</item>
+        <item quantity="one">%1$s trace affichée</item>
+        <item quantity="many">%1$s traces affichées</item>
+        <item quantity="other">%1$s traces affichées</item>
     </plurals>
     <string name="journal_list_multitrack_no_legend">Trop de traces pour une légende détaillée : affichage uniforme.</string>
 
@@ -136,7 +136,7 @@
     <string name="journal_photos_empty_hint">Aucune photo pour l\'instant.</string>
     <string name="photo_gallery_caption_dialog_title">Légende</string>
     <string name="photo_gallery_caption_placeholder">Ajouter une légende</string>
-    <string name="photo_gallery_title_count">Photos (%1$d)</string>
+    <string name="photo_gallery_title_count">Photos (%1$s)</string>
     <string name="photo_gallery_picker_title">Ajouter des photos</string>
     <string name="photo_gallery_scope_track_dates_chip">Période de la sortie</string>
     <string name="photo_gallery_scope_whole_gallery_chip">Toute la galerie</string>
@@ -184,14 +184,14 @@
         <item quantity="other">%1$d jours</item>
     </plurals>
     <plurals name="bilan_insight_most_active_month">
-        <item quantity="one">Mois le plus actif : %1$s (%2$d sortie depuis %3$d)</item>
-        <item quantity="many">Mois le plus actif : %1$s (%2$d sorties depuis %3$d)</item>
-        <item quantity="other">Mois le plus actif : %1$s (%2$d sorties depuis %3$d)</item>
+        <item quantity="one">Mois le plus actif : %1$s (%2$s sortie depuis %3$d)</item>
+        <item quantity="many">Mois le plus actif : %1$s (%2$s sorties depuis %3$d)</item>
+        <item quantity="other">Mois le plus actif : %1$s (%2$s sorties depuis %3$d)</item>
     </plurals>
     <plurals name="bilan_totals_label">
-        <item quantity="one">%1$d rando au total</item>
-        <item quantity="many">%1$d randos au total</item>
-        <item quantity="other">%1$d randos au total</item>
+        <item quantity="one">%1$s rando au total</item>
+        <item quantity="many">%1$s randos au total</item>
+        <item quantity="other">%1$s randos au total</item>
     </plurals>
     <string name="bilan_section_progression_label">Progression</string>
     <string name="bilan_section_records_label">Records</string>
@@ -241,7 +241,7 @@
     <string name="settings_speed_calibration_auto_hint">Calculées à partir de toutes les randonnées du Journal, recalculées à chaque nouvel import.</string>
     <string name="settings_speed_calibration_selection_hint_empty">Aucune trace choisie pour l\'instant : calibration par défaut en attendant.</string>
     <string name="settings_speed_calibration_selection_hint_one">Calculée à partir d\'une seule trace : la vitesse s\'ajuste, mais la pénalité D+ ne peut pas être isolée avec un seul point de mesure et reste à sa valeur par défaut. Choisir au moins 2 randonnées de profils différents (plate et pentue) pour l\'affiner aussi.</string>
-    <string name="settings_speed_calibration_selection_hint_many">Calculées à partir de %1$d traces choisies dans le Journal.</string>
+    <string name="settings_speed_calibration_selection_hint_many">Calculées à partir de %1$s traces choisies dans le Journal.</string>
     <string name="settings_speed_calibration_choose_tracks_button">Choisir les traces</string>
     <string name="settings_speed_calibration_dplus_preview">Rando type de 15 km, 600 m de D+ → %1$s (dont %2$s dus au D+)</string>
     <string name="settings_speed_calibration_pause_preview">Rando estimée à 6 h de marche → %1$s avec cette provision</string>
@@ -268,31 +268,31 @@
     <string name="settings_photo_storage_mode_reduced_explanation">Recommandé : Bivouac enregistre une copie redimensionnée à %1$d px sur son grand côté, environ dix fois plus légère et largement suffisante pour l\'affichage dans l\'app. L\'original dans la galerie n\'est jamais touché : la visionneuse le recharge automatiquement quand il est encore disponible.</string>
     <string name="settings_missing_photos_row_label">Retrouver les photos manquantes</string>
     <plurals name="settings_missing_photos_row_description">
-        <item quantity="one">%1$d photo du Journal n\'a plus de fichier local, après une restauration ou un nettoyage du stockage. Bivouac peut la reprendre depuis la galerie, à condition d\'y retrouver l\'original exact.</item>
-        <item quantity="many">%1$d photos du Journal n\'ont plus de fichier local, après une restauration ou un nettoyage du stockage. Bivouac peut les reprendre depuis la galerie, à condition d\'y retrouver les originaux exacts.</item>
-        <item quantity="other">%1$d photos du Journal n\'ont plus de fichier local, après une restauration ou un nettoyage du stockage. Bivouac peut les reprendre depuis la galerie, à condition d\'y retrouver les originaux exacts.</item>
+        <item quantity="one">%1$s photo du Journal n\'a plus de fichier local, après une restauration ou un nettoyage du stockage. Bivouac peut la reprendre depuis la galerie, à condition d\'y retrouver l\'original exact.</item>
+        <item quantity="many">%1$s photos du Journal n\'ont plus de fichier local, après une restauration ou un nettoyage du stockage. Bivouac peut les reprendre depuis la galerie, à condition d\'y retrouver les originaux exacts.</item>
+        <item quantity="other">%1$s photos du Journal n\'ont plus de fichier local, après une restauration ou un nettoyage du stockage. Bivouac peut les reprendre depuis la galerie, à condition d\'y retrouver les originaux exacts.</item>
     </plurals>
     <string name="settings_photo_purge_button">Purger les photos (%1$s)</string>
     <plurals name="settings_photo_recovery_recovered_line">
-        <item quantity="one">%1$d photo retrouvée et remise en place.</item>
-        <item quantity="many">%1$d photos retrouvées et remises en place.</item>
-        <item quantity="other">%1$d photos retrouvées et remises en place.</item>
+        <item quantity="one">%1$s photo retrouvée et remise en place.</item>
+        <item quantity="many">%1$s photos retrouvées et remises en place.</item>
+        <item quantity="other">%1$s photos retrouvées et remises en place.</item>
     </plurals>
     <string name="settings_photo_recovery_none_line">Aucune photo n\'a pu être retrouvée.</string>
     <plurals name="settings_photo_recovery_modified_line">
-        <item quantity="one">%1$d photo retrouvée dans la galerie, mais modifiée depuis l\'import : ce n\'est plus le même fichier, rien n\'a été repris.</item>
-        <item quantity="many">%1$d photos retrouvées dans la galerie, mais modifiées depuis l\'import : ce ne sont plus les mêmes fichiers, rien n\'a été repris.</item>
-        <item quantity="other">%1$d photos retrouvées dans la galerie, mais modifiées depuis l\'import : ce ne sont plus les mêmes fichiers, rien n\'a été repris.</item>
+        <item quantity="one">%1$s photo retrouvée dans la galerie, mais modifiée depuis l\'import : ce n\'est plus le même fichier, rien n\'a été repris.</item>
+        <item quantity="many">%1$s photos retrouvées dans la galerie, mais modifiées depuis l\'import : ce ne sont plus les mêmes fichiers, rien n\'a été repris.</item>
+        <item quantity="other">%1$s photos retrouvées dans la galerie, mais modifiées depuis l\'import : ce ne sont plus les mêmes fichiers, rien n\'a été repris.</item>
     </plurals>
     <plurals name="settings_photo_recovery_notfound_line">
-        <item quantity="one">%1$d photo reste introuvable dans la galerie. Sa fiche est conservée dans le Journal, au cas où l\'original revienne.</item>
-        <item quantity="many">%1$d photos restent introuvables dans la galerie. Leurs fiches sont conservées dans le Journal, au cas où les originaux reviennent.</item>
-        <item quantity="other">%1$d photos restent introuvables dans la galerie. Leurs fiches sont conservées dans le Journal, au cas où les originaux reviennent.</item>
+        <item quantity="one">%1$s photo reste introuvable dans la galerie. Sa fiche est conservée dans le Journal, au cas où l\'original revienne.</item>
+        <item quantity="many">%1$s photos restent introuvables dans la galerie. Leurs fiches sont conservées dans le Journal, au cas où les originaux reviennent.</item>
+        <item quantity="other">%1$s photos restent introuvables dans la galerie. Leurs fiches sont conservées dans le Journal, au cas où les originaux reviennent.</item>
     </plurals>
     <plurals name="settings_photo_count_label">
-        <item quantity="one">%1$d photo</item>
-        <item quantity="many">%1$d photos</item>
-        <item quantity="other">%1$d photos</item>
+        <item quantity="one">%1$s photo</item>
+        <item quantity="many">%1$s photos</item>
+        <item quantity="other">%1$s photos</item>
     </plurals>
     <string name="settings_storage_usage_row_label">Espace utilisé</string>
     <string name="settings_storage_usage_row_description">Ce que les traces, les photos et la base occupent sur le téléphone</string>
@@ -310,49 +310,49 @@
     <string name="storage_usage_recompression_progress_title">Recompression en cours</string>
     <string name="storage_usage_gallery_access_denied_message">Recompresser demande de retrouver les photos d\'origine dans la galerie, et Android ne redemandera plus l\'autorisation depuis l\'application. Autoriser l\'accès à la galerie dans les réglages de l\'application.</string>
     <plurals name="storage_usage_recompression_report_recompressed_line">
-        <item quantity="one">%1$d photo recompressée, %2$s libérés.</item>
-        <item quantity="many">%1$d photos recompressées, %2$s libérés.</item>
-        <item quantity="other">%1$d photos recompressées, %2$s libérés.</item>
+        <item quantity="one">%1$s photo recompressée, %2$s libérés.</item>
+        <item quantity="many">%1$s photos recompressées, %2$s libérés.</item>
+        <item quantity="other">%1$s photos recompressées, %2$s libérés.</item>
     </plurals>
     <string name="storage_usage_recompression_report_none">Aucune photo n\'a pu être recompressée.</string>
     <plurals name="storage_usage_recompression_report_kept_line">
-        <item quantity="one">%1$d photo conservée en qualité d\'origine : original introuvable ou modifié depuis l\'import.</item>
-        <item quantity="many">%1$d photos conservées en qualité d\'origine : original introuvable ou modifié depuis l\'import.</item>
-        <item quantity="other">%1$d photos conservées en qualité d\'origine : original introuvable ou modifié depuis l\'import.</item>
+        <item quantity="one">%1$s photo conservée en qualité d\'origine : original introuvable ou modifié depuis l\'import.</item>
+        <item quantity="many">%1$s photos conservées en qualité d\'origine : original introuvable ou modifié depuis l\'import.</item>
+        <item quantity="other">%1$s photos conservées en qualité d\'origine : original introuvable ou modifié depuis l\'import.</item>
     </plurals>
     <plurals name="storage_usage_recompression_report_already_reduced_line">
-        <item quantity="one">%1$d photo était déjà au format le plus léger : rien à y gagner.</item>
-        <item quantity="many">%1$d photos étaient déjà au format le plus léger : rien à y gagner.</item>
-        <item quantity="other">%1$d photos étaient déjà au format le plus léger : rien à y gagner.</item>
+        <item quantity="one">%1$s photo était déjà au format le plus léger : rien à y gagner.</item>
+        <item quantity="many">%1$s photos étaient déjà au format le plus léger : rien à y gagner.</item>
+        <item quantity="other">%1$s photos étaient déjà au format le plus léger : rien à y gagner.</item>
     </plurals>
     <string name="storage_usage_loading_text">Calcul de l\'espace occupé…</string>
     <string name="storage_usage_total_label">Total occupé par Bivouac</string>
     <string name="storage_usage_total_description">Traces, photos du Journal et base de données, dans le stockage privé de l\'application. Les photos d\'origine, dans la galerie, ne sont pas comptées ici.</string>
     <string name="storage_usage_row_gpx_title">Traces GPX</string>
     <plurals name="storage_usage_row_gpx_journal_detail">
-        <item quantity="one">Journal : %1$d fichier, %2$s</item>
-        <item quantity="many">Journal : %1$d fichiers, %2$s</item>
-        <item quantity="other">Journal : %1$d fichiers, %2$s</item>
+        <item quantity="one">Journal : %1$s fichier, %2$s</item>
+        <item quantity="many">Journal : %1$s fichiers, %2$s</item>
+        <item quantity="other">Journal : %1$s fichiers, %2$s</item>
     </plurals>
     <plurals name="storage_usage_row_gpx_planification_detail">
-        <item quantity="one">Planification : %1$d fichier, %2$s</item>
-        <item quantity="many">Planification : %1$d fichiers, %2$s</item>
-        <item quantity="other">Planification : %1$d fichiers, %2$s</item>
+        <item quantity="one">Planification : %1$s fichier, %2$s</item>
+        <item quantity="many">Planification : %1$s fichiers, %2$s</item>
+        <item quantity="other">Planification : %1$s fichiers, %2$s</item>
     </plurals>
     <plurals name="storage_usage_row_photos_full_detail">
-        <item quantity="one">Qualité d\'origine : %1$d photo, %2$s</item>
-        <item quantity="many">Qualité d\'origine : %1$d photos, %2$s</item>
-        <item quantity="other">Qualité d\'origine : %1$d photos, %2$s</item>
+        <item quantity="one">Qualité d\'origine : %1$s photo, %2$s</item>
+        <item quantity="many">Qualité d\'origine : %1$s photos, %2$s</item>
+        <item quantity="other">Qualité d\'origine : %1$s photos, %2$s</item>
     </plurals>
     <plurals name="storage_usage_row_photos_reduced_detail">
-        <item quantity="one">Poids allégé : %1$d photo, %2$s</item>
-        <item quantity="many">Poids allégé : %1$d photos, %2$s</item>
-        <item quantity="other">Poids allégé : %1$d photos, %2$s</item>
+        <item quantity="one">Poids allégé : %1$s photo, %2$s</item>
+        <item quantity="many">Poids allégé : %1$s photos, %2$s</item>
+        <item quantity="other">Poids allégé : %1$s photos, %2$s</item>
     </plurals>
     <plurals name="storage_usage_row_photos_missing_detail">
-        <item quantity="one">Dont %1$d fichier absent</item>
-        <item quantity="many">Dont %1$d fichiers absents</item>
-        <item quantity="other">Dont %1$d fichiers absents</item>
+        <item quantity="one">Dont %1$s fichier absent</item>
+        <item quantity="many">Dont %1$s fichiers absents</item>
+        <item quantity="other">Dont %1$s fichiers absents</item>
     </plurals>
     <string name="storage_usage_row_database_title">Base de données</string>
     <string name="storage_usage_row_database_detail">Sorties, jours, tags, fiches photo</string>
@@ -360,9 +360,9 @@
     <string name="storage_usage_row_other_detail">Réglages, caches de la carte, fichiers temporaires</string>
     <string name="storage_usage_recompression_card_title">Recompresser pourrait libérer ~%1$s</string>
     <plurals name="storage_usage_recompression_card_body">
-        <item quantity="one">%1$d photo est conservée en qualité d\'origine. Bivouac peut la remplacer par une version allégée, à condition de retrouver l\'original dans la galerie : si l\'original a disparu ou a changé, elle n\'est jamais touchée.</item>
-        <item quantity="many">%1$d photos sont conservées en qualité d\'origine. Bivouac peut les remplacer par une version allégée, à condition de retrouver l\'original dans la galerie : celles dont l\'original a disparu ou a changé ne sont jamais touchées.</item>
-        <item quantity="other">%1$d photos sont conservées en qualité d\'origine. Bivouac peut les remplacer par une version allégée, à condition de retrouver l\'original dans la galerie : celles dont l\'original a disparu ou a changé ne sont jamais touchées.</item>
+        <item quantity="one">%1$s photo est conservée en qualité d\'origine. Bivouac peut la remplacer par une version allégée, à condition de retrouver l\'original dans la galerie : si l\'original a disparu ou a changé, elle n\'est jamais touchée.</item>
+        <item quantity="many">%1$s photos sont conservées en qualité d\'origine. Bivouac peut les remplacer par une version allégée, à condition de retrouver l\'original dans la galerie : celles dont l\'original a disparu ou a changé ne sont jamais touchées.</item>
+        <item quantity="other">%1$s photos sont conservées en qualité d\'origine. Bivouac peut les remplacer par une version allégée, à condition de retrouver l\'original dans la galerie : celles dont l\'original a disparu ou a changé ne sont jamais touchées.</item>
     </plurals>
     <string name="storage_usage_recompress_button">Recompresser les photos existantes</string>
     <string name="storage_choice_prompt_title">Le poids des photos du Journal</string>
@@ -371,7 +371,7 @@
 
     <!-- Sauvegarde et restauration -->
     <string name="backup_open_destination_failed">Impossible d\'ouvrir la destination sélectionnée.</string>
-    <string name="backup_incomplete_write_message">La sauvegarde n\'a pas été écrite en entier (%1$d octets sur %2$d). Vérifier l\'espace disponible sur la destination, puis recommencer.</string>
+    <string name="backup_incomplete_write_message">La sauvegarde n\'a pas été écrite en entier (%1$s octets sur %2$s). Vérifier l\'espace disponible sur la destination, puis recommencer.</string>
     <string name="restore_missing_database_message">Cette archive ne contient pas de base Bivouac (bivouac.db manquant).</string>
     <string name="restore_corrupted_database_message">L\'archive contient une base corrompue ou illisible : restauration annulée, les données actuelles sont intactes.</string>
     <string name="restore_generic_failure_message">Échec de la restauration.</string>
@@ -521,9 +521,9 @@
     <string name="photo_msg_missing_photo">Photo absente</string>
     <string name="settings_photo_recompress_offer_title">Recompresser les photos ?</string>
     <plurals name="settings_photo_recompress_offer_message">
-        <item quantity="one">%1$d photo déjà importée reste en qualité d\'origine (~%2$s). La recompresser maintenant ?</item>
-        <item quantity="many">%1$d photos déjà importées restent en qualité d\'origine (~%2$s). Les recompresser maintenant ?</item>
-        <item quantity="other">%1$d photos déjà importées restent en qualité d\'origine (~%2$s). Les recompresser maintenant ?</item>
+        <item quantity="one">%1$s photo déjà importée reste en qualité d\'origine (~%2$s). La recompresser maintenant ?</item>
+        <item quantity="many">%1$s photos déjà importées restent en qualité d\'origine (~%2$s). Les recompresser maintenant ?</item>
+        <item quantity="other">%1$s photos déjà importées restent en qualité d\'origine (~%2$s). Les recompresser maintenant ?</item>
     </plurals>
     <string name="settings_photo_recompress_offer_confirm_button">Recompresser</string>
     <string name="settings_photo_recompress_offer_dismiss_button">Plus tard</string>

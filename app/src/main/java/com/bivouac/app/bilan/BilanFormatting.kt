@@ -121,11 +121,13 @@ internal fun recordColor(kind: BilanRecordKind): Color = when (kind) {
 // conditionnel de « sortie(s) cumulée(s) » est remplacé par les formes one/other de la ressource.
 internal fun formatInsight(context: Context, insight: MostActiveMonthInsight): String {
     val monthName = Month.of(insight.monthOfYear).getDisplayName(TextStyle.FULL, Locale.getDefault())
+    // RIC-192 : le cumul de sorties porte le séparateur de milliers de la locale ; l'année
+    // (%3$d) reste un entier brut.
     return context.resources.getQuantityString(
         R.plurals.bilan_insight_most_active_month,
         insight.cumulativeCount,
         monthName,
-        insight.cumulativeCount,
+        formatGroupedInt(insight.cumulativeCount),
         insight.sinceYear,
     )
 }

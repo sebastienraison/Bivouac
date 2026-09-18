@@ -27,6 +27,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
+import com.bivouac.app.ui.components.formatGroupedInt
 
 // RIC-43 : galerie plate en complément du placement sur la trace : pour qui veut juste feuilleter
 // sans passer par la carte. Tap sur une vignette ouvre la visionneuse plein écran au bon index.
@@ -44,7 +45,8 @@ internal fun PhotoGalleryDialog(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        stringResource(R.string.photo_gallery_title_count, photos.size),
+                        // RIC-192 : « Photos (1 234) », séparateur de milliers de la locale.
+                        stringResource(R.string.photo_gallery_title_count, formatGroupedInt(photos.size)),
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f),
                     )

@@ -23,3 +23,7 @@ fun formatKm1(km: Double): String = KM_FORMAT.format(km)
 fun formatGroupedInt(value: Double): String = NumberFormat.getIntegerInstance(Locale.getDefault()).format(value.toLong())
 
 fun formatGroupedInt(value: Int): String = NumberFormat.getIntegerInstance(Locale.getDefault()).format(value)
+
+// RIC-192 : surcharge Long, pour les volumétries en octets de la sauvegarde. Passer par la
+// surcharge Double reviendrait à écrire .toDouble() sur le site d'appel, sans rien y gagner.
+fun formatGroupedInt(value: Long): String = NumberFormat.getIntegerInstance(Locale.getDefault()).format(value)
