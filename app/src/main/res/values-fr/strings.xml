@@ -493,9 +493,6 @@
     <string name="format_distance_km">%1$s km</string>
 
     <!-- Formats (dates, nombres, unités) -->
-    <string name="fmt_elevation_profile_km_axis">%1$s</string>
-    <string name="fmt_number_km1">%1$s</string>
-    <string name="fmt_number_grouped_int">%1$s</string>
     <string name="fmt_stats_rows_gain">D+ %1$s m</string>
     <string name="fmt_stats_rows_loss">D- %1$s m</string>
     <string name="fmt_stats_rows_duration">%1$dh%2$s</string>
@@ -510,7 +507,6 @@
     <string name="settings_format_bytes_mo">%1$s Mo</string>
     <string name="settings_format_bytes_ko">%1$s Ko</string>
     <string name="settings_format_bytes_o">%1$d o</string>
-    <string name="settings_backup_timestamp_pattern">d MMMM \'à\' HH:mm</string>
     <string name="settings_unit_kmh">km/h</string>
     <string name="settings_unit_meters">m</string>
     <string name="settings_manual_penalty_prefix">+1 km / </string>

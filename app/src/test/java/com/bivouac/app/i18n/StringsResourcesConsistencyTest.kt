@@ -143,15 +143,16 @@ class StringsResourcesConsistencyTest {
 
     @Test
     fun `au moins autant de ressources que l'inventaire en compte`() {
-        // 382 lignes dans l'inventaire v5 après le lot 3 (RIC-187 : v3 en avait 403, 15 clés "OK"
-        // fusionnées en une seule common_ok_button ; RIC-188 a laissé v4 à 390 ; RIC-190 fusionne
-        // 10 fragments de countLabel dans les phrases qui les portaient et ajoute 2 clés qui
-        // manquaient), moins les clés volontairement non générées (bilan_month_initials_array, voir
-        // generate_strings.py SKIPPED_KEYS), plus app_name fixe.
+        // 379 lignes dans l'inventaire maître v7 (RIC-187 : v3 en avait 403, 15 clés "OK"
+        // fusionnées en une seule common_ok_button ; RIC-188 : +3 -1 ; RIC-189 : +5, moins 4
+        // motifs de date morts ; RIC-190 : 10 fragments de countLabel fondus dans leurs phrases,
+        // +2 clés, moins 4 clés de format devenues sans objet), moins les clés volontairement non
+        // générées (bilan_month_initials_array, voir generate_strings.py SKIPPED_KEYS), plus
+        // app_name fixe. Le pilotage tient ce nombre à jour à chaque régénération depuis le maître.
         //
         // Le compte exact n'est pas le sujet : ce garde-fou attrape une génération vide ou
         // tronquée, pas un écart d'une clé. Il se met à jour quand un lot bouge l'inventaire.
-        val minimumAttendu = 382 - 1 + 1
+        val minimumAttendu = 379 - 1 + 1
         if (enResources.size < minimumAttendu) {
             fail("Seulement ${enResources.size} ressources générées, au moins $minimumAttendu attendues.")
         }
