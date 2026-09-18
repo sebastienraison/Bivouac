@@ -416,8 +416,8 @@
         <item quantity="one">• et %1$d autre</item>
         <item quantity="other">• et %1$d autres</item>
     </plurals>
-    <string name="journal_msg_probable_duplicate_single">À vérifier : cette trace ressemble à une sortie déjà présente (même date, distance très proche) et a quand même été importée.\\n%1$s</string>
-    <string name="journal_msg_probable_duplicate_multi">À vérifier : ces traces ressemblent à des sorties déjà présentes (même date, distance très proche) et ont quand même été importées.\\n%1$s</string>
+    <string name="journal_msg_probable_duplicate_single">À vérifier : cette trace ressemble à une sortie déjà présente (même date, distance très proche) et a quand même été importée.\n%1$s</string>
+    <string name="journal_msg_probable_duplicate_multi">À vérifier : ces traces ressemblent à des sorties déjà présentes (même date, distance très proche) et ont quand même été importées.\n%1$s</string>
     <string name="journal_msg_unsaved_changes_title">Modifications non enregistrées</string>
     <string name="journal_msg_unsaved_changes_body">Les modifications en cours (tags, note, photos) ne seront pas conservées.</string>
     <string name="journal_msg_discard_button">Ne pas enregistrer</string>

@@ -416,8 +416,8 @@
         <item quantity="one">• and %1$d more</item>
         <item quantity="other">• and %1$d more</item>
     </plurals>
-    <string name="journal_msg_probable_duplicate_single">Worth checking: this track looks like a hike already in the Journal (same date, very similar distance) and was imported anyway.\\n%1$s</string>
-    <string name="journal_msg_probable_duplicate_multi">Worth checking: these tracks look like hikes already in the Journal (same date, very similar distance) and were imported anyway.\\n%1$s</string>
+    <string name="journal_msg_probable_duplicate_single">Worth checking: this track looks like a hike already in the Journal (same date, very similar distance) and was imported anyway.\n%1$s</string>
+    <string name="journal_msg_probable_duplicate_multi">Worth checking: these tracks look like hikes already in the Journal (same date, very similar distance) and were imported anyway.\n%1$s</string>
     <string name="journal_msg_unsaved_changes_title">Unsaved changes</string>
     <string name="journal_msg_unsaved_changes_body">Current changes (tags, note, photos) will not be kept.</string>
     <string name="journal_msg_discard_button">Don\'t save</string>
