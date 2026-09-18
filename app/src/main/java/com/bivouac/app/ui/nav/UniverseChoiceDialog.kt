@@ -9,7 +9,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.bivouac.app.R
 import com.bivouac.app.ui.components.ChoiceOptionCard
 
 /**
@@ -38,30 +40,35 @@ fun UniverseChoiceDialog(
     val planificationAvailable = UniverseChoice.planificationAccepts(fileCount)
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text("Cette trace, c'est pour le Journal ou pour Planification ?") },
+        title = { Text(stringResource(R.string.nav_universe_choice_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 ChoiceOptionCard(
                     icon = Icons.AutoMirrored.Filled.MenuBook,
-                    title = "Journal",
-                    subtitle = "Une rando déjà faite, à archiver dans ton carnet",
+                    title = stringResource(R.string.journal_list_screen_title),
+                    subtitle = stringResource(R.string.nav_universe_choice_option_journal_subtitle),
                     onClick = onJournalChosen,
                 )
                 ChoiceOptionCard(
                     icon = Icons.Default.Route,
-                    title = "Planification",
-                    subtitle = if (planificationAvailable) {
-                        "Une trace à préparer, avec ses points de bivouac"
-                    } else {
-                        UniverseChoice.PLANIFICATION_MULTI_FILE_SUBTITLE
-                    },
+                    title = stringResource(R.string.nav_section_planification),
+                    subtitle = stringResource(
+                        if (planificationAvailable) {
+                            R.string.nav_universe_choice_option_planification_subtitle
+                        } else {
+                            // RIC-190 (lot 3 i18n) : la constante UniverseChoice.PLANIFICATION_
+                            // MULTI_FILE_SUBTITLE a été remplacée par cette ressource. Le when
+                            // choisit un id, le stringResource reste unique.
+                            R.string.nav_universe_choice_planification_disabled_subtitle
+                        },
+                    ),
                     onClick = onPlanificationChosen,
                     enabled = planificationAvailable,
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = onCancel) { Text("Annuler") }
+            TextButton(onClick = onCancel) { Text(stringResource(R.string.common_cancel_button)) }
         },
     )
 }
@@ -79,9 +86,6 @@ object UniverseChoice {
 
     /** Ce que la Planification sait ouvrir d'un seul geste : un fichier, pas un lot. */
     const val MAX_PLANIFICATION_FILES = 1
-
-    const val PLANIFICATION_MULTI_FILE_SUBTITLE =
-        "N'ouvre qu'un fichier à la fois : passe par le Journal pour un lot"
 
     fun planificationAccepts(fileCount: Int): Boolean = fileCount <= MAX_PLANIFICATION_FILES
 }

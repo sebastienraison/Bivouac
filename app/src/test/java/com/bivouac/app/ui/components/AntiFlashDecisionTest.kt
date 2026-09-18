@@ -107,13 +107,19 @@ class AntiFlashDecisionTest {
         assertNull(decision.recheckInMillis)
     }
 
-    /** Le compteur n'est affiché que quand le travail est réellement dénombrable. */
+    /**
+     * Le compteur n'est affiché que quand le travail est réellement dénombrable.
+     *
+     * RIC-190 (lot 3 i18n) : la fonction rend maintenant la décision et non la phrase (le texte
+     * vient des ressources, côté Compose). Ce qui se vérifie ici est donc la même règle, sans
+     * dépendre d'un libellé français.
+     */
     @Test
     fun leLibelleDeProgressionDitCeQuIlSait() {
-        assertEquals("3 sur 12…", blockingProgressLabel(3, 12))
-        assertEquals("Patiente un instant…", blockingProgressLabel(4, null))
-        assertEquals("Patiente un instant…", blockingProgressLabel(null, 12))
-        assertEquals("Patiente un instant…", blockingProgressLabel(null, null))
-        assertEquals("un total à zéro n'est pas un dénominateur", "Patiente un instant…", blockingProgressLabel(0, 0))
+        assertEquals(3 to 12, countableProgress(3, 12))
+        assertNull(countableProgress(4, null))
+        assertNull(countableProgress(null, 12))
+        assertNull(countableProgress(null, null))
+        assertNull("un total à zéro n'est pas un dénominateur", countableProgress(0, 0))
     }
 }
