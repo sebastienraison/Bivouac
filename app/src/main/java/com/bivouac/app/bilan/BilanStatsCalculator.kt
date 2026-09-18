@@ -1,5 +1,7 @@
 package com.bivouac.app.bilan
 
+import androidx.annotation.StringRes
+import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackDayEntity
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.gpx.SpeedCalibration
@@ -10,15 +12,25 @@ import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
 
-/** RIC-19 §2 : les 5 métriques du sélecteur, dans l'ordre d'affichage de la maquette. */
-enum class ProgressionMetric(val label: String, val chartTitle: String, val isLine: Boolean) {
-    SORTIES("Sorties", "Sorties par mois", isLine = false),
-    KM("Km", "Km par mois", isLine = false),
-    DPLUS("D+", "D+ par mois", isLine = false),
+/**
+ * RIC-19 §2 : les 5 métriques du sélecteur, dans l'ordre d'affichage de la maquette.
+ *
+ * RIC-190 (lot 3 i18n) : libellé et titre sont des ids de ressource et non des chaînes, résolus à
+ * l'affichage (BilanScreen), comme MapLayer.labelRes au lot 1 : un enum se construit à
+ * l'initialisation de la classe, bien avant qu'un Context existe.
+ */
+enum class ProgressionMetric(
+    @StringRes val labelRes: Int,
+    @StringRes val chartTitleRes: Int,
+    val isLine: Boolean,
+) {
+    SORTIES(R.string.bilan_metric_label_sorties, R.string.bilan_metric_chart_title_sorties, isLine = false),
+    KM(R.string.bilan_metric_label_km, R.string.bilan_metric_chart_title_km, isLine = false),
+    DPLUS(R.string.bilan_metric_label_dplus, R.string.bilan_metric_chart_title_dplus, isLine = false),
     // Ligne (sparkline) et non barres : c'est une moyenne, pas une somme (RIC-19 §2) : sommer une
     // vitesse d'un mois à l'autre n'a aucun sens physique.
-    VITESSE("Vitesse", "Vitesse à plat calibrée, par mois", isLine = true),
-    BIVOUACS("Bivouacs", "Bivouacs par mois", isLine = false),
+    VITESSE(R.string.bilan_metric_label_vitesse, R.string.bilan_metric_chart_title_vitesse, isLine = true),
+    BIVOUACS(R.string.bilan_metric_label_bivouacs, R.string.bilan_metric_chart_title_bivouacs, isLine = false),
 }
 
 /** Un point du graphique Progression. [value] est null quand le mois n'a littéralement rien à montrer
