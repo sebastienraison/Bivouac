@@ -12,9 +12,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
+import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 
 /**
@@ -43,12 +45,12 @@ internal fun PhotoCaptionDialog(
     }
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text("Légende") },
+        title = { Text(stringResource(R.string.photo_gallery_caption_dialog_title)) },
         text = {
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
-                placeholder = { Text("Ajouter une légende") },
+                placeholder = { Text(stringResource(R.string.photo_gallery_caption_placeholder)) },
                 // RIC-176 : majuscule automatique en début de phrase, comme le champ de note de
                 // JournalScreen (même nature de texte libre, saisi au clavier).
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
@@ -56,10 +58,10 @@ internal fun PhotoCaptionDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(text.text) }) { Text("OK") }
+            TextButton(onClick = { onConfirm(text.text) }) { Text(stringResource(R.string.common_ok_button)) }
         },
         dismissButton = {
-            TextButton(onClick = onCancel) { Text("Annuler") }
+            TextButton(onClick = onCancel) { Text(stringResource(R.string.common_cancel_button)) }
         },
     )
 }

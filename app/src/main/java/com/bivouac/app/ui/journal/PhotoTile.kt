@@ -23,12 +23,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
+import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
 import com.bivouac.app.data.db.positionUncertain
@@ -113,7 +115,7 @@ private fun MissingPhotoPlaceholder(modifier: Modifier = Modifier) {
                 modifier = Modifier.size(20.dp),
             )
             Text(
-                "Photo absente",
+                stringResource(R.string.photo_msg_missing_photo),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -152,7 +154,7 @@ private fun ApproximatePositionBadge(modifier: Modifier = Modifier) {
     ) {
         Icon(
             Icons.Default.LocationSearching,
-            contentDescription = "Positionnement approximatif",
+            contentDescription = stringResource(R.string.photo_gallery_approximate_position_description),
             tint = Color.White,
             modifier = Modifier.padding(PhotoBadgePadding).size(PhotoBadgeIconSize),
         )
@@ -178,7 +180,7 @@ private fun RemovedFromMapBadge(modifier: Modifier = Modifier) {
     ) {
         Icon(
             Icons.Default.LocationOff,
-            contentDescription = "Retirée de la carte",
+            contentDescription = stringResource(R.string.photo_gallery_removed_from_map_description),
             tint = Color.White,
             modifier = Modifier.padding(PhotoBadgePadding).size(PhotoBadgeIconSize),
         )

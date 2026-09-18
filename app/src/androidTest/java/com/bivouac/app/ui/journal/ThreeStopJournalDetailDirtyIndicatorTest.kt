@@ -6,6 +6,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.ui.theme.BivouacTheme
@@ -13,11 +15,19 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
+/**
+ * RIC-189 (lot 2 i18n) : les descriptions de contenu visées viennent des ressources. Le GMD tourne
+ * en en-US, donc l'app y est en anglais et un test écrit sur « Modifier » ne trouverait plus rien.
+ * Seul « Solo » reste un littéral : c'est un libellé de SystemTag (data/db), pas encore migré.
+ */
 @RunWith(AndroidJUnit4::class)
 class ThreeStopJournalDetailDirtyIndicatorTest {
 
     @get:Rule
     val composeRule = createComposeRule()
+
+    private fun string(id: Int): String =
+        InstrumentationRegistry.getInstrumentation().targetContext.getString(id)
 
     private val entry = LoggedTrackEntity(
         id = "track-test",
@@ -60,22 +70,22 @@ class ThreeStopJournalDetailDirtyIndicatorTest {
         setContent()
 
         // Not editing yet: neutral "Modifier" (edit) icon, no save icon at all.
-        composeRule.onNodeWithContentDescription("Modifier").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.journal_detail_edit_description)).assertIsDisplayed()
 
-        composeRule.onNodeWithContentDescription("Modifier").performClick()
+        composeRule.onNodeWithContentDescription(string(R.string.journal_detail_edit_description)).performClick()
 
         // Editing started, nothing changed yet: neutral save icon, plain label.
-        composeRule.onNodeWithContentDescription("Enregistrer").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.common_save_button)).assertIsDisplayed()
 
         // Toggling a system tag makes the draft diverge from the saved state.
         composeRule.onNodeWithText("Solo").performClick()
 
         // Dirty: orange-tinted save icon with the accessibility label reflecting unsaved changes.
-        composeRule.onNodeWithContentDescription("Enregistrer (modifications non sauvegardées)")
+        composeRule.onNodeWithContentDescription(string(R.string.journal_detail_save_dirty_description))
             .assertIsDisplayed()
             .performClick()
 
         // Saving stops editing immediately, returning to the neutral edit icon.
-        composeRule.onNodeWithContentDescription("Modifier").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.journal_detail_edit_description)).assertIsDisplayed()
     }
 }

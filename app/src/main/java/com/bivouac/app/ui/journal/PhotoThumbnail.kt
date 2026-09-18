@@ -20,7 +20,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 
 /**
@@ -71,12 +73,12 @@ internal fun PhotoThumbnail(
             // édition seulement, comme tout ce menu : ajuster est une modification, elle rejoint le
             // même brouillon que la note et les tags, et attend la disquette.
             DropdownMenuItem(
-                text = { Text("Ajuster") },
+                text = { Text(stringResource(R.string.photo_adjust_dialog_title)) },
                 leadingIcon = { Icon(Icons.Default.Crop, contentDescription = null) },
                 onClick = { menuExpanded = false; onAdjustClick() },
             )
             DropdownMenuItem(
-                text = { Text("Supprimer") },
+                text = { Text(stringResource(R.string.common_delete_button)) },
                 leadingIcon = {
                     Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                 },

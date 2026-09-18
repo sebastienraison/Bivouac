@@ -106,6 +106,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
@@ -587,7 +589,7 @@ fun JournalScreen(
         var name by remember(detail.entry.id) { mutableStateOf(detail.entry.name) }
         AlertDialog(
             onDismissRequest = { renameDialogVisible = false },
-            title = { Text("Renommer la trace") },
+            title = { Text(stringResource(R.string.journal_detail_rename_dialog_title)) },
             text = {
                 OutlinedTextField(
                     value = name,
@@ -603,10 +605,12 @@ fun JournalScreen(
                 TextButton(onClick = {
                     viewModel.renameCurrentTrack(name)
                     renameDialogVisible = false
-                }) { Text("Enregistrer") }
+                }) { Text(stringResource(R.string.common_save_button)) }
             },
             dismissButton = {
-                TextButton(onClick = { renameDialogVisible = false }) { Text("Annuler") }
+                TextButton(onClick = { renameDialogVisible = false }) {
+                    Text(stringResource(R.string.common_cancel_button))
+                }
             },
         )
     }
@@ -614,10 +618,12 @@ fun JournalScreen(
     if (importError != null) {
         AlertDialog(
             onDismissRequest = viewModel::dismissImportError,
-            title = { Text("Import impossible") },
+            title = { Text(stringResource(R.string.journal_msg_import_failed_title)) },
             text = { Text(importError ?: "") },
             confirmButton = {
-                TextButton(onClick = viewModel::dismissImportError) { Text("OK") }
+                TextButton(onClick = viewModel::dismissImportError) {
+                    Text(stringResource(R.string.common_ok_button))
+                }
             },
         )
     }
@@ -627,10 +633,10 @@ fun JournalScreen(
     (uiState as? JournalUiState.Error)?.let { error ->
         AlertDialog(
             onDismissRequest = viewModel::closeTrack,
-            title = { Text("Ouverture impossible") },
+            title = { Text(stringResource(R.string.journal_msg_open_failed_title)) },
             text = { Text(error.message) },
             confirmButton = {
-                TextButton(onClick = viewModel::closeTrack) { Text("OK") }
+                TextButton(onClick = viewModel::closeTrack) { Text(stringResource(R.string.common_ok_button)) }
             },
         )
     }
@@ -649,10 +655,12 @@ fun JournalScreen(
     separateImportReport?.let { report ->
         AlertDialog(
             onDismissRequest = viewModel::dismissSeparateImportReport,
-            title = { Text("Import terminé") },
+            title = { Text(stringResource(R.string.journal_msg_separate_import_report_title)) },
             text = { Text(formatSeparateImportReport(report)) },
             confirmButton = {
-                TextButton(onClick = viewModel::dismissSeparateImportReport) { Text("OK") }
+                TextButton(onClick = viewModel::dismissSeparateImportReport) {
+                    Text(stringResource(R.string.common_ok_button))
+                }
             },
         )
     }
@@ -663,17 +671,21 @@ fun JournalScreen(
             title = {
                 Text(
                     when (warning) {
-                        is DuplicateMatch.SharedDay -> "Journée déjà présente"
-                        else -> "Trace peut-être déjà présente"
+                        is DuplicateMatch.SharedDay -> stringResource(R.string.journal_msg_duplicate_day_title)
+                        else -> stringResource(R.string.journal_msg_duplicate_track_title)
                     },
                 )
             },
             text = { Text(formatDuplicateWarning(warning)) },
             confirmButton = {
-                TextButton(onClick = viewModel::confirmImportAnyway) { Text("Importer quand même") }
+                TextButton(onClick = viewModel::confirmImportAnyway) {
+                    Text(stringResource(R.string.journal_msg_import_anyway_button))
+                }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissDuplicateWarning) { Text("Annuler") }
+                TextButton(onClick = viewModel::dismissDuplicateWarning) {
+                    Text(stringResource(R.string.common_cancel_button))
+                }
             },
         )
     }
@@ -681,15 +693,17 @@ fun JournalScreen(
     deleteTarget?.let { target ->
         AlertDialog(
             onDismissRequest = viewModel::dismissDeleteConfirmation,
-            title = { Text("Supprimer cette trace ?") },
-            text = { Text("« ${target.name} » sera définitivement supprimée du journal. Cette action est irréversible.") },
+            title = { Text(stringResource(R.string.journal_msg_delete_track_title)) },
+            text = { Text(stringResource(R.string.journal_msg_delete_track_body, target.name)) },
             confirmButton = {
                 TextButton(onClick = viewModel::confirmDelete) {
-                    Text("Supprimer", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.common_delete_button), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissDeleteConfirmation) { Text("Annuler") }
+                TextButton(onClick = viewModel::dismissDeleteConfirmation) {
+                    Text(stringResource(R.string.common_cancel_button))
+                }
             },
         )
     }
@@ -700,15 +714,17 @@ fun JournalScreen(
     photoDeleteTarget?.let {
         AlertDialog(
             onDismissRequest = viewModel::dismissPhotoDeleteConfirmation,
-            title = { Text("Supprimer cette photo ?") },
-            text = { Text("Seule la copie dans Bivouac est supprimée, pas l'original dans ta galerie.") },
+            title = { Text(stringResource(R.string.journal_msg_delete_photo_title)) },
+            text = { Text(stringResource(R.string.journal_msg_delete_photo_body)) },
             confirmButton = {
                 TextButton(onClick = viewModel::confirmDeletePhoto) {
-                    Text("Supprimer", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.common_delete_button), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissPhotoDeleteConfirmation) { Text("Annuler") }
+                TextButton(onClick = viewModel::dismissPhotoDeleteConfirmation) {
+                    Text(stringResource(R.string.common_cancel_button))
+                }
             },
         )
     }
@@ -719,21 +735,18 @@ fun JournalScreen(
     if (photoPermissionBlockedDialog) {
         AlertDialog(
             onDismissRequest = { photoPermissionBlockedDialog = false },
-            title = { Text("Accès aux photos refusé") },
-            text = {
-                Text(
-                    "Android ne redemandera plus l'autorisation depuis l'application. " +
-                        "Pour ajouter des photos, autorise l'accès à la galerie dans les réglages de l'application.",
-                )
-            },
+            title = { Text(stringResource(R.string.journal_msg_photo_access_denied_title)) },
+            text = { Text(stringResource(R.string.journal_msg_photo_access_denied_body)) },
             confirmButton = {
                 TextButton(onClick = {
                     photoPermissionBlockedDialog = false
                     journalContext.openAppSettings()
-                }) { Text("Ouvrir les réglages") }
+                }) { Text(stringResource(R.string.journal_msg_open_settings_button)) }
             },
             dismissButton = {
-                TextButton(onClick = { photoPermissionBlockedDialog = false }) { Text("Annuler") }
+                TextButton(onClick = { photoPermissionBlockedDialog = false }) {
+                    Text(stringResource(R.string.common_cancel_button))
+                }
             },
         )
     }
@@ -764,8 +777,8 @@ fun JournalScreen(
         progress = photoOperationProgress?.let { progress ->
             BlockingProgress(
                 title = when (progress.phase) {
-                    PhotoOperationPhase.IMPORT -> "Import des photos"
-                    PhotoOperationPhase.COMMIT -> "Enregistrement des photos"
+                    PhotoOperationPhase.IMPORT -> stringResource(R.string.journal_msg_photo_import_progress_title)
+                    PhotoOperationPhase.COMMIT -> stringResource(R.string.journal_msg_photo_commit_progress_title)
                 },
                 done = progress.done,
                 total = progress.total,
@@ -779,10 +792,12 @@ fun JournalScreen(
     photoError?.let { message ->
         AlertDialog(
             onDismissRequest = viewModel::dismissPhotoError,
-            title = { Text("Photos") },
+            title = { Text(stringResource(R.string.journal_msg_photo_error_title)) },
             text = { Text(message) },
             confirmButton = {
-                TextButton(onClick = viewModel::dismissPhotoError) { Text("OK") }
+                TextButton(onClick = viewModel::dismissPhotoError) {
+                    Text(stringResource(R.string.common_ok_button))
+                }
             },
         )
     }
@@ -790,10 +805,12 @@ fun JournalScreen(
     photoAddReport?.let { report ->
         AlertDialog(
             onDismissRequest = viewModel::dismissPhotoAddReport,
-            title = { Text("Ajout terminé") },
+            title = { Text(stringResource(R.string.journal_msg_photo_add_report_title)) },
             text = { Text(formatPhotoAddReport(report)) },
             confirmButton = {
-                TextButton(onClick = viewModel::dismissPhotoAddReport) { Text("OK") }
+                TextButton(onClick = viewModel::dismissPhotoAddReport) {
+                    Text(stringResource(R.string.common_ok_button))
+                }
             },
         )
     }
@@ -883,31 +900,32 @@ fun JournalScreen(
  * première explique pourquoi la sélection ne se retrouve pas entièrement dans le bandeau, la
  * seconde qu'il reste quelque chose à refaire.
  */
+@Composable
 private fun formatPhotoAddReport(report: PhotoAddReport): String {
     val lines = mutableListOf<String>()
-    lines += when (report.added) {
-        // RIC-149 : « en attente d'enregistrement » et non « ajoutée » tout court : à ce stade les
-        // photos sont en transit, visibles dans le bandeau mais pas encore dans le Journal. Le
-        // bilan reste rendu au moment de la sélection, seul instant où l'on sait ce qui a été
-        // écarté ou n'a pas pu être lu ; le décaler à la sauvegarde reviendrait à annoncer un
-        // doublon plusieurs minutes après le geste qui l'a produit.
-        0 -> "Aucune photo ajoutée."
-        1 -> "1 photo ajoutée, en attente d'enregistrement."
-        else -> "${report.added} photos ajoutées, en attente d'enregistrement."
+    // RIC-149 : « en attente d'enregistrement » et non « ajoutée » tout court : à ce stade les
+    // photos sont en transit, visibles dans le bandeau mais pas encore dans le Journal. Le
+    // bilan reste rendu au moment de la sélection, seul instant où l'on sait ce qui a été
+    // écarté ou n'a pas pu être lu ; le décaler à la sauvegarde reviendrait à annoncer un
+    // doublon plusieurs minutes après le geste qui l'a produit.
+    //
+    // RIC-189 (lot 2 i18n) : la branche 0 reste du code et ne devient pas une quantité `zero` du
+    // plurals : Android n'honore cette quantité ni en français ni en anglais (règle CLDR), elle
+    // serait écrite pour rien et ne sortirait jamais.
+    lines += if (report.added == 0) {
+        stringResource(R.string.journal_msg_no_photos_added)
+    } else {
+        pluralStringResource(R.plurals.journal_msg_photos_added_count, report.added, report.added)
     }
     if (report.duplicatesSkipped > 0) {
-        lines += if (report.duplicatesSkipped == 1) {
-            "1 photo écartée (déjà sur cette sortie)."
-        } else {
-            "${report.duplicatesSkipped} photos écartées (déjà sur cette sortie)."
-        }
+        lines += pluralStringResource(
+            R.plurals.journal_msg_photos_duplicates_skipped_count,
+            report.duplicatesSkipped,
+            report.duplicatesSkipped,
+        )
     }
     if (report.failed > 0) {
-        lines += if (report.failed == 1) {
-            "1 photo illisible, non ajoutée."
-        } else {
-            "${report.failed} photos illisibles, non ajoutées."
-        }
+        lines += pluralStringResource(R.plurals.journal_msg_photos_failed_count, report.failed, report.failed)
     }
     return lines.joinToString("\n")
 }
@@ -931,7 +949,7 @@ private fun MultiFileImportChoiceDialog(
 ) {
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text("Comment ajouter ces $fileCount traces ?") },
+        title = { Text(stringResource(R.string.journal_msg_multi_import_choice_title, fileCount)) },
         // Les deux choix vivent dans le corps du dialogue plutôt que dans ses slots d'action :
         // c'est ce qui permet de les empiler pleine largeur et de hiérarchiser visuellement le
         // trek multi-jours. Ne reste dans les actions que la porte de sortie.
@@ -939,24 +957,26 @@ private fun MultiFileImportChoiceDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Conservé de RIC-41 : importer un lot a l'air irréversible, et savoir que rien
                 // n'est encore écrit est ce qui permet d'ouvrir ce dialogue sans crainte.
-                Text("Rien n'est importé tant que tu n'as pas choisi.")
+                Text(stringResource(R.string.journal_msg_multi_import_nothing_yet))
                 ChoiceOptionCard(
                     icon = Icons.Default.ContentCopy,
-                    title = "Sorties séparées",
-                    subtitle = "$fileCount randos indépendantes, une entrée chacune dans le Journal",
+                    title = stringResource(R.string.journal_msg_multi_import_separate_title),
+                    subtitle = stringResource(R.string.journal_msg_multi_import_separate_subtitle, fileCount),
                     onClick = onSeparate,
                 )
                 ChoiceOptionCard(
                     icon = Icons.Default.Terrain,
-                    title = "Un seul trek en plusieurs jours",
-                    subtitle = "Un fichier = un jour, réunis en une seule sortie multi-jours",
+                    title = stringResource(R.string.journal_msg_multi_import_multiday_title),
+                    subtitle = stringResource(R.string.journal_msg_multi_import_multiday_subtitle),
                     onClick = onMultiDay,
                     recommended = true,
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = onCancel) { Text("Abandonner l'ajout") }
+            TextButton(onClick = onCancel) {
+                Text(stringResource(R.string.journal_msg_multi_import_cancel_button))
+            }
         },
     )
 }
@@ -973,7 +993,7 @@ private fun ImportProgressDialog(progress: ImportProgress) {
     AlertDialog(
         onDismissRequest = {},
         properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-        title = { Text("Import en cours") },
+        title = { Text(stringResource(R.string.journal_msg_import_progress_title)) },
         text = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
@@ -981,11 +1001,18 @@ private fun ImportProgressDialog(progress: ImportProgress) {
                     when (progress) {
                         // La calibration Auto reparse tout le journal : sur une banque fournie
                         // c'est l'étape la plus longue, et la nommer évite de croire à un blocage.
-                        ImportProgress.Calibrating -> "Mise à jour de la vitesse personnalisée…"
+                        ImportProgress.Calibrating -> stringResource(R.string.journal_msg_import_calibrating)
                         is ImportProgress.Reading -> when {
-                            progress.total == 1 -> "Lecture de la trace…"
-                            progress.done == 0 && progress.total > 1 -> "Lecture de ${progress.total} fichiers…"
-                            else -> "Fichier ${progress.done + 1} sur ${progress.total}…"
+                            progress.total == 1 -> stringResource(R.string.journal_msg_import_reading_single)
+                            progress.done == 0 && progress.total > 1 -> stringResource(
+                                R.string.journal_msg_import_reading_start,
+                                progress.total,
+                            )
+                            else -> stringResource(
+                                R.string.journal_msg_import_reading_progress,
+                                progress.done + 1,
+                                progress.total,
+                            )
                         }
                     },
                 )
@@ -1001,41 +1028,58 @@ private fun ImportProgressDialog(progress: ImportProgress) {
  * identique à l'octet près. La question posée reste la même dans les deux cas, parce que
  * l'intention, elle, n'est certaine ni dans un cas ni dans l'autre.
  */
+@Composable
 private fun formatDuplicateWarning(warning: DuplicateMatch): String {
     val existingName = warning.existing.name
     val existingDate = formatStartedAtWithTime(warning.existing.startedAt)
+    // RIC-189 (lot 2 i18n) : trois phrases entières et non plus un sujet variable collé à un
+    // suffixe commun. La composition marchait en français, où le complément suit toujours le
+    // sujet ; elle ne survit pas à une langue qui range ses mots autrement, et elle prive le
+    // traducteur de la phrase qu'il doit traduire.
     return when (warning) {
-        is DuplicateMatch.SharedDay -> {
-            val subject = when {
-                warning.incomingDays == 1 -> "Cette journée est déjà"
-                warning.sharedDays == 1 -> "Une des journées de ce trek est déjà"
-                else -> "${warning.sharedDays} des journées de ce trek sont déjà"
-            }
-            "$subject dans « $existingName » ($existingDate). Importer quand même ?"
+        is DuplicateMatch.SharedDay -> when {
+            warning.incomingDays == 1 -> stringResource(
+                R.string.journal_msg_duplicate_single_day_body,
+                existingName,
+                existingDate,
+            )
+            warning.sharedDays == 1 -> stringResource(
+                R.string.journal_msg_duplicate_one_shared_day_body,
+                existingName,
+                existingDate,
+            )
+            else -> stringResource(
+                R.string.journal_msg_duplicate_multi_shared_days_body,
+                warning.sharedDays,
+                existingName,
+                existingDate,
+            )
         }
-        else -> "« $existingName » ($existingDate) a une date et une distance très proches. " +
-            "Importer quand même ?"
+        else -> stringResource(R.string.journal_msg_duplicate_track_body, existingName, existingDate)
     }
 }
 
 private const val MaxReportedProbableDuplicates = 5
 
+@Composable
 private fun formatSeparateImportReport(report: SeparateImportReport): String {
     val lines = mutableListOf<String>()
-    lines += when (report.imported) {
-        0 -> "Aucune trace importée."
-        1 -> "1 trace importée."
-        else -> "${report.imported} traces importées."
+    // RIC-189 (lot 2 i18n) : branche 0 gardée dans le code, quantité `zero` d'Android non honorée
+    // en français ni en anglais. Même raison que formatPhotoAddReport.
+    lines += if (report.imported == 0) {
+        stringResource(R.string.journal_msg_no_tracks_imported)
+    } else {
+        pluralStringResource(R.plurals.journal_msg_tracks_imported_count, report.imported, report.imported)
     }
     if (report.duplicatesSkipped > 0) {
-        lines += if (report.duplicatesSkipped == 1) {
-            "1 fichier écarté (déjà dans le journal)."
-        } else {
-            "${report.duplicatesSkipped} fichiers écartés (déjà dans le journal)."
-        }
+        lines += pluralStringResource(
+            R.plurals.journal_msg_files_duplicates_skipped_count,
+            report.duplicatesSkipped,
+            report.duplicatesSkipped,
+        )
     }
     if (report.failed > 0) {
-        lines += if (report.failed == 1) "1 fichier illisible." else "${report.failed} fichiers illisibles."
+        lines += pluralStringResource(R.plurals.journal_msg_files_failed_count, report.failed, report.failed)
     }
     // Le signalement des doublons probables tient dans ce bilan plutôt que dans un popup par
     // fichier : le bilan est déjà l'écran à simple acquittement de fin de lot, et multiplier les
@@ -1046,14 +1090,21 @@ private fun formatSeparateImportReport(report: SeparateImportReport): String {
         // l'écran. Le reste est compté, jamais escamoté en silence.
         val shown = report.probableDuplicateNames.take(MaxReportedProbableDuplicates)
         val hidden = report.probableDuplicateNames.size - shown.size
-        val names = shown.joinToString("\n") { "• $it" } +
-            if (hidden > 0) "\n• et $hidden autre${if (hidden > 1) "s" else ""}" else ""
-        lines += if (report.probableDuplicateNames.size == 1) {
-            "\nÀ vérifier : cette trace ressemble à une sortie déjà présente (même date, distance " +
-                "très proche) et a quand même été importée.\n$names"
+        // Le motif de la puce est lu une fois hors de joinToString : cette dernière n'est pas une
+        // fonction inline, une lecture de ressource ne peut donc pas vivre dans sa lambda.
+        val bullet = stringResource(R.string.journal_msg_probable_duplicate_bullet)
+        val more = if (hidden > 0) {
+            "\n" + pluralStringResource(R.plurals.journal_msg_probable_duplicate_more, hidden, hidden)
         } else {
-            "\nÀ vérifier : ces traces ressemblent à des sorties déjà présentes (même date, " +
-                "distance très proche) et ont quand même été importées.\n$names"
+            ""
+        }
+        val names = shown.joinToString("\n") { String.format(bullet, it) } + more
+        // Le saut de ligne d'ouverture reste ici : il sépare ce bloc du reste du bilan, il ne fait
+        // pas partie de la phrase et n'a rien à faire dans la ressource.
+        lines += "\n" + if (report.probableDuplicateNames.size == 1) {
+            stringResource(R.string.journal_msg_probable_duplicate_single, names)
+        } else {
+            stringResource(R.string.journal_msg_probable_duplicate_multi, names)
         }
     }
     return lines.joinToString("\n")
@@ -1168,19 +1219,19 @@ private fun PhotoPlacementBanner(onDone: () -> Unit, onCancel: () -> Unit, modif
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                "Fais glisser la photo sur la trace",
+                stringResource(R.string.journal_photos_placement_banner_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFF1A1C19),
                 modifier = Modifier.weight(1f, fill = false),
             )
             TextButton(onClick = onCancel) {
-                Text("Annuler")
+                Text(stringResource(R.string.common_cancel_button))
             }
             Button(
                 onClick = onDone,
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
             ) {
-                Text("Terminé")
+                Text(stringResource(R.string.common_done_button))
             }
         }
     }
@@ -1234,7 +1285,13 @@ private fun JournalHomeScreen(
     Scaffold(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { AppScreenHeader(title = "Journal", currentSection = currentSection, onSectionSelected = onSectionSelected) },
+        topBar = {
+            AppScreenHeader(
+                title = stringResource(R.string.journal_list_screen_title),
+                currentSection = currentSection,
+                onSectionSelected = onSectionSelected,
+            )
+        },
         floatingActionButton = {
             // Le CTA plein écran de l'état vraiment vide (ci-dessous) est la seule action possible
             // de cet écran : un FAB par-dessus ferait doublon. Masqué aussi tant que le chargement
@@ -1256,10 +1313,14 @@ private fun JournalHomeScreen(
                     icon = {
                         Icon(
                             Icons.Default.Add,
-                            contentDescription = if (expanded) null else "Ajouter une trace",
+                            contentDescription = if (expanded) {
+                                null
+                            } else {
+                                stringResource(R.string.journal_list_add_track_button)
+                            },
                         )
                     },
-                    text = { Text("Ajouter une trace") },
+                    text = { Text(stringResource(R.string.journal_list_add_track_button)) },
                 )
             }
         },
@@ -1277,9 +1338,9 @@ private fun JournalHomeScreen(
         } else if (neverImported) {
             FullScreenEmptyState(
                 icon = Icons.Default.Terrain,
-                title = "Aucune rando pour l'instant",
-                subtitle = "Ajoute une trace pour commencer ton carnet : tes randos réalisées vivront ici.",
-                buttonText = "Ajouter une trace",
+                title = stringResource(R.string.journal_list_empty_title),
+                subtitle = stringResource(R.string.journal_list_empty_subtitle),
+                buttonText = stringResource(R.string.journal_list_add_track_button),
                 onButtonClick = onImportClick,
                 modifier = Modifier.padding(paddingValues).fillMaxSize(),
             )
@@ -1330,7 +1391,7 @@ private fun JournalBilanCard(
     modifier: Modifier = Modifier,
 ) {
     TotalsCapsule(
-        totalLabel = "$total rando${if (total > 1) "s" else ""} au total",
+        totalLabel = pluralStringResource(R.plurals.journal_list_total_hikes_count, total, total),
         stats = stats,
         bivouacCount = bivouacCount,
         modifier = modifier,
@@ -1428,10 +1489,13 @@ private fun JournalPopulatedList(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(12.dp))
-                    Text("Aucune rando ne correspond", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.journal_list_filter_empty_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Essaie un autre filtre.",
+                        stringResource(R.string.journal_list_filter_empty_hint),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1467,22 +1531,35 @@ private fun JournalPopulatedList(
                 ) {
                     Text(
                         when {
-                            calibrationSelectionActive -> "Confirmer la sélection (${selectedTrackIds.size})"
-                            selectedTrackIds.isEmpty() -> "Afficher les ${filteredTracks.size} résultats sur la carte"
-                            else -> "Afficher la sélection (${selectedTrackIds.size})"
+                            calibrationSelectionActive -> stringResource(
+                                R.string.journal_list_confirm_selection_button,
+                                selectedTrackIds.size,
+                            )
+                            selectedTrackIds.isEmpty() -> pluralStringResource(
+                                R.plurals.journal_list_show_results_on_map_button,
+                                filteredTracks.size,
+                                filteredTracks.size,
+                            )
+                            else -> stringResource(
+                                R.string.journal_list_show_selection_on_map_button,
+                                selectedTrackIds.size,
+                            )
                         },
                     )
                 }
                 if (selectionModeActive) {
                     IconButton(onClick = onExitSelectionMode) {
-                        Icon(Icons.Default.Close, contentDescription = "Annuler la sélection")
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = stringResource(R.string.journal_list_cancel_selection_description),
+                        )
                     }
                 }
             }
         }
         if (calibrationSelectionActive && selectedTrackIds.size < SpeedCalibrationCalculator.MIN_TRACKS_FOR_CALIBRATION) {
             Text(
-                "Choisis au moins 2 traces pour valider.",
+                stringResource(R.string.journal_list_min_selection_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp),
@@ -1611,7 +1688,12 @@ private fun YearHeader(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = "${group.year} · ${group.entries.size} rando${if (group.entries.size > 1) "s" else ""}",
+                text = pluralStringResource(
+                    R.plurals.journal_list_year_header_count,
+                    group.entries.size,
+                    group.year,
+                    group.entries.size,
+                ),
                 style = MaterialTheme.typography.titleMedium,
             )
         }
@@ -1669,7 +1751,10 @@ private fun JournalTrackRow(
                 if (bivouacCount > 0) {
                     Image(
                         painter = painterResource(R.drawable.ic_bivouac_badge),
-                        contentDescription = "nuit${if (bivouacCount != 1) "s" else ""} de bivouac",
+                        contentDescription = pluralStringResource(
+                            R.plurals.journal_list_bivouac_nights_description,
+                            bivouacCount,
+                        ),
                         modifier = Modifier.size(14.dp),
                     )
                 }
@@ -1695,7 +1780,7 @@ private fun JournalTrackRow(
                     )
                     Icon(
                         Icons.AutoMirrored.Filled.Notes,
-                        contentDescription = "note",
+                        contentDescription = stringResource(R.string.journal_list_note_icon_description),
                         modifier = Modifier.size(14.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1708,7 +1793,7 @@ private fun JournalTrackRow(
                     )
                     Icon(
                         Icons.Default.PhotoLibrary,
-                        contentDescription = "photos",
+                        contentDescription = stringResource(R.string.journal_list_photos_icon_description),
                         modifier = Modifier.size(14.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1766,11 +1851,15 @@ private fun JournalMultiTrackContent(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "${entries.size} trace${if (entries.size > 1) "s" else ""} affichée${if (entries.size > 1) "s" else ""}",
+                text = pluralStringResource(
+                    R.plurals.journal_list_multitrack_header_count,
+                    entries.size,
+                    entries.size,
+                ),
                 style = MaterialTheme.typography.titleMedium,
             )
             IconButton(onClick = onCloseClick) {
-                Icon(Icons.Default.Close, contentDescription = "Fermer")
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_close_description))
             }
         }
         if (showLegend) {
@@ -1800,7 +1889,7 @@ private fun JournalMultiTrackContent(
             }
         } else {
             Text(
-                text = "Trop de traces pour une légende détaillée : affichage uniforme.",
+                text = stringResource(R.string.journal_list_multitrack_no_legend),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),
@@ -1827,13 +1916,13 @@ private fun ReadOnlyBivouacRow(arrival: TrackPoint?, departure: TrackPoint?) {
     ) {
         Image(
             painter = painterResource(R.drawable.ic_bivouac_badge),
-            contentDescription = "Nuit de bivouac",
+            contentDescription = stringResource(R.string.journal_detail_bivouac_night_description),
             modifier = Modifier.size(24.dp),
         )
         val elevation = arrival?.elevationMeters
         if (elevation != null) {
             InfoText(
-                text = "${formatGroupedInt(elevation.roundToInt())} m",
+                text = stringResource(R.string.format_elevation_meters, formatGroupedInt(elevation.roundToInt())),
                 icon = Icons.Default.Terrain,
                 iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1842,7 +1931,11 @@ private fun ReadOnlyBivouacRow(arrival: TrackPoint?, departure: TrackPoint?) {
         val leftAt = departure?.time
         if (arrivedAt != null && leftAt != null) {
             InfoText(
-                text = "${formatTimeOfDay(arrivedAt)} → ${formatTimeOfDay(leftAt)}",
+                text = stringResource(
+                    R.string.format_bivouac_arrival_departure,
+                    formatTimeOfDay(arrivedAt),
+                    formatTimeOfDay(leftAt),
+                ),
                 icon = Icons.Default.Snooze,
                 iconTint = DurationIconColor,
             )
@@ -2139,7 +2232,10 @@ internal fun ThreeStopJournalDetail(
                                 onDeleteClick = onDeleteClick,
                             )
                             IconButton(onClick = { requestExit(onCloseClick) }) {
-                                Icon(Icons.Default.Close, contentDescription = "Fermer")
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = stringResource(R.string.common_close_description),
+                                )
                             }
                         }
                     }
@@ -2148,7 +2244,7 @@ internal fun ThreeStopJournalDetail(
                     // l'information utile, même hiérarchie visuelle qu'en Planification.
                     if (daySegments.size > 1) {
                         Text(
-                            text = "Total",
+                            text = stringResource(R.string.journal_detail_total_label),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -2197,7 +2293,10 @@ internal fun ThreeStopJournalDetail(
                     // ligne « Total » ci-dessus dit déjà tout, une ventilation à une entrée ne
                     // serait que du bruit.
                     if (daySegments.size > 1) {
-                        Text("Jours", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            stringResource(R.string.journal_detail_days_title),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
                         Column {
                             daySegments.forEachIndexed { index, segment ->
                                 HorizontalDivider()
@@ -2208,7 +2307,7 @@ internal fun ThreeStopJournalDetail(
                                     // trou isolé ne doit pas casser la ventilation des autres jours.
                                     val dayLabel = segment.points.firstOrNull()?.time
                                         ?.let { formatDayLabel(it) }
-                                        ?: "Jour ${index + 1}"
+                                        ?: stringResource(R.string.journal_detail_day_fallback_label, index + 1)
                                     Text(text = dayLabel, style = MaterialTheme.typography.labelLarge)
                                     StatsRows(TrackStatsCalculator.recomputeDuration(segment.stats, activeCalibration))
                                 }
@@ -2234,22 +2333,28 @@ internal fun ThreeStopJournalDetail(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("Tags", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            stringResource(R.string.journal_detail_tags_title),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
                         if (isEditing) {
                             IconButton(onClick = { saveAndStopEditing() }) {
                                 Icon(
                                     Icons.Default.Save,
                                     contentDescription = if (isDirty) {
-                                        "Enregistrer (modifications non sauvegardées)"
+                                        stringResource(R.string.journal_detail_save_dirty_description)
                                     } else {
-                                        "Enregistrer"
+                                        stringResource(R.string.common_save_button)
                                     },
                                     tint = if (isDirty) GainIconColor else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         } else {
                             IconButton(onClick = { beginEditing() }) {
-                                Icon(Icons.Default.Edit, contentDescription = "Modifier")
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = stringResource(R.string.journal_detail_edit_description),
+                                )
                             }
                         }
                     }
@@ -2306,7 +2411,7 @@ internal fun ThreeStopJournalDetail(
                             TextField(
                                 value = newTagText,
                                 onValueChange = { newTagText = it },
-                                placeholder = { Text("Ajouter un tag") },
+                                placeholder = { Text(stringResource(R.string.journal_detail_add_tag_placeholder)) },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                                 modifier = Modifier
@@ -2320,7 +2425,7 @@ internal fun ThreeStopJournalDetail(
                                     newTagText = ""
                                 },
                                 enabled = newTagText.isNotBlank(),
-                            ) { Text("Ajouter") }
+                            ) { Text(stringResource(R.string.common_add_button)) }
                         }
                         val suggestedTags = knownFreeTags.filterNot { it in draftTags }
                         if (suggestedTags.isNotEmpty()) {
@@ -2368,10 +2473,13 @@ internal fun ThreeStopJournalDetail(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("Photos", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    stringResource(R.string.journal_photos_section_title),
+                                    style = MaterialTheme.typography.titleSmall,
+                                )
                                 if (currentPhotos.isNotEmpty()) {
                                     Text(
-                                        "· tout voir",
+                                        stringResource(R.string.journal_photos_view_all_link),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.clickable { galleryOpen = true },
@@ -2392,7 +2500,9 @@ internal fun ThreeStopJournalDetail(
                             // combien il en restait, et il était en marge d'un écran qui, lui,
                             // restait entièrement manipulable, croix comprise.
                             if (isEditing) {
-                                TextButton(onClick = onAddPhotosClick) { Text("Ajouter") }
+                                TextButton(onClick = onAddPhotosClick) {
+                                    Text(stringResource(R.string.common_add_button))
+                                }
                             }
                         }
                         // RIC-43 : accès galerie refusé sur une tentative d'ajout réelle. Le WIP
@@ -2402,7 +2512,7 @@ internal fun ThreeStopJournalDetail(
                         // seul endroit où un refus définitif se défait.
                         if (photoPermissionDenied && isEditing) {
                             Text(
-                                "L'ajout de photos nécessite l'accès à la galerie.",
+                                stringResource(R.string.journal_photos_permission_required_hint),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 4.dp),
@@ -2411,12 +2521,12 @@ internal fun ThreeStopJournalDetail(
                                 onClick = onOpenAppSettingsClick,
                                 contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
                             ) {
-                                Text("Ouvrir les réglages de l'application")
+                                Text(stringResource(R.string.journal_photos_open_app_settings_button))
                             }
                         }
                         if (currentPhotos.isEmpty()) {
                             Text(
-                                "Aucune photo pour l'instant.",
+                                stringResource(R.string.journal_photos_empty_hint),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -2444,7 +2554,11 @@ internal fun ThreeStopJournalDetail(
                             }
                         }
                     }
-                    Text("Notes", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
+                    Text(
+                        stringResource(R.string.journal_detail_notes_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
                     if (isEditing) {
                         // RIC-100. La note n'a pas de plafond de hauteur, donc le champ peut
                         // dépasser la fenêtre de saisie ; le défilement que Compose déclenche de
@@ -2478,7 +2592,7 @@ internal fun ThreeStopJournalDetail(
                             value = draftNote,
                             onValueChange = { draftNote = it },
                             visualTransformation = BulletVisualTransformation,
-                            placeholder = { Text("Quelques mots sur cette rando…") },
+                            placeholder = { Text(stringResource(R.string.journal_detail_note_placeholder)) },
                             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                             // Volontairement sans hauteur maximale : c'est un journal, la note
                             // doit se lire d'un bloc, en consultation comme en édition.
@@ -2502,11 +2616,11 @@ internal fun ThreeStopJournalDetail(
         pendingExit?.let { exit ->
             AlertDialog(
                 onDismissRequest = { pendingExit = null },
-                title = { Text("Modifications non enregistrées") },
+                title = { Text(stringResource(R.string.journal_msg_unsaved_changes_title)) },
                 // RIC-149 : les photos sont citées avec les tags et la note : depuis qu'elles
                 // obéissent au même mode édition, « ne pas enregistrer » jette aussi les photos
                 // ajoutées et rend celles qu'on venait de supprimer.
-                text = { Text("Les modifications en cours (tags, note, photos) ne seront pas conservées.") },
+                text = { Text(stringResource(R.string.journal_msg_unsaved_changes_body)) },
                 confirmButton = {
                     TextButton(onClick = {
                         pendingExit = null
@@ -2517,16 +2631,23 @@ internal fun ThreeStopJournalDetail(
                         // disquette, qui ne quitte pas l'écran, ne faisait jamais. L'attente est
                         // couverte par le dialogue bloquant de JournalScreen.
                         saveAndStopEditing { exit() }
-                    }) { Text("Enregistrer") }
+                    }) { Text(stringResource(R.string.common_save_button)) }
                 },
                 dismissButton = {
                     Row {
-                        TextButton(onClick = { pendingExit = null }) { Text("Annuler") }
+                        TextButton(onClick = { pendingExit = null }) {
+                            Text(stringResource(R.string.common_cancel_button))
+                        }
                         TextButton(onClick = {
                             abandonEditing()
                             pendingExit = null
                             exit()
-                        }) { Text("Ne pas enregistrer", color = MaterialTheme.colorScheme.error) }
+                        }) {
+                            Text(
+                                stringResource(R.string.journal_msg_discard_button),
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
                     }
                 },
             )
@@ -2637,7 +2758,7 @@ private fun NotebookEmptyHint() {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
         Text(
-            "Appuie sur l'icône pour ajouter des détails.",
+            stringResource(R.string.journal_detail_empty_notebook_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -2654,21 +2775,21 @@ private fun JournalDetailMenu(onRenameClick: () -> Unit, onDuplicateClick: () ->
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
-            Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+            Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.journal_detail_menu_description))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
-                text = { Text("Renommer") },
+                text = { Text(stringResource(R.string.journal_detail_menu_rename)) },
                 leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
                 onClick = { expanded = false; onRenameClick() },
             )
             DropdownMenuItem(
-                text = { Text("Dupliquer vers la planification") },
+                text = { Text(stringResource(R.string.journal_detail_menu_duplicate)) },
                 leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
                 onClick = { expanded = false; onDuplicateClick() },
             )
             DropdownMenuItem(
-                text = { Text("Supprimer") },
+                text = { Text(stringResource(R.string.common_delete_button)) },
                 leadingIcon = {
                     Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                 },
