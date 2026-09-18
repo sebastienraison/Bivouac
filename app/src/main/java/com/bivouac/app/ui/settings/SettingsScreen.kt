@@ -1,9 +1,11 @@
 package com.bivouac.app.ui.settings
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -70,12 +72,15 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLocale
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.BuildConfig
+import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.db.PhotoStorageSummary
 import com.bivouac.app.data.gpx.SpeedCalibration
@@ -95,6 +100,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -227,7 +233,13 @@ fun SettingsScreen(
     Scaffold(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { AppScreenHeader(title = "Réglages", currentSection = currentSection, onSectionSelected = onSectionSelected) },
+        topBar = {
+            AppScreenHeader(
+                title = stringResource(R.string.settings_screen_title),
+                currentSection = currentSection,
+                onSectionSelected = onSectionSelected,
+            )
+        },
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -287,7 +299,11 @@ fun SettingsScreen(
             // RIC-133 : identifie la build exacte qui tourne (utile support/debug), et rassure que
             // la mise à jour a bien pris. Texte simple, pas une SettingsSection : rien à toucher ici.
             Text(
-                text = "Version ${BuildConfig.VERSION_NAME} · build du ${BuildConfig.BUILD_DATE}",
+                text = stringResource(
+                    R.string.settings_version_build_info,
+                    BuildConfig.VERSION_NAME,
+                    BuildConfig.BUILD_DATE,
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -314,19 +330,29 @@ fun SettingsScreen(
     photoRecompressionOffer?.let { estimate ->
         AlertDialog(
             onDismissRequest = viewModel::dismissPhotoRecompressionOffer,
-            title = { Text("Recompresser tes photos ?") },
+            title = { Text(stringResource(R.string.settings_photo_recompress_offer_title)) },
             text = {
+                // RIC-190 (lot 3 i18n) : la phrase entière est un <plurals> portant le compte, au
+                // lieu d'un countLabel recollant un fragment : au singulier, « Les recompresser »
+                // devient « La recompresser », ce qu'un fragment ne savait pas dire.
                 Text(
-                    "${countLabel(estimate.photoCount, "photo déjà importée reste", "photos déjà importées restent")} " +
-                        "en qualité d'origine (~${formatBytes(estimate.freedBytes)}). Les recompresser " +
-                        "maintenant ?",
+                    pluralStringResource(
+                        R.plurals.settings_photo_recompress_offer_message,
+                        estimate.photoCount,
+                        estimate.photoCount,
+                        formatBytes(context, estimate.freedBytes),
+                    ),
                 )
             },
             confirmButton = {
-                TextButton(onClick = onRecompressFromOfferClick) { Text("Recompresser") }
+                TextButton(onClick = onRecompressFromOfferClick) {
+                    Text(stringResource(R.string.settings_photo_recompress_offer_confirm_button))
+                }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissPhotoRecompressionOffer) { Text("Plus tard") }
+                TextButton(onClick = viewModel::dismissPhotoRecompressionOffer) {
+                    Text(stringResource(R.string.settings_photo_recompress_offer_dismiss_button))
+                }
             },
         )
     }
@@ -336,18 +362,26 @@ fun SettingsScreen(
     photoRecompressionReport?.let { report ->
         AlertDialog(
             onDismissRequest = viewModel::dismissPhotoRecompressionReport,
-            title = { Text("Recompression terminée") },
-            text = { Text(recompressionReportMessage(report)) },
-            confirmButton = { TextButton(onClick = viewModel::dismissPhotoRecompressionReport) { Text("OK") } },
+            title = { Text(stringResource(R.string.settings_photo_recompress_report_title)) },
+            text = { Text(recompressionReportMessage(context, report)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissPhotoRecompressionReport) {
+                    Text(stringResource(R.string.common_ok_button))
+                }
+            },
         )
     }
 
     photoRecompressionError?.let { message ->
         AlertDialog(
             onDismissRequest = viewModel::dismissPhotoRecompressionError,
-            title = { Text("Recompression impossible") },
+            title = { Text(stringResource(R.string.settings_photo_recompress_error_title)) },
             text = { Text(message) },
-            confirmButton = { TextButton(onClick = viewModel::dismissPhotoRecompressionError) { Text("OK") } },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissPhotoRecompressionError) {
+                    Text(stringResource(R.string.common_ok_button))
+                }
+            },
         )
     }
 
@@ -357,29 +391,41 @@ fun SettingsScreen(
     photoPurgeConfirmation?.let { storage ->
         AlertDialog(
             onDismissRequest = viewModel::dismissPhotoPurge,
-            title = { Text("Purger les photos ?") },
+            title = { Text(stringResource(R.string.settings_photo_purge_confirm_title)) },
             text = {
                 Text(
-                    "${formatPhotoStorage(storage)} vont être supprimées définitivement du Journal, " +
-                        "fichiers compris. Les photos d'origine de ta galerie ne sont pas touchées. " +
-                        "Cette action est irréversible.",
+                    stringResource(
+                        R.string.settings_photo_purge_confirm_message,
+                        formatPhotoStorage(context, storage),
+                    ),
                 )
             },
             confirmButton = {
                 TextButton(onClick = viewModel::confirmPhotoPurge) {
-                    Text("Purger", color = MaterialTheme.colorScheme.error)
+                    Text(
+                        stringResource(R.string.settings_photo_purge_confirm_button),
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             },
-            dismissButton = { TextButton(onClick = viewModel::dismissPhotoPurge) { Text("Annuler") } },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissPhotoPurge) {
+                    Text(stringResource(R.string.common_cancel_button))
+                }
+            },
         )
     }
 
     backupError?.let { message ->
         AlertDialog(
             onDismissRequest = viewModel::dismissBackupError,
-            title = { Text("Sauvegarde impossible") },
+            title = { Text(stringResource(R.string.settings_backup_error_title)) },
             text = { Text(message) },
-            confirmButton = { TextButton(onClick = viewModel::dismissBackupError) { Text("OK") } },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissBackupError) {
+                    Text(stringResource(R.string.common_ok_button))
+                }
+            },
         )
     }
 
@@ -388,9 +434,13 @@ fun SettingsScreen(
     photoPurgeError?.let { message ->
         AlertDialog(
             onDismissRequest = viewModel::dismissPhotoPurgeError,
-            title = { Text("Purge impossible") },
+            title = { Text(stringResource(R.string.settings_photo_purge_error_title)) },
             text = { Text(message) },
-            confirmButton = { TextButton(onClick = viewModel::dismissPhotoPurgeError) { Text("OK") } },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissPhotoPurgeError) {
+                    Text(stringResource(R.string.common_ok_button))
+                }
+            },
         )
     }
 
@@ -400,18 +450,26 @@ fun SettingsScreen(
     photoRecoveryReport?.let { report ->
         AlertDialog(
             onDismissRequest = viewModel::dismissPhotoRecoveryReport,
-            title = { Text("Recherche terminée") },
-            text = { Text(photoRecoveryReportMessage(report)) },
-            confirmButton = { TextButton(onClick = viewModel::dismissPhotoRecoveryReport) { Text("OK") } },
+            title = { Text(stringResource(R.string.settings_photo_recovery_report_title)) },
+            text = { Text(photoRecoveryReportMessage(context, report)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissPhotoRecoveryReport) {
+                    Text(stringResource(R.string.common_ok_button))
+                }
+            },
         )
     }
 
     photoRecoveryError?.let { message ->
         AlertDialog(
             onDismissRequest = viewModel::dismissPhotoRecoveryError,
-            title = { Text("Recherche impossible") },
+            title = { Text(stringResource(R.string.settings_photo_recovery_error_title)) },
             text = { Text(message) },
-            confirmButton = { TextButton(onClick = viewModel::dismissPhotoRecoveryError) { Text("OK") } },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissPhotoRecoveryError) {
+                    Text(stringResource(R.string.common_ok_button))
+                }
+            },
         )
     }
 
@@ -423,22 +481,18 @@ fun SettingsScreen(
     if (photoPermissionBlockedDialog) {
         AlertDialog(
             onDismissRequest = { photoPermissionBlockedDialog = false },
-            title = { Text("Accès aux photos refusé") },
-            text = {
-                Text(
-                    "Cette action demande d'aller chercher tes photos d'origine dans la galerie, et " +
-                        "Android ne redemandera plus l'autorisation depuis l'application. " +
-                        "Autorise l'accès à la galerie dans les réglages de l'application.",
-                )
-            },
+            title = { Text(stringResource(R.string.journal_msg_photo_access_denied_title)) },
+            text = { Text(stringResource(R.string.settings_photo_permission_blocked_message)) },
             confirmButton = {
                 TextButton(onClick = {
                     photoPermissionBlockedDialog = false
                     context.openApplicationSettings()
-                }) { Text("Ouvrir les réglages") }
+                }) { Text(stringResource(R.string.journal_msg_open_settings_button)) }
             },
             dismissButton = {
-                TextButton(onClick = { photoPermissionBlockedDialog = false }) { Text("Annuler") }
+                TextButton(onClick = { photoPermissionBlockedDialog = false }) {
+                    Text(stringResource(R.string.common_cancel_button))
+                }
             },
         )
     }
@@ -446,16 +500,23 @@ fun SettingsScreen(
     pendingRestoreUri?.let { uri ->
         AlertDialog(
             onDismissRequest = { pendingRestoreUri = null },
-            title = { Text("Restaurer cette sauvegarde ?") },
-            text = { Text("Les randonnées et réglages actuels seront remplacés par le contenu de cette sauvegarde. Cette action est irréversible.") },
+            title = { Text(stringResource(R.string.settings_restore_confirm_title)) },
+            text = { Text(stringResource(R.string.settings_restore_confirm_message)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.restore(uri)
                     pendingRestoreUri = null
-                }) { Text("Restaurer", color = MaterialTheme.colorScheme.error) }
+                }) {
+                    Text(
+                        stringResource(R.string.settings_restore_confirm_button),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             },
             dismissButton = {
-                TextButton(onClick = { pendingRestoreUri = null }) { Text("Annuler") }
+                TextButton(onClick = { pendingRestoreUri = null }) {
+                    Text(stringResource(R.string.common_cancel_button))
+                }
             },
         )
     }
@@ -466,27 +527,41 @@ fun SettingsScreen(
                 // Not dismissible without restarting: the app's in-memory state is stale the
                 // instant the on-disk files get swapped underneath it (see AppRestart's kdoc).
                 onDismissRequest = {},
-                title = { Text("Restauration terminée") },
-                text = { Text("La base a été restaurée. L'application va redémarrer pour appliquer les changements.") },
-                confirmButton = { TextButton(onClick = viewModel::confirmRestartAfterRestore) { Text("Redémarrer") } },
+                title = { Text(stringResource(R.string.settings_restore_done_title)) },
+                text = { Text(stringResource(R.string.settings_restore_done_message)) },
+                confirmButton = {
+                    TextButton(onClick = viewModel::confirmRestartAfterRestore) {
+                        Text(stringResource(R.string.settings_restore_done_restart_button))
+                    }
+                },
             )
             is RestoreOutcome.VersionTooNew -> AlertDialog(
                 onDismissRequest = viewModel::dismissRestoreOutcome,
-                title = { Text("Sauvegarde trop récente") },
+                title = { Text(stringResource(R.string.settings_restore_version_too_new_title)) },
                 text = {
                     Text(
-                        "Cette sauvegarde provient d'une version plus récente de l'application " +
-                            "(schéma ${outcome.backupVersion}, version actuelle : schéma ${outcome.appVersion}). " +
-                            "Mets à jour Bivouac avant de la restaurer.",
+                        stringResource(
+                            R.string.settings_restore_version_too_new_message,
+                            outcome.backupVersion,
+                            outcome.appVersion,
+                        ),
                     )
                 },
-                confirmButton = { TextButton(onClick = viewModel::dismissRestoreOutcome) { Text("OK") } },
+                confirmButton = {
+                    TextButton(onClick = viewModel::dismissRestoreOutcome) {
+                        Text(stringResource(R.string.common_ok_button))
+                    }
+                },
             )
             is RestoreOutcome.Error -> AlertDialog(
                 onDismissRequest = viewModel::dismissRestoreOutcome,
-                title = { Text("Restauration impossible") },
+                title = { Text(stringResource(R.string.settings_restore_error_title)) },
                 text = { Text(outcome.message) },
-                confirmButton = { TextButton(onClick = viewModel::dismissRestoreOutcome) { Text("OK") } },
+                confirmButton = {
+                    TextButton(onClick = viewModel::dismissRestoreOutcome) {
+                        Text(stringResource(R.string.common_ok_button))
+                    }
+                },
             )
         }
     }
@@ -578,11 +653,11 @@ private fun SpeedCalibrationSection(
     // ceiling either mode can reach (BIV-16 recette). Whichever mode is already active stays
     // reachable even if the Journal has since shrunk below that floor; see the note below.
     val calibrationModesUsable = journalTrackCount >= SpeedCalibrationCalculator.MIN_TRACKS_FOR_CALIBRATION
-    SettingsSection(label = "Vitesse personnalisée") {
+    SettingsSection(label = stringResource(R.string.settings_speed_calibration_section_title)) {
         SettingsRow(
             icon = Icons.Default.Speed,
-            title = "Mode de calcul",
-            subtitle = "Utilisé pour estimer la durée des randonnées",
+            title = stringResource(R.string.settings_speed_calibration_mode_label),
+            subtitle = stringResource(R.string.settings_speed_calibration_mode_description),
         )
         SingleChoiceSegmentedButtonRow(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -596,13 +671,13 @@ private fun SpeedCalibrationSection(
                     // somewhere else when there isn't enough data for either to mean anything.
                     enabled = candidate == SpeedCalibrationMode.MANUAL || candidate == mode || calibrationModesUsable,
                     shape = SegmentedButtonDefaults.itemShape(index = index, count = SpeedCalibrationMode.entries.size),
-                    label = { Text(candidate.label()) },
+                    label = { Text(stringResource(candidate.labelRes())) },
                 )
             }
         }
         if (!calibrationModesUsable) {
             Text(
-                "Auto et Sélection demandent au moins 2 randonnées dans le Journal.",
+                stringResource(R.string.settings_speed_calibration_modes_locked_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 6.dp),
@@ -612,7 +687,7 @@ private fun SpeedCalibrationSection(
             when (mode) {
                 SpeedCalibrationMode.MANUAL -> {
                     Text(
-                        "Saisies directement, jamais recalculées automatiquement.",
+                        stringResource(R.string.settings_speed_calibration_manual_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -621,7 +696,7 @@ private fun SpeedCalibrationSection(
                 }
                 SpeedCalibrationMode.AUTO -> {
                     Text(
-                        "Calculées à partir de toutes les randonnées du Journal, recalculées à chaque nouvel import.",
+                        stringResource(R.string.settings_speed_calibration_auto_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -629,20 +704,21 @@ private fun SpeedCalibrationSection(
                     CalibrationStatGrid(auto)
                 }
                 SpeedCalibrationMode.SELECTION -> {
+                    // RIC-190 (lot 3 i18n) : le when choisit un id de ressource, pas une chaîne.
                     Text(
                         when (selectedTrackCount) {
-                            0 -> "Aucune trace choisie pour l'instant : calibration par défaut en attendant."
+                            0 -> stringResource(R.string.settings_speed_calibration_selection_hint_empty)
                             // A single hike can't separate two unknowns (vitesse et pénalité D+)
                             // from one another: the maths behind CalibrationStatGrid genuinely
                             // has no way to isolate D+ from just one data point, so it's kept at
                             // sa valeur par défaut rather than showing a number that looks computed
                             // but isn't. Same reasoning applies with more traces if their profil
                             // (rapport dénivelé/distance) est trop similaire d'une trace à l'autre.
-                            1 -> "Calculée à partir d'une seule trace : la vitesse s'ajuste, mais la " +
-                                "pénalité D+ ne peut pas être isolée avec un seul point de mesure, " +
-                                "elle reste à sa valeur par défaut. Choisis au moins 2 randonnées de " +
-                                "profils différents (plate et pentue) pour l'affiner aussi."
-                            else -> "Calculées à partir de $selectedTrackCount traces choisies dans le Journal."
+                            1 -> stringResource(R.string.settings_speed_calibration_selection_hint_one)
+                            else -> stringResource(
+                                R.string.settings_speed_calibration_selection_hint_many,
+                                selectedTrackCount,
+                            )
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -650,7 +726,7 @@ private fun SpeedCalibrationSection(
                     Spacer(Modifier.size(8.dp))
                     CalibrationStatGrid(selection)
                     TextButton(onClick = onChooseTracksClick, modifier = Modifier.align(Alignment.End)) {
-                        Text("Choisir les traces")
+                        Text(stringResource(R.string.settings_speed_calibration_choose_tracks_button))
                     }
                 }
             }
@@ -702,8 +778,11 @@ private fun DPlusPreviewRow(calibration: SpeedCalibration) {
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            "Rando type de 15 km, 600 m de D+ → ${formatDuration(totalMinutes.roundToInt())} " +
-                "(dont ${formatDuration(dPlusOnlyMinutes.roundToInt())} dus au D+)",
+            stringResource(
+                R.string.settings_speed_calibration_dplus_preview,
+                formatDuration(totalMinutes.roundToInt()),
+                formatDuration(dPlusOnlyMinutes.roundToInt()),
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -725,7 +804,10 @@ private fun PausePreviewRow(pauseFractionPercent: Double) {
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            "Rando estimée à 6 h de marche → ${formatDuration(totalMinutes.roundToInt())} avec cette provision",
+            stringResource(
+                R.string.settings_speed_calibration_pause_preview,
+                formatDuration(totalMinutes.roundToInt()),
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -760,9 +842,13 @@ private fun PauseStatCard(
             )
             .padding(12.dp),
     ) {
-        Text("Pauses pendant la marche", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(
-            "${pauseFractionPercent.roundToInt()} %",
+            stringResource(R.string.settings_pause_slider_label),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            stringResource(R.string.settings_pause_percent_value, pauseFractionPercent.roundToInt()),
             style = MaterialTheme.typography.titleMedium,
             // RIC-115 : cette capsule reste la même en Manuel qu'en Auto/Sélection (seul le
             // slider ci-dessous bascule enabled/disabled), contrairement à vitesse/D+, qui
@@ -780,20 +866,20 @@ private fun PauseStatCard(
         )
         Row(modifier = Modifier.fillMaxWidth()) {
             Text(
-                "Je ne m'arrête pas ou presque",
+                stringResource(R.string.settings_pause_slider_min_label),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
             Text(
-                "Je fais quelques pauses",
+                stringResource(R.string.settings_pause_slider_mid_label),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.weight(1f),
             )
             Text(
-                "Je fais beaucoup de pauses",
+                stringResource(R.string.settings_pause_slider_max_label),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.End,
@@ -803,10 +889,13 @@ private fun PauseStatCard(
     }
 }
 
-private fun SpeedCalibrationMode.label(): String = when (this) {
-    SpeedCalibrationMode.MANUAL -> "Manuel"
-    SpeedCalibrationMode.AUTO -> "Auto"
-    SpeedCalibrationMode.SELECTION -> "Sélection"
+// RIC-190 (lot 3 i18n) : un id de ressource et non une chaîne, résolu par l'appelant : le mode de
+// calibration est une préférence persistée (data.prefs), son enum ne porte aucun texte.
+@StringRes
+private fun SpeedCalibrationMode.labelRes(): Int = when (this) {
+    SpeedCalibrationMode.MANUAL -> R.string.settings_speed_mode_manual_label
+    SpeedCalibrationMode.AUTO -> R.string.settings_speed_mode_auto_label
+    SpeedCalibrationMode.SELECTION -> R.string.settings_speed_mode_selection_label
 }
 
 // Keeps its own draft text rather than binding directly to the persisted value, so typing "3." or
@@ -817,8 +906,8 @@ private fun SpeedCalibrationMode.label(): String = when (this) {
 private fun ManualCalibrationFields(manual: SpeedCalibration, onSpeedChanged: (Double) -> Unit, onPenaltyChanged: (Double) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         NumberField(
-            label = "Vitesse à plat",
-            unit = "km/h",
+            label = stringResource(R.string.settings_manual_speed_field_label),
+            unit = stringResource(R.string.settings_unit_kmh),
             value = manual.walkingSpeedKmh,
             valueRange = 0.1..20.0,
             // Caps at "20,0" / "19,9" (4 chars), the longest a valid value in this range can be
@@ -829,12 +918,12 @@ private fun ManualCalibrationFields(manual: SpeedCalibration, onSpeedChanged: (D
             modifier = Modifier.weight(1f),
         )
         NumberField(
-            label = "Pénalité D+",
-            unit = "m",
+            label = stringResource(R.string.settings_manual_penalty_field_label),
+            unit = stringResource(R.string.settings_unit_meters),
             // "+1 km / " prefix mirrors how Auto/Sélection show this same value read-only
             // (CalibrationStatGrid: "+1 km / 100 m"): a bare "100 m/km" needed translating in
             // your head to line up with that phrasing every time you switched modes.
-            prefix = "+1 km / ",
+            prefix = stringResource(R.string.settings_manual_penalty_prefix),
             value = manual.elevationGainPenaltyMetersPerKm,
             valueRange = 1.0..999.0,
             maxLength = 3,
@@ -864,7 +953,10 @@ private fun NumberField(
     // through and relying on valueRange/parsing to catch it after the fact.
     digitsOnly: Boolean = false,
 ) {
-    var draft by remember(value) { mutableStateOf(formatNumber(value)) }
+    // RIC-187 (lot 0 i18n) : même raison qu'à CalibrationStatGrid, Lint (NonObservableLocale)
+    // refuse Locale.getDefault() dans une fonction @Composable.
+    val locale = LocalLocale.current.platformLocale
+    var draft by remember(value) { mutableStateOf(formatNumber(value, locale)) }
     OutlinedTextField(
         value = draft,
         onValueChange = { text ->
@@ -892,17 +984,22 @@ private fun NumberField(
             if (!focusState.isFocused) {
                 val parsed = draft.replace(',', '.').toDoubleOrNull()
                 if (parsed == null || parsed !in valueRange || draft.length > maxLength) {
-                    draft = formatNumber(value)
+                    draft = formatNumber(value, locale)
                 }
             }
         },
     )
 }
 
-// French convention (comma) to match every other number shown on this screen: accepting a typed
-// "." in onValueChange above is purely an input convenience, not what gets displayed back.
-private fun formatNumber(value: Double): String =
-    if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString().replace('.', ',')
+// RIC-190 (lot 3 i18n) : la virgule française n'est plus posée à la main, le séparateur décimal
+// vient de la locale (NumberFormat), comme partout ailleurs sur cet écran. Le groupement des
+// milliers est explicitement coupé : il n'a aucun sens dans ces plages (0,1 à 20 km/h, 1 à 999 m),
+// et l'espace insécable qu'il insérerait casserait la relecture du brouillon en nombre.
+//
+// La saisie, elle, continue d'accepter les deux séparateurs (voir le replace(',', '.') de
+// onValueChange) : c'est une commodité de frappe, pas ce qui est réaffiché.
+private fun formatNumber(value: Double, locale: Locale): String =
+    NumberFormat.getNumberInstance(locale).apply { maximumFractionDigits = 1; isGroupingUsed = false }.format(value)
 
 @Composable
 private fun CalibrationStatGrid(calibration: SpeedCalibration) {
@@ -916,13 +1013,19 @@ private fun CalibrationStatGrid(calibration: SpeedCalibration) {
     val locale = LocalLocale.current.platformLocale
     Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         StatBox(
-            label = "Vitesse à plat",
-            value = String.format(locale, "%.1f km/h", calibration.walkingSpeedKmh),
+            label = stringResource(R.string.settings_manual_speed_field_label),
+            value = stringResource(
+                R.string.settings_speed_value_format,
+                String.format(locale, "%.1f", calibration.walkingSpeedKmh),
+            ),
             modifier = Modifier.weight(1f),
         )
         StatBox(
-            label = "Pénalité D+",
-            value = "+1 km / ${calibration.elevationGainPenaltyMetersPerKm.roundToInt()} m",
+            label = stringResource(R.string.settings_manual_penalty_field_label),
+            value = stringResource(
+                R.string.settings_penalty_value_format,
+                calibration.elevationGainPenaltyMetersPerKm.roundToInt(),
+            ),
             modifier = Modifier.weight(1f),
         )
     }
@@ -942,11 +1045,11 @@ private fun StatBox(label: String, value: String, modifier: Modifier = Modifier)
 
 @Composable
 private fun NonFreeFeaturesSection(disabled: Boolean, onToggle: (Boolean) -> Unit) {
-    SettingsSection(label = "Fonctionnalités non libres") {
+    SettingsSection(label = stringResource(R.string.settings_nonfree_section_title)) {
         SettingsRow(
             icon = Icons.Default.Shield,
-            title = "Désactiver les fonctions non libres",
-            subtitle = "Coupe le fond satellite Esri et le lien météo Meteoblue",
+            title = stringResource(R.string.settings_nonfree_toggle_label),
+            subtitle = stringResource(R.string.settings_nonfree_toggle_description),
             secondaryAvatar = true,
             trailing = { Switch(checked = disabled, onCheckedChange = onToggle) },
         )
@@ -975,13 +1078,11 @@ private fun JournalPhotosSection(
     missingPhotoCount: Int,
     onRecoverMissingPhotosClick: () -> Unit,
 ) {
-    SettingsSection(label = "Photos du Journal") {
+    SettingsSection(label = stringResource(R.string.settings_photos_section_title)) {
         SettingsRow(
             icon = Icons.Default.PhotoLibrary,
-            title = "Associer des photos aux sorties",
-            subtitle = "Ajouter des photos à une sortie, les placer sur la trace et les revoir. " +
-                "Désactivée, aucune photo n'apparaît et l'accès à la galerie n'est jamais demandé ; " +
-                "rien n'est supprimé, tout revient en réactivant.",
+            title = stringResource(R.string.settings_photos_toggle_label),
+            subtitle = stringResource(R.string.settings_photos_toggle_description),
             secondaryAvatar = true,
             trailing = { Switch(checked = enabled, onCheckedChange = onToggle) },
         )
@@ -991,9 +1092,8 @@ private fun JournalPhotosSection(
         if (enabled) {
             SettingsRow(
                 icon = Icons.Default.PhotoSizeSelectLarge,
-                title = "Stockage des photos",
-                subtitle = "S'applique aux photos que tu ajouteras : celles déjà dans le Journal " +
-                    "gardent le format sous lequel elles sont entrées.",
+                title = stringResource(R.string.settings_photo_storage_mode_row_label),
+                subtitle = stringResource(R.string.settings_photo_storage_mode_row_description),
                 secondaryAvatar = true,
             )
             PhotoStorageModeChoice(
@@ -1011,11 +1111,12 @@ private fun JournalPhotosSection(
             if (missingPhotoCount > 0) {
                 SettingsRow(
                     icon = Icons.Default.ImageSearch,
-                    title = "Retrouver les photos manquantes",
-                    subtitle = "${countLabel(missingPhotoCount, "photo du Journal n'a plus", "photos du Journal n'ont plus")} " +
-                        "de fichier local, après une restauration ou un nettoyage du stockage. " +
-                        "Bivouac peut les reprendre depuis ta galerie, à condition d'y retrouver " +
-                        "l'original exact.",
+                    title = stringResource(R.string.settings_missing_photos_row_label),
+                    subtitle = pluralStringResource(
+                        R.plurals.settings_missing_photos_row_description,
+                        missingPhotoCount,
+                        missingPhotoCount,
+                    ),
                     secondaryAvatar = true,
                 )
                 OutlinedButton(
@@ -1026,7 +1127,7 @@ private fun JournalPhotosSection(
                 ) {
                     Icon(Icons.Default.ImageSearch, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Retrouver les photos manquantes")
+                    Text(stringResource(R.string.settings_missing_photos_row_label))
                 }
             }
         }
@@ -1048,7 +1149,12 @@ private fun JournalPhotosSection(
             ) {
                 Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Purger les photos (${formatPhotoStorage(storage)})")
+                Text(
+                    stringResource(
+                        R.string.settings_photo_purge_button,
+                        formatPhotoStorage(LocalContext.current, storage),
+                    ),
+                )
             }
         }
     }
@@ -1061,29 +1167,45 @@ private fun JournalPhotosSection(
  * sauvegarde photo qui a recompressé la pellicule, et il faut que l'utilisateur comprenne que rien
  * n'a été adopté à la place. Adopter une image approchante serait réécrire son carnet.
  */
-internal fun photoRecoveryReportMessage(report: LoggedTrackRepository.PhotoRecoveryReport): String {
+internal fun photoRecoveryReportMessage(context: Context, report: LoggedTrackRepository.PhotoRecoveryReport): String {
     val lines = mutableListOf<String>()
     lines += if (report.recovered > 0) {
-        "${countLabel(report.recovered, "photo retrouvée", "photos retrouvées")} et remise en place."
+        // RIC-190 (lot 3 i18n) : chaque ligne est un <plurals> portant la phrase ENTIÈRE, et non
+        // un fragment recollé : « Sa fiche est conservée » / « Leurs fiches sont conservées » ne
+        // s'accorde pas au seul groupe nominal du début.
+        context.resources.getQuantityString(
+            R.plurals.settings_photo_recovery_recovered_line,
+            report.recovered,
+            report.recovered,
+        )
     } else {
-        "Aucune photo n'a pu être retrouvée."
+        context.getString(R.string.settings_photo_recovery_none_line)
     }
     if (report.modifiedNotAdopted > 0) {
-        lines += "${countLabel(report.modifiedNotAdopted, "photo retrouvée", "photos retrouvées")} " +
-            "dans la galerie, mais modifiée depuis l'import : ce n'est plus le même fichier, rien " +
-            "n'a été repris."
+        lines += context.resources.getQuantityString(
+            R.plurals.settings_photo_recovery_modified_line,
+            report.modifiedNotAdopted,
+            report.modifiedNotAdopted,
+        )
     }
     if (report.notFound > 0) {
-        lines += "${countLabel(report.notFound, "photo reste introuvable", "photos restent introuvables")} " +
-            "dans la galerie. Sa fiche est conservée dans le Journal, au cas où l'original revienne."
+        lines += context.resources.getQuantityString(
+            R.plurals.settings_photo_recovery_notfound_line,
+            report.notFound,
+            report.notFound,
+        )
     }
     return lines.joinToString("\n\n")
 }
 
 /** RIC-152 : « 12 photos, 34,5 Mo » : ce que la purge va retirer, lignes et fichiers. */
-internal fun formatPhotoStorage(storage: PhotoStorageSummary): String {
-    val photos = if (storage.count == 1) "1 photo" else "${storage.count} photos"
-    return "$photos, ${formatBytes(storage.totalBytes)}"
+internal fun formatPhotoStorage(context: Context, storage: PhotoStorageSummary): String {
+    val photos = context.resources.getQuantityString(
+        R.plurals.settings_photo_count_label,
+        storage.count,
+        storage.count,
+    )
+    return context.getString(R.string.settings_photo_storage_summary, photos, formatBytes(context, storage.totalBytes))
 }
 
 /**
@@ -1092,15 +1214,17 @@ internal fun formatPhotoStorage(storage: PhotoStorageSummary): String {
  * annonce pour la même app, sans que personne puisse expliquer l'écart.
  */
 // RIC-187 (lot 0 i18n) : Locale.FRANCE figé remplacé par Locale.getDefault() pour le SÉPARATEUR
-// DÉCIMAL uniquement (virgule en français, point en anglais). Les unités "Go"/"Mo"/"Ko"/"o"
-// restent en dur : ce sont des chaînes d'écran (settings_format_bytes_go/mo/ko/o dans
-// l'inventaire i18n), leur traduction ("GB"/"MB"/"kB"/"B") attend la migration de cet écran
-// (lots 1 à 4), hors périmètre du lot 0 qui ne touche aucun écran.
-internal fun formatBytes(bytes: Long): String = when {
-    bytes >= 1_000_000_000L -> String.format(Locale.getDefault(), "%.1f Go", bytes / 1_000_000_000.0)
-    bytes >= 1_000_000L -> String.format(Locale.getDefault(), "%.1f Mo", bytes / 1_000_000.0)
-    bytes >= 1_000L -> String.format(Locale.getDefault(), "%.0f Ko", bytes / 1_000.0)
-    else -> "$bytes o"
+// DÉCIMAL. RIC-190 (lot 3) : les unités "Go"/"Mo"/"Ko"/"o", restées en dur au lot 0, viennent
+// maintenant des ressources ("GB"/"MB"/"kB"/"B" en anglais) : d'où le Context. Le nombre et son
+// unité restent séparés, la ressource ne portant que l'unité et l'espace qui la précède.
+internal fun formatBytes(context: Context, bytes: Long): String = when {
+    bytes >= 1_000_000_000L ->
+        context.getString(R.string.settings_format_bytes_go, String.format(Locale.getDefault(), "%.1f", bytes / 1_000_000_000.0))
+    bytes >= 1_000_000L ->
+        context.getString(R.string.settings_format_bytes_mo, String.format(Locale.getDefault(), "%.1f", bytes / 1_000_000.0))
+    bytes >= 1_000L ->
+        context.getString(R.string.settings_format_bytes_ko, String.format(Locale.getDefault(), "%.0f", bytes / 1_000.0))
+    else -> context.getString(R.string.settings_format_bytes_o, bytes)
 }
 
 @Composable
@@ -1111,12 +1235,13 @@ private fun DataSection(
     onRestoreClick: () -> Unit,
     onStorageUsageClick: () -> Unit,
 ) {
-    SettingsSection(label = "Données") {
+    SettingsSection(label = stringResource(R.string.settings_data_section_title)) {
         SettingsRow(
             icon = Icons.Default.CloudUpload,
-            title = "Sauvegarde de la base",
-            subtitle = lastBackupAtMillis?.let { "Dernière sauvegarde : ${formatBackupTimestamp(it)}" }
-                ?: "Aucune sauvegarde effectuée pour l'instant",
+            title = stringResource(R.string.settings_backup_row_label),
+            subtitle = lastBackupAtMillis
+                ?.let { stringResource(R.string.settings_backup_last_date, formatBackupTimestamp(it)) }
+                ?: stringResource(R.string.settings_backup_never),
         )
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp),
@@ -1139,7 +1264,7 @@ private fun DataSection(
             ) {
                 Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Sauvegarder", maxLines = 1)
+                Text(stringResource(R.string.settings_backup_button), maxLines = 1)
             }
             OutlinedButton(
                 onClick = onRestoreClick,
@@ -1149,7 +1274,9 @@ private fun DataSection(
             ) {
                 Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Restaurer", maxLines = 1)
+                // Même mot que le bouton de confirmation du dialogue de restauration : une seule
+                // ressource, l'inventaire n'en prévoyait pas de seconde.
+                Text(stringResource(R.string.settings_restore_confirm_button), maxLines = 1)
             }
         }
         // RIC-140 : dans « Données » et non dans « Photos du Journal », alors que les photos en
@@ -1159,8 +1286,8 @@ private fun DataSection(
         // pour orner une ligne que personne n'ouvre.
         SettingsRow(
             icon = Icons.Default.PieChart,
-            title = "Espace utilisé",
-            subtitle = "Ce que les traces, les photos et la base occupent sur le téléphone",
+            title = stringResource(R.string.settings_storage_usage_row_label),
+            subtitle = stringResource(R.string.settings_storage_usage_row_description),
             onClick = onStorageUsageClick,
             trailing = {
                 Icon(
@@ -1185,33 +1312,41 @@ internal fun formatBackupTimestamp(epochMillis: Long): String =
         .withZone(ZoneId.systemDefault())
         .format(Instant.ofEpochMilli(epochMillis))
 
-private data class CreditLink(val label: String, val url: String)
+// RIC-190 (lot 3 i18n) : @StringRes et non une chaîne. Ces libellés sont des noms propres,
+// identiques dans les deux langues, mais ils vivent dans une liste construite à l'initialisation du
+// fichier, sans Context : le même geste que pour les enums du lot.
+private data class CreditLink(@StringRes val labelRes: Int, val url: String)
 
 // stax-api rides alongside aalto-xml (see the comment on the aalto-xml/stax-api dependencies in
 // app/build.gradle.kts) to make GPX parsing work at all on Android: a real bundled third-party
 // library, not just an internal implementation detail, so it earns its own credit here too.
 private val MAP_LAYER_CREDITS = listOf(
-    CreditLink("Esri", "https://www.esri.com"),
-    CreditLink("OpenStreetMap", "https://www.openstreetmap.org"),
-    CreditLink("OpenTopoMap", "https://opentopomap.org"),
+    CreditLink(R.string.settings_credits_esri_name, "https://www.esri.com"),
+    CreditLink(R.string.settings_credits_osm_name, "https://www.openstreetmap.org"),
+    CreditLink(R.string.settings_credits_opentopo_name, "https://opentopomap.org"),
 )
-private val WEATHER_CREDITS = listOf(CreditLink("Meteoblue", "https://www.meteoblue.com"))
+private val WEATHER_CREDITS = listOf(CreditLink(R.string.settings_credits_meteoblue_name, "https://www.meteoblue.com"))
 private val LIBRARY_CREDITS = listOf(
-    CreditLink("osmdroid", "https://github.com/osmdroid/osmdroid"),
-    CreditLink("JPX", "https://github.com/jenetics/jpx"),
-    CreditLink("aalto-xml", "https://github.com/FasterXML/aalto-xml"),
-    CreditLink("stax-api", "https://mvnrepository.com/artifact/javax.xml.stream/stax-api"),
+    CreditLink(R.string.settings_credits_osmdroid_name, "https://github.com/osmdroid/osmdroid"),
+    CreditLink(R.string.settings_credits_jpx_name, "https://github.com/jenetics/jpx"),
+    CreditLink(R.string.settings_credits_aaltoxml_name, "https://github.com/FasterXML/aalto-xml"),
+    CreditLink(R.string.settings_credits_staxapi_name, "https://mvnrepository.com/artifact/javax.xml.stream/stax-api"),
 )
-private val LICENSE_CREDITS = listOf(CreditLink("GPLv3", "https://www.gnu.org/licenses/gpl-3.0.html"))
+private val LICENSE_CREDITS = listOf(
+    CreditLink(R.string.settings_credits_license_name, "https://www.gnu.org/licenses/gpl-3.0.html"),
+)
 
 @Composable
 private fun CreditsSection(onOpenUrl: (String) -> Unit) {
-    SettingsSection(label = "Crédits") {
-        CreditRow("Fonds de carte", MAP_LAYER_CREDITS, onOpenUrl)
-        CreditRow("Météo", WEATHER_CREDITS, onOpenUrl)
-        CreditRow("Bibliothèques", LIBRARY_CREDITS, onOpenUrl)
-        StaticCreditRow("Développement", "Sébastien Raison, avec Claude (Anthropic)")
-        CreditRow("Licence", LICENSE_CREDITS, onOpenUrl)
+    SettingsSection(label = stringResource(R.string.settings_credits_section_title)) {
+        CreditRow(stringResource(R.string.settings_credits_maps_label), MAP_LAYER_CREDITS, onOpenUrl)
+        CreditRow(stringResource(R.string.settings_credits_weather_label), WEATHER_CREDITS, onOpenUrl)
+        CreditRow(stringResource(R.string.settings_credits_libraries_label), LIBRARY_CREDITS, onOpenUrl)
+        StaticCreditRow(
+            stringResource(R.string.settings_credits_dev_label),
+            stringResource(R.string.settings_credits_dev_value),
+        )
+        CreditRow(stringResource(R.string.settings_credits_license_label), LICENSE_CREDITS, onOpenUrl)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1220,7 +1355,11 @@ private fun CreditsSection(onOpenUrl: (String) -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Code source sur GitHub", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                stringResource(R.string.settings_credits_github_link),
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
             Icon(
                 Icons.AutoMirrored.Filled.OpenInNew,
                 contentDescription = null,
@@ -1253,7 +1392,7 @@ private fun CreditRow(label: String, links: List<CreditLink>, onOpenUrl: (String
                     Text(" · ", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
                 }
                 Text(
-                    link.label,
+                    stringResource(link.labelRes),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.clickable { onOpenUrl(link.url) },

@@ -15,11 +15,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.BuildConfig
+import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
@@ -37,7 +39,6 @@ import com.bivouac.app.ui.components.BlockingProgress
 import com.bivouac.app.ui.components.BlockingProgressDialog
 import com.bivouac.app.ui.settings.PhotoGalleryActionOutcome
 import com.bivouac.app.ui.settings.PhotoStorageModeChoice
-import com.bivouac.app.ui.settings.countLabel
 import com.bivouac.app.ui.settings.formatBytes
 import com.bivouac.app.ui.settings.openApplicationSettings
 import com.bivouac.app.ui.settings.photoGalleryActionOutcome
@@ -324,10 +325,17 @@ fun PhotoStorageChoicePrompt(viewModel: PhotoStorageChoiceViewModel = viewModel(
             onDismissRequest = viewModel::dismissRecompressionOffer,
             title = { Text("Recompresser tes photos ?") },
             text = {
+                // RIC-190 (lot 3 i18n) : la MÊME ressource que la proposition des Réglages, dont ce
+                // dialogue reprenait déjà le texte au caractère près (settings_photo_recompress_
+                // offer_message). Un <plurals> portant la phrase entière : au singulier, « Les
+                // recompresser » devient « La recompresser ».
                 Text(
-                    "${countLabel(estimate.photoCount, "photo déjà importée reste", "photos déjà importées restent")} " +
-                        "en qualité d'origine (~${formatBytes(estimate.freedBytes)}). Les recompresser " +
-                        "maintenant ?",
+                    pluralStringResource(
+                        R.plurals.settings_photo_recompress_offer_message,
+                        estimate.photoCount,
+                        estimate.photoCount,
+                        formatBytes(context, estimate.freedBytes),
+                    ),
                 )
             },
             confirmButton = { TextButton(onClick = onRecompressClick) { Text("Recompresser") } },
@@ -349,7 +357,7 @@ fun PhotoStorageChoicePrompt(viewModel: PhotoStorageChoiceViewModel = viewModel(
         AlertDialog(
             onDismissRequest = viewModel::dismissRecompressionReport,
             title = { Text("Recompression terminée") },
-            text = { Text(recompressionReportMessage(report)) },
+            text = { Text(recompressionReportMessage(context, report)) },
             confirmButton = { TextButton(onClick = viewModel::dismissRecompressionReport) { Text("OK") } },
         )
     }
