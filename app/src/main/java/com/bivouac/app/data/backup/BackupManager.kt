@@ -5,6 +5,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import com.bivouac.app.R
 import com.bivouac.app.data.db.BivouacDatabase
 import com.bivouac.app.data.db.LoggedTrackGpxStore
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
@@ -140,7 +141,7 @@ object BackupManager {
                 // donne son dénominateur à la progression, et le compte que le manifeste annonce.
                 val entries = collectBackupEntries(context)
                 val output = context.contentResolver.openOutputStream(destination)
-                    ?: throw IOException("Impossible d'ouvrir la destination sélectionnée.")
+                    ?: throw IOException(context.getString(R.string.backup_open_destination_failed))
                 val counting = CountingOutputStream(output)
                 ZipOutputStream(counting).use { zip ->
                     writeManifest(zip, entries.size)
@@ -195,6 +196,9 @@ object BackupManager {
         zip.putNextEntry(ZipEntry(MANIFEST_ENTRY_NAME))
         zip.write(
             (
+                // i18n-ok : contenu d'un fichier de l'archive, pas un texte d'IHM. Il doit rester
+                // identique d'un appareil à l'autre, sans quoi une archive écrite en anglais ne
+                // ressemblerait plus à une archive écrite en français (RIC-191).
                 "# Sauvegarde Bivouac. Ne pas modifier : ce compte est ce qui permet de détecter\n" +
                     "# une archive tronquée avant qu'elle ne remplace des données saines.\n" +
                     "$MANIFEST_FILE_COUNT_KEY=$fileCount\n"
@@ -232,8 +236,7 @@ object BackupManager {
         }.getOrNull() ?: return
         if (reported < bytesWritten) {
             throw IOException(
-                "La sauvegarde n'a pas été écrite en entier ($reported octets sur $bytesWritten). " +
-                    "Vérifie l'espace disponible sur la destination, puis recommence.",
+                context.getString(R.string.backup_incomplete_write_message, reported, bytesWritten),
             )
         }
     }
@@ -289,7 +292,9 @@ object BackupManager {
 
             val extractedDb = File(tempDir, BivouacDatabase.DATABASE_NAME)
             if (!extractedDb.exists()) {
-                return@withContext RestoreResult.Error("Cette archive ne contient pas de base Bivouac (bivouac.db manquant).")
+                return@withContext RestoreResult.Error(
+                    context.getString(R.string.restore_missing_database_message),
+                )
             }
 
             // RIC-95 : l'intégrité de la base extraite est vérifiée AVANT de toucher au moindre
@@ -297,7 +302,7 @@ object BackupManager {
             // base saine.
             if (!passesIntegrityCheck(extractedDb)) {
                 return@withContext RestoreResult.Error(
-                    "L'archive contient une base corrompue ou illisible : restauration annulée, les données actuelles sont intactes.",
+                    context.getString(R.string.restore_corrupted_database_message),
                 )
             }
 
@@ -333,7 +338,9 @@ object BackupManager {
             sweepOrphanPhotoFiles(context)
             RestoreResult.Success
         } catch (e: Exception) {
-            RestoreResult.Error(e.message ?: "Échec de la restauration.")
+            RestoreResult.Error(
+                e.message ?: context.getString(R.string.restore_generic_failure_message),
+            )
         } finally {
             tempDir.deleteRecursively()
         }
@@ -380,6 +387,13 @@ object BackupManager {
      * de laisser un mélange mi-ancien mi-nouveau ; l'ancien état n'est purgé qu'une fois tous les
      * nouveaux fichiers écrits.
      */
+    /**
+     * RIC-191 : le gabarit « Impossible d'écarter le répertoire %1$s avant remplacement » était
+     * recopié trois fois (gpx/, gpx-planif/, photos/). Une seule ressource, une seule fonction.
+     */
+    private fun moveDirFailure(context: Context, dir: File): String =
+        context.getString(R.string.restore_rollback_move_dir_failed, dir.name)
+
     private fun replaceWithRollback(context: Context, tempDir: File) {
         val dbFile = context.getDatabasePath(BivouacDatabase.DATABASE_NAME)
         val datastoreDir = File(context.filesDir, "datastore").apply { mkdirs() }
@@ -435,7 +449,12 @@ object BackupManager {
                     val aside = File(destination.path + PRE_RESTORE_SUFFIX)
                     aside.delete()
                     if (!destination.renameTo(aside)) {
-                        throw IOException("Impossible d'écarter ${destination.name} avant remplacement.")
+                        throw IOException(
+                            context.getString(
+                                R.string.restore_rollback_move_file_failed,
+                                destination.name,
+                            ),
+                        )
                     }
                     originals[destination] = aside
                 } else {
@@ -446,7 +465,7 @@ object BackupManager {
                 val aside = File(gpxDir.path + PRE_RESTORE_SUFFIX)
                 aside.deleteRecursively()
                 if (!gpxDir.renameTo(aside)) {
-                    throw IOException("Impossible d'écarter le répertoire ${gpxDir.name} avant remplacement.")
+                    throw IOException(moveDirFailure(context, gpxDir))
                 }
                 gpxAside = aside
             }
@@ -454,7 +473,7 @@ object BackupManager {
                 val aside = File(gpxPlanifDir.path + PRE_RESTORE_SUFFIX)
                 aside.deleteRecursively()
                 if (!gpxPlanifDir.renameTo(aside)) {
-                    throw IOException("Impossible d'écarter le répertoire ${gpxPlanifDir.name} avant remplacement.")
+                    throw IOException(moveDirFailure(context, gpxPlanifDir))
                 }
                 gpxPlanifAside = aside
             }
@@ -462,7 +481,7 @@ object BackupManager {
                 val aside = File(photosDir.path + PRE_RESTORE_SUFFIX)
                 aside.deleteRecursively()
                 if (!photosDir.renameTo(aside)) {
-                    throw IOException("Impossible d'écarter le répertoire ${photosDir.name} avant remplacement.")
+                    throw IOException(moveDirFailure(context, photosDir))
                 }
                 photosAside = aside
             }
@@ -536,7 +555,7 @@ object BackupManager {
         onProgress: (done: Int, total: Int?) -> Unit,
     ): ExtractionResult {
         val input = context.contentResolver.openInputStream(source)
-            ?: return ExtractionResult("Impossible de lire le fichier sélectionné.")
+            ?: return ExtractionResult(context.getString(R.string.restore_read_source_failed))
         var expectedFileCount: Int? = null
         var extracted = 0
         ZipInputStream(input).use { zip ->
@@ -566,10 +585,15 @@ object BackupManager {
         }
         val expected = expectedFileCount
         if (expected != null && extracted != expected) {
+            // RIC-191 : « fichiers » restait invariable même pour un seul fichier annoncé. Vrai
+            // <plurals>, accordé sur le compte annoncé par le manifeste.
             return ExtractionResult(
-                "Cette sauvegarde est incomplète : elle annonce $expected fichiers mais n'en contient " +
-                    "que $extracted. Elle a probablement été interrompue pendant sa création. " +
-                    "Restauration annulée, les données actuelles sont intactes.",
+                context.resources.getQuantityString(
+                    R.plurals.restore_truncated_backup_message,
+                    expected,
+                    expected,
+                    extracted,
+                ),
             )
         }
         return ExtractionResult(null)

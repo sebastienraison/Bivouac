@@ -1743,7 +1743,10 @@ private fun JournalTrackRow(
             val bivouacCount = dayInfo?.bivouacCount ?: 0
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = (TrekDatesFormatter.format(dayInfo?.dates.orEmpty()) ?: formatStartedAt(entry.startedAt)) +
+                    text = (
+                        TrekDatesFormatter.format(LocalContext.current, dayInfo?.dates.orEmpty())
+                            ?: formatStartedAt(entry.startedAt)
+                        ) +
                         if (bivouacCount > 0) " · $bivouacCount" else "",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2221,7 +2224,8 @@ internal fun ThreeStopJournalDetail(
                                 // dénormalisées, la trace étant de toute façon parsée pour être
                                 // affichée.
                                 Text(
-                                    text = TrekDatesFormatter.format(dayStartDates) ?: formatStartedAt(entry.startedAt),
+                                    text = TrekDatesFormatter.format(LocalContext.current, dayStartDates)
+                                        ?: formatStartedAt(entry.startedAt),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
