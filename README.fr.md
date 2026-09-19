@@ -4,7 +4,7 @@
 
 Application Android open source pour la préparation et le journal de randonnées itinérantes avec bivouac.
 
-Prépare tes randonnées itinérantes (Planification) et garde la trace de celles déjà réalisées
+Prépare tes randonnées itinérantes (Planification) et garde l'historique de celles déjà réalisées
 (Journal), avec tes points de bivouac positionnés sur une carte OSM et un tableau des segments
 journaliers (distance, dénivelé, durée estimée) qui se met à jour automatiquement.
 
@@ -29,8 +29,8 @@ durées suivent la locale du système.
       <sub>Journal : liste chronologique par année</sub>
     </td>
     <td width="50%" align="center">
-      <img src="screenshots/04_journal_detail.jpg" width="100%" alt="Journal : détail d'une trace, photos, tags et note"><br>
-      <sub>Journal : détail d'une trace, photos, tags et note</sub>
+      <img src="screenshots/04_journal_detail.jpg" width="100%" alt="Journal : détail d'une rando, photos, tags et note"><br>
+      <sub>Journal : détail d'une rando, photos, tags et note</sub>
     </td>
   </tr>
   <tr>
@@ -90,7 +90,8 @@ durées suivent la locale du système.
 
 - Importer une ou plusieurs traces GPX déjà réalisées (fichiers multiples reconnus comme les jours
   d'une même sortie), liste chronologique par année, détail en lecture seule avec carte et profil
-- Note libre et tags par trace, filtrage par tag ; dupliquer une trace du Journal vers Planification
+- Note libre et tags par rando, filtrage par tag ; dupliquer une rando du Journal vers
+  Planification
 - Photos associées à une randonnée : positionnées sur la trace grâce à leurs données GPS, marqueurs
   sur la carte, carrousel dans la bulle, galerie de la sortie et visionneuse plein écran ;
   fonctionnalité débrayable dans les Réglages (voir la FAQ pour les permissions)
@@ -103,9 +104,9 @@ durées suivent la locale du système.
 
 **Bilan :**
 
-- Totaux cumulés, graphique de progression mensuelle (sorties, km, D+, vitesse, bivouacs) sur tout
-  l'historique, et records personnels (km-effort, vitesse ascensionnelle, altitude atteinte, bivouac
-  le plus haut, plus gros trek...) renvoyant chacun vers la sortie du Journal concernée
+- Totaux cumulés, graphique de progression mensuelle (randos, distance, D+, vitesse, bivouacs) sur
+  tout l'historique, et records personnels (km-effort, vitesse ascensionnelle, altitude atteinte,
+  bivouac le plus haut, plus gros trek...) renvoyant chacun vers la rando du Journal concernée
 
 **Réglages :**
 

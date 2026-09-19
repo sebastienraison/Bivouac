@@ -12,7 +12,7 @@
 - Harmonized French vocabulary: "rando" always refers to a Journal entry, "trace" to a GPX file
   or the item currently being planned
 - The "Distance" tab in Stats and its chart now share the same name (the chart used to be
-  labelled "Km")
+  labeled "Km")
 - Build date shown in ISO format (yyyy-mm-dd), unambiguous regardless of language
 - The Hiking map layer (OpenTopoMap) attribution is shown in English in both languages of the app
 
@@ -28,7 +28,7 @@
   available afterwards from Settings. Each photo is replaced safely (new file, swap, then delete
   the old one)
 - In lightweight mode, the full-screen viewer shows the gallery original when it's still on the
-  phone (transparent upgrade in quality)
+  phone (a seamless upgrade in quality)
 - "Storage usage" screen in Settings: tracks, photos, the rest
 - Photos missing after a restore: found automatically in the gallery when the original is still
   there
@@ -59,7 +59,7 @@
 - Several GPX files shared to Planning: the choice is now disabled instead of silently losing
   every file after the first
 - Fixed a duplicate app instance when a GPX file is opened from another app
-- Disabled the network connection on the very first launch with no interaction (a tile was being
+- No network connection on the very first launch without any interaction (a tile was being
   loaded for a map that wasn't visible yet)
 - Thumbnail badges (approximate position, hidden from map) are now legible
 
@@ -87,7 +87,7 @@
 - Fully optional feature, can be turned off in Settings; purging all imported photos is possible
   in the same place
 - Editing a hike (note, tags, photos) is now transactional: nothing changes until you save, and
-  leaving with pending changes explicitly asks what to do (save, discard, or stay)
+  leaving with pending changes explicitly asks you what to do (save, discard, or stay)
 
 **Backup / restore:**
 
@@ -105,9 +105,9 @@
 
 **Stats (new):**
 
-- New Stats tab: an overview of the Journal: cumulative totals, a monthly progression chart
+- New Stats tab, an overview of the Journal: cumulative totals, a monthly progression chart
   (hikes, distance, ascent, speed, bivouacs) across the whole history, and your personal records
-  (km-effort, climbing speed, highest point reached, highest bivouac, longest trek...). Each
+  (km-effort, best climb rate, highest altitude reached, highest bivouac, longest trek...). Each
   record links straight back to the relevant hike in the Journal.
 
 **Settings:**
@@ -118,7 +118,7 @@
 **Bugfixes:**
 
 - Planning: on the very first launch of the app, the "No track being planned" screen could
-  briefly show even when a previous session was about to be restored
+  briefly appear even when a previous session was about to be restored
 - Planning: after killing and relaunching the app on a track already saved to the bank, closing
   the screen wrongly asked for a save confirmation again, and saving from that prompt duplicated
   the track instead of simply closing
@@ -141,8 +141,8 @@
 - Planning: a multi-day trek duplicated from the Journal, whose recording had stopped far from
   the bivouac one evening, could show a fictitious path on the map and inflate the displayed
   total distance: same fix as the one already applied to the Journal
-- A single-day track with no bivouac point at all had no way to export a GPX from Planning; added
-  to the track's menu
+- A single-day track with no bivouac point at all had no way to export a GPX from Planning; the
+  option has been added to the track's menu
 - Opening a bank track that had become unreadable showed an error screen that made the rest of
   the list disappear; it now shows a one-off message instead, without disturbing the rest
 - Journal: the bivouac row's layout (time font, icon) aligned with the rest of the interface
@@ -165,11 +165,11 @@
 - Import one or more already-hiked GPX tracks; several files selected together are recognized as
   the days of a single hike rather than separate hikes
 - Chronological list grouped by year, with cumulative distance, duration and elevation gain
-- Read-only detail of a track: map, elevation profile, bivouacs automatically detected at the
+- Read-only detail of a hike: map, elevation profile, bivouacs automatically detected at the
   breaks between the days of a multi-day hike
-- Free-text note and tags on each track; filter the list by tag
-- Multi-select tracks to overlay them on the same map
-- Delete a track
+- Free-text note and tags on each hike; filter the list by tag
+- Multi-select hikes to overlay them on the same map
+- Delete a hike
 - Duplicate a hike from Journal to Planning to reuse an already-hiked route
 
 **Planning:**
@@ -181,8 +181,8 @@
 
 **Mapping:**
 
-- Satellite map layer (Esri World Imagery), can be turned off like the weather link from the new
-  Settings
+- Satellite map layer (Esri World Imagery), which can be turned off from the new Settings, like
+  the weather link
 - Direction arrows on the track, loops included
 
 **Settings (new):**
@@ -196,13 +196,14 @@
   tracking
 
 **Misc:**
+
 - Updating from any previously published version of the app fully preserves the tracks, bivouacs
   and hikes already saved
 
 **Bugfixes:**
 
-- Opening a track in Planning, the bottom of the track could stay hidden behind the drawer until
-  the recenter button was pressed
+- When opening a track in Planning, its lower part could stay hidden behind the drawer until the
+  recenter button was pressed
 - The GPX content of tracks (Planning bank and current session) is now stored in files rather
   than in the database, which removes a crash risk when opening a very large or point-heavy track
 - Opening a track could fail consistently right after a backup, without needing an app restart
@@ -228,8 +229,8 @@
 
 **Bugfixes:**
 
-- Importing a GPX track containing sensor data (heart rate, cadence...), common in exports from
-  hiking watches/GPS devices, made the import fail
+- Import failed for a GPX track containing sensor data (heart rate, cadence...), common in
+  exports from hiking watches and GPS devices
 - In landscape mode, recentering the map on the track could cut off the top of it
 
 ## V1.2
@@ -258,7 +259,7 @@
 **Bivouac points:**
 
 - Point altitude displayed; weather icon opening the forecast (Meteoblue, point coordinates,
-  FR/EN language depending on the device's)
+  FR/EN language matching the device's)
 
 **Elevation profile (new):**
 
@@ -291,8 +292,8 @@ First functional version:
 
 - Import a GPX file via the system picker (multi-track/multi-segment flattened into one
   continuous track)
-- Display on an OSM map background (osmdroid), track as a blue dashed line with a white outline
-  to stand out against any background
+- Display on an OSM base map (osmdroid), the track as a blue dashed line with a white outline so
+  it stands out on any layer
 - Automatic zoom to the track's extent on opening (5% margin on the edges)
 - Start icon (green, "play") and end icon (red, "stop"); combined start/end icon for a loop
 

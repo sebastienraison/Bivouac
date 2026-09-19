@@ -78,8 +78,8 @@ the system locale.
 
 - Import a GPX track via the system file picker, or directly from another app; a track bank
   (save, rename, duplicate, delete, list)
-- Display on an OSM map (osmdroid) with a layer switch (Standard, Hiking, Satellite), start/
-  end/loop icons, recenter on the track
+- Display on an OSM map (osmdroid) with a layer switch (Standard, Hiking, Satellite),
+  start/end/loop icons, recenter on the track
 - Add, move (snapped to the track) and remove bivouac points; altitude and a weather link for
   each point
 - Elevation profile with altitude/distance markers and bivouac positions
@@ -93,25 +93,25 @@ the system locale.
   elevation profile
 - Free-text note and tags per hike, filter by tag; duplicate a hike from Journal to Planning
 - Photos attached to a hike: placed on the track from their GPS data, markers on the map,
-  carousel in the bubble, per-hike gallery and full-screen viewer; can be turned off in Settings
-  (see the FAQ for permissions)
+  carousel in the bubble, per-hike gallery and full-screen viewer; the feature can be turned off
+  in Settings (see the FAQ for permissions)
 - Photo editing: non-destructive rotation and crop, caption, reposition by dragging along the
-  track, restore to GPS position, hide from map, show on map again; enlarge candidates before
-  import
+  track, restore to GPS position, hide from map, show on map again; enlarge candidate photos
+  before import
 - Two photo storage modes: "Original quality" or "Lightweight" (reduced to 2048 px, about ten
   times smaller), recompression of the existing photos, storage usage screen (see the FAQ)
 
 **Stats:**
 
 - Cumulative totals, monthly progression chart (hikes, distance, ascent, speed, bivouacs) across
-  your whole history, and personal records (km-effort, climbing speed, highest point reached,
+  your whole history, and personal records (km-effort, best climb rate, highest altitude reached,
   highest bivouac, longest trek...), each linking back to the relevant hike in the Journal
 
 **Settings:**
 
 - Custom speed for duration estimates (manual, automatic, or from a selection of hikes), full
-  backup and restore, enabling/disabling the non-free features and photo management, photo
-  storage mode, storage used, purge imported photos
+  backup and restore of your data, enabling/disabling the non-free features and photo
+  management, photo storage mode, storage usage, purge imported photos
 
 Full feature history by version, and known limitations: [RELEASE_NOTES.md](RELEASE_NOTES.md)
 ([version française](RELEASE_NOTES.fr.md)).
@@ -122,8 +122,8 @@ Full feature history by version, and known limitations: [RELEASE_NOTES.md](RELEA
 
 Yes, partly. Map tiles already viewed stay available offline: once an area has been displayed
 once (for example while planning a hike at home), its tiles stay cached on the phone and reload
-without a network. That's useful once you're out there, where you often have no mobile network
-left: you can still view the map of areas already seen, and place or adjust your bivouac points
+without a network. That's useful once you're out there, where you often have no mobile signal:
+you can still view the map of areas already seen, and place or adjust your bivouac points
 without a connection. Only areas never displayed before stay blank until you have a network
 again.
 
@@ -136,7 +136,7 @@ distance covered and the elevation climbed, a bit like solving an equation with 
 With a single hike, there isn't enough information to separate them: there's no way to tell
 whether you took longer because the terrain was flat but long, or short but very steep. At least
 two different hikes are needed for the calculation to make sense, which is why the Auto and
-Selection modes stay greyed out until your Journal (or your track selection) holds at least two.
+Selection modes stay grayed out until your Journal (or your track selection) holds at least two.
 
 ### How does the automatic speed calculation work, and why can it be optimistic?
 
@@ -156,14 +156,14 @@ allowance to the estimates, adjustable manually or measured automatically from t
 selection depending on the chosen mode. Without it, estimates tend to be optimistic, and the gap
 grows with the number of expected breaks.
 
-### Why does the app ask for both photo access AND their location?
+### Why does the app ask for access to photos AND to their location?
 
 To place a photo on the track, Bivouac needs the GPS position stored in the photo. The standard
 Android photo picker, designed so apps only get the bare minimum, actually strips that position
 from the photos it hands over. Bivouac therefore uses its own selection screen, which needs two
 permissions: reading images (the one any gallery app asks for), and access to media location
 (the one that preserves the GPS position). Both are only requested the first time you use the
-photo feature, never if you don't use it, and Android 14+'s partial access ("allow only selected
+photo feature, never if you don't use it, and Android 14+ partial access ("allow only selected
 photos") is supported. The feature can be fully turned off in Settings, and photos never leave
 the device.
 
@@ -176,7 +176,7 @@ smaller, which is still plenty for a phone screen. In that mode, the full-screen
 the original in the gallery for as long as it's still there, so nothing is lost on screen. New
 installs start in lightweight mode; if you already had photos, the app offers the choice on
 first launch, and already-imported photos can be recompressed from Settings afterwards. The
-"Storage used" screen in Settings shows what tracks and photos take up.
+"Storage usage" screen in Settings shows what tracks and photos take up.
 
 ### Do my hikes go into a Google cloud backup?
 
@@ -186,7 +186,7 @@ either (database and preferences included), like most apps that don't explicitly
 Concretely, if automatic backup is enabled on your Google account, your hikes, tags and notes
 are part of it; on a device without a Google account/services (as on many F-Droid setups), this
 mechanism is simply inactive and does nothing. A direct phone-to-phone transfer (cable or the
-manufacturer's transfer tool) stays complete either way. The explicit backup (Settings > Backup,
+manufacturer's transfer tool) stays complete either way. The explicit backup (Settings > Back up,
 to the location of your choice) remains the mechanism to use deliberately if you want a safety
 net outside those two channels, especially before a reinstall or a test.
 
@@ -203,7 +203,7 @@ net outside those two channels, especially before a reinstall or a test.
 ./gradlew assembleDebug
 ```
 
-Requires an Android SDK (API 34) and a JDK 17.
+Requires the Android SDK (API 34) and JDK 17.
 
 ## License
 
