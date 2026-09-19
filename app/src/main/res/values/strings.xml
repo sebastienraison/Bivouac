@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : docs/pilotage/i18n/strings-inventaire-v10.csv (inventaire de l'agent de pilotage,
+    Source : /home/seb/Bureau/MEGA/Projets/Bivouac/docs/pilotage/i18n/strings-inventaire-v11.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v10.csv
+        python3 tools/i18n/generate_strings.py /home/seb/Bureau/MEGA/Projets/Bivouac/docs/pilotage/i18n/strings-inventaire-v11.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -197,7 +197,7 @@
     <string name="bilan_metric_label_dplus">Ascent</string>
     <string name="bilan_metric_chart_title_dplus">Ascent per month</string>
     <string name="bilan_metric_label_vitesse">Speed</string>
-    <string name="bilan_metric_chart_title_vitesse">Calibrated flat speed per month</string>
+    <string name="bilan_metric_chart_title_vitesse">Calibrated flat-ground speed per month</string>
     <string name="bilan_metric_label_bivouacs">Bivouacs</string>
     <string name="bilan_metric_chart_title_bivouacs">Bivouacs per month</string>
     <string name="bilan_totals_label_distance">Distance</string>
@@ -244,7 +244,7 @@
     <string name="settings_speed_mode_manual_label">Manual</string>
     <string name="settings_speed_mode_auto_label">Auto</string>
     <string name="settings_speed_mode_selection_label">Selection</string>
-    <string name="settings_manual_speed_field_label">Flat speed</string>
+    <string name="settings_manual_speed_field_label">Flat-ground speed</string>
     <string name="settings_manual_penalty_field_label">Ascent penalty</string>
     <string name="settings_nonfree_section_title">Non-free features</string>
     <string name="settings_nonfree_toggle_label">Disable non-free features</string>

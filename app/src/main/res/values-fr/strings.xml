@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : docs/pilotage/i18n/strings-inventaire-v10.csv (inventaire de l'agent de pilotage,
+    Source : /home/seb/Bureau/MEGA/Projets/Bivouac/docs/pilotage/i18n/strings-inventaire-v11.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v10.csv
+        python3 tools/i18n/generate_strings.py /home/seb/Bureau/MEGA/Projets/Bivouac/docs/pilotage/i18n/strings-inventaire-v11.csv
 
     Voir tools/i18n/README.md.
 -->
