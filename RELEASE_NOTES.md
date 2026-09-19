@@ -1,5 +1,23 @@
 # Bivouac : notes de version
 
+*[English version](RELEASE_NOTES.en.md) (V2.4.0 seulement, l'historique complet reste ici)*
+
+## V2.4.0
+
+**Internationalisation (nouveau) :**
+
+- L'interface est désormais disponible en anglais (langue par défaut) et en français, selon la
+  langue de l'appareil (ou la langue par application sur Android 13 et plus) ; pas de sélecteur
+  de langue dans l'app
+- Nombres, dates et durées s'affichent selon le format de la locale du système
+- Vocabulaire français harmonisé : « rando » désigne toujours une sortie du Journal, « trace » un
+  fichier GPX ou l'objet en cours de Planification
+- L'onglet « Distance » du Bilan et son graphique portent désormais le même nom (le graphique
+  s'appelait auparavant « Km »)
+- Date de build affichée au format ISO (aaaa-mm-jj), sans ambiguïté quelle que soit la langue
+- Attribution de la carte Randonnée (OpenTopoMap) affichée en anglais dans les deux langues de
+  l'app
+
 ## V2.3.0
 
 **Journal, photos : stockage à deux modes (nouveau) :**
