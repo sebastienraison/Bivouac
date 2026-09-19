@@ -1,223 +1,224 @@
 # Bivouac
 
-Application Android open source pour la préparation et le journal de randonnées itinérantes avec bivouac.
+*[Version française](README.fr.md)*
 
-Prépare tes randonnées itinérantes (Planification) et garde la trace de celles déjà réalisées
-(Journal), avec tes points de bivouac positionnés sur une carte OSM et un tableau des segments
-journaliers (distance, dénivelé, durée estimée) qui se met à jour automatiquement.
+Open source Android app for planning and logging multi-day hikes with wild-camping (bivouac) stops.
+
+Plan your multi-day hikes (Planning) and keep a log of the ones you've already done (Journal),
+with your bivouac points placed on an OSM map and a table of daily segments (distance, elevation
+gain, estimated duration) that updates automatically.
+
+Available in English (default) and French, following the device's language (or the per-app
+language setting on Android 13+). No in-app language switch. Numbers, dates and durations follow
+the system locale.
 
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src="screenshots/01_planification_carte.jpg" width="100%" alt="Planification : trace ouverte sur fond de carte Randonnée, profil altimétrique"><br>
-      <sub>Planification : trace sur fond de carte, profil altimétrique</sub>
+      <img src="screenshots/01_planification_carte.jpg" width="100%" alt="Planning: track open on the Hiking map layer, elevation profile"><br>
+      <sub>Planning: track on the map, elevation profile</sub>
     </td>
     <td width="50%" align="center">
-      <img src="screenshots/02_planification_details.jpg" width="100%" alt="Planification : tiroir de détail, segments par jour"><br>
-      <sub>Planification : détail des segments par jour</sub>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <img src="screenshots/03_journal_liste.jpg" width="100%" alt="Journal : liste chronologique par année"><br>
-      <sub>Journal : liste chronologique par année</sub>
-    </td>
-    <td width="50%" align="center">
-      <img src="screenshots/04_journal_detail.jpg" width="100%" alt="Journal : détail d'une trace, photos, tags et note"><br>
-      <sub>Journal : détail d'une trace, photos, tags et note</sub>
+      <img src="screenshots/02_planification_details.jpg" width="100%" alt="Planning: detail drawer, daily segments"><br>
+      <sub>Planning: daily segment detail</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="screenshots/07_journal_photos_carte.jpg" width="100%" alt="Journal : photos positionnées sur la trace, marqueurs sur la carte"><br>
-      <sub>Journal : photos positionnées sur la trace</sub>
+      <img src="screenshots/03_journal_liste.jpg" width="100%" alt="Journal: chronological list by year"><br>
+      <sub>Journal: chronological list by year</sub>
     </td>
     <td width="50%" align="center">
-      <img src="screenshots/08_journal_photo_bulle.jpg" width="100%" alt="Journal : bulle photo avec distance, altitude, heure et légende"><br>
-      <sub>Journal : bulle photo, distance, altitude et légende</sub>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <img src="screenshots/09_ajuster.jpg" width="100%" alt="Journal : éditeur Ajuster, rotation et recadrage non destructifs d'une photo"><br>
-      <sub>Journal : Ajuster, rotation et recadrage non destructifs</sub>
-    </td>
-    <td width="50%" align="center">
-      <img src="screenshots/10_placement.jpg" width="100%" alt="Journal : repositionnement d'une photo par glisser le long de la trace, profil qui suit"><br>
-      <sub>Journal : repositionner une photo le long de la trace</sub>
+      <img src="screenshots/04_journal_detail.jpg" width="100%" alt="Journal: hike detail, photos, tags and note"><br>
+      <sub>Journal: hike detail, photos, tags and note</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="screenshots/05_bilan.jpg" width="100%" alt="Bilan : totaux, graphique de progression et records"><br>
-      <sub>Bilan : totaux, progression et records</sub>
+      <img src="screenshots/07_journal_photos_carte.jpg" width="100%" alt="Journal: photos placed on the track, markers on the map"><br>
+      <sub>Journal: photos placed on the track</sub>
     </td>
     <td width="50%" align="center">
-      <img src="screenshots/06_reglages.jpg" width="100%" alt="Réglages : photos du Journal et mode de stockage, qualité d'origine ou poids allégé"><br>
-      <sub>Réglages : photos du Journal, mode de stockage</sub>
+      <img src="screenshots/08_journal_photo_bulle.jpg" width="100%" alt="Journal: photo bubble with distance, altitude, time and caption"><br>
+      <sub>Journal: photo bubble, distance, altitude and caption</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="screenshots/11_espace_utilise.jpg" width="100%" alt="Réglages : espace utilisé par les traces, les photos et la base, recompression proposée"><br>
-      <sub>Réglages : espace utilisé, recompression des photos</sub>
+      <img src="screenshots/09_ajuster.jpg" width="100%" alt="Journal: Crop editor, non-destructive rotation and cropping of a photo"><br>
+      <sub>Journal: Crop, non-destructive rotation and cropping</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="screenshots/10_placement.jpg" width="100%" alt="Journal: repositioning a photo by dragging it along the track, profile follows"><br>
+      <sub>Journal: reposition a photo along the track</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="screenshots/05_bilan.jpg" width="100%" alt="Stats: totals, progression chart and records"><br>
+      <sub>Stats: totals, progression and records</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="screenshots/06_reglages.jpg" width="100%" alt="Settings: Journal photos and storage mode, original quality or lightweight"><br>
+      <sub>Settings: Journal photos, storage mode</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="screenshots/11_espace_utilise.jpg" width="100%" alt="Settings: storage used by tracks, photos and the database, recompression offered"><br>
+      <sub>Settings: storage used, photo recompression</sub>
     </td>
     <td width="50%"></td>
   </tr>
 </table>
 
-## Fonctionnalités (V2.3.0)
+## Features (V2.4.0)
 
-**Planification :**
+**Planning:**
 
-- Import d'une trace GPX via le sélecteur de fichiers système, ou directement depuis une autre
-  application ; banque de traces (enregistrer, renommer, dupliquer, supprimer, lister)
-- Affichage sur fond de carte OSM (osmdroid) avec sélecteur (standard, randonnée, satellite),
-  pictos de départ/arrivée/boucle, recentrage sur la trace
-- Ajout, déplacement (aimanté à la trace) et suppression des points de bivouac ; altitude et lien
-  météo pour chaque point
-- Courbe de dénivelé avec repères d'altitude/distance et position des bivouacs
-- Tableau des segments journaliers : distance, durée estimée, D+, D-
-- Export d'un segment au format GPX vers une autre application
+- Import a GPX track via the system file picker, or directly from another app; a track bank
+  (save, rename, duplicate, delete, list)
+- Display on an OSM map (osmdroid) with a layer switch (Standard, Hiking, Satellite), start/
+  end/loop icons, recenter on the track
+- Add, move (snapped to the track) and remove bivouac points; altitude and a weather link for
+  each point
+- Elevation profile with altitude/distance markers and bivouac positions
+- Daily segment table: distance, estimated duration, ascent, descent
+- Export a segment as a GPX file to another app
 
-**Journal :**
+**Journal:**
 
-- Importer une ou plusieurs traces GPX déjà réalisées (fichiers multiples reconnus comme les jours
-  d'une même sortie), liste chronologique par année, détail en lecture seule avec carte et profil
-- Note libre et tags par trace, filtrage par tag ; dupliquer une trace du Journal vers Planification
-- Photos associées à une randonnée : positionnées sur la trace grâce à leurs données GPS, marqueurs
-  sur la carte, carrousel dans la bulle, galerie de la sortie et visionneuse plein écran ;
-  fonctionnalité débrayable dans les Réglages (voir la FAQ pour les permissions)
-- Manipulation des photos : rotation et recadrage non destructifs, légende, repositionnement par
-  glisser le long de la trace, retour à la position GPS, retrait de la carte ; agrandissement des
-  candidates à l'import
-- Deux modes de stockage des photos : "Qualité d'origine" ou "Poids allégé" (copie réduite à
-  2048 px, environ dix fois plus légère), recompression du stock existant, écran de l'espace
-  utilisé (voir la FAQ)
+- Import one or more already-hiked GPX tracks (multiple files selected together are recognized
+  as the days of a single hike), chronological list by year, read-only detail with map and
+  elevation profile
+- Free-text note and tags per hike, filter by tag; duplicate a hike from Journal to Planning
+- Photos attached to a hike: placed on the track from their GPS data, markers on the map,
+  carousel in the bubble, per-hike gallery and full-screen viewer; can be turned off in Settings
+  (see the FAQ for permissions)
+- Photo editing: non-destructive rotation and crop, caption, reposition by dragging along the
+  track, restore to GPS position, hide from map, show on map again; enlarge candidates before
+  import
+- Two photo storage modes: "Original quality" or "Lightweight" (reduced to 2048 px, about ten
+  times smaller), recompression of the existing photos, storage usage screen (see the FAQ)
 
-**Bilan :**
+**Stats:**
 
-- Totaux cumulés, graphique de progression mensuelle (sorties, km, D+, vitesse, bivouacs) sur tout
-  l'historique, et records personnels (km-effort, vitesse ascensionnelle, altitude atteinte, bivouac
-  le plus haut, plus gros trek...) renvoyant chacun vers la sortie du Journal concernée
+- Cumulative totals, monthly progression chart (hikes, distance, ascent, speed, bivouacs) across
+  your whole history, and personal records (km-effort, climbing speed, highest point reached,
+  highest bivouac, longest trek...), each linking back to the relevant hike in the Journal
 
-**Réglages :**
+**Settings:**
 
-- Vitesse personnalisée pour l'estimation de durée (manuelle, automatique, ou par sélection de
-  traces), sauvegarde et restauration complètes des données, activation/désactivation des
-  fonctionnalités non libres et de la gestion des photos, mode de stockage des photos, espace
-  utilisé, purge des photos importées
+- Custom speed for duration estimates (manual, automatic, or from a selection of hikes), full
+  backup and restore, enabling/disabling the non-free features and photo management, photo
+  storage mode, storage used, purge imported photos
 
-Détail complet des fonctionnalités par version, et limitations connues : [RELEASE_NOTES.md](RELEASE_NOTES.md).
+Full feature history by version, and known limitations: [RELEASE_NOTES.md](RELEASE_NOTES.md)
+(French; [English notes](RELEASE_NOTES.en.md) cover V2.4.0 only).
 
 ## FAQ
 
-### L'appli fonctionne-t-elle sans réseau ?
+### Does the app work offline?
 
-Oui, en partie. Les fonds de carte déjà consultés restent disponibles hors connexion : dès qu'une
-zone a été affichée une fois (par exemple en préparant ta rando chez toi), ses tuiles restent en
-cache sur le téléphone et se rechargent sans réseau. C'est pratique une fois sur le terrain, là où
-tu n'as souvent plus de réseau mobile : tu peux revoir la carte des zones déjà consultées, positionner
-ou ajuster tes bivouacs, sans avoir besoin de connexion. Seules les zones jamais affichées auparavant
-resteront vides tant que tu n'as pas de réseau.
+Yes, partly. Map tiles already viewed stay available offline: once an area has been displayed
+once (for example while planning a hike at home), its tiles stay cached on the phone and reload
+without a network. That's useful once you're out there, where you often have no mobile network
+left: you can still view the map of areas already seen, and place or adjust your bivouac points
+without a connection. Only areas never displayed before stay blank until you have a network
+again.
 
-### Pourquoi le mode Auto/Sélection de vitesse personnalisée demande-t-il au moins 2 randonnées ?
+### Why does the Auto/Selection custom speed mode need at least 2 hikes?
 
-Bivouac peut calculer automatiquement ta vitesse de marche à plat et ta pénalité de dénivelé à
-partir de tes randonnées déjà présentes dans le Journal, plutôt que de te demander de les saisir
-toi-même. Ce calcul répartit le temps mis sur une rando entre deux facteurs distincts, la distance
-parcourue à plat et le dénivelé grimpé, un peu comme résoudre une équation à deux inconnues. Avec
-une seule randonnée, il n'y a pas assez d'information pour les séparer : impossible de savoir si tu
-as mis du temps parce que le terrain était plat mais long, ou court mais très pentu. Il faut au
-moins deux randonnées différentes pour que le calcul ait un sens : c'est pourquoi les modes Auto et
-Sélection restent grisés tant que ton Journal (ou ta sélection de traces) n'en contient pas au moins
-deux.
+Bivouac can compute your flat-ground walking speed and your elevation-gain penalty automatically
+from the hikes already in your Journal, instead of asking you to enter them yourself. This
+calculation splits the time spent on a hike between two separate factors, the flat-ground
+distance covered and the elevation climbed, a bit like solving an equation with two unknowns.
+With a single hike, there isn't enough information to separate them: there's no way to tell
+whether you took longer because the terrain was flat but long, or short but very steep. At least
+two different hikes are needed for the calculation to make sense, which is why the Auto and
+Selection modes stay greyed out until your Journal (or your track selection) holds at least two.
 
-### Comment le calcul automatique de vitesse fonctionne-t-il, et pourquoi peut-il être optimiste ?
+### How does the automatic speed calculation work, and why can it be optimistic?
 
-Plutôt que de faire une moyenne globale par rando, Bivouac découpe chacune de tes randonnées en
-petits tronçons pour séparer ce qui relève de l'allure à plat de ce qui relève du dénivelé, plus
-précis qu'une simple moyenne, surtout si tes randos varient beaucoup en profil. Les moments passés
-à l'arrêt (pause, photo, casse-croûte) sont automatiquement écartés de ce calcul, pour qu'une longue
-pause ne fasse pas croire que tu marches lentement.
+Rather than taking a single average per hike, Bivouac splits each of your hikes into small
+segments to separate what comes from flat-ground pace from what comes from elevation gain, which
+is more accurate than a simple average, especially if your hikes vary a lot in profile. Time
+spent stopped (breaks, photos, snacks) is automatically excluded from this calculation, so a long
+break doesn't make it look like you're walking slowly.
 
-Ce même souci de précision explique un choix qui peut surprendre : la pénalité de dénivelé ne
-distingue pas montée et descente. Sur des boucles (l'immense majorité des randos), les deux sont si
-étroitement corrélées qu'un facteur séparé n'apporterait aucune précision réelle, juste du bruit
-statistique sur un chiffre supplémentaire : mieux vaut un seul facteur robuste que deux
-approximatifs.
+This same concern for accuracy explains a choice that can be surprising: the elevation-gain
+penalty doesn't distinguish ascent from descent. On loops (the vast majority of hikes), the two
+are so closely correlated that a separate factor wouldn't add any real accuracy, just statistical
+noise on an extra number: one solid factor beats two approximate ones.
 
-Pour la marge de pause justement : les Réglages (Vitesse personnalisée) proposent un curseur dédié
-qui ajoute une provision de temps aux estimations, réglable manuellement ou mesurée automatiquement
-sur le Journal/la sélection selon le mode choisi : sans lui, les estimations tendent à être
-optimistes, l'écart grandissant avec le nombre de pauses prévisibles.
+As for the break margin: Settings (Custom speed) offers a dedicated slider that adds a time
+allowance to the estimates, adjustable manually or measured automatically from the Journal or the
+selection depending on the chosen mode. Without it, estimates tend to be optimistic, and the gap
+grows with the number of expected breaks.
 
-### Pourquoi l'app demande-t-elle l'accès aux photos ET à leur localisation ?
+### Why does the app ask for both photo access AND their location?
 
-Pour placer une photo sur la trace, Bivouac a besoin de la position GPS enregistrée dans la photo.
-Or le sélecteur de photos standard d'Android, pensé pour que les apps n'accèdent qu'au strict
-minimum, supprime justement cette position des photos qu'il transmet. Bivouac utilise donc son
-propre écran de sélection, ce qui demande deux permissions : la lecture des images (celle que
-demande toute app de galerie), et l'accès à la localisation des médias (celle qui préserve la
-position GPS). Les deux ne sont demandées qu'au premier usage de la fonctionnalité photos, jamais
-si tu ne t'en sers pas, et l'accès partiel d'Android 14+ ("autoriser seulement certaines photos")
-est géré. La fonctionnalité est entièrement désactivable dans les Réglages, et les photos ne
-quittent jamais l'appareil.
+To place a photo on the track, Bivouac needs the GPS position stored in the photo. The standard
+Android photo picker, designed so apps only get the bare minimum, actually strips that position
+from the photos it hands over. Bivouac therefore uses its own selection screen, which needs two
+permissions: reading images (the one any gallery app asks for), and access to media location
+(the one that preserves the GPS position). Both are only requested the first time you use the
+photo feature, never if you don't use it, and Android 14+'s partial access ("allow only selected
+photos") is supported. The feature can be fully turned off in Settings, and photos never leave
+the device.
 
-### Qualité d'origine ou poids allégé : quel mode de stockage des photos choisir ?
+### Original quality or lightweight: which photo storage mode should I choose?
 
-Bivouac garde sa propre copie de chaque photo associée à une randonnée, pour ne pas dépendre de
-la galerie. En "Qualité d'origine", cette copie est identique à la photo de la galerie (souvent
-3 à 5 Mo par photo). En "Poids allégé", elle est réduite à 2048 px de côté, environ dix fois plus
-légère, ce qui reste largement suffisant pour l'écran d'un téléphone. Dans ce mode, la
-visionneuse plein écran va chercher l'original dans la galerie tant qu'il y est encore, donc rien
-n'est perdu à l'affichage. Les nouvelles installations démarrent en poids allégé ; si tu avais
-déjà des photos, l'app te propose le choix au premier lancement, et les photos déjà importées
-peuvent être recompressées depuis les Réglages. L'écran "Espace utilisé" des Réglages montre ce
-que prennent les traces et les photos.
+Bivouac keeps its own copy of every photo attached to a hike, so it doesn't depend on the
+gallery. In "Original quality", this copy is identical to the photo in the gallery (often 3 to
+5 MB per photo). In "Lightweight", it's reduced to 2048 px on the long side, about ten times
+smaller, which is still plenty for a phone screen. In that mode, the full-screen viewer looks up
+the original in the gallery for as long as it's still there, so nothing is lost on screen. New
+installs start in lightweight mode; if you already had photos, the app offers the choice on
+first launch, and already-imported photos can be recompressed from Settings afterwards. The
+"Storage used" screen in Settings shows what tracks and photos take up.
 
-### Mes randonnées partent-elles dans une sauvegarde cloud Google ?
+### Do my hikes go into a Google cloud backup?
 
-Bivouac est 100 % local, modulo les sauvegardes du système : l'app elle-même n'envoie rien nulle
-part de son propre chef, mais elle ne s'exclut pas non plus de la sauvegarde automatique standard
-d'Android (base de données et préférences incluses), comme la quasi-totalité des apps qui ne
-s'en excluent pas explicitement. Concrètement, si la sauvegarde automatique est activée sur ton
-compte Google, tes randos, tags et notes en font partie ; sur un appareil sans compte/services
-Google (dont beaucoup de configurations F-Droid), ce mécanisme est simplement inactif et ne fait
-rien. Le transfert direct d'un téléphone à l'autre (câble ou outil de transfert du fabricant) reste
-complet dans tous les cas. La sauvegarde explicite (Réglages → Sauvegarder, vers l'endroit de ton
-choix) reste le mécanisme à utiliser volontairement si tu veux un filet en dehors de ces deux
-canaux, notamment avant une réinstallation ou un test.
+Bivouac is 100% local, aside from the system's own backups: the app itself never sends anything
+anywhere on its own, but it doesn't exclude itself from Android's standard automatic backup
+either (database and preferences included), like most apps that don't explicitly opt out.
+Concretely, if automatic backup is enabled on your Google account, your hikes, tags and notes
+are part of it; on a device without a Google account/services (as on many F-Droid setups), this
+mechanism is simply inactive and does nothing. A direct phone-to-phone transfer (cable or the
+manufacturer's transfer tool) stays complete either way. The explicit backup (Settings > Backup,
+to the location of your choice) remains the mechanism to use deliberately if you want a safety
+net outside those two channels, especially before a reinstall or a test.
 
-## Stack technique
+## Tech stack
 
 - Kotlin + Jetpack Compose (Material3)
-- [osmdroid](https://github.com/osmdroid/osmdroid) pour la cartographie OSM
-- [JPX](https://github.com/jenetics/jpx) pour la lecture des traces GPX
-- Architecture MVVM (StateFlow)
+- [osmdroid](https://github.com/osmdroid/osmdroid) for OSM mapping
+- [JPX](https://github.com/jenetics/jpx) for reading GPX tracks
+- MVVM architecture (StateFlow)
 
-## Compiler depuis les sources
+## Building from source
 
 ```bash
 ./gradlew assembleDebug
 ```
 
-Nécessite un SDK Android (API 34) et un JDK 17.
+Requires an Android SDK (API 34) and a JDK 17.
 
-## Licence
+## License
 
-Ce projet est distribué sous licence [GPLv3](LICENSE).
+This project is distributed under the [GPLv3](LICENSE) license.
 
-## Pourquoi open source ?
+## Why open source?
 
-Ce projet a démarré comme un outil perso pour ne plus perdre mes bivouacs sur un coin de carte, et
-il a pris de l'ampleur sans prévenir. Ne vous attendez pas à du code exemplaire, mais ça tourne,
-et si ça peut servir à quelqu'un d'autre, tant mieux. Indulgence et retours bienvenus.
+This project started as a personal tool to stop losing track of my bivouac spots on a corner of
+a paper map, and grew from there without much planning. Don't expect exemplary code, but it
+works, and if it's useful to someone else, all the better. Feedback and contributions welcome.
 
-## Statut
+## Status
 
-V2.3.0 fonctionnelle. Développement actif.
+V2.4.0, functional. Active development.
 
-## Développement
+## Development
 
-Code écrit avec l'assistance d'un modèle d'IA.
+Code written with the assistance of an AI model.
