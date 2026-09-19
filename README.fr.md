@@ -114,8 +114,8 @@ durées suivent la locale du système.
   fonctionnalités non libres et de la gestion des photos, mode de stockage des photos, espace
   utilisé, purge des photos importées
 
-Détail complet des fonctionnalités par version, et limitations connues : [RELEASE_NOTES.md](RELEASE_NOTES.md)
-([version anglaise](RELEASE_NOTES.en.md)).
+Détail complet des fonctionnalités par version, et limitations connues : [RELEASE_NOTES.fr.md](RELEASE_NOTES.fr.md)
+([English version](RELEASE_NOTES.md)).
 
 ## FAQ
 

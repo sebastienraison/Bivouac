@@ -114,7 +114,7 @@ the system locale.
   storage mode, storage used, purge imported photos
 
 Full feature history by version, and known limitations: [RELEASE_NOTES.md](RELEASE_NOTES.md)
-(French; [English notes](RELEASE_NOTES.en.md) cover V2.4.0 only).
+([version française](RELEASE_NOTES.fr.md)).
 
 ## FAQ
 
