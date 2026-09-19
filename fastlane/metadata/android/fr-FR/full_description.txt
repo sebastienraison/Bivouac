@@ -1,0 +1,28 @@
+Bivouac t'aide à préparer tes randonnées itinérantes avec des points de bivouac, et à garder la trace de celles que tu as déjà faites.
+
+L'interface est disponible en anglais et en français, selon la langue de ton appareil.
+
+Planification : importe une trace GPX de plusieurs jours, affiche-la sur un fond de carte OpenStreetMap, et positionne tes points de bivouac directement sur le tracé. Un tableau des segments journaliers (distance, dénivelé, durée estimée) se met à jour automatiquement à mesure que tu ajustes ton plan. Enregistre plusieurs traces préparées dans une banque que tu peux rouvrir, renommer ou dupliquer plus tard.
+
+Journal : importe une ou plusieurs traces GPX déjà réalisées (plusieurs fichiers sélectionnés ensemble sont reconnus comme les jours d'une même randonnée), parcours une liste chronologique groupée par année, et consulte un détail en lecture seule avec carte et profil altimétrique. Ajoute une note libre et des tags à chaque rando, et filtre la liste par tag. Duplique une rando du Journal vers Planification pour réutiliser son tracé.
+
+Photos : associe des photos de la galerie à une rando du Journal. Elles sont positionnées automatiquement grâce à leur position GPS, affichées comme marqueurs sur la carte, avec un carrousel, une galerie par rando et une visionneuse plein écran. Chaque photo peut être pivotée et recadrée (non destructif), légendée, ou repositionnée le long de la trace. Deux modes de stockage : qualité d'origine, ou une copie allégée à 2048 px, environ dix fois plus légère (l'écran Espace utilisé des Réglages montre ce que ça prend). L'app utilise son propre sélecteur de photos, car le sélecteur système d'Android supprime la position GPS des photos qu'il transmet. Fonctionnalité entièrement facultative, désactivable dans les Réglages ; les deux permissions médias qu'elle utilise ne sont demandées qu'au premier usage réel. Les photos ne quittent jamais l'appareil.
+
+Bilan : une vue d'ensemble de ton Journal : totaux cumulés, graphique de progression mensuelle (randos, distance, dénivelé, vitesse, bivouacs) sur tout ton historique, et records personnels (km-effort, vitesse ascensionnelle, altitude atteinte, bivouac le plus haut, plus gros trek...). Chaque record renvoie directement vers la rando concernée.
+
+Réglages : une vitesse de marche et une pénalité de dénivelé personnalisées pour l'estimation de durée, saisies manuellement, calculées automatiquement à partir de l'historique du Journal, ou à partir d'une sélection de randos. Sauvegarde et restauration complètes de tes données, et un interrupteur pour désactiver les deux fonctionnalités non libres ci-dessous.
+
+Fonctionnalités :
+
+* Importer une trace GPX depuis le sélecteur de fichiers système, ou en ouvrir une directement depuis une autre application
+* Basculer entre les fonds de carte Standard, Randonnée (OpenTopoMap) et Satellite
+* Ajouter, déplacer et supprimer des points de bivouac, aimantés à la trace
+* Altitude et lien vers les prévisions météo pour chaque point de bivouac
+* Courbe de dénivelé avec repères d'altitude/distance et position des bivouacs
+* Tableau des segments journaliers : distance, durée estimée, dénivelé
+* Exporter le segment d'un jour dans son propre fichier GPX
+* Ta dernière trace et la dernière section utilisée (Journal ou Planification) sont mémorisées entre les lancements
+
+Aucun compte, aucun suivi, aucune publicité. Deux fonctionnalités optionnelles se connectent à des services réseau tiers quand tu les utilises : le fond de carte Satellite (Esri World Imagery) et le lien météo sur les points de bivouac (Meteoblue). Tout le reste fonctionne sans aucune dépendance de ce type.
+
+Ce projet a démarré comme un outil perso pour ne plus perdre mes bivouacs sur un coin de carte, et a pris de l'ampleur depuis. Ne t'attends pas à du code exemplaire, mais ça tourne, et si ça peut servir à quelqu'un d'autre, tant mieux. Retours et contributions bienvenus.

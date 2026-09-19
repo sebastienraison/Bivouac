@@ -1,6 +1,6 @@
 Bivouac helps you plan multi-day hikes with wild-camping (bivouac) stops, and keep a log of the hikes you've already done.
 
-Note: the app's interface is currently French-only (an English translation is on the roadmap). This description is in English for the store listing only.
+The app's interface is available in English and French, following your device's language.
 
 Planning: import a multi-day GPX track, view it on an OpenStreetMap-based map, and place your bivouac points directly on the route. A daily segment table (distance, elevation gain/loss, estimated duration) updates automatically as you adjust your plan. Save several planned tracks to a bank you can reopen, rename or duplicate later.
 
@@ -8,7 +8,7 @@ Journal: import one or more already-hiked GPX tracks (several files selected tog
 
 Photos: attach photos from your device's gallery to a logged hike. They are placed automatically on the track using the GPS position embedded in the photo, and shown as markers on the map, with a swipeable carousel, a per-hike gallery and a full-screen viewer. Each photo can be rotated and cropped (non-destructively), captioned, repositioned by dragging it along the track, or hidden from the map. Two storage modes: keep the original quality, or a lightweight 2048 px copy about ten times smaller; in that mode the full-screen viewer still shows the original from your gallery when it is still there. A storage usage screen in Settings shows what the app takes. The app uses its own photo selector rather than the Android system picker, because the system picker strips the GPS position from the photos it hands over, which is exactly what the placement needs. The photo feature is entirely optional: it can be disabled in Settings, and the two media permissions it relies on (reading images, accessing their location metadata) are only requested the first time you actually use it. Photos never leave your device.
 
-Bilan: an overview of your Journal: cumulative totals, a monthly progression chart (outings, distance, elevation gain, speed, bivouacs) across your whole history, and personal records (km-effort, climbing speed, highest point reached, highest bivouac, biggest trek...). Each record links straight back to the hike behind it.
+Stats: an overview of your Journal: cumulative totals, a monthly progression chart (hikes, distance, elevation gain, speed, bivouacs) across your whole history, and personal records (km-effort, climbing speed, highest point reached, highest bivouac, biggest trek...). Each record links straight back to the hike behind it.
 
 Settings: a custom walking speed and elevation-gain penalty for duration estimates, either typed in manually, computed automatically from your Journal history, or from a selection of hikes you pick. Full backup and restore of your data, and a switch to disable the two optional non-free features below.
 
@@ -21,7 +21,7 @@ Features:
 * Elevation profile with altitude/distance markers and bivouac positions
 * Daily segment table: distance, estimated duration, elevation gain/loss
 * Export a single day's segment as its own GPX file
-* Your last trace and last-used section (Journal or Planning) are remembered between launches
+* Your last track and last-used section (Journal or Planning) are remembered between launches
 
 No account, no tracking, no ads. Two optional features connect to third-party network services when you use them: the Satellite map layer (Esri World Imagery) and the weather forecast link on bivouac points (Meteoblue). Everything else works without any such dependency.
 

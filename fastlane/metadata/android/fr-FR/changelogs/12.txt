@@ -1,0 +1,1 @@
+L'interface est désormais disponible en anglais et en français, selon la langue de l'appareil. Nombres, dates et durées suivent la locale du système. Corrections mineures : l'onglet « Distance » et son graphique du Bilan portent le même nom, date de build au format ISO, attribution de la carte Randonnée lisible en anglais.
