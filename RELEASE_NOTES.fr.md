@@ -134,7 +134,7 @@
 
 - Le calcul automatique de pénalité D+ (Auto/Sélection) pouvait être surestimé quand un arrêt était
   pris en pleine montée : désormais exclu du calcul, comme c'était déjà le cas sur terrain plat
-- Duplication d'une trace du Journal vers Planification : le dialogue de renommage pouvait se
+- Duplication d'une rando du Journal vers Planification : le dialogue de renommage pouvait se
   refermer tout seul avant d'avoir pu taper un nom
 - Planification : un trek multi-jours dupliqué depuis le Journal, dont l'enregistrement s'était
   arrêté loin du bivouac un soir, pouvait afficher un trajet fictif sur la carte et gonfler la
@@ -166,10 +166,10 @@
 - Liste chronologique groupée par année, avec distance, durée et dénivelé cumulés
 - Détail en lecture seule d'une trace : carte, profil altimétrique, bivouacs relevés automatiquement
   aux coupures entre les jours d'une sortie de plusieurs jours
-- Note libre et tags sur chaque trace ; filtrage de la liste par tag
-- Sélection multiple de traces pour les superposer sur la même carte
-- Suppression d'une trace
-- Dupliquer une trace du Journal vers Planification pour reprendre un itinéraire déjà parcouru
+- Note libre et tags sur chaque rando ; filtrage de la liste par tag
+- Sélection multiple de randos pour les superposer sur la même carte
+- Suppression d'une rando
+- Dupliquer une rando du Journal vers Planification pour reprendre un itinéraire déjà parcouru
 
 **Planification :**
 
@@ -206,8 +206,8 @@
 - Le contenu GPX des traces (banque de Planification et session en cours) est désormais stocké
   dans des fichiers plutôt qu'en base, ce qui élimine un risque de plantage à l'ouverture d'une
   trace très volumineuse ou très riche en points
-- Ouvrir une trace pouvait échouer systématiquement juste après une sauvegarde, sans qu'un
-  redémarrage de l'app ne soit nécessaire pour que ça reparte
+- Après une sauvegarde, plus aucune rando ni trace ne s'ouvrait tant que l'app n'était pas
+  redémarrée
 - Le filtre par tag du Journal pouvait continuer de retenir un tag qui n'existait plus
 - Le dialogue de choix d'univers (Journal ou Planification) pouvait se rouvrir après une rotation
   d'écran

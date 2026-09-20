@@ -201,8 +201,7 @@
   recenter button was pressed
 - The GPX content of tracks (Planning bank and current session) is now stored in files rather
   than in the database, which removes a crash risk when opening a very large or point-heavy track
-- Opening a track could fail consistently right after a backup, without needing an app restart
-  for it to work again
+- After a backup, no hike or track would open until the app was restarted
 - The Journal's tag filter could keep referencing a tag that no longer existed
 - The section-choice dialog (Journal or Planning) could reopen after a screen rotation
 - Closing a track received from another app without ever having saved it didn't warn about the
