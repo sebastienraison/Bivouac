@@ -6,17 +6,10 @@
 
 **Internationalisation (nouveau) :**
 
-- L'interface est désormais disponible en anglais (langue par défaut) et en français, selon la
-  langue de l'appareil (ou la langue par application sur Android 13 et plus) ; pas de sélecteur
-  de langue dans l'app
-- Nombres, dates et durées s'affichent selon le format de la locale du système
-- Vocabulaire français harmonisé : « rando » désigne toujours une sortie du Journal, « trace » un
-  fichier GPX ou l'objet en cours de Planification
-- L'onglet « Distance » du Bilan et son graphique portent désormais le même nom (le graphique
-  s'appelait auparavant « Km »)
-- Date de build affichée au format ISO (aaaa-mm-jj), sans ambiguïté quelle que soit la langue
-- Attribution de la carte Randonnée (OpenTopoMap) affichée en anglais dans les deux langues de
-  l'app
+- L'app est désormais disponible en anglais (langue par défaut) et en français. Elle suit la
+  langue de l'appareil, ou la langue par application sur Android 13 et plus
+- Nombres, dates et durées suivent le format de la langue affichée
+- Quelques libellés et termes ont été homogénéisés à cette occasion
 
 ## V2.3.0
 
