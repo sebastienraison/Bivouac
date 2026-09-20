@@ -1,0 +1,1 @@
+The app is now available in English (default) and French, following the device language. Numbers, dates and durations follow the format of the displayed language. A few labels and terms were harmonized along the way.

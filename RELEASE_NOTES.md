@@ -1,324 +1,323 @@
-# Bivouac : notes de version
+# Bivouac: release notes
+
+*[Version française](RELEASE_NOTES.fr.md)*
+
+## V2.4.0
+
+**Internationalization (new):**
+
+- The app is now available in English (default) and French. It follows the device language, or
+  the per-app language on Android 13 and later
+- Numbers, dates and durations follow the format of the displayed language
+- A few labels and terms were harmonized along the way
 
 ## V2.3.0
 
-**Journal, photos : stockage à deux modes (nouveau) :**
+**Journal, photos: two storage modes (new):**
 
-- Choix dans les Réglages entre "Qualité d'origine" (copie identique à la photo de la galerie) et
-  "Poids allégé" (copie réduite à 2048 px, environ dix fois plus légère). Les nouvelles
-  installations démarrent en poids allégé ; les installations qui ont déjà des photos reçoivent une
-  proposition au premier lancement (choisir maintenant, plus tard, ou ne plus voir)
-- Recompression des photos déjà importées : proposée à la bascule vers le mode allégé, disponible
-  ensuite dans les Réglages. Chaque photo est remplacée de façon sûre (nouveau fichier, bascule,
-  puis suppression de l'ancien)
-- En mode allégé, la visionneuse plein écran affiche l'original de la galerie quand il est encore
-  sur le téléphone (montée en qualité transparente)
-- Écran "Espace utilisé" dans les Réglages : traces, photos, reste
-- Photos manquantes après une restauration : retrouvées automatiquement dans la galerie quand
-  l'original y est encore
+- Choice in Settings between "Original quality" (a copy identical to the gallery photo) and
+  "Lightweight" (reduced to 2048 px, about ten times smaller). New installs start in lightweight
+  mode; installs that already have photos get a prompt on first launch (choose now, later, or
+  don't ask again)
+- Recompression of already-imported photos: offered when switching to lightweight mode,
+  available afterwards from Settings. Each photo is replaced safely (new file, swap, then delete
+  the old one)
+- In lightweight mode, the full-screen viewer shows the gallery original when it's still on the
+  phone (a seamless upgrade in quality)
+- "Storage usage" screen in Settings: tracks, photos, the rest
+- Photos missing after a restore: found automatically in the gallery when the original is still
+  there
 
-**Journal, photos : manipulation (nouveau) :**
+**Journal, photos: editing (new):**
 
-- "Ajuster" une photo : rotation par quarts de tour et recadrage (coins à proportions conservées,
-  côtés libres, déplacement du cadre), non destructif et appliqué à toutes les vues ; bouton
-  Réinitialiser
-- Visionneuse plein écran en mode édition : barre d'actions Ajuster / Position / Supprimer, légende
-  modifiable d'un tap
-- Position : repositionner une photo en la faisant glisser le long de la trace (le tiroir descend
-  sur la carte, le profil altimétrique suit, Annuler ou Terminé), revenir à la position GPS ou à la
-  position déduite de l'heure de prise de vue, retirer une photo de la carte et l'y replacer (badge
-  dans la grille)
-- Légende par photo, affichée dans la visionneuse et dans la bulle de la carte
-- Import : agrandir une photo candidate avant de la choisir, sélection par tap dans la visionneuse
-- Un tap sur un groupe de photos sur la carte ouvre tout le groupe dans le carrousel de la bulle,
-  et le curseur suit le balayage
+- "Crop" a photo: rotate by quarter turns and crop (corners keep the aspect ratio, edges are
+  free, drag to move the frame), non-destructive and applied to every view; a Reset button
+- Full-screen viewer in edit mode: Crop / Position / Delete action bar, caption editable with a
+  tap
+- Position: reposition a photo by dragging it along the track (the drawer drops down over the
+  map, the elevation profile follows, Cancel or Done), restore it to its GPS position or to the
+  position inferred from the shot's timestamp, hide a photo from the map and show it again
+  (badge in the grid)
+- Caption per photo, shown in the viewer and in the map bubble
+- Import: enlarge a candidate photo before picking it, tap to select in the viewer
+- Tapping a group of photos on the map opens the whole group in the bubble's carousel, and the
+  cursor follows the swipe
 
-**Améliorations :**
+**Improvements:**
 
-- Flèches de direction recalculées selon le zoom et le cadrage, sur tous les jours d'un trek
-- Pictos "a une note" et "a des photos" sur chaque ligne du Journal
-- Dialogue dédié quand une duplication vers Planification attend derrière la fermeture d'une trace
+- Direction arrows recalculated based on zoom and framing, on every day of a trek
+- "has a note" and "has photos" icons on each Journal row
+- Dedicated dialog when a duplication to Planning is queued behind closing a track
 
-**Bugfixes :**
+**Bugfixes:**
 
-- Plusieurs fichiers GPX partagés vers Planification : le choix est désactivé au lieu de perdre en
-  silence tous les fichiers après le premier
-- Correction de la double instance de l'app quand un GPX est ouvert depuis une autre application
-- Désactivation de la connexion réseau au premier démarrage sans aucune interaction (une tuile était
-  chargée pour une carte encore invisible)
-- Badges de vignette (position approximative, retirée de la carte) désormais lisibles
+- Several GPX files shared to Planning: the choice is now disabled instead of silently losing
+  every file after the first
+- Fixed a duplicate app instance when a GPX file is opened from another app
+- No network connection on the very first launch without any interaction (a tile was being
+  loaded for a map that wasn't visible yet)
+- Thumbnail badges (approximate position, hidden from map) are now legible
 
 ## V2.2.1
 
-**Bugfix critique :**
+**Critical bugfix:**
 
-- Sur Android 8 à 13, l'import d'une trace GPX échouait systématiquement ("Trace incorrecte ou
-  fichier illisible"), rendant l'app inutilisable sur ces versions : l'app ne fonctionnait
-  en pratique que sur Android 14+. Corrigé (bibliothèque de lecture GPX s'appuyant sur une API
-  Java absente des Android antérieurs, désormais fournie par l'app elle-même). Merci au testeur
-  bénévole de la revue F-Droid qui a découvert et documenté le problème.
+- On Android 8 to 13, importing a GPX track failed every time ("Invalid track or unreadable
+  file"), making the app unusable on those versions: in practice, it only worked on Android 14+.
+  Fixed (the GPX reading library relied on a Java API missing from older Android versions, now
+  bundled with the app itself). Thanks to the volunteer F-Droid reviewer who found and documented
+  the issue.
 
 ## V2.2.0
 
-**Journal, photos (nouveau) :**
+**Journal, photos (new):**
 
-- Associer des photos de la galerie du téléphone à une randonnée du Journal : positionnées
-  automatiquement sur la trace grâce à leurs données GPS, marqueurs sur la carte, carrousel à
-  balayage dans la bulle d'un marqueur (avec l'heure de prise de vue), galerie de la sortie et
-  visionneuse plein écran
-- Sélecteur de photos intégré à l'app plutôt que le sélecteur système d'Android : ce dernier
-  supprime la position GPS des photos qu'il transmet, ce qui rendrait leur placement sur la trace
-  impossible. D'où deux nouvelles permissions médias (lecture des images, accès à leur
-  localisation), demandées uniquement à la première utilisation de la fonctionnalité
-- Fonctionnalité entièrement débrayable dans les Réglages ; purge de toutes les photos importées
-  possible au même endroit
-- Le mode édition d'une randonnée (note, tags, photos) est désormais transactionnel : rien n'est
-  modifié tant qu'on n'enregistre pas, et quitter avec des modifications en attente demande
-  explicitement quoi en faire (enregistrer, abandonner, ou rester)
+- Attach photos from the phone's gallery to a Journal hike: placed automatically on the track
+  from their GPS data, markers on the map, swipeable carousel in a marker's bubble (with the
+  shot's timestamp), a per-hike gallery and a full-screen viewer
+- Photo picker built into the app instead of the Android system picker: the latter strips the
+  GPS position from the photos it hands over, which would make placing them on the track
+  impossible. Hence two new media permissions (reading images, access to their location),
+  requested only the first time the feature is used
+- Fully optional feature, can be turned off in Settings; purging all imported photos is possible
+  in the same place
+- Editing a hike (note, tags, photos) is now transactional: nothing changes until you save, and
+  leaving with pending changes explicitly asks you what to do (save, discard, or stay)
 
-**Sauvegarde / restauration :**
+**Backup / restore:**
 
-- Progression affichée pendant la sauvegarde, la restauration et la purge des photos (dialogue
-  bloquant avec compteur) ; les opérations lourdes ne peuvent plus se chevaucher (sauvegarde,
-  restauration, imports GPX, import/purge de photos)
-- Détection des sauvegardes incomplètes : un fichier de sauvegarde tronqué (transfert interrompu,
-  espace insuffisant) est refusé à la restauration au lieu de passer inaperçu
+- Progress shown during backup, restore and photo purge (blocking dialog with a counter); heavy
+  operations can no longer overlap (backup, restore, GPX imports, photo import/purge)
+- Detection of incomplete backups: a truncated backup file (interrupted transfer, insufficient
+  space) is now rejected at restore time instead of going unnoticed
 
-**Bugfixes :**
+**Bugfixes:**
 
-- Le profil d'altitude d'une trace restait entièrement vide dès qu'un seul point du GPX n'avait
-  pas d'altitude : les trous sont désormais comblés par interpolation
+- A track's elevation profile stayed completely empty as soon as a single GPX point had no
+  altitude: gaps are now filled by interpolation
 
 ## V2.1.0
 
-**Bilan (nouveau) :**
+**Stats (new):**
 
-- Nouvel onglet Bilan : vue d'ensemble du Journal : totaux cumulés, graphique de progression
-  mensuelle (sorties, km, D+, vitesse, bivouacs) sur tout l'historique, et tes records personnels
-  (km-effort, vitesse ascensionnelle, altitude max atteinte, bivouac le plus haut, plus gros trek...).
-  Chaque record renvoie directement à la sortie concernée dans le Journal.
+- New Stats tab, an overview of the Journal: cumulative totals, a monthly progression chart
+  (hikes, distance, ascent, speed, bivouacs) across the whole history, and your personal records
+  (km-effort, best climb rate, highest altitude reached, highest bivouac, longest trek...). Each
+  record links straight back to the relevant hike in the Journal.
 
-**Réglages :**
+**Settings:**
 
-- Numéro de version et date de build affichés en bas de l'écran, pour identifier précisément quelle
-  version tourne sur l'appareil
+- Version number and build date shown at the bottom of the screen, to identify exactly which
+  version is running on the device
 
-**Bugfixes :**
+**Bugfixes:**
 
-- Planification : au tout premier lancement de l'app, l'écran "Aucune trace en préparation" pouvait
-  s'afficher brièvement même quand une session précédente était sur le point d'être restaurée
-- Planification : après avoir tué puis relancé l'app sur une trace déjà enregistrée en banque, fermer
-  l'écran redemandait à tort une confirmation de sauvegarde, et sauvegarder à cette invite dupliquait
-  la trace au lieu de simplement fermer
+- Planning: on the very first launch of the app, the "No track being planned" screen could
+  briefly appear even when a previous session was about to be restored
+- Planning: after killing and relaunching the app on a track already saved to the bank, closing
+  the screen wrongly asked for a save confirmation again, and saving from that prompt duplicated
+  the track instead of simply closing
 
 ## V2.0.2
 
-**Réglages (nouveau) :**
+**Settings (new):**
 
-- Provision de pause réglable dans l'estimation de durée (Vitesse personnalisée) : ajoute une marge
-  de temps aux estimations pour tenir compte des pauses (photo, casse-croûte, arrêts...), réglable
-  manuellement ou mesurée automatiquement sur le Journal/la sélection selon le mode choisi
+- Adjustable break allowance in the duration estimate (Custom speed): adds a time margin to
+  estimates to account for breaks (photos, snacks, stops...), adjustable manually or measured
+  automatically from the Journal/selection depending on the chosen mode
 
-**Bugfixes :**
+**Bugfixes:**
 
-- Le calcul automatique de pénalité D+ (Auto/Sélection) pouvait être surestimé quand un arrêt était
-  pris en pleine montée : désormais exclu du calcul, comme c'était déjà le cas sur terrain plat
-- Duplication d'une trace du Journal vers Planification : le dialogue de renommage pouvait se
-  refermer tout seul avant d'avoir pu taper un nom
-- Planification : un trek multi-jours dupliqué depuis le Journal, dont l'enregistrement s'était
-  arrêté loin du bivouac un soir, pouvait afficher un trajet fictif sur la carte et gonfler la
-  distance totale affichée : même correctif que celui déjà appliqué au Journal
-- Une trace mono-jour sans aucun point de bivouac posé n'avait aucun moyen d'export GPX depuis
-  Planification, ajouté au menu de la trace
-- Ouvrir une trace de la banque devenue illisible affichait un écran d'erreur qui faisait
-  disparaître le reste de la liste ; affiche désormais un message ponctuel, sans perturber le reste
-- Journal : mise en page de la ligne de bivouac (police des heures, icône) alignée sur le reste de
-  l'interface
-- Renforce la protection contre un risque théorique de sauvegarde incomplète en cas d'accès
-  concurrent à la base pendant l'opération
+- The automatic ascent-penalty calculation (Auto/Selection) could be overestimated when a stop
+  was taken in the middle of a climb: now excluded from the calculation, as was already the case
+  on flat ground
+- Duplicating a hike from Journal to Planning: the rename dialog could close by itself before you
+  could type a name
+- Planning: a multi-day trek duplicated from the Journal, whose recording had stopped far from
+  the bivouac one evening, could show a fictitious path on the map and inflate the displayed
+  total distance: same fix as the one already applied to the Journal
+- A single-day track with no bivouac point at all had no way to export a GPX from Planning; the
+  option has been added to the track's menu
+- Opening a bank track that had become unreadable showed an error screen that made the rest of
+  the list disappear; it now shows a one-off message instead, without disturbing the rest
+- Journal: the bivouac row's layout (time font, icon) aligned with the rest of the interface
+- Strengthened protection against a theoretical risk of an incomplete backup under concurrent
+  database access during the operation
 
 ## V2.0.1
 
-**Bugfixes :**
+**Bugfixes:**
 
-- Le calcul automatique de vitesse/pénalité D+ (Réglages, mode Auto ou Sélection) pouvait varier
-  fortement selon les randonnées présentes dans le Journal ou la sélection, surtout avec peu de
-  randonnées (une dizaine ou moins) : corrigé par un calcul plus robuste, à l'intérieur de chaque
-  randonnée plutôt qu'en comparant les randonnées entre elles.
+- The automatic speed/ascent-penalty calculation (Settings, Auto or Selection mode) could vary
+  a lot depending on the hikes present in the Journal or the selection, especially with few hikes
+  (around ten or fewer): fixed with a more robust calculation, done within each hike rather than
+  by comparing hikes against each other.
 
 ## V2.0
 
-**Journal (nouveau) :**
+**Journal (new):**
 
-- Importer une ou plusieurs traces GPX déjà réalisées ; plusieurs fichiers sélectionnés ensemble
-  sont reconnus comme les jours d'une même sortie plutôt que des randonnées séparées
-- Liste chronologique groupée par année, avec distance, durée et dénivelé cumulés
-- Détail en lecture seule d'une trace : carte, profil altimétrique, bivouacs relevés automatiquement
-  aux coupures entre les jours d'une sortie de plusieurs jours
-- Note libre et tags sur chaque trace ; filtrage de la liste par tag
-- Sélection multiple de traces pour les superposer sur la même carte
-- Suppression d'une trace
-- Dupliquer une trace du Journal vers Planification pour reprendre un itinéraire déjà parcouru
+- Import one or more already-hiked GPX tracks; several files selected together are recognized as
+  the days of a single hike rather than separate hikes
+- Chronological list grouped by year, with cumulative distance, duration and elevation gain
+- Read-only detail of a hike: map, elevation profile, bivouacs automatically detected at the
+  breaks between the days of a multi-day hike
+- Free-text note and tags on each hike; filter the list by tag
+- Multi-select hikes to overlay them on the same map
+- Delete a hike
+- Duplicate a hike from Journal to Planning to reuse an already-hiked route
 
-**Planification :**
+**Planning:**
 
-- Même tiroir à trois crans (Synthèse / Profil / Détails) que le Journal, pour une interface
-  cohérente entre les deux univers
-- L'app se relance sur le dernier univers consulté (Journal ou Planification) ; un fichier GPX reçu
-  d'une autre application demande explicitement dans lequel l'ouvrir quand ce n'est pas évident
+- Same three-tab drawer (Overview / Profile / Details) as the Journal, for a consistent
+  interface between the two sections
+- The app resumes on the last section used (Journal or Planning); a GPX file received from
+  another app explicitly asks which one to open it in when it isn't obvious
 
-**Cartographie :**
+**Mapping:**
 
-- Fond de carte satellite (Esri World Imagery), désactivable comme le lien météo depuis les
-  nouveaux Réglages
-- Flèches de direction sur le tracé, y compris pour les boucles
+- Satellite map layer (Esri World Imagery), which can be turned off from the new Settings, like
+  the weather link
+- Direction arrows on the track, loops included
 
-**Réglages (nouveau) :**
+**Settings (new):**
 
-- Écran de réglages, accessible depuis le menu de section
-- Vitesse personnalisée pour l'estimation de durée : manuelle (vitesse à plat et pénalité D+
-  éditables), automatique (calculée à partir de tout le Journal, recalculée à chaque import) ou par
-  sélection de traces représentatives
-- Interrupteur pour désactiver les fonctionnalités non libres (fond satellite Esri, lien météo
-  Meteoblue)
-- Sauvegarde et restauration complètes de la base et des réglages (format ouvert), gestion des
-  versions des backups et de l'app
+- Settings screen, accessible from the section menu
+- Custom speed for duration estimates: manual (editable flat-ground speed and ascent penalty),
+  automatic (computed from the whole Journal, recalculated on every import), or from a selection
+  of representative hikes
+- Switch to disable the non-free features (Esri satellite layer, Meteoblue weather link)
+- Full backup and restore of the database and settings (open format), backup and app version
+  tracking
 
-**Divers :**
-- La mise à jour depuis n'importe quelle version précédemment publiée de l'app préserve
-  intégralement les traces, bivouacs et randonnées déjà enregistrés
+**Misc:**
 
-**Bugfixes :**
+- Updating from any previously published version of the app fully preserves the tracks, bivouacs
+  and hikes already saved
 
-- À l'ouverture d'une trace en Planification, le bas du tracé pouvait rester masqué par le tiroir
-  tant qu'on n'appuyait pas sur recentrage
-- Le contenu GPX des traces (banque de Planification et session en cours) est désormais stocké
-  dans des fichiers plutôt qu'en base, ce qui élimine un risque de plantage à l'ouverture d'une
-  trace très volumineuse ou très riche en points
-- Ouvrir une trace pouvait échouer systématiquement juste après une sauvegarde, sans qu'un
-  redémarrage de l'app ne soit nécessaire pour que ça reparte
-- Le filtre par tag du Journal pouvait continuer de retenir un tag qui n'existait plus
-- Le dialogue de choix d'univers (Journal ou Planification) pouvait se rouvrir après une rotation
-  d'écran
-- Fermer une trace reçue depuis une autre application sans jamais l'avoir enregistrée ne prévenait
-  pas de la perte, contrairement à une trace déjà enregistrée puis modifiée
-- Correction d'un crash possible sur la courbe de dénivelé dans un cas de mesure transitoire de
-  hauteur nulle
-- Suppression de bulles d'info parasites : au tap manqué près d'une trace, et au clic court sur un
-  point de bivouac
+**Bugfixes:**
+
+- When opening a track in Planning, its lower part could stay hidden behind the drawer until the
+  recenter button was pressed
+- The GPX content of tracks (Planning bank and current session) is now stored in files rather
+  than in the database, which removes a crash risk when opening a very large or point-heavy track
+- After a backup, no hike or track would open until the app was restarted
+- The Journal's tag filter could keep referencing a tag that no longer existed
+- The section-choice dialog (Journal or Planning) could reopen after a screen rotation
+- Closing a track received from another app without ever having saved it didn't warn about the
+  loss, unlike a track that had been saved and then modified
+- Fixed a possible crash on the elevation chart in a transient case of zero height measurement
+- Removed stray info bubbles: on a missed tap near a track, and on a short click on a bivouac
+  point
 
 ## V1.3
 
-**Banque de traces (nouveau) :**
+**Track bank (new):**
 
-- Enregistrer, renommer, dupliquer, supprimer et lister plusieurs traces planifiées
-- Indicateur de modifications non enregistrées, confirmation avant de fermer une trace modifiée
-  sans l'enregistrer
+- Save, rename, duplicate, delete and list several planned tracks
+- Unsaved-changes indicator, confirmation before closing a modified track without saving it
 
-**Cartographie :**
+**Mapping:**
 
-- Zoom de départ de la carte adapté à la France quand l'appareil y est configuré
+- Initial map zoom adapted to France when the device is set to that region
 
-**Bugfixes :**
+**Bugfixes:**
 
-- L'import d'une trace GPX contenant des données de capteur (fréquence cardiaque, cadence...),
-  fréquentes sur les exports de montres/GPS de randonnée, faisait échouer l'import
-- En mode paysage, recentrer la carte sur la trace pouvait couper le haut du tracé
+- Import failed for a GPX track containing sensor data (heart rate, cadence...), common in
+  exports from hiking watches and GPS devices
+- In landscape mode, recentering the map on the track could cut off the top of it
 
 ## V1.2
 
-**Persistance (nouveau) :**
+**Persistence (new):**
 
-- La trace en cours et ses points de bivouac sont sauvegardés automatiquement et rouverts au
-  lancement de l'app, sauf si un GPX arrive entre-temps depuis une autre application (qui reste
-  prioritaire)
-- Le fond de carte sélectionné (Standard, Randonnée, Satellite) est mémorisé entre les sessions
+- The current track and its bivouac points are saved automatically and reopened when the app
+  launches, unless a GPX file arrives in the meantime from another app (which takes priority)
+- The selected map layer (Standard, Hiking, Satellite) is remembered between sessions
 
-**Bugfixes :**
+**Bugfixes:**
 
-- Le bouton de recentrage bougeait légèrement à l'ouverture et à la fermeture du menu des fonds de
-  carte
+- The recenter button shifted slightly when opening and closing the map layer menu
 
 ## V1.1
 
-**Import et affichage :**
+**Import and display:**
 
-- Import d'une trace directement depuis une autre application (ouverture d'un fichier `.gpx` ou
-  partage vers l'app), en plus du sélecteur système
-- Sélecteur de fonds de carte (Standard, Randonnée OpenTopoMap, Satellite Esri World Imagery,
-  Randonnée par défaut)
-- Bouton de recentrage sur la trace, qui tient compte de la zone effectivement visible au-dessus
-  du tiroir (pas centré sur tout l'écran s'il est en partie masqué)
+- Import a track directly from another app (opening a `.gpx` file or sharing to the app), in
+  addition to the system picker
+- Map layer picker (Standard, Hiking OpenTopoMap, Satellite Esri World Imagery, Hiking by
+  default)
+- Recenter button on the track, which accounts for the area actually visible above the drawer
+  (not centered on the whole screen if part of it is hidden)
 
-**Points de bivouac :**
+**Bivouac points:**
 
-- Altitude du point affichée ; icône météo ouvrant les prévisions (meteoblue, coordonnées du
-  point, langue FR/EN selon celle de l'appareil)
+- Point altitude displayed; weather icon opening the forecast (Meteoblue, point coordinates,
+  FR/EN language matching the device's)
 
-**Courbe de dénivelé (nouveau) :**
+**Elevation profile (new):**
 
-- Profil altimétrique de la trace complète, affiché dès qu'une trace est chargée
-- Repères d'altitude et de distance, espacés régulièrement entre les bornes puis arrondis
-- Position de chaque point de bivouac marquée sur la courbe, avec sa distance indiquée sur l'axe ;
-  suit le glissement du point en temps réel, avant même de relâcher le geste
+- Elevation profile of the whole track, shown as soon as a track is loaded
+- Altitude and distance markers, evenly spaced between the bounds then rounded
+- Each bivouac point's position marked on the chart, with its distance shown on the axis; follows
+  the point being dragged in real time, even before the gesture is released
 
-**Interface :**
+**Interface:**
 
-- Hauteur repliée du tiroir ajustée automatiquement à son contenu (au lieu d'une valeur fixe)
+- Collapsed drawer height automatically adjusted to its content (instead of a fixed value)
 
-**Bugfixes :**
+**Bugfixes:**
 
-- La trace et les points de bivouac étaient perdus lors d'un changement d'orientation de l'écran
-- En mode paysage, le tiroir pouvait masquer l'essentiel de la carte
-- Le tableau des segments n'était pas défilable une fois le tiroir déplié en plein écran, rendant
-  les points de bivouac au-delà de la première page inatteignables
-- Le picto du point de bivouac dans le tableau apparaissait déformé (bords rognés)
+- The track and bivouac points were lost on a screen orientation change
+- In landscape mode, the drawer could hide most of the map
+- The segment table wasn't scrollable once the drawer was expanded full-screen, making bivouac
+  points beyond the first page unreachable
+- The bivouac point icon in the table looked distorted (clipped edges)
 
 ## V1
 
-Première version fonctionnelle :
+First functional version:
 
-- Import d'une trace GPX
-- Positionnement des points de bivouac sur la carte
-- Tableau des segments journaliers
+- GPX track import
+- Placing bivouac points on the map
+- Daily segment table
 
-**Import et affichage :**
+**Import and display:**
 
-- Import d'un fichier GPX via le sélecteur système (multi-trace/multi-segment aplatis en une
-  trace continue)
-- Affichage sur fond de carte OSM (osmdroid), trace en pointillés bleus avec contour blanc pour
-  ressortir sur tout type de fond
-- Zoom automatique sur l'emprise de la trace à l'ouverture (marge de 5 % sur les bords)
-- Pictos de départ (vert, "play") et d'arrivée (rouge, "stop") ; picto combiné départ/arrivée en
-  cas de boucle
+- Import a GPX file via the system picker (multi-track/multi-segment flattened into one
+  continuous track)
+- Display on an OSM base map (osmdroid), the track as a blue dashed line with a white outline so
+  it stands out on any layer
+- Automatic zoom to the track's extent on opening (5% margin on the edges)
+- Start icon (green, "play") and end icon (red, "stop"); combined start/end icon for a loop
 
-**Points de bivouac :**
+**Bivouac points:**
 
-- Ajout d'un point en tapant sur la trace (tolérance de 24dp)
-- Déplacement par glisser, aimanté en temps réel au point de trace le plus proche
-- Suppression depuis le tableau des segments
+- Add a point by tapping the track (24dp tolerance)
+- Move by dragging, snapped in real time to the nearest track point
+- Delete from the segment table
 
-**Tableau des segments :**
+**Segment table:**
 
-- Généré automatiquement dès le premier point de bivouac posé
-- Par segment : distance, durée estimée, D+, D-
-- Mise à jour en temps réel pendant le glissement d'un point
-- Total général affiché en tête du tiroir, estompé dès qu'il y a des segments (pour ne pas faire
-  doublon visuellement)
-- Export d'un segment au format GPX, ouverture directe dans une application tierce compatible
+- Generated automatically as soon as the first bivouac point is placed
+- Per segment: distance, estimated duration, ascent, descent
+- Updated in real time while dragging a point
+- Grand total shown at the top of the drawer, faded out once there are segments (to avoid a
+  visual duplicate)
+- Export a segment as a GPX file, opened directly in a compatible third-party app
 
-**Interface :**
+**Interface:**
 
-- Tiroir bas extensible (glisser vers le haut) au-dessus d'une carte plein écran
-- Icône d'application et pictos de bivouac assortis (tente orange)
+- Expandable bottom drawer (drag upward) over a full-screen map
+- App icon and matching bivouac icons (orange tent)
 
-**Détails techniques notables :**
+**Notable technical details:**
 
-- Durée estimée à partir d'une vitesse de base (3,5 km/h) corrigée du D+ selon une règle simplifiée
-  proche de Naismith (100 m de D+ ≈ 1 km équivalent plat)
+- Estimated duration from a base speed (3.5 km/h) corrected for ascent using a simplified rule
+  close to Naismith's (100 m of ascent ≈ 1 km of flat equivalent)
 
-**Limitations connues :**
+**Known limitations:**
 
-- Le D- global peut légèrement différer de la somme des segments (lissage d'altitude recalculé
-  indépendamment par segment)
-- Pas de sauvegarde/reprise d'une session (tout est perdu à la fermeture de l'app)
+- Total descent can differ slightly from the sum of the segments (elevation smoothing
+  recalculated independently per segment)
+- No session save/resume (everything is lost when the app closes)
