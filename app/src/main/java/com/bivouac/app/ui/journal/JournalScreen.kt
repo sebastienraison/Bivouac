@@ -102,7 +102,6 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -158,6 +157,7 @@ import com.bivouac.app.ui.components.ThreeStopDrawerHandle
 import com.bivouac.app.ui.components.ThreeStopDrawerStopRow
 import com.bivouac.app.ui.components.TotalsCapsule
 import com.bivouac.app.ui.components.formatGroupedInt
+import com.bivouac.app.ui.components.halfWindowHeight
 import com.bivouac.app.ui.components.rememberThreeStopDrawerState
 import com.bivouac.app.ui.map.ColoredTrack
 import com.bivouac.app.ui.map.HikeMapView
@@ -500,7 +500,7 @@ fun JournalScreen(
         multiTrack != null || uiState is JournalUiState.Loading -> {
             BottomSheetScaffold(
                 modifier = modifier,
-                sheetPeekHeight = PEEK_HEIGHT_EMPTY.coerceAtMost(LocalConfiguration.current.screenHeightDp.dp * 0.5f),
+                sheetPeekHeight = PEEK_HEIGHT_EMPTY.coerceAtMost(halfWindowHeight()),
                 sheetContent = {
                     // Loading est émis par openTrack() comme par showOnMap() : sans ce rendu, taper
                     // une trace ne donnait aucun retour visuel le temps du parsing (RIC-95), et une
