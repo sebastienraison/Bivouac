@@ -37,16 +37,41 @@ android {
     // RIC-111 : Compose BOM 2026.08.00 (Compose 1.12) exige compileSdk >= 37 pour plusieurs
     // artefacts (androidx.compose.ui, material3, core-ktx, lifecycle-compose...) : confirmé par
     // les erreurs AGP au premier essai avec compileSdk=34, qui recommandaient explicitement 37.
-    // targetSdk volontairement laissé inchangé (34) : ne change que la surface de compilation
-    // (rétrocompatible par construction), pas le comportement runtime de l'app : un bump de
-    // targetSdk revient à opter dans des changements de comportement par version d'Android, ce
-    // qui mérite sa propre vérification visuelle sur device, jamais faite depuis (RIC-116).
+    // compileSdk ne change que la surface de compilation (rétrocompatible par construction), pas
+    // le comportement runtime de l'app : c'est targetSdk, plus bas, qui décide des changements de
+    // comportement auxquels l'app se déclare prête.
     compileSdk = 37
 
     defaultConfig {
         applicationId = "com.bivouac.app"
         minSdk = 26
-        targetSdk = 34
+        // RIC-116 : 35 (Android 15), et volontairement PAS 36. Monter targetSdk revient à opter
+        // dans les changements de comportement d'une version d'Android : ceux d'Android 15 ont été
+        // passés en revue un par un, et aucun n'exige d'adaptation ici. L'app n'a aucun service
+        // (donc rien des quatre changements sur les services de premier plan), aucune notification,
+        // aucun PendingIntent, aucun accès au focus audio, ne parle qu'en HTTPS vers des serveurs
+        // modernes (TLS 1.0/1.1 interdits), n'utilise que des formats de chaîne indexés et valides,
+        // et ne sert que en/fr (les changements de rendu du texte visent les écritures arabe,
+        // thaïe et indiennes). Côté médias, l'accès galerie est déjà celui d'Android 14
+        // (READ_MEDIA_VISUAL_USER_SELECTED, voir le manifeste), inchangé par 15.
+        //
+        // L'edge-to-edge imposé est le seul changement qui touche vraiment l'app, et elle y était
+        // déjà : enableEdgeToEdge() dans MainActivity.onCreate, et les inserts gérés écran par
+        // écran. Le mode d'encoche ne change rien non plus : enableEdgeToEdge pose déjà
+        // LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS dès l'API 30 (vérifié dans le bytecode
+        // d'androidx.activity 1.9.2, EdgeToEdgeApi30), donc le durcissement d'Android 15 sur ce
+        // point porte sur un état déjà en vigueur.
+        //
+        // Deux effets visuels restent à contrôler à l'oeil sur appareil, et n'ont pas de correctif
+        // à écrire : setStatusBarColor/setNavigationBarColor deviennent sans effet, donc le voile
+        // que posait enableEdgeToEdge derrière les barres disparaît (lisibilité des icônes système
+        // au-dessus d'une carte plein cadre) ; et Configuration.screenHeightDp inclut désormais les
+        // barres système, ce qui allonge d'autant le plafond de hauteur des deux bottom sheets qui
+        // s'en servent (Journal, Import GPX).
+        //
+        // 36 est un autre chantier : il retire la possibilité de sortir de l'edge-to-edge et se
+        // juge sur une recette visuelle complète, pas sur une revue de code.
+        targetSdk = 35
         versionCode = 12
         versionName = "2.4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
