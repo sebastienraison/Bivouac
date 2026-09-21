@@ -184,27 +184,33 @@ android {
         // un émulateur jetable provisionné par le build, jamais par un appareil branché.
         // `connectedAndroidTest` désinstalle l'app à la fin de son exécution et effacerait les
         // données réelles du téléphone de recette : la tâche à lancer est
-        // `pixel6Api35DebugAndroidTest`, qui crée l'AVD, l'exécute et le jette.
+        // `pixel6Api37DebugAndroidTest`, qui crée l'AVD, l'exécute et le jette.
         //
-        // Images « aosp » (sans les services Google) partout : rien ici n'en dépend, et c'est la
-        // plus légère à télécharger. La première exécution récupère l'image système si elle manque,
-        // c'est normal.
+        // Images « aosp » (sans les services Google) quand elles existent : rien ici n'en dépend,
+        // et c'est la plus légère à télécharger. La première exécution récupère l'image système si
+        // elle manque, c'est normal.
         managedDevices {
             localDevices {
-                // RIC-116 : appareil de référence, aligné sur targetSdk = 35. C'est le seul qui
-                // exerce réellement les changements de comportement d'Android 15 (edge-to-edge
-                // imposé, Configuration qui inclut les barres système, voile des barres ignoré) :
-                // un appareil API 34 ne les déclenche pas, quel que soit le targetSdk compilé.
-                create("pixel6Api35") {
+                // RIC-116 : appareil de référence, aligné sur targetSdk = 37. C'est le seul qui
+                // exerce réellement les changements de comportement d'Android 16 et 17
+                // (edge-to-edge sans opt-out, retour prédictif activé par défaut, contraintes
+                // d'orientation ignorées) : un appareil API 34 ne les déclenche pas, quel que soit
+                // le targetSdk compilé.
+                //
+                // « google » et non « aosp » ici, contrairement aux deux autres : Google ne publie
+                // aucune image `default` (aosp) pour l'API 37, seulement google_apis et
+                // google_apis_playstore (vérifié avec `sdkmanager --list`). Les services Google
+                // embarqués ne changent rien aux suites de ce dépôt, qui ne les touchent pas.
+                create("pixel6Api37") {
                     device = "Pixel 6"
-                    apiLevel = 35
-                    systemImageSource = "aosp"
+                    apiLevel = 37
+                    systemImageSource = "google"
                     testedAbi = "x86_64"
                 }
                 // RIC-116 : conservé sous l'appareil de référence ci-dessus. Android 14 est la
                 // version que le parc réel exécute encore majoritairement, et c'est le niveau
                 // auquel l'app tournait avant ce ticket : le garder rend visible toute régression
-                // qui ne se produirait QUE sur 35, et inversement.
+                // qui ne se produirait QUE sur 37, et inversement.
                 create("pixel6Api34") {
                     device = "Pixel 6"
                     apiLevel = 34
