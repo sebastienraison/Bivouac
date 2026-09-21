@@ -127,13 +127,27 @@ android {
         // un émulateur jetable provisionné par le build, jamais par un appareil branché.
         // `connectedAndroidTest` désinstalle l'app à la fin de son exécution et effacerait les
         // données réelles du téléphone de recette : la tâche à lancer est
-        // `pixel6Api34DebugAndroidTest`, qui crée l'AVD, l'exécute et le jette.
+        // `pixel6Api35DebugAndroidTest`, qui crée l'AVD, l'exécute et le jette.
         //
-        // API 34 pour coller au targetSdk, et image « aosp » (sans les services Google) : rien ici
-        // n'en dépend, et c'est la plus légère à télécharger. La première exécution récupère
-        // l'image système si elle manque, c'est normal.
+        // Images « aosp » (sans les services Google) partout : rien ici n'en dépend, et c'est la
+        // plus légère à télécharger. La première exécution récupère l'image système si elle manque,
+        // c'est normal.
         managedDevices {
             localDevices {
+                // RIC-116 : appareil de référence, aligné sur targetSdk = 35. C'est le seul qui
+                // exerce réellement les changements de comportement d'Android 15 (edge-to-edge
+                // imposé, Configuration qui inclut les barres système, voile des barres ignoré) :
+                // un appareil API 34 ne les déclenche pas, quel que soit le targetSdk compilé.
+                create("pixel6Api35") {
+                    device = "Pixel 6"
+                    apiLevel = 35
+                    systemImageSource = "aosp"
+                    testedAbi = "x86_64"
+                }
+                // RIC-116 : conservé sous l'appareil de référence ci-dessus. Android 14 est la
+                // version que le parc réel exécute encore majoritairement, et c'est le niveau
+                // auquel l'app tournait avant ce ticket : le garder rend visible toute régression
+                // qui ne se produirait QUE sur 35, et inversement.
                 create("pixel6Api34") {
                     device = "Pixel 6"
                     apiLevel = 34
