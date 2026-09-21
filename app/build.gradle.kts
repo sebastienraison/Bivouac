@@ -37,16 +37,67 @@ android {
     // RIC-111 : Compose BOM 2026.08.00 (Compose 1.12) exige compileSdk >= 37 pour plusieurs
     // artefacts (androidx.compose.ui, material3, core-ktx, lifecycle-compose...) : confirmé par
     // les erreurs AGP au premier essai avec compileSdk=34, qui recommandaient explicitement 37.
-    // targetSdk volontairement laissé inchangé (34) : ne change que la surface de compilation
-    // (rétrocompatible par construction), pas le comportement runtime de l'app : un bump de
-    // targetSdk revient à opter dans des changements de comportement par version d'Android, ce
-    // qui mérite sa propre vérification visuelle sur device, jamais faite depuis (RIC-116).
+    // compileSdk ne change que la surface de compilation (rétrocompatible par construction), pas
+    // le comportement runtime de l'app : c'est targetSdk, plus bas, qui décide des changements de
+    // comportement auxquels l'app se déclare prête.
     compileSdk = 37
 
     defaultConfig {
         applicationId = "com.bivouac.app"
         minSdk = 26
-        targetSdk = 34
+        // RIC-116 : 37 (Android 17), directement, sans étape par 36. Monter targetSdk revient à
+        // opter dans les changements de comportement d'une version d'Android, donc à s'engager sur
+        // une recette ; le raisonnement porte ici sur le calendrier autant que sur le code.
+        //
+        // Pourquoi pas 36 : Google Play exige déjà targetSdk 36 depuis le 31/08/2026, et exigera
+        // 37 en août 2027. S'arrêter à 36 achèterait donc onze mois au prix d'une seconde recette
+        // complète l'an prochain. Or les changements de comportement d'Android 17 confrontés à ce
+        // code donnent un delta NUL au-delà de la ligne ci-dessous : limite mémoire des RemoteViews
+        // (aucun widget), MessageQueue sans verrou et champs static final scellés (aucune
+        // réflexion dans l'app), System.load en lecture seule (aucun appel : les deux seuls .so de
+        // l'APK, libandroidx.graphics.path et libdatastore_shared_counter, sont embarqués par des
+        // bibliothèques AndroidX et chargés par System.loadLibrary, et ils sont déjà alignés sur
+        // 16 Ko, vérifié au zipalign), durcissement des lancements d'activité en arrière-plan
+        // (aucun PendingIntent ni IntentSender ; les seuls startActivity partent d'une action
+        // utilisateur au premier plan), audio en arrière-plan, SMS/OTP, ContactsContract, mot de
+        // passe au clavier physique, BluetoothSocket RFCOMM : rien de tout cela n'existe ici.
+        // ECH et Certificate Transparency activés par défaut sont transparents pour les trois hôtes
+        // de tuiles publics (OSM, OpenTopoMap, ArcGIS Online). ACCESS_LOCAL_NETWORK, la permission
+        // qui devient obligatoire en 17, ne concerne pas l'app : elle ne parle qu'à des serveurs
+        // publics en HTTPS, sans socket brut ni NsdManager.
+        //
+        // Les changements d'Android 15 et 16 ont été passés en revue de la même façon. Aucun
+        // service (donc rien des changements sur les services de premier plan), aucune
+        // notification, aucun accès au focus audio, aucun ScheduledExecutorService, pas d'appel à
+        // MediaStore#getVersion, et seulement en/fr (les changements de rendu du texte et la
+        // dépréciation d'elegantTextHeight visent les écritures arabe, thaïe et indiennes).
+        // L'accès galerie est déjà celui d'Android 14 (READ_MEDIA_VISUAL_USER_SELECTED, voir le
+        // manifeste). Le retour arrière passe déjà par BackHandler, c'est-à-dire par
+        // OnBackInvokedCallback : la fin de onBackPressed et de KEYCODE_BACK en 36 ne casse rien,
+        // et aucun opt-out enableOnBackInvokedCallback n'est à poser. Aucune contrainte
+        // d'orientation, de redimensionnement ni de ratio n'est déclarée, donc leur mise à l'écart
+        // sur grand écran (36, rendue non contournable en 37) ne retire rien à l'app.
+        //
+        // L'edge-to-edge imposé est le seul changement qui touche vraiment l'app, et elle y était
+        // déjà : enableEdgeToEdge() dans MainActivity.onCreate, et les inserts gérés écran par
+        // écran. La disparition de l'opt-out en 36 (windowOptOutEdgeToEdgeEnforcement) ne fait donc
+        // que sceller un état en vigueur, comme le mode d'encoche : enableEdgeToEdge pose déjà
+        // LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS dès l'API 30 (vérifié dans le bytecode
+        // d'androidx.activity 1.9.2, EdgeToEdgeApi30).
+        //
+        // Ce qui reste est une recette VISUELLE, sans correctif à écrire. Ce qu'un appareil
+        // Android 16 suffit à montrer : lisibilité des icônes système au-dessus d'une carte plein
+        // cadre (setStatusBarColor/setNavigationBarColor sont sans effet depuis 15, donc plus de
+        // voile derrière les barres) ; hauteur de repli des deux tiroirs Journal et Import GPX, en
+        // portrait, en paysage et en écran partagé (voir halfWindowHeight) ; geste de retour
+        // prédictif, à la fois là où BackHandler l'intercepte (placement de photo, fermeture du
+        // Journal) et là où il sort de l'app ; clavier et inserts sur la saisie des notes et des
+        // tags. Ce qui exige un appareil Android 17 : rien de propre à 17 n'est visible sur un
+        // téléphone, les deux changements 17 qui pourraient se voir concernent un grand écran
+        // (contraintes d'orientation et de ratio définitivement ignorées au-delà de 600 dp de
+        // largeur, donc à regarder sur tablette) et le réseau (ECH et Certificate Transparency
+        // activés par défaut, donc à vérifier en chargeant les trois couches de tuiles).
+        targetSdk = 37
         versionCode = 12
         versionName = "2.4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -120,6 +171,12 @@ android {
                 // Robolectric ouvre des descripteurs de fichiers par réflexion (ParcelFileDescriptor),
                 // ce que le système de modules du JDK 17 bloque par défaut.
                 test.jvmArgs("--add-opens", "java.base/java.io=ALL-UNNAMED")
+                // RIC-116 : l'android-all de l'API 37 crée une ApplicationSharedMemory au démarrage
+                // de chaque test, et l'intercepteur de Robolectric y passe par
+                // jdk.internal.access.SharedSecrets, un paquet que java.base n'exporte pas ("Failed
+                // to interact with raw FileDescriptor internals", 242 tests sur 520). add-exports et
+                // pas add-opens : c'est l'accès à la classe qui manque, pas la réflexion profonde.
+                test.jvmArgs("--add-exports", "java.base/jdk.internal.access=ALL-UNNAMED")
             }
         }
 
@@ -127,13 +184,33 @@ android {
         // un émulateur jetable provisionné par le build, jamais par un appareil branché.
         // `connectedAndroidTest` désinstalle l'app à la fin de son exécution et effacerait les
         // données réelles du téléphone de recette : la tâche à lancer est
-        // `pixel6Api34DebugAndroidTest`, qui crée l'AVD, l'exécute et le jette.
+        // `pixel6Api37DebugAndroidTest`, qui crée l'AVD, l'exécute et le jette.
         //
-        // API 34 pour coller au targetSdk, et image « aosp » (sans les services Google) : rien ici
-        // n'en dépend, et c'est la plus légère à télécharger. La première exécution récupère
-        // l'image système si elle manque, c'est normal.
+        // Images « aosp » (sans les services Google) quand elles existent : rien ici n'en dépend,
+        // et c'est la plus légère à télécharger. La première exécution récupère l'image système si
+        // elle manque, c'est normal.
         managedDevices {
             localDevices {
+                // RIC-116 : appareil de référence, aligné sur targetSdk = 37. C'est le seul qui
+                // exerce réellement les changements de comportement d'Android 16 et 17
+                // (edge-to-edge sans opt-out, retour prédictif activé par défaut, contraintes
+                // d'orientation ignorées) : un appareil API 34 ne les déclenche pas, quel que soit
+                // le targetSdk compilé.
+                //
+                // « google » et non « aosp » ici, contrairement aux deux autres : Google ne publie
+                // aucune image `default` (aosp) pour l'API 37, seulement google_apis et
+                // google_apis_playstore (vérifié avec `sdkmanager --list`). Les services Google
+                // embarqués ne changent rien aux suites de ce dépôt, qui ne les touchent pas.
+                create("pixel6Api37") {
+                    device = "Pixel 6"
+                    apiLevel = 37
+                    systemImageSource = "google"
+                    testedAbi = "x86_64"
+                }
+                // RIC-116 : conservé sous l'appareil de référence ci-dessus. Android 14 est la
+                // version que le parc réel exécute encore majoritairement, et c'est le niveau
+                // auquel l'app tournait avant ce ticket : le garder rend visible toute régression
+                // qui ne se produirait QUE sur 37, et inversement.
                 create("pixel6Api34") {
                     device = "Pixel 6"
                     apiLevel = 34
@@ -210,14 +287,26 @@ dependencies {
     implementation(libs.exifinterface)
     implementation(libs.coil.compose)
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.robolectric:robolectric:4.16")
+    // RIC-116 : 4.17 et pas 4.16, parce que Robolectric exécute par défaut ses tests au niveau
+    // d'API du targetSdk de l'app et refuse de démarrer au-delà de celui qu'il embarque
+    // (« Package targetSdkVersion=37 > maxSdkVersion=36 » sur 4.16). 4.17 est la première version
+    // à livrer un android-all pour l'API 37. Alternative écartée : figer @Config(sdk = 36) pour
+    // tout le module, ce qui reviendrait à faire tourner 520 tests sous une version d'Android que
+    // l'app ne cible plus.
+    testImplementation("org.robolectric:robolectric:4.17")
     testImplementation("androidx.test:core:1.6.1")
     debugImplementation(libs.ui.tooling)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
     androidTestImplementation("junit:junit:4.13.2")
     androidTestImplementation(libs.room.testing)
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    // RIC-116 : androidx.test remonté pour l'API 37. La cause est précise : Espresso construit son
+    // injection d'événements en appelant android.hardware.input.InputManager.getInstance() par
+    // réflexion, méthode cachée que l'API 37 ne fournit plus (NoSuchMethodException, 16 tests sur
+    // 54 en échec avec espresso-core 3.5.0). espresso-core est déclaré explicitement parce qu'il
+    // n'arrivait ici que transitivement par compose ui-test, qui l'épingle encore en 3.5.0.
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

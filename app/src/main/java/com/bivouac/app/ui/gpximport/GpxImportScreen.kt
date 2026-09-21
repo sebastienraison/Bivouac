@@ -62,7 +62,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
@@ -86,6 +85,7 @@ import com.bivouac.app.gpximport.NameDialogPurpose
 import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.ui.components.FullScreenEmptyState
 import com.bivouac.app.ui.components.StatsRows
+import com.bivouac.app.ui.components.halfWindowHeight
 import com.bivouac.app.ui.map.HikeMapView
 import com.bivouac.app.ui.map.MapControls
 import com.bivouac.app.ui.nav.AppSection
@@ -272,9 +272,10 @@ fun GpxImportScreen(
     }
     val onOpenClick = { pickGpxLauncher.launch(arrayOf("*/*")) }
 
-    // Cap the peek height to a share of the available screen height so the sheet can't swallow
+    // Cap the peek height to a share of the available window height so the sheet can't swallow
     // the map in landscape, where total height is much smaller than the measured content needs.
-    val maxPeekHeight = LocalConfiguration.current.screenHeightDp.dp * 0.5f
+    // RIC-116 : voir halfWindowHeight pour le choix de la fenêtre plutôt que de Configuration.
+    val maxPeekHeight = halfWindowHeight()
 
     // Hissés ici (et non plus créés dans TrackSheetContent) : le FAB flottant qui recouvre
     // maintenant le tiroir a besoin de lire ces deux états pour savoir s'il doit être étendu ou
