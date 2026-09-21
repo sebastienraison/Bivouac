@@ -14,7 +14,7 @@ import androidx.compose.ui.unit.Dp
  * Lit la hauteur de la FENÊTRE (LocalWindowInfo) et non Configuration.screenHeightDp, pour deux
  * raisons qui vont dans le même sens :
  *
- * 1. Sous targetSdk 35, Configuration.screenHeightDp inclut désormais les barres système, alors
+ * 1. À partir de targetSdk 35, Configuration.screenHeightDp inclut les barres système, alors
  *    qu'il les excluait avant : la même expression n'aurait pas rendu la même valeur selon la
  *    version d'Android sous laquelle l'app tourne. C'est le seul changement de comportement
  *    d'Android 15 qui atteignait du code de cette app (lint le signale sous
