@@ -38,6 +38,56 @@ val localProperties = Properties().apply {
 }
 val esriApiKey: String = localProperties.getProperty("esri.apiKey", "")
 
+// RIC-201 : signature de la release. Voir le commentaire complet dans buildTypes.release
+// ci-dessous pour le POURQUOI (qui signe quoi, pourquoi jamais de repli debug) -- ici seulement
+// la RÉSOLUTION des deux entrées, chacune avec sa propre raison d'être à cet endroit précis.
+//
+// Chemin du keystore : clé "signing.storeFile" dans local.properties, même mécanique que
+// esri.apiKey juste au-dessus (jamais commité, lu localement). Valeur par défaut alignée sur
+// l'emplacement réel du fichier de Seb (~/cles-signature/bivouac-release.p12) : avec la variable
+// d'environnement seule, aucune ligne à ajouter à local.properties pour publier. Le chemin n'est
+// pas un secret (c'est un EMPLACEMENT, pas une clé), donc local.properties -- déjà le mécanisme du
+// dépôt pour un réglage local non commité -- convient, contrairement au mot de passe ci-dessous.
+// Expansion manuelle du "~" : Gradle/Kotlin ne l'interprète pas comme le shell, contrairement à
+// keytool ou à un chemin tapé en ligne de commande.
+fun expandUserHome(path: String): String =
+    if (path.startsWith("~")) path.replaceFirst("~", System.getProperty("user.home")) else path
+
+val releaseSigningStoreFile: File = File(
+    expandUserHome(localProperties.getProperty("signing.storeFile", "~/cles-signature/bivouac-release.p12")),
+)
+
+// Mot de passe : UNIQUEMENT la variable d'environnement BIVOUAC_SIGNING_PASSWORD, jamais un
+// fichier -- local.properties vit en clair sur le disque et pourrait finir dans une sauvegarde ou
+// une synchro par erreur ; une variable d'environnement ne survit qu'au shell qui la pose, à
+// renseigner depuis le gestionnaire de mots de passe au moment de publier. Un seul mot de passe
+// pour le store et la clé (choix de Seb à la génération du keystore), donc une seule variable.
+val releaseSigningPassword: String? = System.getenv("BIVOUAC_SIGNING_PASSWORD")
+
+// Disponibilité de la signature release, évaluée UNE FOIS ici. File.isFile() et System.getenv()
+// sont synchrones, ne peuvent pas échouer (contrairement à `git log` plus bas, qui peut échouer et
+// est donc rendu paresseux via l'API Variant/providers.exec) et ne sont lus qu'à l'intérieur des
+// blocs signingConfigs/buildTypes.release ci-dessous -- jamais dans defaultConfig ni buildTypes.debug.
+// Conséquence : testDebugUnitTest, lintDebug et assembleDebug ne dépendent ni de la présence du
+// fichier ni de celle de la variable, sans qu'il soit nécessaire de différer la lecture à
+// l'exécution d'une tâche -- la portée (release seulement) suffit à l'isolation demandée, pas
+// besoin de l'API Variant ici.
+val releaseSigningKeystorePresent: Boolean = releaseSigningStoreFile.isFile
+val releaseSigningPasswordPresent: Boolean = !releaseSigningPassword.isNullOrEmpty()
+val releaseSigningAvailable: Boolean = releaseSigningKeystorePresent && releaseSigningPasswordPresent
+
+if (!releaseSigningAvailable) {
+    val manquants = buildList {
+        if (!releaseSigningKeystorePresent) add("le fichier keystore ($releaseSigningStoreFile)")
+        if (!releaseSigningPasswordPresent) add("la variable d'environnement BIVOUAC_SIGNING_PASSWORD")
+    }.joinToString(" et ")
+    logger.warn(
+        "RIC-201 : release NON SIGNÉE -- $manquants absent(s). " +
+            "assembleRelease produira app-release-unsigned.apk (pas de repli sur la clé debug). " +
+            "Pour signer, voir le commentaire RIC-201 dans app/build.gradle.kts (buildTypes.release).",
+    )
+}
+
 // RIC-133 : horodatage affiché en bas de Réglages pour savoir exactement quelle build tourne sur
 // un appareil donné. Format non localisé, ISO 8601 (aaaa-MM-jj, RIC-193) : une build reste
 // identique quel que soit l'appareil qui l'exécute, sa date ne devrait pas varier avec la locale
@@ -142,6 +192,20 @@ android {
         // commentaire RIC-133/RIC-201 plus haut et les deux buildTypes ci-dessous.
     }
 
+    signingConfigs {
+        // RIC-201 : créé seulement quand les deux entrées sont là (voir plus haut en tête de
+        // fichier) -- jamais avec des valeurs partielles/nulles, pour qu'un signingConfig
+        // incomplet ne puisse jamais être attaché à une variante par erreur.
+        if (releaseSigningAvailable) {
+            create("release") {
+                storeFile = releaseSigningStoreFile
+                storePassword = releaseSigningPassword
+                keyAlias = "bivouac"
+                keyPassword = releaseSigningPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
             buildConfigField("String", "BUILD_DATE", "\"$debugBuildDate\"")
@@ -149,14 +213,50 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Choix assumé, pas un oubli : F-Droid compile et signe lui-même le binaire depuis
-            // les sources (sa propre clé, jamais la nôtre) : la signature de ce buildType n'a
-            // donc aucune incidence sur ce qui est réellement distribué. Elle ne sert qu'au
-            // mainteneur, pour pouvoir tester un build "release-shaped" en local sans se
-            // fabriquer un keystore de prod pour un usage qui ne le nécessite pas. Réutilise la
-            // signature debug : même signature que le build debug déjà installé, donc
-            // `adb install -r` remplace en place sans perte de données.
-            signingConfig = signingConfigs.getByName("debug")
+            // RIC-201 : qui signe quoi, et pourquoi. Ancien état (périmé) : "F-Droid compile et
+            // signe lui-même le binaire depuis les sources, la signature de ce buildType n'a
+            // aucune incidence sur ce qui est réellement distribué". C'était vrai tant que F-Droid
+            // republiait sa PROPRE signature. Désormais F-Droid republie l'APK signé par Seb : il
+            // le reconstruit depuis les sources (build reproductible, RIC-201 précédent), vérifie
+            // qu'il correspond octet pour octet à l'APK que Seb a publié et signé, puis distribue
+            // CET APK -- pas le sien (mécanique "developer signed binaries" du dépôt F-Droid :
+            // champs Binaries + AllowedAPKSigningKeys de la recette,
+            // https://f-droid.org/docs/Reproducible_Builds/, lu le 22/09/2026). La signature de ce
+            // buildType a donc désormais une incidence directe et publique.
+            //
+            // Qui : uniquement Seb, avec sa propre clé (bivouac-release.p12, alias "bivouac",
+            // empreinte SHA-256 7F:EA:90:2A:AC:6F:8C:F4:9A:5B:7B:0E:F8:60:27:3D:9B:37:F5:32:7C:04:
+            // 9E:4A:C7:29:58:9E:CC:6F:E3:C2). Jamais commitée, jamais dans ce dépôt : voir la
+            // résolution en tête de fichier (releaseSigningStoreFile / releaseSigningPassword).
+            //
+            // Comment signer : positionner BIVOUAC_SIGNING_PASSWORD (le mot de passe du
+            // gestionnaire, celui qui protège à la fois le store et la clé) puis lancer
+            // `./gradlew assembleRelease`. Le keystore est cherché par défaut à
+            // ~/cles-signature/bivouac-release.p12 ; un autre emplacement se déclare avec
+            // signing.storeFile dans local.properties (non commité, jamais lu ni modifié par cet
+            // agent). Sans les deux (fichier ET variable), voir plus haut : la release sort NON
+            // SIGNÉE (app-release-unsigned.apk), avec un avertissement Gradle qui dit ce qui
+            // manque.
+            //
+            // Pourquoi AUCUN repli sur signingConfigs.debug (contrairement à l'état précédent) :
+            // un APK "release" signé avec la clé debug ressemble à une vraie release à l'œil nu
+            // (même buildType, même nom de fichier app-release.apk) mais porte une signature
+            // triviale, générée automatiquement, jamais destinée à être publique -- la seule
+            // différence visible sans vérification explicite est la signature elle-même. Un tel
+            // APK publié par erreur serait indiscernable d'une vraie release avant l'installation.
+            // Sortir explicitement un app-release-unsigned.apk rend l'état "pas encore signé pour
+            // de vrai" impossible à manquer : F-Droid refuserait de toute façon un APK non signé à
+            // ce stade de son pipeline, et un APK debug-signé ne passerait pas la vérification
+            // AllowedAPKSigningKeys -- mais autant que l'échec soit visible ICI, au moment de la
+            // construction, plutôt que découvert plus tard côté F-Droid.
+            //
+            // Conséquence pour Seb : un APK release signé par cette clé ne s'installe plus
+            // PAR-DESSUS un app-debug.apk déjà installé (signatures différentes, `adb install -r`
+            // échouerait avec INSTALL_FAILED_UPDATE_INCOMPATIBLE) -- désinstaller d'abord.
+            // Impossible aussi de garder les deux côte à côte : applicationId identique. Pour
+            // tester en local au fil de l'eau, rester sur le build debug (signature debug,
+            // réinstallable à volonté) ; la release signée est réservée à la publication.
+            signingConfig = if (releaseSigningAvailable) signingConfigs.getByName("release") else null
             // RIC-201 : BUILD_DATE n'est pas fixé ici (buildConfigField classique), mais plus bas
             // via androidComponents.onVariants -- voir le commentaire RIC-133/RIC-201 en tête de
             // fichier pour la raison : il faut que la lecture de `git log` reste paresseuse.
