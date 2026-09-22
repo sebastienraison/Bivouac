@@ -162,6 +162,22 @@ android {
             // fichier pour la raison : il faut que la lecture de `git log` reste paresseuse.
         }
     }
+    // RIC-201 : le bloc de métadonnées de dépendances qu'AGP place par défaut dans l'APK Signing
+    // Block (ID 0x504b4453) est chiffré avec une clé Google, donc il diffère à chaque build même à
+    // sources et BUILD_DATE strictement identiques -- mesuré directement lors de RIC-201 : deux
+    // builds indépendants de la même branche produisaient deux APK dont la SEULE zone différente,
+    // octet pour octet, était ce bloc précis (tout le reste -- 244 entrées ZIP, resources.arsc,
+    // notre propre signature v2, répertoire central, EOCD -- était identique). C'est la seule
+    // source de non-reproductibilité identifiée par RIC-201, donc désactivée pour l'APK.
+    // Reste dans le bundle (.aab) : seul Google Play l'exploite (signalement des dépendances à
+    // risque dans Play Console), et F-Droid ne distribue jamais le bundle, seulement l'APK -- ce
+    // qui s'y trouve n'a donc aucune incidence sur la reproductibilité vérifiée par F-Droid.
+    dependenciesInfo {
+        includeInApk = false
+        // Valeur par défaut d'AGP, mais explicite : le choix ne doit pas dépendre d'un défaut qui
+        // pourrait changer avec une future version d'AGP.
+        includeInBundle = true
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
