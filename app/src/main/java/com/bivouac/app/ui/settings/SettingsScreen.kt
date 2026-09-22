@@ -299,6 +299,12 @@ fun SettingsScreen(
             )
             // RIC-133 : identifie la build exacte qui tourne (utile support/debug), et rassure que
             // la mise à jour a bien pris. Texte simple, pas une SettingsSection : rien à toucher ici.
+            // RIC-201 : BUILD_DATE ne veut plus dire la même chose selon le buildType (voir le
+            // commentaire dans app/build.gradle.kts). Sur une build de dev (debug), c'est la date
+            // de compilation. Sur la build distribuée (release, y compris F-Droid), c'est la date
+            // du dernier commit source, nécessaire pour que F-Droid puisse reconstruire un APK
+            // identique octet pour octet depuis les mêmes sources. Dans les deux cas, ce texte
+            // reste la question à laquelle il répond : "quelle build, précisément, tourne ici ?"
             Text(
                 text = stringResource(
                     R.string.settings_version_build_info,
