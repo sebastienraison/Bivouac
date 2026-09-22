@@ -2,6 +2,18 @@
 
 *[English version](RELEASE_NOTES.md)*
 
+## V2.5.0
+
+**Compatibilité :**
+
+- Compatible Android 17, la version la plus récente, pour que l'application continue de se
+  comporter comme prévu sur les appareils les plus récents
+
+**Détails techniques notables :**
+
+- Les versions publiées sont désormais signées par le développeur, ce qui permet de vérifier
+  qu'un binaire publié correspond bien au code source
+
 ## V2.4.0
 
 **Internationalisation (nouveau) :**

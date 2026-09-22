@@ -210,7 +210,7 @@ canaux, notamment avant une réinstallation ou un test.
 ./gradlew assembleDebug
 ```
 
-Nécessite un SDK Android (API 34) et un JDK 17.
+Nécessite un SDK Android (API 37) et un JDK 17.
 
 ## Licence
 
@@ -224,7 +224,7 @@ et si ça peut servir à quelqu'un d'autre, tant mieux. Indulgence et retours bi
 
 ## Statut
 
-V2.4.0 fonctionnelle. Développement actif.
+V2.5.0 fonctionnelle. Développement actif.
 
 ## Développement
 

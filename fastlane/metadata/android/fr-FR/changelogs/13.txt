@@ -1,0 +1,1 @@
+Bivouac vise désormais Android 17, la version la plus récente, pour que l'application continue de se comporter comme prévu sur les appareils les plus récents. Les versions publiées sont aussi désormais signées par le développeur, ce qui permet de vérifier qu'un binaire publié correspond bien au code source.

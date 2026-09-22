@@ -184,8 +184,8 @@ android {
         // largeur, donc à regarder sur tablette) et le réseau (ECH et Certificate Transparency
         // activés par défaut, donc à vérifier en chargeant les trois couches de tuiles).
         targetSdk = 37
-        versionCode = 12
-        versionName = "2.4.0"
+        versionCode = 13
+        versionName = "2.5.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "ESRI_API_KEY", "\"$esriApiKey\"")
         // RIC-201 : BUILD_DATE n'est plus ici -- valeur différente par buildType, voir le

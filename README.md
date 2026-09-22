@@ -203,7 +203,7 @@ net outside those two channels, especially before a reinstall or a test.
 ./gradlew assembleDebug
 ```
 
-Requires the Android SDK (API 34) and JDK 17.
+Requires the Android SDK (API 37) and JDK 17.
 
 ## License
 
@@ -217,7 +217,7 @@ works, and if it's useful to someone else, all the better. Feedback and contribu
 
 ## Status
 
-V2.4.0, functional. Active development.
+V2.5.0, functional. Active development.
 
 ## Development
 

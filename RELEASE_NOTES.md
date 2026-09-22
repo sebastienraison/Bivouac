@@ -2,6 +2,18 @@
 
 *[Version française](RELEASE_NOTES.fr.md)*
 
+## V2.5.0
+
+**Compatibility:**
+
+- Targets Android 17, the latest version, so the app keeps working as expected on the most
+  recent devices
+
+**Notable technical details:**
+
+- Released builds are now signed by the developer, so anyone can verify that a published
+  binary matches this source code
+
 ## V2.4.0
 
 **Internationalization (new):**
