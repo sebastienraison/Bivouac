@@ -23,11 +23,13 @@ Desktop.ini
 # Other editors
 .vscode/
 
-# Signing material — no release keystore exists yet (F-Droid builds and signs from source,
-# see the signingConfig comment in app/build.gradle.kts), excluded ahead of time in case a real
-# prod keystore is introduced later.
+# Signing material -- RIC-201 : the real release keystore lives outside this repo
+# (~/cles-signature/, see the signingConfig comment in app/build.gradle.kts) and its path in
+# local.properties is already gitignored above. These patterns are defense in depth, in case a
+# keystore or its password ever end up copied into the repo by mistake.
 *.jks
 *.keystore
+*.p12
 key.properties
 
 # Internal planning docs — working base, not meant to be published
