@@ -7,6 +7,8 @@ import com.bivouac.app.data.backup.BackupManager
 import com.bivouac.app.data.gpx.DaySegmentAggregate
 import com.bivouac.app.data.gpx.GpxWriter
 import com.bivouac.app.data.model.TrackPoint
+import com.bivouac.app.data.prefs.MapLayerPreferences
+import com.bivouac.app.data.prefs.SettingsPreferences
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.zip.ZipFile
@@ -29,27 +31,32 @@ import org.robolectric.RobolectricTestRunner
  * Planification (BankedTrackRepository et SavedTrackRepository) et Réglages, qui lit le Journal
  * par la même classe LoggedTrackRepository.
  *
- * Limite connue : backup() écrit aussi dans le DataStore de SettingsPreferences, un singleton de
- * process qu'aucun tearDown ne peut réinitialiser : il reste lié au sandbox Robolectric de la
- * première classe de test qui l'a touché. Sans conséquence ici, mais une future classe de test
- * qui voudrait ASSERTER sur le contenu du DataStore devra en tenir compte.
+ * Ancienne limite connue, levée par RIC-204 : backup() écrit aussi dans le DataStore de
+ * SettingsPreferences, qui restait lié au sandbox Robolectric de la première classe de test qui
+ * l'avait touché, faute d'un reset possible. SettingsPreferences.resetCache()/
+ * MapLayerPreferences.resetCache() (RIC-204) donnent maintenant ce reset : repris ci-dessous, même
+ * discipline que BivouacDatabase.closeAndReset().
  */
 @RunWith(RobolectricTestRunner::class)
 class RepositoryBackupCycleTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
 
-    // Le singleton survit d'un test à l'autre alors que Robolectric change de sandbox : reset
-    // avant ET après, pour ne pas hériter d'une base pointant sur les fichiers d'un environnement
-    // disparu (classe de test antérieure), ni en léguer une au test suivant.
+    // Les singletons survivent d'un test à l'autre alors que Robolectric change de sandbox : reset
+    // avant ET après, pour ne pas hériter d'un état pointant sur les fichiers d'un environnement
+    // disparu (classe de test antérieure), ni en léguer un au test suivant.
     @Before
     fun resetSingleton() {
         BivouacDatabase.closeAndReset()
+        SettingsPreferences.resetCache()
+        MapLayerPreferences.resetCache()
     }
 
     @After
     fun tearDown() {
         BivouacDatabase.closeAndReset()
+        SettingsPreferences.resetCache()
+        MapLayerPreferences.resetCache()
     }
 
     @Test

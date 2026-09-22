@@ -81,6 +81,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.BuildConfig
 import com.bivouac.app.R
+import com.bivouac.app.data.backup.AppRestart
 import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.db.PhotoStorageSummary
 import com.bivouac.app.data.gpx.SpeedCalibration
@@ -533,13 +534,21 @@ fun SettingsScreen(
     restoreOutcome?.let { outcome ->
         when (outcome) {
             is RestoreOutcome.PendingRestart -> AlertDialog(
-                // Not dismissible without restarting: the app's in-memory state is stale the
+                // Not dismissible without refreshing: the app's in-memory state is stale the
                 // instant the on-disk files get swapped underneath it (see AppRestart's kdoc).
                 onDismissRequest = {},
                 title = { Text(stringResource(R.string.settings_restore_done_title)) },
                 text = { Text(stringResource(R.string.settings_restore_done_message)) },
                 confirmButton = {
-                    TextButton(onClick = viewModel::confirmRestartAfterRestore) {
+                    TextButton(onClick = {
+                        // RIC-204 : plus de redémarrage de process. viewModel.dismissRestoreOutcome()
+                        // d'abord : ce ViewModel-ci est sur le point d'être détruit par
+                        // AppRestart.refresh() (ViewModelStore vidé puis Activity recréée), inutile
+                        // qu'il rejoue ce dialogue une dernière fois pendant la recomposition qui
+                        // précède la destruction.
+                        viewModel.dismissRestoreOutcome()
+                        AppRestart.refresh(context)
+                    }) {
                         Text(stringResource(R.string.settings_restore_done_restart_button))
                     }
                 },

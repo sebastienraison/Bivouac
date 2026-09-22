@@ -11,6 +11,7 @@ import com.bivouac.app.data.db.LoggedTrackGpxStore
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
 import com.bivouac.app.data.db.PlanificationGpxStore
 import com.bivouac.app.data.prefs.MAP_LAYER_DATASTORE_NAME
+import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SETTINGS_DATASTORE_NAME
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.components.formatGroupedInt
@@ -343,6 +344,15 @@ object BackupManager {
                     BivouacDatabase.getInstance(context)
                 }
             }
+            // RIC-204 : les deux DataStore restaurés (bivouac_settings, map_layer_prefs) sont des
+            // singletons de process qui ne se relisent jamais tout seuls depuis le disque (voir
+            // ResettableDataStoreHolder) : replaceWithRollback() vient de remplacer leur fichier
+            // EN PLACE sans passer par leur API, exactement le même problème que la base
+            // ci-dessus. Reset seulement ici, après un remplacement qui a RÉUSSI : un
+            // replaceWithRollback() qui échoue restaure les octets d'origine, la valeur déjà en
+            // cache reste donc juste, rien à invalider.
+            SettingsPreferences.resetCache()
+            MapLayerPreferences.resetCache()
             sweepOrphanPhotoFiles(context)
             RestoreResult.Success
         } catch (e: Exception) {
