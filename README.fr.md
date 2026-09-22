@@ -224,7 +224,7 @@ et si ça peut servir à quelqu'un d'autre, tant mieux. Indulgence et retours bi
 
 ## Statut
 
-V2.5.0 fonctionnelle. Développement actif.
+V2.5.1 fonctionnelle. Développement actif.
 
 ## Développement
 

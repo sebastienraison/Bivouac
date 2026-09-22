@@ -1,0 +1,1 @@
+Restoring a backup no longer closes the app: it refreshes in place and shows the restored data right away. Bivouac now also targets Android 17, the latest version, so the app keeps working as expected on the most recent devices. Released builds are signed by the developer, so anyone can verify that a published binary matches this source code.

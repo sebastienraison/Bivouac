@@ -1,1 +1,0 @@
-Bivouac now targets Android 17, the latest version, so the app keeps working as expected on the most recent devices. Released builds are also now signed by the developer, so anyone can verify that a published binary matches this source code.

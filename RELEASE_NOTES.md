@@ -2,7 +2,12 @@
 
 *[Version française](RELEASE_NOTES.fr.md)*
 
-## V2.5.0
+## V2.5.1
+
+**Bugfixes:**
+
+- Restoring a backup no longer closes the app. It now refreshes in place and shows the restored
+  data right away
 
 **Compatibility:**
 

@@ -2,7 +2,12 @@
 
 *[English version](RELEASE_NOTES.md)*
 
-## V2.5.0
+## V2.5.1
+
+**Corrections :**
+
+- La restauration d'une sauvegarde ne ferme plus l'application. Elle se rafraîchit sur place et
+  affiche immédiatement les données restaurées
 
 **Compatibilité :**
 

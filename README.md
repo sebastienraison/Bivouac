@@ -217,7 +217,7 @@ works, and if it's useful to someone else, all the better. Feedback and contribu
 
 ## Status
 
-V2.5.0, functional. Active development.
+V2.5.1, functional. Active development.
 
 ## Development
 
