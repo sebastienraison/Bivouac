@@ -397,8 +397,8 @@
     <string name="settings_restore_confirm_message">Les randos et réglages actuels seront remplacés par le contenu de cette sauvegarde. Cette action est irréversible.</string>
     <string name="settings_restore_confirm_button">Restaurer</string>
     <string name="settings_restore_done_title">Restauration terminée</string>
-    <string name="settings_restore_done_message">La base a été restaurée. L\'application va redémarrer pour appliquer les changements.</string>
-    <string name="settings_restore_done_restart_button">Redémarrer</string>
+    <string name="settings_restore_done_message">Les données ont été restaurées.</string>
+    <string name="settings_restore_done_continue_button">Continuer</string>
     <string name="settings_restore_version_too_new_title">Sauvegarde trop récente</string>
     <string name="settings_restore_version_too_new_message">Cette sauvegarde provient d\'une version plus récente de l\'application (schéma %1$s, version actuelle : schéma %2$s). Mettre à jour Bivouac avant de la restaurer.</string>
     <string name="settings_restore_error_title">Restauration impossible</string>

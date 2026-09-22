@@ -549,7 +549,7 @@ fun SettingsScreen(
                         viewModel.dismissRestoreOutcome()
                         AppRestart.refresh(context)
                     }) {
-                        Text(stringResource(R.string.settings_restore_done_restart_button))
+                        Text(stringResource(R.string.settings_restore_done_continue_button))
                     }
                 },
             )

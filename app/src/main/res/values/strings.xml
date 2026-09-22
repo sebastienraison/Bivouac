@@ -373,8 +373,8 @@
     <string name="settings_restore_confirm_message">Current hikes and settings will be replaced by the content of this backup. This action cannot be undone.</string>
     <string name="settings_restore_confirm_button">Restore</string>
     <string name="settings_restore_done_title">Restore complete</string>
-    <string name="settings_restore_done_message">The database has been restored. The app will restart to apply the changes.</string>
-    <string name="settings_restore_done_restart_button">Restart</string>
+    <string name="settings_restore_done_message">Your data has been restored.</string>
+    <string name="settings_restore_done_continue_button">Continue</string>
     <string name="settings_restore_version_too_new_title">Backup from a newer version</string>
     <string name="settings_restore_version_too_new_message">This backup comes from a newer version of the app (schema %1$s, current version: schema %2$s). Update Bivouac before restoring it.</string>
     <string name="settings_restore_error_title">Restore failed</string>
