@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.bivouac.app.R
-import com.bivouac.app.data.backup.AppRestart
 import com.bivouac.app.data.backup.BackupManager
 import com.bivouac.app.data.backup.RestorePhase
 import com.bivouac.app.data.backup.RestoreResult
@@ -526,11 +525,5 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun dismissBackupError() {
         _backupError.value = null
-    }
-
-    // Only reached from the PendingRestart dialog's confirm button: see AppRestart's kdoc for
-    // why nothing short of a full process restart can safely pick up a just-restored database.
-    fun confirmRestartAfterRestore() {
-        AppRestart.restart(getApplication())
     }
 }

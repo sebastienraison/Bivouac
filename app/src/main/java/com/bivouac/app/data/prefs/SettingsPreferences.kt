@@ -1,12 +1,13 @@
 package com.bivouac.app.data.prefs
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.photo.PhotoStorageMode
 import kotlinx.coroutines.flow.Flow
@@ -17,7 +18,10 @@ import kotlinx.coroutines.flow.map
 // Réglages screen is that a backup only has to embed this one preferences file alongside
 // map_layer_prefs, not enumerate every DataStore the app happens to have.
 internal const val SETTINGS_DATASTORE_NAME = "bivouac_settings"
-private val Context.settingsDataStore by preferencesDataStore(name = SETTINGS_DATASTORE_NAME)
+
+// RIC-204 : ResettableDataStoreHolder plutôt que `by preferencesDataStore(...)` : voir sa kdoc.
+private val settingsDataStoreHolder = ResettableDataStoreHolder(SETTINGS_DATASTORE_NAME)
+private val Context.settingsDataStore: DataStore<Preferences> get() = settingsDataStoreHolder.getInstance(this)
 
 enum class SpeedCalibrationMode { MANUAL, AUTO, SELECTION }
 
@@ -189,5 +193,12 @@ class SettingsPreferences(private val context: Context) {
 
     suspend fun setPhotosEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { it[Keys.PHOTOS_ENABLED] = enabled }
+    }
+
+    companion object {
+        // RIC-204 : appelé par BackupManager.restore() juste après avoir remplacé
+        // bivouac_settings.preferences_pb, pour que la prochaine lecture (un ViewModel neuf y
+        // compris) rouvre le fichier fraîchement restauré au lieu de servir le cache d'avant.
+        fun resetCache() = settingsDataStoreHolder.reset()
     }
 }

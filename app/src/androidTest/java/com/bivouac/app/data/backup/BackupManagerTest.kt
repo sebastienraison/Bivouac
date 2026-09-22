@@ -42,6 +42,13 @@ class BackupManagerTest {
     fun setUp() {
         backupFile = File(context.cacheDir, "test-backup-${System.nanoTime()}.zip")
         BivouacDatabase.closeAndReset()
+        // RIC-204 : les deux DataStore ont le même besoin que la base ci-dessus (voir
+        // ResettableDataStoreHolder) ; sans ce reset, une classe de test qui en construirait
+        // plusieurs instances dans le même process instrumenté risquerait la même
+        // IllegalStateException ("multiple DataStores active for the same file") que celle
+        // rencontrée en écrivant RestoreDataStoreCacheTest côté JVM.
+        SettingsPreferences.resetCache()
+        MapLayerPreferences.resetCache()
         context.deleteDatabase(BivouacDatabase.DATABASE_NAME)
         LoggedTrackGpxStore.dir(context).deleteRecursively()
         LoggedTrackPhotoStore.dir(context).deleteRecursively()
@@ -51,6 +58,8 @@ class BackupManagerTest {
     fun tearDown() {
         backupFile.delete()
         BivouacDatabase.closeAndReset()
+        SettingsPreferences.resetCache()
+        MapLayerPreferences.resetCache()
         context.deleteDatabase(BivouacDatabase.DATABASE_NAME)
         LoggedTrackGpxStore.dir(context).deleteRecursively()
         LoggedTrackPhotoStore.dir(context).deleteRecursively()
@@ -109,13 +118,15 @@ class BackupManagerTest {
         assertTrue(backupResult.isSuccess)
         assertTrue(backupFile.length() > 0)
 
-        // DataStore's delegate is a process-wide singleton per file: once opened (as it just was
-        // above), it never re-reads from disk on its own, restore or no restore; only a fresh
-        // process picks up a swapped file (see AppRestart's kdoc, and why the real UI flow forces
-        // a restart after a successful restore). So preference correctness here is checked at the
-        // file level (the layer this in-process test *can* actually observe), snapshotting the
-        // exact bytes DataStore holds right after backup() (which itself stamps lastBackupAtMillis
-        // before zipping, so this snapshot already includes it: the whole point being verified).
+        // RIC-204 : le DataStore de chaque préférence est un singleton de process qui ne se relit
+        // jamais seul depuis le disque (voir ResettableDataStoreHolder) ; mapPrefs/settingsPrefs
+        // ci-dessus restent donc volontairement périmées après restore() plus bas, exactement
+        // comme le resteraient les StateFlow d'un ViewModel déjà affiché à l'écran Réglages :
+        // c'est BackupManager.restore() qui vide ce cache, pas la lecture qui suit. La correction
+        // se vérifie donc plus bas via DEUX INSTANCES NEUVES, construites après restore() (ce
+        // qu'AppRestart.refresh() produit réellement : ViewModelStore vidé puis Activity recréée,
+        // donc un ViewModel neuf par écran). Ici, en attendant, snapshot des octets bruts juste
+        // après backup() (qui stamp lastBackupAtMillis avant de zipper, donc déjà inclus).
         val datastoreDir = File(context.filesDir, "datastore")
         val mapPrefsFile = File(datastoreDir, "map_layer_prefs.preferences_pb")
         val settingsPrefsFile = File(datastoreDir, "bivouac_settings.preferences_pb")
@@ -148,6 +159,22 @@ class BackupManagerTest {
         assertEquals("<gpx><!-- contenu test backup --></gpx>", restoredGpxFile.readText())
         assertTrue(mapPrefsBytesAtBackup.contentEquals(mapPrefsFile.readBytes()))
         assertTrue(settingsPrefsBytesAtBackup.contentEquals(settingsPrefsFile.readBytes()))
+
+        // RIC-204 : la vérification qui manquait avant ce ticket, maintenant possible. Deux
+        // instances neuves, jamais celles construites plus haut : c'est ce qu'AppRestart.refresh()
+        // produit réellement après une restauration (ViewModelStore vidé puis Activity recréée),
+        // et c'est cette reconstruction-là que le correctif doit rendre suffisante, sans redémarrer
+        // le process. Sans SettingsPreferences.resetCache()/MapLayerPreferences.resetCache() dans
+        // BackupManager.restore(), ces deux lectures rendraient encore HIKING et 3.5 (l'état
+        // écrasé juste avant restore(), ligne 141-142 plus haut), pas SATELLITE et 5.0.
+        val mapPrefsAfterRestore = MapLayerPreferences(context)
+        val settingsPrefsAfterRestore = SettingsPreferences(context)
+        assertEquals(MapLayer.SATELLITE, mapPrefsAfterRestore.selectedLayer.first())
+        val restoredManual = settingsPrefsAfterRestore.manualCalibration.first()
+        assertEquals(5.0, restoredManual.walkingSpeedKmh, 0.0)
+        assertEquals(120.0, restoredManual.elevationGainPenaltyMetersPerKm, 0.0)
+        assertEquals(20.0, restoredManual.pauseFractionPercent, 0.0)
+        assertEquals(SpeedCalibrationMode.MANUAL, settingsPrefsAfterRestore.speedCalibrationMode.first())
     }
 
     /**
