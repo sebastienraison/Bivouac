@@ -1,5 +1,10 @@
+import com.android.build.api.variant.BuildConfigField
 import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.Date
+import java.util.Locale
 import java.util.Properties
 
 plugins {
@@ -16,6 +21,15 @@ plugins {
 // Esri API key (see BIV-56, free anonymous tile access is otherwise rate/volume-limited) can
 // drop `esri.apiKey=...` in local.properties. Never committed; absent by default, in which case
 // EsriWorldImagery falls back to the current unauthenticated public endpoint.
+//
+// RIC-201 : une release PUBLIEE se compile toujours sans esri.apiKey, pour deux raisons
+// indépendantes. D'abord la reproductibilité F-Droid (https://f-droid.org/docs/Reproducible_Builds/) :
+// F-Droid reconstruit depuis les sources sans local.properties personnel, donc sans cette clé --
+// une release qui l'embarquerait ne serait plus reconstructible à l'identique par quiconque d'autre,
+// et divergerait de l'APK réellement distribué. Ensuite la sécurité : une clé posée dans
+// defaultConfig finit dans BuildConfig, donc dans l'APK en clair, et un APK public est un fichier
+// zip -- une clé qui s'y trouve est triviale à extraire (unzip + strings). Cette override reste
+// un confort de développement local, jamais un mécanisme de release.
 val localProperties = Properties().apply {
     val localPropertiesFile = rootProject.file("local.properties")
     if (localPropertiesFile.exists()) {
@@ -24,13 +38,35 @@ val localProperties = Properties().apply {
 }
 val esriApiKey: String = localProperties.getProperty("esri.apiKey", "")
 
-// RIC-133 : horodatage figé à la compilation (pas au runtime), affiché en bas de Réglages pour
-// savoir exactement quelle build tourne sur un appareil donné. Format non localisé, ISO 8601
-// (aaaa-MM-jj, RIC-193) : une build reste identique quel que soit l'appareil qui l'exécute, sa date
-// ne devrait pas varier avec la locale du téléphone -- jj/MM/aaaa était ambigu en anglais (le 18e
-// mois) et jamais explicitement daté par une locale, alors qu'ISO 8601 est sans ambiguïté dans les
-// deux langues.
-val buildDate: String = SimpleDateFormat("yyyy-MM-dd").format(Date())
+// RIC-133 : horodatage affiché en bas de Réglages pour savoir exactement quelle build tourne sur
+// un appareil donné. Format non localisé, ISO 8601 (aaaa-MM-jj, RIC-193) : une build reste
+// identique quel que soit l'appareil qui l'exécute, sa date ne devrait pas varier avec la locale
+// du téléphone -- jj/MM/aaaa était ambigu en anglais (le 18e mois) et jamais explicitement daté
+// par une locale, alors qu'ISO 8601 est sans ambiguïté dans les deux langues.
+//
+// RIC-201 : la valeur diffère désormais PAR buildType (buildConfigField déplacé de defaultConfig
+// vers chaque buildType) -- les deux moitiés de la règle sont symétriques et volontaires :
+//   - debug : reste la date DE COMPILATION (comportement d'origine, inchangé), fixée juste en
+//     dessous et posée en buildConfigField classique dans buildTypes.debug. En développement on
+//     recompile souvent des modifications non commitées ; dater du dernier commit afficherait une
+//     date qui ne correspond pas à ce qui tourne réellement sur l'appareil de test.
+//   - release : devient la date du DERNIER COMMIT, déterministe, pour que F-Droid puisse
+//     reconstruire depuis les sources un APK identique octet pour octet au nôtre
+//     (https://f-droid.org/docs/Reproducible_Builds/). `Date()` capture l'instant de la
+//     compilation : deux builds des mêmes sources, à deux instants différents, produiraient deux
+//     APK différents -- non reproductible par construction, quelle que soit la machine. Voir le
+//     bloc androidComponents.onVariants tout en bas de ce fichier pour le calcul et son repli :
+//     posé là plutôt qu'ici en buildConfigField classique, PAS par goût de l'API récente, mais
+//     parce qu'un buildConfigField classique force la résolution de sa valeur (donc l'exécution de
+//     `git log`) à CHAQUE configuration du projet, pour CHAQUE tâche demandée -- y compris
+//     `testDebugUnitTest` ou `lintDebug`, qui n'ont rien à voir avec la release. Un git cassé
+//     casserait alors des tâches purement debug, ce que RIC-201 ne demande pas. La MapProperty
+//     paresseuse de l'API Variant (`variant.buildConfigFields`) ne résout sa valeur qu'à
+//     l'exécution de la tâche qui génère RÉELLEMENT le BuildConfig de la release
+//     (generateReleaseBuildConfig), jamais pour les autres variantes.
+//
+// Date de compilation, pour le buildType debug uniquement (voir ci-dessus).
+val debugBuildDate: String = SimpleDateFormat("yyyy-MM-dd").format(Date())
 
 android {
     namespace = "com.bivouac.app"
@@ -102,10 +138,14 @@ android {
         versionName = "2.4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "ESRI_API_KEY", "\"$esriApiKey\"")
-        buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
+        // RIC-201 : BUILD_DATE n'est plus ici -- valeur différente par buildType, voir le
+        // commentaire RIC-133/RIC-201 plus haut et les deux buildTypes ci-dessous.
     }
 
     buildTypes {
+        debug {
+            buildConfigField("String", "BUILD_DATE", "\"$debugBuildDate\"")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -117,7 +157,26 @@ android {
             // signature debug : même signature que le build debug déjà installé, donc
             // `adb install -r` remplace en place sans perte de données.
             signingConfig = signingConfigs.getByName("debug")
+            // RIC-201 : BUILD_DATE n'est pas fixé ici (buildConfigField classique), mais plus bas
+            // via androidComponents.onVariants -- voir le commentaire RIC-133/RIC-201 en tête de
+            // fichier pour la raison : il faut que la lecture de `git log` reste paresseuse.
         }
+    }
+    // RIC-201 : le bloc de métadonnées de dépendances qu'AGP place par défaut dans l'APK Signing
+    // Block (ID 0x504b4453) est chiffré avec une clé Google, donc il diffère à chaque build même à
+    // sources et BUILD_DATE strictement identiques -- mesuré directement lors de RIC-201 : deux
+    // builds indépendants de la même branche produisaient deux APK dont la SEULE zone différente,
+    // octet pour octet, était ce bloc précis (tout le reste -- 244 entrées ZIP, resources.arsc,
+    // notre propre signature v2, répertoire central, EOCD -- était identique). C'est la seule
+    // source de non-reproductibilité identifiée par RIC-201, donc désactivée pour l'APK.
+    // Reste dans le bundle (.aab) : seul Google Play l'exploite (signalement des dépendances à
+    // risque dans Play Console), et F-Droid ne distribue jamais le bundle, seulement l'APK -- ce
+    // qui s'y trouve n'a donc aucune incidence sur la reproductibilité vérifiée par F-Droid.
+    dependenciesInfo {
+        includeInApk = false
+        // Valeur par défaut d'AGP, mais explicite : le choix ne doit pas dépendre d'un défaut qui
+        // pourrait changer avec une future version d'AGP.
+        includeInBundle = true
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -233,6 +292,70 @@ android {
                 }
             }
         }
+    }
+}
+
+// RIC-201 : BUILD_DATE du buildType release, posé ici plutôt qu'en buildConfigField classique dans
+// buildTypes.release -- voir le commentaire RIC-133/RIC-201 en tête de fichier pour la raison
+// (rester paresseux : ne lire `git log` qu'à l'exécution de generateReleaseBuildConfig, jamais à la
+// configuration du projet, qui tourne pour toute tâche demandée y compris debug/lint).
+// `variant.buildConfigFields` est une MapProperty : `.put(clé, Provider<...>)` ne résout la valeur
+// qu'au moment où AGP lit effectivement la map, à l'exécution de la tâche de la variante release.
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        // buildConfigFields est nullable dans le type de l'API (nulle si buildFeatures.buildConfig
+        // est désactivé) ; ce module l'active explicitement (voir android.buildFeatures plus haut),
+        // donc jamais nul ici -- `?.` reste la façon idiomatique de le dire au compilateur sans `!!`.
+        variant.buildConfigFields?.put(
+            "BUILD_DATE",
+            providers.provider {
+                // Date du dernier commit. %cs = date de committer, format court ISO 8601, rendue
+                // dans le fuseau ENREGISTRÉ DANS LE COMMIT (pas celui de la machine qui compile) --
+                // deux machines dans des fuseaux différents, ou la même machine à deux instants
+                // différents, lisent donc la même date pour le même commit. Lecture faite via
+                // providers.exec (API Provider de Gradle, depuis 7.5), jamais Runtime.exec ni
+                // ProcessBuilder : un appel process brut est un input de build non déclaré, que le
+                // cache de configuration ne peut pas suivre (et refuse explicitement s'il est actif)
+                // ; providers.exec s'enregistre comme source de valeur trackée, donc compatible avec
+                // `--configuration-cache` si ce projet l'active un jour.
+                val gitCommitDate: String? = try {
+                    val gitLog = providers.exec {
+                        commandLine("git", "log", "-1", "--format=%cs")
+                        isIgnoreExitValue = true
+                    }
+                    if (gitLog.result.get().exitValue == 0) gitLog.standardOutput.asText.get().trim() else null
+                } catch (e: Exception) {
+                    // git absent du PATH, ou incapable de démarrer le process : on tente le repli
+                    // plutôt que d'échouer tout de suite, SOURCE_DATE_EPOCH peut très bien être
+                    // positionnée.
+                    null
+                }
+                // Repli si le dépôt git est indisponible (source distribuée hors d'un clone git,
+                // `git` absent du PATH...) : SOURCE_DATE_EPOCH, la variable d'environnement standard
+                // des builds reproductibles (https://reproducible-builds.org/docs/source-date-epoch/,
+                // secondes Unix, toujours en UTC) que F-Droid ou un autre orchestrateur peut
+                // positionner explicitement. Si ni git ni SOURCE_DATE_EPOCH ne répondent, le build
+                // ÉCHOUE avec un message explicite : mieux vaut un échec net qu'une date
+                // silencieusement fausse dans un APK dont la reproductibilité est justement ce qu'on
+                // vérifie -- une valeur "juste plausible" ici serait pire que pas de valeur du tout,
+                // elle passerait inaperçue jusqu'à l'échec de comparaison octet à octet chez F-Droid.
+                val date = gitCommitDate
+                    ?: providers.environmentVariable("SOURCE_DATE_EPOCH").orNull?.let { epoch ->
+                        DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT)
+                            .withZone(ZoneOffset.UTC)
+                            .format(Instant.ofEpochSecond(epoch.trim().toLong()))
+                    }
+                    ?: throw GradleException(
+                        "RIC-201 : impossible de déterminer BUILD_DATE pour le buildType release -- " +
+                            "`git log -1 --format=%cs` a échoué (pas un dépôt git, HEAD sans commit, " +
+                            "ou `git` introuvable dans PATH) et SOURCE_DATE_EPOCH n'est pas définie. " +
+                            "Lancer le build release depuis un clone git, ou positionner " +
+                            "SOURCE_DATE_EPOCH (secondes Unix UTC) si les sources sont distribuées " +
+                            "hors d'un dépôt git.",
+                    )
+                BuildConfigField("String", "\"$date\"", "RIC-201 : date du dernier commit (reproductibilité F-Droid)")
+            },
+        )
     }
 }
 
