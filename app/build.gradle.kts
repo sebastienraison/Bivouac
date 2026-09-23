@@ -1,4 +1,5 @@
 import com.android.build.api.variant.BuildConfigField
+import com.android.build.api.variant.impl.VariantOutputImpl
 import java.text.SimpleDateFormat
 import java.time.Instant
 import java.time.ZoneOffset
@@ -456,6 +457,27 @@ androidComponents {
                 BuildConfigField("String", "\"$date\"", "RIC-201 : date du dernier commit (reproductibilité F-Droid)")
             },
         )
+
+        // RIC-205 : la recette F-Droid calcule l'URL du binaire avec le gabarit
+        // .../releases/download/v%v/Bivouac-%v.apk, donc le fichier attaché à la Release GitHub doit
+        // s'appeler exactement Bivouac-<versionName>.apk. Le renommer à la main au moment de publier
+        // marche, mais un oubli casse silencieusement la publication de la version : Gradle produit
+        // donc directement le bon nom. L'API Variant est la seule façon stable de renommer une
+        // sortie avec AGP 9.x (archivesName n'a aucun effet sur le plugin application, et
+        // applicationVariants est l'ancienne API). Le suffixe -unsigned est reposé explicitement,
+        // parce qu'AGP remplace le nom au lieu de le compléter : sans lui, une release non signée
+        // (le cas de F-Droid, qui recompile sans clé) porterait le même nom qu'une release signée,
+        // exactement ce que le garde-fou de RIC-201 cherche à rendre visible.
+        variant.outputs.forEach { output ->
+            if (output is VariantOutputImpl) {
+                output.outputFileName.set(
+                    output.versionName.map { versionName ->
+                        val suffixeNonSigne = if (releaseSigningAvailable) "" else "-unsigned"
+                        "Bivouac-$versionName$suffixeNonSigne.apk"
+                    },
+                )
+            }
+        }
     }
 }
 
