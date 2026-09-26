@@ -48,6 +48,47 @@ documentée jusqu'ici, lancée depuis la racine, échouait sur un `ModuleNotFoun
 cd tools/i18n && python3 -m unittest test_generate_strings
 ```
 
+### Sortie ailleurs que `app/src/main/res` (`--out-dir`)
+
+```bash
+python3 tools/i18n/generate_strings.py docs/pilotage/i18n/strings-inventaire-v12.csv --out-dir /tmp/verif
+```
+
+Écrit `<REPERTOIRE>/values/strings.xml` et `<REPERTOIRE>/values-fr/strings.xml` au lieu des
+fichiers du dépôt. Comportement par défaut inchangé sans l'option (RIC-206) : sert à `check_generated.sh`
+et au test JVM `GeneratedStringsUpToDateTest` pour régénérer dans un répertoire jetable, jamais
+dans l'arbre du dépôt.
+
+## Vérifier qu'aucune édition manuelle n'a divergé de l'inventaire (fin de lot)
+
+```bash
+tools/i18n/check_generated.sh docs/pilotage/i18n/strings-inventaire-v12.csv
+```
+
+Régénère dans un répertoire temporaire (via `--out-dir`, jamais dans `app/src/main/res`), compare
+aux deux `strings.xml` committés, affiche un diff lisible en cas d'écart. Code de retour 1 s'il y a
+le moindre écart (édition manuelle non reportée dans l'inventaire, régénération oubliée après une
+correction du CSV...), 0 sinon.
+
+**À lancer en fin de lot**, avant de committer les `strings.xml` : c'est le contrôle qui aurait
+attrapé la régression qui a motivé RIC-206 : une correction posée à la main dans `strings.xml`,
+jamais reportée dans l'inventaire, qu'une régénération ultérieure aurait annulée en silence.
+
+L'en-tête « Source : ... » des fichiers générés ne porte que le NOM du fichier CSV (RIC-206,
+suite) : le chemin complet dépend du poste qui a généré (ex. `/home/<utilisateur>/...`), il n'a rien à faire
+dans un fichier commité du dépôt public. Peu importe donc sous quelle forme (absolue ou relative)
+le CSV est passé à `check_generated.sh` ou à `generate_strings.py` : seul son nom compte pour la
+comparaison et pour la régénération.
+
+Un second filet, JVM celui-là, tourne à chaque `./gradlew :app:testDebugUnitTest` :
+`GeneratedStringsUpToDateTest` (`app/src/test/java/com/bivouac/app/i18n/`) lit l'en-tête « Source :
+... » des fichiers générés pour retrouver le nom du CSV, le cherche dans le répertoire donné par la
+propriété système `bivouac.i18n.inventoryDir` (elle-même transmise depuis une propriété de projet
+`-Pbivouac.i18n.inventoryDir=...` ou la variable d'environnement `BIVOUAC_I18N_INVENTORY_DIR`,
+câblé dans `app/build.gradle.kts`), à défaut dans `<racine du dépôt>/docs/pilotage/i18n/`. Introuvable
+(poste sans l'inventaire, worktree isolé du dépôt principal, CI) ou `python3` absent : le test est
+`Assume`-ignoré avec un message explicite, jamais vert en silence ni rouge à tort.
+
 ## Vérifier ce qui reste en dur
 
 ```bash

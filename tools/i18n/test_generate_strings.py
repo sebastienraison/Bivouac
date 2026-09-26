@@ -153,5 +153,54 @@ class ErrorPathTest(unittest.TestCase):
         self.assertNotIn("<plurals", fr_xml)
 
 
+class OutDirOptionTest(unittest.TestCase):
+    """RIC-206 : --out-dir permet d'ecrire ailleurs que app/src/main/res, sans toucher au
+    comportement par defaut. Utilise par check_generated.sh et par le test JVM de non-regression
+    pour regenerer dans un repertoire temporaire, jamais dans l'arbre du depot."""
+
+    def test_parse_args_sans_out_dir(self) -> None:
+        self.assertEqual(g.parse_args(["prog", "inventaire.csv"]), ("inventaire.csv", None))
+
+    def test_parse_args_avec_out_dir(self) -> None:
+        self.assertEqual(
+            g.parse_args(["prog", "inventaire.csv", "--out-dir", "/tmp/sortie"]),
+            ("inventaire.csv", "/tmp/sortie"),
+        )
+
+    def test_parse_args_out_dir_sans_valeur_est_invalide(self) -> None:
+        self.assertIsNone(g.parse_args(["prog", "inventaire.csv", "--out-dir"]))
+
+    def test_parse_args_sans_csv_est_invalide(self) -> None:
+        self.assertIsNone(g.parse_args(["prog"]))
+        self.assertIsNone(g.parse_args(["prog", "--out-dir", "/tmp/sortie"]))
+
+    def test_main_avec_out_dir_ecrit_hors_de_res(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "sortie"
+            rc = g.main(["prog", str(SAMPLE_CSV), "--out-dir", str(out_dir)])
+            self.assertEqual(rc, 0)
+            en_path = out_dir / "values" / "strings.xml"
+            fr_path = out_dir / "values-fr" / "strings.xml"
+            self.assertTrue(en_path.is_file())
+            self.assertTrue(fr_path.is_file())
+            self.assertIn('<string name="app_name">Bivouac</string>', en_path.read_text(encoding="utf-8"))
+
+
+class SourceLabelTest(unittest.TestCase):
+    """RIC-206 (suite) : l'en-tete "Source : ..." ne porte QUE le nom de fichier de l'inventaire,
+    jamais son chemin -- un chemin complet (ex. /home/<utilisateur>/...) fuiterait un chemin personnel dans
+    un fichier commite du depot public."""
+
+    def test_source_label_est_le_nom_de_fichier_seul(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "sortie"
+            rc = g.main(["prog", str(SAMPLE_CSV.resolve()), "--out-dir", str(out_dir)])
+            self.assertEqual(rc, 0)
+            en_xml = (out_dir / "values" / "strings.xml").read_text(encoding="utf-8")
+            self.assertIn(f"Source : {SAMPLE_CSV.name}", en_xml)
+            self.assertNotIn(str(SAMPLE_CSV.resolve().parent), en_xml)
+            self.assertNotIn("/home/", en_xml)
+
+
 if __name__ == "__main__":
     unittest.main()

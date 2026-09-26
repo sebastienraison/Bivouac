@@ -337,6 +337,17 @@ android {
                 // to interact with raw FileDescriptor internals", 242 tests sur 520). add-exports et
                 // pas add-opens : c'est l'accès à la classe qui manque, pas la réflexion profonde.
                 test.jvmArgs("--add-exports", "java.base/jdk.internal.access=ALL-UNNAMED")
+
+                // RIC-206 : transmet au test JVM ou trouver l'inventaire i18n hors depot
+                // (docs/pilotage/i18n/, gitignore -- absent des worktrees et de tout CI). Propriete
+                // de projet d'abord (./gradlew -Pbivouac.i18n.inventoryDir=... testDebugUnitTest),
+                // sinon la variable d'environnement du meme nom ; absentes des deux, le test
+                // GeneratedStringsUpToDateTest retombe sur <racine du depot>/docs/pilotage/i18n/.
+                val i18nInventoryDir = (project.findProperty("bivouac.i18n.inventoryDir") as String?)
+                    ?: System.getenv("BIVOUAC_I18N_INVENTORY_DIR")
+                if (i18nInventoryDir != null) {
+                    test.systemProperty("bivouac.i18n.inventoryDir", i18nInventoryDir)
+                }
             }
         }
 
