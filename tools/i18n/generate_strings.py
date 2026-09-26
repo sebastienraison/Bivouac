@@ -238,7 +238,7 @@ HEADER_TEMPLATE = """<?xml version="1.0" encoding="utf-8"?>
     Source : {source} (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py {source}
+        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/{source}
 
     Voir tools/i18n/README.md.
 -->
@@ -248,7 +248,10 @@ HEADER_TEMPLATE = """<?xml version="1.0" encoding="utf-8"?>
 # RIC-191 : chemin de l'inventaire reellement utilise, et non un "v4" fige dans le script. Les
 # fichiers generes annoncaient encore v4 alors que les lots 1 et 2 avaient regenere depuis v6 :
 # un en-tete faux envoie corriger le mauvais fichier.
-DEFAULT_SOURCE_LABEL = "docs/pilotage/i18n/strings-inventaire.csv"
+# RIC-206 (suite) : seul le NOM de fichier, jamais un chemin -- le chemin complet de l'inventaire
+# est celui du poste qui a genere (ex. /home/<utilisateur>/...), il n'a rien a faire dans un fichier commite
+# du depot public. La commande d'exemple ci-dessus montre un dossier generique a la place.
+DEFAULT_SOURCE_LABEL = "strings-inventaire.csv"
 
 FOOTER = "</resources>\n"
 
@@ -343,12 +346,11 @@ def main(argv: list[str]) -> int:
     repo_root = Path(__file__).resolve().parents[2]
     res_dir = Path(out_dir_arg) if out_dir_arg is not None else repo_root / "app" / "src" / "main" / "res"
 
-    # Chemin tel qu'il a ete tape, releve au depot quand c'est possible : c'est ce que l'en-tete des
-    # fichiers generes montrera a qui voudra les corriger.
-    try:
-        source_label = str(csv_path.resolve().relative_to(repo_root))
-    except ValueError:
-        source_label = str(csv_path)
+    # Seul le nom de fichier va dans l'en-tete, jamais le chemin complet : le chemin depend du poste
+    # qui a genere (ex. /home/<utilisateur>/... hors du depot, ce que RIC-206 a corrige), le nom de fichier
+    # seul suffit a retrouver l'inventaire dans docs/pilotage/i18n/ et ne fuite aucun chemin
+    # personnel dans un fichier commite.
+    source_label = csv_path.name
 
     try:
         en_xml, fr_xml = generate(csv_path, source_label)

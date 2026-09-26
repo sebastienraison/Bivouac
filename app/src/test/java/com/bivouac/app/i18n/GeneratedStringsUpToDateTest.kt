@@ -28,10 +28,10 @@ import org.junit.Test
  *   3. a defaut, `<racine du depot>/docs/pilotage/i18n/`
  *
  * Le NOM du CSV a chercher dans ce repertoire n'est pas fige ici : il est lu dans l'en-tete
- * "Source : ..." des fichiers generes committes, qui porte le chemin utilise a la derniere
- * generation (voir generate_strings.py). On en garde juste le nom de fichier (basename) : le
- * repertoire, lui, vient des trois pistes ci-dessus, pas du chemin absolu ecrit dans l'en-tete
- * (qui est celui du poste qui a genere, pas forcement celui qui fait tourner le test).
+ * "Source : ..." des fichiers generes committes (generate_strings.py n'y ecrit QUE le nom de
+ * fichier depuis RIC-206, jamais un chemin complet -- un chemin de poste, ex. /home/<utilisateur>/..., n'a
+ * rien a faire dans un fichier commite du depot public). Le repertoire, lui, vient des trois
+ * pistes ci-dessus, jamais de l'en-tete.
  */
 class GeneratedStringsUpToDateTest {
 
@@ -54,9 +54,9 @@ class GeneratedStringsUpToDateTest {
         val line = strings.readLines(Charsets.UTF_8)
             .firstOrNull { it.trimStart().startsWith("Source :") }
         checkNotNull(line) { "En-tete 'Source : ...' introuvable dans ${strings.absolutePath}." }
-        // "    Source : /chemin/vers/strings-inventaire-v12.csv (inventaire de l'agent..." -- le
-        // chemin est le premier token apres "Source :", sans espace (noms de fichiers en
-        // kebab-case dans ce depot).
+        // "    Source : strings-inventaire-v12.csv (inventaire de l'agent..." -- juste un nom de
+        // fichier depuis RIC-206 (suite), premier token apres "Source :". File(...).name reste un
+        // filet si un fichier plus ancien porte encore un chemin complet (avant ce correctif).
         val path = line.substringAfter("Source :").trim().substringBefore(' ')
         return File(path).name
     }

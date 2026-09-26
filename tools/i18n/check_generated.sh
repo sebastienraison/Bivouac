@@ -14,9 +14,9 @@
 # inventaire modifie sans regeneration...), 0 si les fichiers committes correspondent exactement
 # a une regeneration depuis ce CSV.
 #
-# Le CSV doit etre le meme, sous la meme forme (absolue ou relative au depot), que celui utilise
-# pour la derniere generation committee : l'en-tete "Source : ..." des fichiers generes en depend,
-# un chemin ecrit differemment (relatif vs absolu) produirait un ecart sur cette seule ligne.
+# L'en-tete "Source : ..." des fichiers generes ne porte que le NOM du fichier CSV, jamais son
+# chemin complet (RIC-206, suite) : peu importe donc sous quelle forme (absolue ou relative) le
+# CSV est passe ici, seul son nom compte pour la comparaison.
 
 set -euo pipefail
 

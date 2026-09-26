@@ -74,9 +74,11 @@ correction du CSV...), 0 sinon.
 attrapé la régression qui a motivé RIC-206 : une correction posée à la main dans `strings.xml`,
 jamais reportée dans l'inventaire, qu'une régénération ultérieure aurait annulée en silence.
 
-Le CSV passé doit être écrit sous la même forme (absolue ou relative au dépôt) que celui utilisé à
-la dernière génération committée : l'en-tête « Source : ... » des fichiers générés en dépend, un
-chemin simplement reformulé produirait un écart sur cette seule ligne.
+L'en-tête « Source : ... » des fichiers générés ne porte que le NOM du fichier CSV (RIC-206,
+suite) : le chemin complet dépend du poste qui a généré (ex. `/home/<utilisateur>/...`), il n'a rien à faire
+dans un fichier commité du dépôt public. Peu importe donc sous quelle forme (absolue ou relative)
+le CSV est passé à `check_generated.sh` ou à `generate_strings.py` : seul son nom compte pour la
+comparaison et pour la régénération.
 
 Un second filet, JVM celui-là, tourne à chaque `./gradlew :app:testDebugUnitTest` :
 `GeneratedStringsUpToDateTest` (`app/src/test/java/com/bivouac/app/i18n/`) lit l'en-tête « Source :

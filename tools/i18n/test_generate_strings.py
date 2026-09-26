@@ -186,5 +186,21 @@ class OutDirOptionTest(unittest.TestCase):
             self.assertIn('<string name="app_name">Bivouac</string>', en_path.read_text(encoding="utf-8"))
 
 
+class SourceLabelTest(unittest.TestCase):
+    """RIC-206 (suite) : l'en-tete "Source : ..." ne porte QUE le nom de fichier de l'inventaire,
+    jamais son chemin -- un chemin complet (ex. /home/<utilisateur>/...) fuiterait un chemin personnel dans
+    un fichier commite du depot public."""
+
+    def test_source_label_est_le_nom_de_fichier_seul(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "sortie"
+            rc = g.main(["prog", str(SAMPLE_CSV.resolve()), "--out-dir", str(out_dir)])
+            self.assertEqual(rc, 0)
+            en_xml = (out_dir / "values" / "strings.xml").read_text(encoding="utf-8")
+            self.assertIn(f"Source : {SAMPLE_CSV.name}", en_xml)
+            self.assertNotIn(str(SAMPLE_CSV.resolve().parent), en_xml)
+            self.assertNotIn("/home/", en_xml)
+
+
 if __name__ == "__main__":
     unittest.main()
