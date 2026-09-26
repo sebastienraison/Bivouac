@@ -302,18 +302,46 @@ def generate(csv_path: Path, source_label: str | None = None) -> tuple[str, str]
     return render_resources(entries, "en", label), render_resources(entries, "fr", label)
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print(f"Usage : {argv[0]} chemin/vers/inventaire.csv", file=sys.stderr)
-        return 2
+def parse_args(argv: list[str]) -> tuple[str, str | None] | None:
+    """Coupe argv en (chemin_csv, out_dir | None). None si les arguments sont invalides.
 
-    csv_path = Path(argv[1])
+    --out-dir REPERTOIRE (RIC-206) : ecrit values/strings.xml et values-fr/strings.xml sous ce
+    repertoire au lieu de app/src/main/res -- utilise par check_generated.sh et par le test JVM
+    StringsGeneratedUpToDateTest pour regenerer dans un repertoire temporaire, jamais dans
+    l'arbre du depot. Absent, le comportement par defaut est inchange.
+    """
+    args = argv[1:]
+    positional: list[str] = []
+    out_dir: str | None = None
+    i = 0
+    while i < len(args):
+        if args[i] == "--out-dir":
+            if i + 1 >= len(args):
+                return None
+            out_dir = args[i + 1]
+            i += 2
+        else:
+            positional.append(args[i])
+            i += 1
+    if len(positional) != 1:
+        return None
+    return positional[0], out_dir
+
+
+def main(argv: list[str]) -> int:
+    parsed = parse_args(argv)
+    if parsed is None:
+        print(f"Usage : {argv[0]} chemin/vers/inventaire.csv [--out-dir REPERTOIRE]", file=sys.stderr)
+        return 2
+    csv_arg, out_dir_arg = parsed
+
+    csv_path = Path(csv_arg)
     if not csv_path.is_file():
         print(f"Introuvable : {csv_path}", file=sys.stderr)
         return 2
 
     repo_root = Path(__file__).resolve().parents[2]
-    res_dir = repo_root / "app" / "src" / "main" / "res"
+    res_dir = Path(out_dir_arg) if out_dir_arg is not None else repo_root / "app" / "src" / "main" / "res"
 
     # Chemin tel qu'il a ete tape, releve au depot quand c'est possible : c'est ce que l'en-tete des
     # fichiers generes montrera a qui voudra les corriger.
@@ -330,6 +358,7 @@ def main(argv: list[str]) -> int:
 
     en_path = res_dir / "values" / "strings.xml"
     fr_path = res_dir / "values-fr" / "strings.xml"
+    en_path.parent.mkdir(parents=True, exist_ok=True)
     fr_path.parent.mkdir(parents=True, exist_ok=True)
     en_path.write_text(en_xml, encoding="utf-8")
     fr_path.write_text(fr_xml, encoding="utf-8")
