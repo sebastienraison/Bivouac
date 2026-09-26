@@ -555,10 +555,27 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
             // RIC-127 : exécuté à chaque démarrage à froid : sans ce filet, une session
             // auto-sauvegardée devenue illisible bloquerait le lancement de l'app. Distinct de
             // "rien à restaurer" (restored == null sans exception, cas normal -> Idle).
+            //
+            // RIC-200 : un échec ici n'écrase plus tout l'écran (GpxImportUiState.Error masquait
+            // la banque, pourtant intacte, sans bouton de retour) : il se traite comme "rien à
+            // restaurer" (Idle), avec ce même popup non bloquant que bankOpenError ci-dessus
+            // (RIC-127) plutôt qu'un nouveau mécanisme.
             val result = runCatching { withContext(Dispatchers.IO) { repository.loadLast() } }
-            if (result.isFailure) {
-                Log.e("GpxImportViewModel", "Échec de la restauration de la session précédente", result.exceptionOrNull())
-                _uiState.value = GpxImportUiState.Error(string(R.string.journal_error_track_unreadable))
+            val error = result.exceptionOrNull()
+            if (error != null) {
+                Log.e("GpxImportViewModel", "Échec de la restauration de la session précédente", error)
+                // Fichier absent (FileNotFoundException) ou GPX que GpxParser refuse de lire
+                // (toujours enveloppé en IOException, voir GpxParser.parse) : rien à retenter, la
+                // ligne singleton est purgée pour que ce message ne revienne pas à chaque
+                // démarrage. Toute autre exception (accès disque transitoire...) n'est pas la
+                // preuve que le fichier est perdu : ne pas y toucher, seul le log ci-dessus la
+                // distingue.
+                if (error is IOException) {
+                    runCatching { withContext(Dispatchers.IO) { repository.clear() } }
+                        .onFailure { Log.e("GpxImportViewModel", "Échec de la purge de la session illisible", it) }
+                }
+                _uiState.value = GpxImportUiState.Idle
+                _bankOpenError.value = string(R.string.gpximport_restore_failed_message)
                 return@launch
             }
             val restored = result.getOrNull()

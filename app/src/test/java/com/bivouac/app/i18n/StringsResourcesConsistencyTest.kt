@@ -172,7 +172,8 @@ class StringsResourcesConsistencyTest {
         // Le compte exact n'est pas le sujet : ce garde-fou attrape une génération vide ou
         // tronquée, pas un écart d'une clé. Il se met à jour quand un lot bouge l'inventaire.
         // RIC-193 (v10) : inventaire à 393 lignes (v9) + 1 (gpximport_rename_dialog_title, RIC-193 c).
-        val minimumAttendu = 393 + 1
+        // RIC-200 (v12) : + 1 (gpximport_restore_failed_message).
+        val minimumAttendu = 393 + 1 + 1
         if (enResources.size < minimumAttendu) {
             fail("Seulement ${enResources.size} ressources générées, au moins $minimumAttendu attendues.")
         }
