@@ -214,7 +214,7 @@ class BivouacDatabaseMigrationTest {
 
         val migrated = helper.runMigrationsAndValidate(
             testDbName,
-            11,
+            BivouacDatabase.SCHEMA_VERSION,
             true,
             BivouacDatabase.MIGRATION_1_2,
             BivouacDatabase.MIGRATION_2_5,
@@ -224,6 +224,13 @@ class BivouacDatabaseMigrationTest {
             BivouacDatabase.MIGRATION_8_9,
             BivouacDatabase.migration9To10(targetContext),
             BivouacDatabase.MIGRATION_10_11,
+            BivouacDatabase.MIGRATION_11_12,
+            BivouacDatabase.MIGRATION_12_13,
+            BivouacDatabase.MIGRATION_13_14,
+            BivouacDatabase.MIGRATION_14_15,
+            BivouacDatabase.MIGRATION_15_16,
+            BivouacDatabase.MIGRATION_16_17,
+            BivouacDatabase.MIGRATION_17_18,
         )
 
         // RIC-97 : la ligne saved_track née en v1 avec gpxContent en colonne doit ressortir avec
@@ -272,6 +279,40 @@ class BivouacDatabaseMigrationTest {
         migrated.query("SELECT note FROM logged_track WHERE id = 'track-1'").use { cursor ->
             assertTrue(cursor.moveToFirst())
             assertEquals("", cursor.getString(0))
+        }
+
+        // logged_track_photo (MIGRATION_14_15) est la seule table apparue entre la v11 où ce test
+        // s'arrêtait et la version courante : elle doit exister, accepter toutes ses colonnes, et
+        // appliquer les DEFAULT posés par MIGRATION_16_17/MIGRATION_17_18 (storageMode,
+        // rotationQuarterTurns, shownOnMap) sur une ligne qui ne les énumère pas.
+        migrated.query("SELECT COUNT(*) FROM logged_track_photo").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        migrated.execSQL(
+            "INSERT INTO logged_track_photo (trackId, filePath, addedAtMillis, " +
+                "positionApproximate, contentHash) " +
+                "VALUES ('track-1', 'photos/track-1-abc.jpg', 1780300900000, 0, 'abc123')",
+        )
+        migrated.query(
+            "SELECT filePath, storageMode, rotationQuarterTurns, shownOnMap FROM logged_track_photo " +
+                "WHERE contentHash = 'abc123'",
+        ).use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("photos/track-1-abc.jpg", cursor.getString(0))
+            assertEquals("FULL", cursor.getString(1))
+            assertEquals(0, cursor.getInt(2))
+            assertEquals(1, cursor.getInt(3))
+        }
+
+        // La cascade FK (posée dès MIGRATION_14_15) doit toujours jouer à la version courante :
+        // supprimer la sortie parente emporte sa photo.
+        migrated.execSQL("PRAGMA foreign_keys = ON")
+        migrated.execSQL("DELETE FROM logged_track WHERE id = 'track-1'")
+        migrated.query("SELECT COUNT(*) FROM logged_track_photo").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
         }
 
         migrated.close()
