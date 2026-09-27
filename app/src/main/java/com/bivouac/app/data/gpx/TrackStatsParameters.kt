@@ -45,7 +45,10 @@ data class TrackStatsParameters(
          * Version des statistiques dérivées (distance, D+, D-, agrégats de segments) produites avec
          * [DEFAULT]. La monter déclenchera le rattrapage des valeurs stockées, sans migration de
          * schéma : c'est le lot 2 de RIC-114 qui la consomme.
+         *
+         * v2 : ajout des totaux par jour (distanceMeters/elevationGainMeters/elevationLossMeters sur
+         * logged_track_day, RIC-207), sans changement de calcul.
          */
-        const val ALGORITHM_VERSION = 1
+        const val ALGORITHM_VERSION = 2
     }
 }

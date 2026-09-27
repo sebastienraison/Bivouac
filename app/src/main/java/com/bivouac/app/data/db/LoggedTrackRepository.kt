@@ -66,6 +66,13 @@ data class PreparedDay(
     // fixtures de test qui n'ont rien à voir avec RIC-19 (voir RepositoryBackupCycleTest).
     val maxElevationMeters: Double? = null,
     val lastPointElevationMeters: Double? = null,
+    // RIC-207 : totaux du jour (distance, D+, D-), calculés ici pendant que track.points est déjà
+    // parsé, même raisonnement que segmentAggregate/maxElevationMeters ci-dessus : voir
+    // LoggedTrackDayEntity. Défaut à null comme maxElevationMeters : un appelant de test qui les
+    // omet obtient un jour "totaux pas encore calculés", cas déjà légitime par ailleurs.
+    val distanceMeters: Double? = null,
+    val elevationGainMeters: Double? = null,
+    val elevationLossMeters: Double? = null,
 )
 
 // Une trace du Journal ouverte pour affichage : [track] est l'ensemble des jours concaténés (la
@@ -299,7 +306,8 @@ class LoggedTrackRepository(context: Context) {
             pointCount = ordered.sumOf { (_, track) -> track.points.size },
             estimatedDurationMinutes = dayStats.sumOf { it.estimatedDurationMinutes },
         )
-        val days = ordered.map { (rawGpx, track) ->
+        val days = ordered.mapIndexed { index, (rawGpx, track) ->
+            val stats = dayStats[index]
             PreparedDay(
                 rawGpx = rawGpx,
                 contentHash = sha256(rawGpx),
@@ -308,6 +316,12 @@ class LoggedTrackRepository(context: Context) {
                 segmentAggregate = DaySegmentAggregate.of(TrackSegmenter.segment(track.points)),
                 maxElevationMeters = track.points.mapNotNull { it.elevationMeters }.maxOrNull(),
                 lastPointElevationMeters = track.points.lastOrNull()?.elevationMeters,
+                // RIC-207 : mêmes stats par jour que celles sommées juste au-dessus pour
+                // entity.distanceMeters/elevationGainMeters/elevationLossMeters : la somme des
+                // jours égale le total par construction, pas de calcul indépendant.
+                distanceMeters = stats.distanceMeters,
+                elevationGainMeters = stats.elevationGainMeters,
+                elevationLossMeters = stats.elevationLossMeters,
             )
         }
         return PreparedImport(entity, days)
@@ -389,6 +403,9 @@ class LoggedTrackRepository(context: Context) {
                 maxElevationMeters = day.maxElevationMeters,
                 lastPointElevationMeters = day.lastPointElevationMeters,
                 elevationBackfilled = true,
+                distanceMeters = day.distanceMeters,
+                elevationGainMeters = day.elevationGainMeters,
+                elevationLossMeters = day.elevationLossMeters,
             )
         }
         try {

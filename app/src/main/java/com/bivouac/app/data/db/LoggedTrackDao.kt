@@ -9,15 +9,22 @@ import com.bivouac.app.data.gpx.DaySegmentAggregate
 import com.bivouac.app.data.photo.PhotoStorageMode
 
 // RIC-114 lot 2 : ce qu'un jour a besoin d'écrire pendant le rattrapage des statistiques (voir
-// LoggedTrackBackfill.runStats) : mêmes onze colonnes que updateDayDenormalizedFields ci-dessous,
+// LoggedTrackBackfill.runStats) : mêmes colonnes que updateDayDenormalizedFields ci-dessous,
 // regroupées ici pour que applyStatsBackfill applique une liste entière dans une seule transaction
 // avec la trace, plutôt qu'un appel par jour éclaté à l'appelant.
+//
+// RIC-207 : distanceMeters/elevationGainMeters/elevationLossMeters rejoignent l'aggregate de
+// segments ci-dessous : les totaux du jour, calculés dans la même passe (backfillStatsOne a déjà
+// TrackStatsCalculator.compute pour ce jour, avant même de construire cette mise à jour).
 data class DayStatsUpdate(
     val id: Long,
     val contentHash: String,
     val startedAtMillis: Long?,
     val elapsedSeconds: Long?,
     val aggregate: DaySegmentAggregate,
+    val distanceMeters: Double,
+    val elevationGainMeters: Double,
+    val elevationLossMeters: Double,
 )
 
 @Dao
@@ -49,12 +56,18 @@ interface LoggedTrackDao {
     @Query("SELECT COUNT(*) FROM logged_track_day WHERE stoppedHours IS NULL")
     suspend fun countDaysNeedingBackfill(): Int
 
+    // RIC-207 : distanceMeters/elevationGainMeters/elevationLossMeters par défaut à null, jamais
+    // écrits par le rattrapage RIC-109/115 (voir LoggedTrackBackfill.writeDenormalizedFields, qui ne
+    // calcule que l'agrégat de segments) : seul backfillStatsOne (RIC-114/207) les connaît, via
+    // applyStatsBackfill ci-dessous.
     @Query(
         "UPDATE logged_track_day SET contentHash = :contentHash, startedAtMillis = :startedAtMillis, " +
             "elapsedSeconds = :elapsedSeconds, flatCount = :flatCount, " +
             "flatDistanceMeters = :flatDistanceMeters, flatHours = :flatHours, steepCount = :steepCount, " +
             "steepDistanceMeters = :steepDistanceMeters, steepGainMeters = :steepGainMeters, " +
-            "steepHours = :steepHours, stoppedHours = :stoppedHours WHERE id = :id",
+            "steepHours = :steepHours, stoppedHours = :stoppedHours, distanceMeters = :distanceMeters, " +
+            "elevationGainMeters = :elevationGainMeters, elevationLossMeters = :elevationLossMeters " +
+            "WHERE id = :id",
     )
     suspend fun updateDayDenormalizedFields(
         id: Long,
@@ -69,6 +82,9 @@ interface LoggedTrackDao {
         steepGainMeters: Double,
         steepHours: Double,
         stoppedHours: Double,
+        distanceMeters: Double? = null,
+        elevationGainMeters: Double? = null,
+        elevationLossMeters: Double? = null,
     )
 
     // RIC-114 lot 2 : statsVersion < version, pas une colonne IS NULL (voir LoggedTrackEntity.
@@ -125,6 +141,9 @@ interface LoggedTrackDao {
                 steepGainMeters = day.aggregate.steepGainMeters,
                 steepHours = day.aggregate.steepHours,
                 stoppedHours = day.aggregate.stoppedHours,
+                distanceMeters = day.distanceMeters,
+                elevationGainMeters = day.elevationGainMeters,
+                elevationLossMeters = day.elevationLossMeters,
             )
         }
         updateTrackStats(

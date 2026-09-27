@@ -272,14 +272,22 @@ object LoggedTrackBackfill {
         // Durée recalculée avec SpeedCalibration.DEFAULT (conception §5.3) : jamais affichée telle
         // quelle (tous les affichages repassent par recomputeDuration sous la calibration active),
         // elle doit seulement rester cohérente avec les trois autres colonnes.
+        //
+        // RIC-207 : distance/D+/D- de dayStats deviennent aussi les totaux stockés du jour
+        // (DayStatsUpdate.distanceMeters et consorts) : la somme de ces totaux par jour reste par
+        // construction égale à la somme passée à applyStatsBackfill pour la trace ci-dessous, ce qui
+        // est exactement l'invariant "somme des jours == total de la rando".
         val dayStats = parsed.map { TrackStatsCalculator.compute(it.points, SpeedCalibration.DEFAULT) }
-        val dayUpdates = parsed.map { p ->
+        val dayUpdates = parsed.zip(dayStats).map { (p, stats) ->
             DayStatsUpdate(
                 id = p.day.id,
                 contentHash = p.contentHash,
                 startedAtMillis = p.startedAtMillis,
                 elapsedSeconds = p.elapsedSeconds,
                 aggregate = DaySegmentAggregate.of(TrackSegmenter.segment(p.points)),
+                distanceMeters = stats.distanceMeters,
+                elevationGainMeters = stats.elevationGainMeters,
+                elevationLossMeters = stats.elevationLossMeters,
             )
         }
         dao.applyStatsBackfill(
