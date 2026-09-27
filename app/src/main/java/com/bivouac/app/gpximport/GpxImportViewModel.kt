@@ -16,6 +16,7 @@ import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.TrackStats
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.BivouacPoint
+import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrackPoint
@@ -107,10 +108,16 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         applyDragPreview(points, preview)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val segments: StateFlow<List<Segment>> = combine(_uiState, effectiveBivouacPoints, activeCalibration) { state, points, calibration ->
+    // RIC-114 : les bornes suivent le glissement en cours (effectiveBivouacPoints), mais les
+    // coupures de la série restent celles des bivouacs VALIDÉS, comme le total (Loaded.stats) et
+    // le profil : segments et total lisent ainsi toujours la même série, et leur somme tombe
+    // exactement sur le total, glissement en cours compris.
+    val segments: StateFlow<List<Segment>> = combine(
+        _uiState, _bivouacPoints, effectiveBivouacPoints, activeCalibration,
+    ) { state, committed, points, calibration ->
         val track = (state as? GpxImportUiState.Loaded)?.track
         if (track == null || points.isEmpty()) return@combine emptyList()
-        computeSegments(track.points, points, calibration)
+        planificationSegments(track.points, committed, points, calibration)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // --- Banque de traces ---
@@ -297,7 +304,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
                 return@launch
             }
             val (track, points) = opened
-            _uiState.value = GpxImportUiState.Loaded(track, TrackStatsCalculator.compute(track.points, activeCalibration.value))
+            _uiState.value = GpxImportUiState.Loaded(track, computeTotalStats(track.points, points))
             _bivouacPoints.value = points
             _currentBankedId.value = id
             _dirty.value = false
@@ -467,7 +474,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         }
         _uiState.value = GpxImportUiState.Loaded(
             plan.track,
-            TrackStatsCalculator.compute(plan.track.points, activeCalibration.value),
+            computeTotalStats(plan.track.points, plan.bivouacPoints),
         )
         _bivouacPoints.value = plan.bivouacPoints
         _currentBankedId.value = null
@@ -509,7 +516,9 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
                             // et remplacé à l'écran par journal_error_track_unreadable. Il ne
                             // remonte qu'au logcat, il n'a pas à être traduit (RIC-191).
                             ?: throw IOException("Impossible d'ouvrir le fichier sélectionné")
-                        track to TrackStatsCalculator.compute(track.points, activeCalibration.value)
+                        // Aucun bivouac à l'import, donc aucune coupure : même appel que
+                        // computeTotalStats avec une liste vide.
+                        track to computeTotalStats(track.points, emptyList())
                     }
                 }
                 _uiState.value = result.fold(
@@ -584,7 +593,7 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
                 return@launch
             }
             val (track, points, bankedId) = restored
-            _uiState.value = GpxImportUiState.Loaded(track, TrackStatsCalculator.compute(track.points, activeCalibration.value))
+            _uiState.value = GpxImportUiState.Loaded(track, computeTotalStats(track.points, points))
             _bivouacPoints.value = points
             _currentBankedId.value = bankedId
             _dirty.value = false
@@ -596,21 +605,26 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
         if (current.any { it.trackPointIndex == trackPointIndex }) return
         _bivouacPoints.value = (current + BivouacPoint(UUID.randomUUID().toString(), trackPointIndex))
             .sortedBy { it.trackPointIndex }
+        refreshTotalStatsIfBreaksChanged(current)
         _dirty.value = true
         persistCurrentState()
     }
 
     fun removeBivouacPoint(id: String) {
-        _bivouacPoints.value = _bivouacPoints.value.filterNot { it.id == id }
+        val previous = _bivouacPoints.value
+        _bivouacPoints.value = previous.filterNot { it.id == id }
+        refreshTotalStatsIfBreaksChanged(previous)
         _dirty.value = true
         persistCurrentState()
     }
 
     fun moveBivouacPoint(id: String, newTrackPointIndex: Int) {
         _dragPreview.value = null
-        _bivouacPoints.value = _bivouacPoints.value
+        val previous = _bivouacPoints.value
+        _bivouacPoints.value = previous
             .map { if (it.id == id) it.copy(trackPointIndex = newTrackPointIndex) else it }
             .sortedBy { it.trackPointIndex }
+        refreshTotalStatsIfBreaksChanged(previous)
         _dirty.value = true
         persistCurrentState()
     }
@@ -649,11 +663,50 @@ class GpxImportViewModel(application: Application) : AndroidViewModel(applicatio
             .sortedBy { it.trackPointIndex }
     }
 
-    private fun computeSegments(points: List<TrackPoint>, bivouacs: List<BivouacPoint>, calibration: SpeedCalibration): List<Segment> {
-        val boundaries = listOf(0) + bivouacs.map { it.trackPointIndex } + listOf(points.lastIndex)
-        return boundaries.zipWithNext { start, end ->
-            val segmentPoints = points.subList(start, end + 1)
-            Segment(segmentPoints, TrackStatsCalculator.compute(segmentPoints, calibration))
-        }
+    private fun computeTotalStats(points: List<TrackPoint>, bivouacs: List<BivouacPoint>): TrackStats =
+        planificationTotalStats(points, bivouacs, activeCalibration.value)
+
+    /**
+     * RIC-114 : Loaded.stats est un instantané pris à l'ouverture, mais ses coupures dépendent des
+     * bivouacs : retirer ou déplacer celui d'une coupure d'enregistrement change la série. Sans ce
+     * recalcul, la somme des segments (qui suivent les bivouacs) ne tomberait plus sur le total.
+     * Rien n'est recalculé quand les coupures ne changent pas, le cas courant.
+     */
+    private fun refreshTotalStatsIfBreaksChanged(previous: List<BivouacPoint>) {
+        val state = _uiState.value as? GpxImportUiState.Loaded ?: return
+        val points = state.track.points
+        if (planificationSeriesBreaks(points, previous) == planificationSeriesBreaks(points, _bivouacPoints.value)) return
+        _uiState.value = state.copy(stats = computeTotalStats(points, _bivouacPoints.value))
     }
 }
+
+/**
+ * RIC-114 : statistiques d'un segment de Planification = plage d'index de la série commune de la
+ * trace ENTIÈRE, et non plus un `compute` sur chaque sous-liste (qui relissait chaque segment
+ * séparément, bords tronqués à chaque bivouac) : les deltas se partitionnent et la distance se
+ * télescope, donc la somme des segments égale [planificationTotalStats], exactement. Coupures de
+ * la série : celles des bivouacs validés [committed] ; bornes : [bivouacs], glissement en cours
+ * compris (voir GpxImportViewModel.segments). Pur, pour être testé sans ViewModel.
+ */
+internal fun planificationSegments(
+    points: List<TrackPoint>,
+    committed: List<BivouacPoint>,
+    bivouacs: List<BivouacPoint>,
+    calibration: SpeedCalibration,
+): List<Segment> {
+    val series = TrackStatsCalculator.series(points, planificationSeriesBreaks(points, committed))
+    val boundaries = listOf(0) + bivouacs.map { it.trackPointIndex } + listOf(points.lastIndex)
+    return boundaries.zipWithNext { start, end ->
+        Segment(points.subList(start, end + 1), series.statsBetween(start, end, calibration))
+    }
+}
+
+/** RIC-114 : le total de la Planification, sur la même série que les segments et le profil. */
+internal fun planificationTotalStats(
+    points: List<TrackPoint>,
+    bivouacs: List<BivouacPoint>,
+    calibration: SpeedCalibration,
+): TrackStats = TrackStatsCalculator.compute(points, calibration, planificationSeriesBreaks(points, bivouacs))
+
+private fun planificationSeriesBreaks(points: List<TrackPoint>, bivouacs: List<BivouacPoint>): Set<Int> =
+    DayJunctions.planificationSeriesBreaks(points, bivouacs.map { it.trackPointIndex })
