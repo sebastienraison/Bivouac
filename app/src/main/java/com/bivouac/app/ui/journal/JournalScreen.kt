@@ -420,6 +420,11 @@ fun JournalScreen(
                     track = detail.track,
                     bivouacPoints = journalBivouacs,
                     dayBoundaryIndices = journalBivouacs.map { it.trackPointIndex },
+                    // RIC-114 : mêmes coupures que le profil (toutes les jonctions de jours) : la
+                    // distance de la bulle est celle de l'axe, somme des jours stockés.
+                    seriesBreaks = remember(journalBivouacs) {
+                        DayJunctions.journalSeriesBreaks(journalBivouacs.map { it.trackPointIndex })
+                    },
                     selectedLayer = selectedLayer,
                     recenterSignal = recenterSignal,
                     visibleMapHeightPx = visibleMapHeightPx,
@@ -1115,6 +1120,7 @@ private fun JournalMap(
     track: HikeTrack?,
     bivouacPoints: List<BivouacPoint> = emptyList(),
     dayBoundaryIndices: List<Int> = emptyList(),
+    seriesBreaks: Set<Int> = emptySet(),
     selectedLayer: com.bivouac.app.ui.map.MapLayer,
     recenterSignal: Int,
     visibleMapHeightPx: Int,
@@ -1156,6 +1162,7 @@ private fun JournalMap(
             onBivouacDragPreview = { _, _ -> },
             bivouacsReadOnly = true,
             dayBoundaryIndices = dayBoundaryIndices,
+            seriesBreaks = seriesBreaks,
             cursorIndex = cursorIndex,
             onCursorChanged = onCursorChanged,
             onCursorCleared = onCursorCleared,
@@ -2275,6 +2282,12 @@ internal fun ThreeStopJournalDetail(
                         points = track.points,
                         bivouacPoints = bivouacPoints,
                         dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
+                        // RIC-114 : le lissage ne traverse plus les jonctions de jours, et le pas
+                        // de jonction n'est plus compté : la série affichée est la concaténation
+                        // des séries par jour, celles qui ont produit les chiffres stockés.
+                        seriesBreaks = remember(bivouacPoints) {
+                            DayJunctions.journalSeriesBreaks(bivouacPoints.map { it.trackPointIndex })
+                        },
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                         cursorIndex = cursorIndex,
                         onCursorDragged = onCursorDragged,

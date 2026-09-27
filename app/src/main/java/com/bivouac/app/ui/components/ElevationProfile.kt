@@ -23,8 +23,8 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bivouac.app.R
-import com.bivouac.app.data.gpx.GeoMath
 import com.bivouac.app.data.gpx.TrackStatsCalculator
+import com.bivouac.app.data.gpx.TrackStatsParameters
 import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.TrackPoint
@@ -102,7 +102,7 @@ private fun formatKm(km: Double): String {
 /**
  * Elevation profile of the whole track, with a dot for each bivouac point at its actual altitude,
  * and altitude/distance rulers. RIC-138 : un export GPX réel a parfois quelques points sans
- * altitude, épars dans le fichier : [TrackStatsCalculator.smoothedElevationSeries] les interpole
+ * altitude, épars dans le fichier : [TrackStatsCalculator.series] les interpole
  * plutôt que d'abandonner toute la série ; ce composant ne rend donc rien seulement si AUCUN point
  * de la trace n'a d'altitude.
  *
@@ -118,33 +118,29 @@ fun ElevationProfile(
     cursorIndex: Int? = null,
     onCursorDragged: (Int) -> Unit = {},
     // Journal : dernier point de chaque jour qui s'achève, sur une sortie de plusieurs fichiers.
-    // Vide en Planification, où la trace est d'un seul tenant.
+    // Planification : les bivouacs. Ne sert qu'au dessin des coupures d'enregistrement.
     dayBoundaryIndices: List<Int> = emptyList(),
+    // RIC-114 : coupures de la série commune, calculées par l'appelant avec le même helper que
+    // ses statistiques (DayJunctions.journalSeriesBreaks / planificationSeriesBreaks).
+    seriesBreaks: Set<Int> = emptySet(),
+    statsParameters: TrackStatsParameters = TrackStatsParameters.DEFAULT,
 ) {
-    val elevations = remember(points) { TrackStatsCalculator.smoothedElevationSeries(points) }
-    if (elevations == null || elevations.size < 2) return
-
+    // RIC-114 : courbe ET axe tirés de la série commune, celle qui produit les statistiques de la
+    // même vue : l'axe finit sur la distance affichée, la courbe est celle qui a donné le D+.
     // Distance-based, not index-based: GPS point density varies along a track (denser on slow or
     // steep sections), so evenly spacing by index would visually distort the horizontal scale.
-    // Les jonctions où l'enregistrement a réellement été coupé, à ne surtout pas compter comme du
-    // parcours : l'axe annoncerait plus de kilomètres que les statistiques de la même vue, qui
-    // sont sommées jour par jour précisément pour éviter ce trajet fictif.
+    val series = remember(points, seriesBreaks, statsParameters) {
+        TrackStatsCalculator.series(points, seriesBreaks, statsParameters)
+    }
+    val elevations = series.smoothedElevationMeters
+    if (elevations == null || elevations.size < 2) return
+    val cumulativeDistances = series.cumulativeDistanceMeters
+
+    // Les jonctions où l'enregistrement a réellement été coupé : dessinées en pointillé plutôt
+    // qu'en trait plein. Elles font partie des coupures de la série, donc n'ajoutent déjà aucune
+    // distance à l'axe.
     val recordingGaps = remember(points, dayBoundaryIndices) {
         DayJunctions.recordingGaps(points, dayBoundaryIndices)
-    }
-    val cumulativeDistances = remember(points, recordingGaps) {
-        val distances = DoubleArray(points.size)
-        for (i in 1 until points.size) {
-            val a = points[i - 1]
-            val b = points[i]
-            val step = if (i - 1 in recordingGaps) {
-                0.0
-            } else {
-                GeoMath.haversineMeters(a.latitude, a.longitude, b.latitude, b.longitude)
-            }
-            distances[i] = distances[i - 1] + step
-        }
-        distances
     }
     val totalDistance = cumulativeDistances.last().coerceAtLeast(1.0)
     val totalKm = totalDistance / 1000.0

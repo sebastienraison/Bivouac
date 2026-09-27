@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import com.bivouac.app.R
 import com.bivouac.app.data.gpx.TrackStats
 import com.bivouac.app.data.model.BivouacPoint
+import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrackPoint
@@ -255,6 +256,10 @@ internal fun ThreeStopPlanificationDetail(
                     // le profil d'un trek dupliqué depuis le Journal annonce plus de kilomètres que
                     // les statistiques affichées juste au-dessus.
                     dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
+                    // RIC-114 : mêmes coupures que le total et les segments affichés au-dessus.
+                    seriesBreaks = remember(track, bivouacPoints) {
+                        DayJunctions.planificationSeriesBreaks(track.points, bivouacPoints.map { it.trackPointIndex })
+                    },
                     modifier = Modifier
                         .padding(horizontal = 20.dp)
                         .padding(top = 10.dp, bottom = 2.dp),
