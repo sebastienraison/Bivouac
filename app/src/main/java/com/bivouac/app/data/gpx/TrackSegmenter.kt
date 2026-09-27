@@ -11,8 +11,9 @@ import kotlin.math.abs
 //     ce qui corrélerait la variable explicative avec l'effet à mesurer) ; à durée fixe c'est pire
 //     encore.
 //   - le D+ d'un segment est sommé sur les mêmes altitudes lissées que TrackStatsCalculator.compute
-//     (via smoothedElevationSeries, fenêtre 5), de sorte que somme(D+ segments) == D+ de la trace :
-//     la pénalité calibrée reste à l'échelle du D+ que la prédiction utilisera.
+//     (RIC-114 : la série commune du jour, TrackStatsCalculator.series), de sorte que
+//     somme(D+ segments) == D+ de la trace : la pénalité calibrée reste à l'échelle du D+ que la
+//     prédiction utilisera. La distance d'un segment est la distance filtrée de cette même série.
 //   - le dénivelé NET du segment (altitude lissée fin - début) sert à la classification plat/pentu,
 //     bien plus robuste au bruit capteur que le D+ intégré (CR section 3.3 : le D+ "fantôme" d'un
 //     segment réellement plat vaut encore 13 m/km en médiane).
@@ -50,29 +51,39 @@ object TrackSegmenter {
     private const val KEEP_TAIL_RATIO = 0.5
 
     /**
-     * Découpe [points] en segments d'environ [segmentLengthMeters] de distance parcourue. Le
-     * reliquat de fin de trace est conservé s'il atteint la moitié de cette longueur, sinon
+     * Découpe [points] (un jour) en segments d'environ [segmentLengthMeters] de distance parcourue.
+     * Le reliquat de fin de trace est conservé s'il atteint la moitié de cette longueur, sinon
      * abandonné (trop court pour que sa pente ait un sens).
      *
-     * Seuls les points porteurs à la fois d'une altitude et d'un horodatage sont pris en compte :
-     * les deux sont nécessaires (altitude pour le dénivelé, horodatage pour la durée d'un
-     * segment). RIC-138 : [TrackStatsCalculator.smoothedElevationSeries] sait désormais interpoler
-     * les trous d'altitude, mais on préfère ici ne classer un segment plat/pentu que sur des
-     * altitudes réellement mesurées : une valeur interpolée n'apporte aucune pente réelle, autant
-     * l'exclure du calcul plutôt que de biaiser la classification vers "plat".
+     * RIC-114 : tout est lu sur la série commune du jour ([TrackStatsCalculator.series], sans
+     * coupure), exactement celle qui donne le D+ du jour : distance filtrée, altitude lissée en
+     * distance. Les points sans altitude y portent une altitude interpolée, déjà mêlée à la moyenne
+     * de leurs voisins : ils ne sont plus écartés, ce qui revient sur le choix de RIC-138 au profit
+     * de l'invariant somme(D+ de tous les segments, reliquat compris) == D+ du jour.
+     *
+     * Un segment ne s'ouvre et ne se ferme que sur un point horodaté, puisque sa durée en dépend :
+     * le seuil de distance atteint, il se ferme au premier point horodaté qui suit. Les points
+     * avant le premier ou après le dernier point horodaté ne sont dans aucun segment.
      */
-    fun segment(points: List<TrackPoint>, segmentLengthMeters: Double = SEGMENT_LENGTH_METERS): List<TrackSegment> {
-        val usable = points.filter { it.elevationMeters != null && it.time != null }
-        if (usable.size < 2) return emptyList()
-        val smoothed = TrackStatsCalculator.smoothedElevationSeries(usable) ?: return emptyList()
+    fun segment(
+        points: List<TrackPoint>,
+        segmentLengthMeters: Double = SEGMENT_LENGTH_METERS,
+        parameters: TrackStatsParameters = TrackStatsParameters.DEFAULT,
+    ): List<TrackSegment> {
+        val firstTimed = points.indexOfFirst { it.time != null }
+        val lastTimed = points.indexOfLast { it.time != null }
+        if (firstTimed < 0 || lastTimed <= firstTimed) return emptyList()
+        val series = TrackStatsCalculator.series(points, parameters = parameters)
+        val smoothed = series.smoothedElevationMeters ?: return emptyList()
+        val distances = series.cumulativeDistanceMeters
 
         val segments = mutableListOf<TrackSegment>()
-        var startIndex = 0
+        var startIndex = firstTimed
         var accumulatedDistance = 0.0
         var accumulatedGain = 0.0
 
         fun close(endIndex: Int) {
-            val hours = (usable[endIndex].time!!.toEpochMilli() - usable[startIndex].time!!.toEpochMilli()) / 3_600_000.0
+            val hours = (points[endIndex].time!!.toEpochMilli() - points[startIndex].time!!.toEpochMilli()) / 3_600_000.0
             if (hours > 0) {
                 segments += TrackSegment(
                     distanceMeters = accumulatedDistance,
@@ -83,20 +94,18 @@ object TrackSegmenter {
             }
         }
 
-        for (i in 0 until usable.size - 1) {
-            val a = usable[i]
-            val b = usable[i + 1]
-            accumulatedDistance += GeoMath.haversineMeters(a.latitude, a.longitude, b.latitude, b.longitude)
+        for (i in firstTimed until lastTimed) {
+            accumulatedDistance += distances[i + 1] - distances[i]
             val delta = smoothed[i + 1] - smoothed[i]
             if (delta > 0) accumulatedGain += delta
-            if (accumulatedDistance >= segmentLengthMeters) {
+            if (accumulatedDistance >= segmentLengthMeters && points[i + 1].time != null) {
                 close(i + 1)
                 startIndex = i + 1
                 accumulatedDistance = 0.0
                 accumulatedGain = 0.0
             }
         }
-        if (accumulatedDistance >= KEEP_TAIL_RATIO * segmentLengthMeters) close(usable.lastIndex)
+        if (accumulatedDistance >= KEEP_TAIL_RATIO * segmentLengthMeters) close(lastTimed)
         return segments
     }
 }
