@@ -87,4 +87,24 @@ data class LoggedTrackDayEntity(
     // flatCount non nul mais elevationBackfilled à false, et doit repasser une fois par ce nouveau
     // rattrapage. Voir LoggedTrackBackfill.runElevation.
     val elevationBackfilled: Boolean = false,
+    // RIC-207 : totaux du jour, calculés avec la même série commune et les mêmes coupures que les
+    // totaux de la rando (TrackStatsCalculator.compute sur les seuls points de ce jour, aucune
+    // coupure : un jour du Journal se calcule toujours seul, jamais concaténé) : la somme de ces
+    // colonnes sur tous les jours d'une trace égale exactement logged_track.distanceMeters/
+    // elevationGainMeters/elevationLossMeters, par construction, puisque ce sont ces mêmes valeurs
+    // par jour que logged_track additionne pour obtenir son propre total (voir
+    // LoggedTrackRepository.prepareImport et LoggedTrackBackfill.backfillStatsOne).
+    //
+    // Avant ce ticket, le Bilan lisait flatDistanceMeters+steepDistanceMeters/steepGainMeters (RIC-19
+    // §3) : des agrégats de segments qui excluent la distance des arrêts et ne comptent le D+ que
+    // des segments classés pentus, donc ne correspondent pas aux totaux du jour affichés dans le
+    // détail de la rando. Les colonnes de segments restent, elles ne servent plus qu'à la
+    // calibration (SpeedCalibrationCalculator).
+    //
+    // Nullable, même convention que flatCount/maxElevationMeters : null si et seulement si ce jour
+    // n'a pas encore été rattrapé (statsVersion de la trace < TrackStatsParameters.ALGORITHM_VERSION,
+    // voir LoggedTrackBackfill.runStats), jamais un cas réel une fois rattrapé.
+    val distanceMeters: Double? = null,
+    val elevationGainMeters: Double? = null,
+    val elevationLossMeters: Double? = null,
 )

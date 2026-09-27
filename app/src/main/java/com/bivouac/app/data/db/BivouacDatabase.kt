@@ -30,7 +30,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open"): a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 19
+        const val SCHEMA_VERSION = 20
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -520,6 +520,28 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-207 : trois colonnes sur logged_track_day, les totaux du jour (distance, D+, D-)
+        // calculés avec la même série commune que le total de la rando (voir
+        // LoggedTrackDayEntity) : c'est ce qui permet au Bilan de lire les records "distance max
+        // sur une journée" / "D+ max sur une journée" sur les mêmes chiffres que le détail de la
+        // rando, au lieu des agrégats de segments de calibration (RIC-19 §3, qui excluaient la
+        // distance des arrêts et ne comptaient que le D+ des segments pentus).
+        //
+        // Même patron que MIGRATION_18_19 et les rattrapages précédents : trois ALTER TABLE ADD
+        // COLUMN, colonnes nullables, aucune recréation de table, aucun rattrapage ici. Nullable
+        // (pas de DEFAULT) : une ligne d'avant ce ticket n'a tout simplement jamais eu ces totaux
+        // calculés, contrairement à statsVersion ci-dessus dont 0 est la version exacte de l'ancien
+        // algorithme. Remplies par LoggedTrackBackfill.runStats (voir TrackStatsParameters.
+        // ALGORITHM_VERSION, monté à 2 pour redéclencher ce rattrapage) et par
+        // LoggedTrackRepository.commitImport pour toute nouvelle trace. Cible : schemas/20.json.
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `distanceMeters` REAL")
+                db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `elevationGainMeters` REAL")
+                db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `elevationLossMeters` REAL")
+            }
+        }
+
         // ~256K points de code par tranche : au pire quadruplé en UTF-8 ça reste sous la fenêtre de
         // 2 Mo, et un GPX réel (ASCII pour l'essentiel) en est très loin.
         private const val MIGRATION_CHUNK_CODE_POINTS = 256 * 1024
@@ -598,6 +620,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                         MIGRATION_16_17,
                         MIGRATION_17_18,
                         MIGRATION_18_19,
+                        MIGRATION_19_20,
                     )
                     .build()
                     .also { instance = it }
