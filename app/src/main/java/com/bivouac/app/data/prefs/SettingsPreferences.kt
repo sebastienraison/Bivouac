@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.bivouac.app.data.gpx.SpeedCalibration
@@ -47,6 +48,7 @@ class SettingsPreferences(private val context: Context) {
         val LAST_BACKUP_AT = longPreferencesKey("last_backup_at_millis")
         val PHOTOS_ENABLED = booleanPreferencesKey("journal_photos_enabled")
         val PHOTO_STORAGE_MODE = stringPreferencesKey("journal_photo_storage_mode")
+        val CALIBRATION_STATS_VERSION = intPreferencesKey("calibration_stats_version")
     }
 
     // RIC-115 : contrairement à AUTO_PAUSE/SELECTION_PAUSE (repli sur SpeedCalibration.DEFAULT.
@@ -139,6 +141,20 @@ class SettingsPreferences(private val context: Context) {
      */
     val photoStorageModeDecision: Flow<PhotoStorageMode?> = context.settingsDataStore.data.map { prefs ->
         prefs[Keys.PHOTO_STORAGE_MODE]?.let { name -> runCatching { PhotoStorageMode.valueOf(name) }.getOrNull() }
+    }
+
+    /**
+     * RIC-114 lot 2 (conception §5.2/§5.5) : version de [com.bivouac.app.data.gpx.
+     * TrackStatsParameters.ALGORITHM_VERSION] qui a produit les calibrations Auto et Sélection
+     * actuellement stockées. 0 par défaut (préférence absente, jamais recalibré sous ce marqueur) :
+     * même convention que `statsVersion` des entités, une préférence pour la même raison que sa
+     * kdoc donne (le marqueur vit avec la donnée qu'il décrit, pas avec les traces).
+     */
+    val calibrationStatsVersion: Flow<Int> =
+        context.settingsDataStore.data.map { it[Keys.CALIBRATION_STATS_VERSION] ?: 0 }
+
+    suspend fun setCalibrationStatsVersion(version: Int) {
+        context.settingsDataStore.edit { it[Keys.CALIBRATION_STATS_VERSION] = version }
     }
 
     suspend fun setPhotoStorageMode(mode: PhotoStorageMode) {

@@ -11,6 +11,7 @@ import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackSegmenter
 import com.bivouac.app.data.gpx.TrackStatsCalculator
+import com.bivouac.app.data.gpx.TrackStatsParameters
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
@@ -215,6 +216,18 @@ class LoggedTrackRepository(context: Context) {
 
     /** Ce que la porte d'accueil (RIC-19) doit savoir avant de décider d'afficher le popup bloquant. */
     suspend fun countDaysNeedingElevationBackfill(): Int = dao.countDaysNeedingElevationBackfill()
+
+    /**
+     * RIC-114 lot 2 : rattrapage des statistiques stockées (distance/D+/D-/durée) calculées par un
+     * algorithme antérieur à [com.bivouac.app.data.gpx.TrackStatsParameters.ALGORITHM_VERSION].
+     * Bloquant côté appelant, comme [backfillElevationFields] : voir ElevationBackfillGate et
+     * [LoggedTrackBackfill.runStats].
+     */
+    suspend fun countTracksNeedingStatsBackfill(): Int =
+        dao.countTracksNeedingStatsBackfill(TrackStatsParameters.ALGORITHM_VERSION)
+
+    suspend fun backfillStatsFields(onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }) =
+        LoggedTrackBackfill.runStats(appContext, dao, onProgress)
 
     /**
      * Ce que la liste doit savoir des jours d'une trace sans ouvrir le moindre fichier : combien

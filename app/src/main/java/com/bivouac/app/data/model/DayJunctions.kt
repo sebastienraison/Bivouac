@@ -57,4 +57,23 @@ object DayJunctions {
                 GeoMath.haversineMeters(end.latitude, end.longitude, next.latitude, next.longitude) >
                 GAP_THRESHOLD_METERS
         }
+
+    /**
+     * RIC-114 : coupures de la série commune (voir [com.bivouac.app.data.gpx.TrackSeries]) d'une
+     * sortie du Journal affichée d'un seul tenant (profil, bulle du curseur) : TOUTES les
+     * jonctions de jours, [dayBoundaryIndices] étant celles de [bivouacTrackPointIndices]. La
+     * série affichée est alors exactement la concaténation des séries calculées jour par jour, qui
+     * sont celles des statistiques stockées : l'axe du profil finit sur la distance totale, et la
+     * courbe est celle qui a produit le D+.
+     */
+    fun journalSeriesBreaks(dayBoundaryIndices: List<Int>): Set<Int> = dayBoundaryIndices.toSet()
+
+    /**
+     * RIC-114 : coupures de la série commune en Planification (statistiques, segments, profil,
+     * bulle) : les seules coupures d'enregistrement ([recordingGaps]) parmi les bivouacs. Un
+     * bivouac posé à la main au milieu d'un tracé continu n'est pas une coupure ; la jonction d'un
+     * trek dupliqué depuis le Journal où la nuit a été coupée loin du camp en est une.
+     */
+    fun planificationSeriesBreaks(points: List<TrackPoint>, bivouacIndices: List<Int>): Set<Int> =
+        recordingGaps(points, bivouacIndices)
 }

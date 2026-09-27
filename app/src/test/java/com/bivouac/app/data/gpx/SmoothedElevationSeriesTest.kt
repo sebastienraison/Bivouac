@@ -12,9 +12,9 @@ import org.junit.Test
  * -> null -> profil vide), alors même que [TrackStatsCalculator.compute] reste correct grâce à son
  * mapNotNull. Ce fichier couvre l'interpolation qui remplace ce comportement, en ciblant
  * [TrackStatsCalculator.interpolateElevations] directement (internal) pour rester indépendant de
- * la fenêtre de lissage de smoothValues (ELEVATION_SMOOTHING_WINDOW = 5) ; une poignée de tests
- * sur [TrackStatsCalculator.smoothedElevationSeries] elle-même vérifie l'assemblage bout en bout,
- * lissage compris.
+ * la fenêtre de lissage (RIC-114 : 50 m de distance parcourue, voir TrackStatsParameters) ; une
+ * poignée de tests sur [TrackStatsCalculator.smoothedElevationSeries] elle-même vérifie
+ * l'assemblage bout en bout, lissage compris.
  */
 class SmoothedElevationSeriesTest {
 
@@ -124,16 +124,25 @@ class SmoothedElevationSeriesTest {
 
     @Test
     fun smoothedElevationSeriesSmoothsTheInterpolatedValuesLikeAnyOther() {
-        // 6 points (>= ELEVATION_SMOOTHING_WINDOW = 5) pour que le lissage entre bien en jeu :
-        // l'altitude interpolée à l'index 2 (200.0) doit participer à la moyenne glissante comme
+        // L'altitude interpolée à l'index 2 (200.0) doit participer à la moyenne glissante comme
         // n'importe quelle valeur mesurée, exactement comme l'attend l'IHM (bulle du curseur,
         // courbe) qui ne distingue pas une valeur interpolée d'une valeur mesurée.
-        val input = points(100.0, 150.0, null, 250.0, 300.0, 350.0)
+        //
+        // RIC-114 : la fenêtre est désormais de 50 m de distance parcourue (+/- 25 m), et non plus
+        // de 5 points. Au pas de 111 m du helper points() plus rien ne serait lissé : ce test
+        // passe donc à un pas de 10 m, où +/- 25 m retient exactement deux voisins de chaque côté,
+        // ce qui conserve le calcul à la main et les valeurs attendues d'avant.
+        val input = listOf(100.0, 150.0, null, 250.0, 300.0, 350.0).mapIndexed { index, elevation ->
+            TrackPoint(latitude = 45.0 + index * 10.0 * degPerMeter, longitude = 6.0, elevationMeters = elevation, time = null)
+        }
 
         val result = TrackStatsCalculator.smoothedElevationSeries(input)
 
-        // Interpolé : [100, 150, 200, 250, 300, 350]. Moyenne glissante fenêtre 5 (2 de chaque
-        // côté, tronquée aux bords) sur cette rampe régulière -> calcul à la main ci-dessous.
+        // Interpolé : [100, 150, 200, 250, 300, 350]. Moyenne glissante (2 de chaque côté,
+        // tronquée aux bords) sur cette rampe régulière -> calcul à la main ci-dessous.
         assertEquals(listOf(150.0, 175.0, 200.0, 250.0, 275.0, 300.0), result)
     }
+
+    // Degrés de latitude par mètre, même dérivation exacte que TrackSegmenterTest.
+    private val degPerMeter = Math.toDegrees(1.0 / 6_371_000.0)
 }

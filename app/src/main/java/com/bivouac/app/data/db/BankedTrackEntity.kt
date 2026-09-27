@@ -1,8 +1,10 @@
 package com.bivouac.app.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.bivouac.app.data.gpx.TrackStats
+import com.bivouac.app.data.gpx.TrackStatsParameters
 
 // The deliberate, named collection of traces the user has explicitly saved: distinct from
 // SavedTrackEntity's singleton row, which is just an invisible crash/restart safety net for
@@ -26,6 +28,10 @@ data class BankedTrackEntity(
     val elevationLossMeters: Double,
     val estimatedDurationMinutes: Int,
     val savedAt: Long,
+    // RIC-114 lot 2 : même marqueur que LoggedTrackEntity.statsVersion, voir sa kdoc. Rattrapage
+    // dans BankedTrackRepository.backfillStatsFields.
+    @ColumnInfo(defaultValue = "0")
+    val statsVersion: Int = TrackStatsParameters.ALGORITHM_VERSION,
 ) {
     // Reconstructs the same TrackStats the open-trace toolbar shows, from the denormalized
     // columns: lets the home screen list reuse the StatsRows composable as-is for full parity.

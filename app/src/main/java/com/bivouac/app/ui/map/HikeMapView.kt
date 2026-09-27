@@ -62,6 +62,8 @@ import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
 import com.bivouac.app.data.db.PhotoDisplayOrder
 import com.bivouac.app.data.gpx.TrackGeometry
+import com.bivouac.app.data.gpx.TrackStatsCalculator
+import com.bivouac.app.data.gpx.TrackStatsParameters
 import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
@@ -277,8 +279,13 @@ fun HikeMapView(
     // coupures entre fichiers. Affichés pour situer les nuits, jamais déplaçables.
     bivouacsReadOnly: Boolean = false,
     // Journal : dernier point de chaque jour qui s'achève, sur une sortie de plusieurs fichiers.
-    // Vide en Planification, où la trace est d'un seul tenant.
+    // Planification : les bivouacs. Ne sert qu'au dessin des coupures d'enregistrement.
     dayBoundaryIndices: List<Int> = emptyList(),
+    // RIC-114 : coupures de la série commune (voir TrackSeries), calculées par l'appelant avec le
+    // même helper que son profil et ses statistiques : la bulle du curseur et le rayon des photos
+    // lisent la même distance que l'axe du profil, au même index.
+    seriesBreaks: Set<Int> = emptySet(),
+    statsParameters: TrackStatsParameters = TrackStatsParameters.DEFAULT,
     cursorIndex: Int? = null,
     onCursorChanged: (trackPointIndex: Int) -> Unit = {},
     // RIC-43 : marqueurs photo, un par entrée avec positionPointIndex non nul (les autres
@@ -436,6 +443,7 @@ fun HikeMapView(
                 val recenterRequested = recenterSignal != lastRecenterSignal.value
                 val heightJustBecameKnown = pendingHeightCorrection.value && visibleHeightPx != Int.MAX_VALUE
                 val shouldFit = trackChanged || recenterRequested || heightJustBecameKnown
+                distanceCache.bind(seriesBreaks, statsParameters)
                 renderTrack(
                     view, track, bivouacPoints, bivouacsReadOnly, dayBoundaryIndices, shouldFit, visibleHeightPx,
                     onTrackTapped, onBivouacMoved, onBivouacDragPreview,
@@ -1452,17 +1460,32 @@ private fun cursorMarker(
  * dizaines de milliers de points. La trace affichée ne change pas en cours de glissement, et une
  * autre trace est une autre liste : l'identité de la liste suffit donc comme clé d'invalidation.
  *
+ * RIC-114 : ces distances sont celles de la série commune ([TrackStatsCalculator.series]), avec
+ * les coupures et les paramètres que l'écran a donnés à HikeMapView ([bind], appelé à chaque
+ * rendu) : la bulle affiche la distance de l'axe du profil au même index, et le rayon des photos
+ * se mesure sur la distance filtrée (les photos d'une pause tombent au même endroit). Une coupure
+ * ou un paramètre qui change invalide le cache comme une autre trace.
+ *
  * Mémorisé pour la durée de vie du MapView (voir HikeMapView), jamais touché hors du thread
  * principal.
  */
 internal class TrackDistanceCache {
+    private var breaks: Set<Int> = emptySet()
+    private var parameters: TrackStatsParameters = TrackStatsParameters.DEFAULT
     private var cachedPoints: List<TrackPoint>? = null
     private var cachedDistances: DoubleArray = DoubleArray(0)
+
+    fun bind(seriesBreaks: Set<Int>, statsParameters: TrackStatsParameters) {
+        if (seriesBreaks == breaks && statsParameters == parameters) return
+        breaks = seriesBreaks
+        parameters = statsParameters
+        cachedPoints = null
+    }
 
     fun distancesFor(points: List<TrackPoint>): DoubleArray {
         if (cachedPoints !== points) {
             cachedPoints = points
-            cachedDistances = TrackGeometry.cumulativeDistancesMeters(points)
+            cachedDistances = TrackStatsCalculator.series(points, breaks, parameters).cumulativeDistanceMeters
         }
         return cachedDistances
     }
@@ -1935,6 +1958,8 @@ private fun directionArrowMarkers(
     tintColor: Int? = null,
 ): List<Marker> {
     if (!directionArrowsEligible(points)) return emptyList()
+    // RIC-114 : distance brute volontairement, et non la série commune : elle ne sert qu'à
+    // orienter les flèches (géométrie), jamais à afficher une statistique.
     val cumulative = TrackGeometry.cumulativeDistancesMeters(points)
     if (cumulative.last() <= 0) return emptyList()
 

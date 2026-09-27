@@ -12,7 +12,7 @@ import org.junit.Test
  * docs/pilotage/prototype-calibration-segments/segments.py. Ce fichier n'a pas d'équivalent direct
  * dans test_prototype.py (qui teste la calibration sur des `SegmentInput` déjà construits, pas la
  * découpe elle-même) ; les tests ci-dessous couvrent la mécanique propre au portage Kotlin :
- * longueur des segments, gestion du reliquat, filtrage des points inexploitables, et surtout la
+ * longueur des segments, gestion du reliquat, points sans altitude ou sans heure, et surtout la
  * propriété centrale du design (CR section 3.2) : la somme du D+ des segments doit égaler
  * exactement le D+ affiché de la trace, calculé par TrackStatsCalculator sur le même lissage.
  */
@@ -85,7 +85,7 @@ class TrackSegmenterTest {
     }
 
     @Test
-    fun ignoresPointsMissingElevationOrTime() {
+    fun keepsPointsMissingElevationOrTimeInsteadOfDroppingThem() {
         // Deux points sans altitude, un sans horodatage, glissés au milieu d'une trace exploitable.
         val track = points(75, elevation = { i ->
             when (i) {
@@ -96,12 +96,27 @@ class TrackSegmenterTest {
 
         val segments = TrackSegmenter.segment(track)
 
-        // La trace ne plante pas et reste exploitable, juste amputée des points manquants : moins
-        // de distance couverte que la version sans trous ci-dessus (75 points intacts -> 120 m de
-        // reliquat sur 2220 m), ici trois sauts de moins.
-        assertTrue(segments.isNotEmpty())
+        // RIC-114 : les points sans altitude portent l'altitude interpolée de la série commune, et
+        // le point sans heure reste du parcours (il ne peut simplement pas borner un segment, et
+        // l'index 50 n'est de toute façon pas une borne : 49 et 56 le sont). Plus aucun saut n'est
+        // perdu : même découpage que la trace intacte, 10 segments de 210 m et 120 m de reliquat.
+        // Avant RIC-114 ces trois points étaient écartés, et la distance couverte tombait sous
+        // 2220 m.
         segments.forEach { assertTrue(it.hours > 0) }
-        assertTrue(segments.sumOf { it.distanceMeters } < 2220.0)
+        assertEquals(11, segments.size)
+        assertEquals(2220.0, segments.sumOf { it.distanceMeters }, 1e-6)
+    }
+
+    @Test
+    fun aSegmentOnlyClosesOnATimestampedPoint() {
+        // RIC-114 : le seuil de 200 m est atteint à l'index 7 (210 m), mais ce point n'a pas
+        // d'heure : le segment se ferme au premier point horodaté qui suit, l'index 8 (240 m).
+        val track = points(71).mapIndexed { i, p -> if (i == 7) p.copy(time = null) else p }
+
+        val segments = TrackSegmenter.segment(track)
+
+        assertEquals(240.0, segments.first().distanceMeters, 1e-6)
+        assertEquals(2100.0, segments.sumOf { it.distanceMeters }, 1e-6)
     }
 
     @Test
@@ -114,7 +129,7 @@ class TrackSegmenterTest {
     // réutiliser exactement le même lissage que TrackStatsCalculator, sinon la pénalité calibrée
     // n'est pas à l'échelle du D+ que la prédiction affichera. Vérifié ici en reconstituant le
     // même D+ par les deux chemins sur un profil vallonné (pas un simple plan incliné, pour que le
-    // lissage fenêtre 5 ait vraiment un effet à absorber).
+    // lissage ait vraiment un effet à absorber).
     @Test
     fun sumOfSegmentGainMatchesTrackStatsCalculatorExactly() {
         // 197 points, 196 sauts = 28 segments de 7 sauts pile (aucun reliquat) : tous les sauts de

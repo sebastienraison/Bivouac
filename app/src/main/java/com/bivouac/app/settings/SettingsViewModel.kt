@@ -8,10 +8,10 @@ import com.bivouac.app.R
 import com.bivouac.app.data.backup.BackupManager
 import com.bivouac.app.data.backup.RestorePhase
 import com.bivouac.app.data.backup.RestoreResult
+import com.bivouac.app.data.db.CalibrationRefresh
 import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.db.PhotoStorageSummary
 import com.bivouac.app.data.gpx.SpeedCalibration
-import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
 import com.bivouac.app.data.operations.exclusiveOperationRefusalMessage
@@ -206,10 +206,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    // RIC-114 : factorisé dans CalibrationRefresh (voir sa kdoc).
     private suspend fun refreshAutoCalibration() {
-        val input = loggedTrackRepository.calibrationSamples()
-        val result = SpeedCalibrationCalculator.compute(input.aggregate, input.fallbackSamples) ?: return
-        settingsPreferences.setAutoCalibration(result.calibration)
+        CalibrationRefresh.refreshAuto(loggedTrackRepository, settingsPreferences)
     }
 
     fun setMode(mode: SpeedCalibrationMode) {

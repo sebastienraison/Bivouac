@@ -5,7 +5,20 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import com.bivouac.app.data.gpx.DaySegmentAggregate
 import com.bivouac.app.data.photo.PhotoStorageMode
+
+// RIC-114 lot 2 : ce qu'un jour a besoin d'écrire pendant le rattrapage des statistiques (voir
+// LoggedTrackBackfill.runStats) : mêmes onze colonnes que updateDayDenormalizedFields ci-dessous,
+// regroupées ici pour que applyStatsBackfill applique une liste entière dans une seule transaction
+// avec la trace, plutôt qu'un appel par jour éclaté à l'appelant.
+data class DayStatsUpdate(
+    val id: Long,
+    val contentHash: String,
+    val startedAtMillis: Long?,
+    val elapsedSeconds: Long?,
+    val aggregate: DaySegmentAggregate,
+)
 
 @Dao
 interface LoggedTrackDao {
@@ -57,6 +70,72 @@ interface LoggedTrackDao {
         steepHours: Double,
         stoppedHours: Double,
     )
+
+    // RIC-114 lot 2 : statsVersion < version, pas une colonne IS NULL (voir LoggedTrackEntity.
+    // statsVersion) : le prochain changement d'algorithme montera encore ALGORITHM_VERSION plutôt
+    // que d'ajouter un marqueur de plus.
+    @Query("SELECT * FROM logged_track WHERE statsVersion < :version ORDER BY id LIMIT :limit")
+    suspend fun getTracksNeedingStatsBackfill(version: Int, limit: Int): List<LoggedTrackEntity>
+
+    @Query("SELECT COUNT(*) FROM logged_track WHERE statsVersion < :version")
+    suspend fun countTracksNeedingStatsBackfill(version: Int): Int
+
+    @Query("UPDATE logged_track SET statsVersion = :version WHERE id = :id")
+    suspend fun markStatsVersion(id: String, version: Int)
+
+    @Query(
+        "UPDATE logged_track SET distanceMeters = :distanceMeters, " +
+            "elevationGainMeters = :elevationGainMeters, elevationLossMeters = :elevationLossMeters, " +
+            "estimatedDurationMinutes = :estimatedDurationMinutes, statsVersion = :statsVersion " +
+            "WHERE id = :id",
+    )
+    suspend fun updateTrackStats(
+        id: String,
+        distanceMeters: Double,
+        elevationGainMeters: Double,
+        elevationLossMeters: Double,
+        estimatedDurationMinutes: Int,
+        statsVersion: Int,
+    )
+
+    // RIC-114 lot 2 : une seule transaction Room par trace, jours d'abord puis la trace (voir
+    // conception §5.3) : jamais une trace dont le total ne serait plus la somme de ses jours, pas
+    // même une fenêtre d'une milliseconde.
+    @Transaction
+    suspend fun applyStatsBackfill(
+        trackId: String,
+        distanceMeters: Double,
+        elevationGainMeters: Double,
+        elevationLossMeters: Double,
+        estimatedDurationMinutes: Int,
+        statsVersion: Int,
+        dayUpdates: List<DayStatsUpdate>,
+    ) {
+        for (day in dayUpdates) {
+            updateDayDenormalizedFields(
+                id = day.id,
+                contentHash = day.contentHash,
+                startedAtMillis = day.startedAtMillis,
+                elapsedSeconds = day.elapsedSeconds,
+                flatCount = day.aggregate.flatCount,
+                flatDistanceMeters = day.aggregate.flatDistanceMeters,
+                flatHours = day.aggregate.flatHours,
+                steepCount = day.aggregate.steepCount,
+                steepDistanceMeters = day.aggregate.steepDistanceMeters,
+                steepGainMeters = day.aggregate.steepGainMeters,
+                steepHours = day.aggregate.steepHours,
+                stoppedHours = day.aggregate.stoppedHours,
+            )
+        }
+        updateTrackStats(
+            id = trackId,
+            distanceMeters = distanceMeters,
+            elevationGainMeters = elevationGainMeters,
+            elevationLossMeters = elevationLossMeters,
+            estimatedDurationMinutes = estimatedDurationMinutes,
+            statsVersion = statsVersion,
+        )
+    }
 
     // RIC-19 : marqueur dédié (elevationBackfilled), pas flatCount IS NULL : ce rattrapage porte des
     // colonnes différentes de celui de RIC-109 et une ligne peut avoir l'un sans l'autre dans les

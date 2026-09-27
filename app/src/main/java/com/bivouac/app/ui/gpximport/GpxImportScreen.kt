@@ -77,6 +77,7 @@ import com.bivouac.app.data.db.BankedTrackEntity
 import com.bivouac.app.data.gpx.GpxExporter
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.TrackStatsCalculator
+import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.weather.MeteoblueLink
 import com.bivouac.app.gpximport.CloseConfirmationReason
 import com.bivouac.app.gpximport.GpxImportUiState
@@ -437,6 +438,11 @@ fun GpxImportScreen(
                 // 50 m dans DayJunctions.recordingGaps filtre naturellement les bivouacs posés à la
                 // main au milieu d'un tracé continu.
                 dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
+                // RIC-114 : mêmes coupures que le total, les segments et le profil (voir
+                // GpxImportViewModel.planificationBreaks) : la bulle affiche la distance de l'axe.
+                seriesBreaks = remember(loaded.track, bivouacPoints) {
+                    DayJunctions.planificationSeriesBreaks(loaded.track.points, bivouacPoints.map { it.trackPointIndex })
+                },
                 selectedLayer = selectedLayer,
                 recenterSignal = recenterSignal,
                 visibleHeightPx = visibleMapHeightPx,
