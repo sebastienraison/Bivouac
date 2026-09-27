@@ -30,7 +30,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open"): a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 18
+        const val SCHEMA_VERSION = 19
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -496,6 +496,30 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-114 lot 2 : marqueur de version des statistiques dérivées (distance, D+, D-, durée),
+        // un par table qui les stocke, plutôt qu'une préférence de version unique (conception §5.2,
+        // §9 point 5) : reprise naturelle ligne par ligne après interruption, et une ligne restaurée
+        // depuis une sauvegarde antérieure (BIV-66) arrive à 0 et est rattrapée au relancement, sans
+        // dépendre de l'état des préférences restaurées. Même patron que MIGRATION_12_13 : un seul
+        // ALTER TABLE ADD COLUMN par table, aucune recréation, aucun rattrapage ici (voir
+        // LoggedTrackBackfill.runStats / BankedTrackRepository.backfillStatsFields, derrière
+        // ElevationBackfillGate). Cible : schemas/19.json.
+        //
+        // DEFAULT 0 : une ligne d'avant ce ticket a été calculée par l'ancien algorithme (mm5,
+        // somme brute), 0 est donc sa version exacte, pas un pis-aller. Les entités posent en plus
+        // une valeur Kotlin par défaut à ALGORITHM_VERSION (pas 0) : une ligne que le CODE construit
+        // à partir de maintenant vient d'être calculée par l'algorithme courant.
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `logged_track` ADD COLUMN `statsVersion` INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `banked_track` ADD COLUMN `statsVersion` INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
         // ~256K points de code par tranche : au pire quadruplé en UTF-8 ça reste sous la fenêtre de
         // 2 Mo, et un GPX réel (ASCII pour l'essentiel) en est très loin.
         private const val MIGRATION_CHUNK_CODE_POINTS = 256 * 1024
@@ -573,6 +597,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                         MIGRATION_15_16,
                         MIGRATION_16_17,
                         MIGRATION_17_18,
+                        MIGRATION_18_19,
                     )
                     .build()
                     .also { instance = it }

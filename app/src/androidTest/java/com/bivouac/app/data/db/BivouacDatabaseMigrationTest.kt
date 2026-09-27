@@ -231,6 +231,7 @@ class BivouacDatabaseMigrationTest {
             BivouacDatabase.MIGRATION_15_16,
             BivouacDatabase.MIGRATION_16_17,
             BivouacDatabase.MIGRATION_17_18,
+            BivouacDatabase.MIGRATION_18_19,
         )
 
         // RIC-97 : la ligne saved_track née en v1 avec gpxContent en colonne doit ressortir avec
@@ -276,9 +277,12 @@ class BivouacDatabaseMigrationTest {
             assertTrue(cursor.moveToFirst())
             assertEquals(1, cursor.getInt(0))
         }
-        migrated.query("SELECT note FROM logged_track WHERE id = 'track-1'").use { cursor ->
+        migrated.query("SELECT note, statsVersion FROM logged_track WHERE id = 'track-1'").use { cursor ->
             assertTrue(cursor.moveToFirst())
             assertEquals("", cursor.getString(0))
+            // RIC-114 lot 2 : une ligne insérée sans énumérer statsVersion retombe sur 0, à
+            // rattraper, jamais sur ALGORITHM_VERSION (qui ne vaut que côté code applicatif).
+            assertEquals(0, cursor.getInt(1))
         }
 
         // logged_track_photo (MIGRATION_14_15) est la seule table apparue entre la v11 où ce test
@@ -1153,6 +1157,82 @@ class BivouacDatabaseMigrationTest {
             assertTrue(cursor.moveToFirst())
             assertEquals(0, cursor.getInt(0))
             assertEquals(1, cursor.getInt(1))
+        }
+
+        migrated.close()
+    }
+
+    /**
+     * RIC-114 lot 2 : un ALTER TABLE ADD COLUMN par table, colonnes NOT NULL DEFAULT 0, aucune
+     * recréation ni rattrapage ici (voir MIGRATION_18_19 et LoggedTrackBackfill.runStats /
+     * BankedTrackRepository.backfillStatsFields pour le rattrapage, fait après coup).
+     *
+     * Ce que ce test doit prouver : les lignes déjà en base (Journal et Banque) survivent intactes
+     * et ressortent avec `statsVersion = 0`, c'est-à-dire « calculées par l'ancien algorithme » :
+     * une valeur par défaut à 1 ferait croire au rattrapage que ces lignes sont déjà à jour, et
+     * elles resteraient silencieusement sur leurs anciennes valeurs pour toujours.
+     */
+    @Test
+    fun migrate18To19_addsStatsVersionAtZeroWithoutTouchingExistingRows() {
+        helper.createDatabase(testDbName, 18).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note) VALUES " +
+                    "('track-1', 'Randonnee Belledonne', 1780300800000, 'hash-track-1', " +
+                    "8200.0, 650.0, 300.0, 3, 240, '')",
+            )
+            execSQL(
+                "INSERT INTO banked_track (id, name, gpxFilePath, bivouacTrackPointIndices, " +
+                    "distanceMeters, elevationGainMeters, elevationLossMeters, " +
+                    "estimatedDurationMinutes, savedAt) VALUES ('bank-1', 'Belledonne', " +
+                    "'gpx-planif/banked-bank-1.gpx', '[]', 8200.0, 650.0, 300.0, 240, 1780300800000)",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            19,
+            true,
+            BivouacDatabase.MIGRATION_18_19,
+        )
+
+        migrated.query("SELECT name, statsVersion FROM logged_track WHERE id = 'track-1'").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Randonnee Belledonne", cursor.getString(0))
+            assertEquals(0, cursor.getInt(1))
+        }
+        migrated.query("SELECT name, statsVersion FROM banked_track WHERE id = 'bank-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Belledonne", cursor.getString(0))
+            assertEquals(0, cursor.getInt(1))
+        }
+
+        // La colonne est utilisable d'emblée dans les deux sens : c'est ce que
+        // LoggedTrackBackfill.runStats / BankedTrackRepository.backfillStatsFields écrivent une
+        // fois une trace rattrapée.
+        migrated.execSQL("UPDATE logged_track SET statsVersion = 1 WHERE id = 'track-1'")
+        migrated.query("SELECT statsVersion FROM logged_track WHERE id = 'track-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1, cursor.getInt(0))
+        }
+
+        // Une insertion qui n'énumère pas statsVersion (le cas du code applicatif, qui pose
+        // toujours une valeur Kotlin explicite, mais aussi d'un INSERT écrit à la main) doit rester
+        // possible et retomber sur 0 : c'est ce que le DEFAULT garantit, et ce que Room attend du
+        // schéma exporté.
+        migrated.execSQL(
+            "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                "elevationGainMeters, elevationLossMeters, pointCount, " +
+                "estimatedDurationMinutes, note) VALUES " +
+                "('track-2', 'Traversee Vanoise', 1781078400000, 'hash-track-2', " +
+                "21500.0, 1400.0, 900.0, 5, 660, '')",
+        )
+        migrated.query("SELECT statsVersion FROM logged_track WHERE id = 'track-2'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
         }
 
         migrated.close()
