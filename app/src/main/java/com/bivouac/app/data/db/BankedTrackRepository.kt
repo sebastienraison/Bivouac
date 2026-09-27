@@ -1,12 +1,18 @@
 package com.bivouac.app.data.db
 
 import android.content.Context
+import android.util.Log
 import com.bivouac.app.data.gpx.GpxParser
 import com.bivouac.app.data.gpx.GpxWriter
+import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.TrackStats
+import com.bivouac.app.data.gpx.TrackStatsParameters
 import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.HikeTrack
+import com.bivouac.app.gpximport.planificationTotalStats
 import java.util.UUID
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 class BankedTrackRepository(context: Context) {
 
@@ -77,5 +83,63 @@ class BankedTrackRepository(context: Context) {
         val entity = dao.get(id) ?: return
         dao.delete(id)
         PlanificationGpxStore.resolve(appContext, entity.gpxFilePath).delete()
+    }
+
+    /**
+     * RIC-114 lot 2 (phase « Banque », conception §5.3) : rattrapage des quatre statistiques
+     * stockées d'une trace de la banque, avec les coupures d'enregistrement de la Planification
+     * (mêmes que le profil et les segments, [planificationTotalStats]). Même patron par paquets de
+     * 10 et même traitement des fichiers illisibles que [LoggedTrackBackfill.runStats] : la ligne
+     * garde ses anciennes valeurs mais passe quand même à la version courante.
+     */
+    suspend fun countTracksNeedingStatsBackfill(): Int =
+        dao.countTracksNeedingStatsBackfill(TrackStatsParameters.ALGORITHM_VERSION)
+
+    suspend fun backfillStatsFields(onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }) {
+        val total = dao.countTracksNeedingStatsBackfill(TrackStatsParameters.ALGORITHM_VERSION)
+        if (total == 0) return
+        Log.i(TAG, "Rattrapage RIC-114 (Banque) : $total trace(s) à traiter")
+        onProgress(0, total)
+        var processed = 0
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val batch = dao.getTracksNeedingStatsBackfill(TrackStatsParameters.ALGORITHM_VERSION, BACKFILL_BATCH_SIZE)
+            if (batch.isEmpty()) break
+            for (entity in batch) {
+                currentCoroutineContext().ensureActive()
+                backfillStatsOne(entity)
+                processed++
+                onProgress(processed, total)
+            }
+        }
+        Log.i(TAG, "Rattrapage RIC-114 (Banque) terminé : $processed trace(s)")
+    }
+
+    private suspend fun backfillStatsOne(entity: BankedTrackEntity) {
+        val points = runCatching {
+            PlanificationGpxStore.resolve(appContext, entity.gpxFilePath).inputStream()
+                .use { GpxParser.parse(it) }.points
+        }.getOrElse {
+            Log.w("BankedTrackRepository", "Trace banquée ${entity.id} illisible (RIC-114), valeurs conservées", it)
+            dao.markStatsVersion(entity.id, TrackStatsParameters.ALGORITHM_VERSION)
+            return
+        }
+        val bivouacs = entity.bivouacTrackPointIndices.split(",")
+            .mapNotNull { it.trim().toIntOrNull() }
+            .map { BivouacPoint(id = UUID.randomUUID().toString(), trackPointIndex = it) }
+        val stats = planificationTotalStats(points, bivouacs, SpeedCalibration.DEFAULT)
+        dao.updateTrackStats(
+            id = entity.id,
+            distanceMeters = stats.distanceMeters,
+            elevationGainMeters = stats.elevationGainMeters,
+            elevationLossMeters = stats.elevationLossMeters,
+            estimatedDurationMinutes = stats.estimatedDurationMinutes,
+            statsVersion = TrackStatsParameters.ALGORITHM_VERSION,
+        )
+    }
+
+    private companion object {
+        const val TAG = "BankedTrackRepository"
+        const val BACKFILL_BATCH_SIZE = 10
     }
 }

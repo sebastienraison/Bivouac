@@ -4,7 +4,11 @@ import android.content.Context
 import android.util.Log
 import com.bivouac.app.data.gpx.DaySegmentAggregate
 import com.bivouac.app.data.gpx.GpxParser
+import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.TrackSegmenter
+import com.bivouac.app.data.gpx.TrackStatsCalculator
+import com.bivouac.app.data.gpx.TrackStatsParameters
+import com.bivouac.app.data.model.TrackPoint
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.nio.charset.StandardCharsets
@@ -185,6 +189,108 @@ object LoggedTrackBackfill {
         val maxElevation = points.mapNotNull { it.elevationMeters }.maxOrNull()
         val lastPointElevation = points.lastOrNull()?.elevationMeters
         dao.updateDayElevationFields(day.id, maxElevation, lastPointElevation)
+    }
+
+    /**
+     * RIC-114 lot 2 : rattrapage des quatre statistiques dérivées de `logged_track`
+     * (distance/D+/D-/durée) après une montée de [TrackStatsParameters.ALGORITHM_VERSION], voir
+     * conception §5.3. Bloquant côté appelant (même porte que [runElevation], voir
+     * ElevationBackfillGate), au même titre que RIC-19 : la calibration (phase 3, en aval) dépend
+     * de ces valeurs, une trace mixte serait pire qu'un rattrapage qui retarde un peu la navigation.
+     *
+     * Par paquets de 10 traces, [onProgress] après chaque trace : même patron que [run] ci-dessus.
+     * Une trace dont au moins un jour est illisible ou non parsable garde toutes ses anciennes
+     * valeurs (jours ET trace, aucune écriture partielle) mais passe quand même à la version
+     * courante (sinon rejouée à chaque lancement) : voir [backfillStatsOne].
+     */
+    suspend fun runStats(
+        context: Context,
+        dao: LoggedTrackDao,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ) {
+        val appContext = context.applicationContext
+        val total = dao.countTracksNeedingStatsBackfill(TrackStatsParameters.ALGORITHM_VERSION)
+        if (total == 0) return
+        Log.i(TAG, "Rattrapage RIC-114 (Journal) : $total trace(s) à traiter")
+        onProgress(0, total)
+
+        var processed = 0
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val batch = dao.getTracksNeedingStatsBackfill(TrackStatsParameters.ALGORITHM_VERSION, BATCH_SIZE)
+            if (batch.isEmpty()) break
+            for (track in batch) {
+                currentCoroutineContext().ensureActive()
+                backfillStatsOne(appContext, dao, track)
+                processed++
+                onProgress(processed, total)
+            }
+        }
+        Log.i(TAG, "Rattrapage RIC-114 (Journal) terminé : $processed trace(s)")
+    }
+
+    // Un jour déjà lu et parsé, avec ce qu'il faut pour reconstruire DayStatsUpdate : même
+    // découpage que PreparedDay (LoggedTrackRepository.prepareImport), qui calcule exactement les
+    // mêmes colonnes au même instant du parsing.
+    private data class ParsedDay(
+        val day: LoggedTrackDayEntity,
+        val contentHash: String,
+        val points: List<TrackPoint>,
+        val startedAtMillis: Long?,
+        val elapsedSeconds: Long?,
+    )
+
+    private suspend fun backfillStatsOne(context: Context, dao: LoggedTrackDao, track: LoggedTrackEntity) {
+        val days = dao.getDays(track.id).sortedBy { it.dayIndex }
+        val parsed = mutableListOf<ParsedDay>()
+        for (day in days) {
+            val file = LoggedTrackGpxStore.resolve(context, day.rawGpxFilePath)
+            val rawGpx = runCatching { file.readText(StandardCharsets.UTF_8) }.getOrElse {
+                // Un seul jour illisible suffit à garder TOUTE la trace à ses anciennes valeurs
+                // (conception §5.3) : un total partiel serait pire qu'un total ancien. La version
+                // monte quand même, sinon cette trace serait rejouée à chaque lancement.
+                Log.w(TAG, "Trace ${track.id} (RIC-114) : jour ${day.id} illisible, valeurs conservées", it)
+                dao.markStatsVersion(track.id, TrackStatsParameters.ALGORITHM_VERSION)
+                return
+            }
+            val points = runCatching {
+                rawGpx.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }.points
+            }.getOrElse {
+                Log.w(TAG, "Trace ${track.id} (RIC-114) : jour ${day.id} non parsable, valeurs conservées", it)
+                dao.markStatsVersion(track.id, TrackStatsParameters.ALGORITHM_VERSION)
+                return
+            }
+            val first = points.firstOrNull()?.time
+            val last = points.lastOrNull()?.time
+            val elapsed = if (first != null && last != null) {
+                Duration.between(first, last).seconds.takeIf { it > 0 }
+            } else {
+                null
+            }
+            parsed += ParsedDay(day, sha256(rawGpx), points, first?.toEpochMilli(), elapsed)
+        }
+        // Durée recalculée avec SpeedCalibration.DEFAULT (conception §5.3) : jamais affichée telle
+        // quelle (tous les affichages repassent par recomputeDuration sous la calibration active),
+        // elle doit seulement rester cohérente avec les trois autres colonnes.
+        val dayStats = parsed.map { TrackStatsCalculator.compute(it.points, SpeedCalibration.DEFAULT) }
+        val dayUpdates = parsed.map { p ->
+            DayStatsUpdate(
+                id = p.day.id,
+                contentHash = p.contentHash,
+                startedAtMillis = p.startedAtMillis,
+                elapsedSeconds = p.elapsedSeconds,
+                aggregate = DaySegmentAggregate.of(TrackSegmenter.segment(p.points)),
+            )
+        }
+        dao.applyStatsBackfill(
+            trackId = track.id,
+            distanceMeters = dayStats.sumOf { it.distanceMeters },
+            elevationGainMeters = dayStats.sumOf { it.elevationGainMeters },
+            elevationLossMeters = dayStats.sumOf { it.elevationLossMeters },
+            estimatedDurationMinutes = dayStats.sumOf { it.estimatedDurationMinutes },
+            statsVersion = TrackStatsParameters.ALGORITHM_VERSION,
+            dayUpdates = dayUpdates,
+        )
     }
 
     private const val TAG = "LoggedTrackBackfill"
