@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.bivouac.app.R
 import com.bivouac.app.bilan.JournalOpenRequest
+import com.bivouac.app.data.db.CalibrationRefresh
 import com.bivouac.app.data.db.DuplicateMatch
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
@@ -782,9 +783,8 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         exitSelectionMode()
         viewModelScope.launch {
             withContext(NonCancellable + Dispatchers.IO) {
-                val input = repository.calibrationSamples(ids)
-                val result = SpeedCalibrationCalculator.compute(input.aggregate, input.fallbackSamples)
-                settingsPreferences.setSelectionCalibration(result?.calibration ?: SpeedCalibration.DEFAULT, ids)
+                // RIC-114 : factorisé dans CalibrationRefresh (voir sa kdoc).
+                CalibrationRefresh.refreshSelection(repository, settingsPreferences, ids)
             }
         }
     }
@@ -1861,10 +1861,10 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     // BIV-16 Auto mode: recomputed on every import regardless of which mode is currently active,
     // so switching to Auto later never shows a stale value from before the last import.
+    // RIC-114 : factorisé dans CalibrationRefresh (voir sa kdoc), plutôt que ce calcul copié une
+    // troisième fois par la phase 3 du rattrapage.
     private suspend fun refreshAutoCalibration() {
-        val input = repository.calibrationSamples()
-        val result = SpeedCalibrationCalculator.compute(input.aggregate, input.fallbackSamples) ?: return
-        settingsPreferences.setAutoCalibration(result.calibration)
+        CalibrationRefresh.refreshAuto(repository, settingsPreferences)
     }
 
     private companion object {

@@ -22,7 +22,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.R
+import com.bivouac.app.data.db.BankedTrackRepository
+import com.bivouac.app.data.db.CalibrationRefresh
 import com.bivouac.app.data.db.LoggedTrackRepository
+import com.bivouac.app.data.prefs.SettingsPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +40,17 @@ import kotlinx.coroutines.withContext
  * [LoggedTrackRepository.backfillDenormalizedFields] (annulable en quittant le Journal, RIC-132) :
  * ici, rien n'est navigable tant que ce n'est pas terminé (voir [ElevationBackfillGate]).
  *
+ * RIC-114 lot 2 (conception §5.3) : cette même porte enchaîne désormais trois phases de plus,
+ * dans cet ordre, sous **un seul compteur de progression** (les done/total de chaque phase se
+ * concatènent plutôt que de faire clignoter le popup à zéro entre deux phases) :
+ * 1. l'altitude ci-dessus (RIC-19, inchangée) ;
+ * 2. les statistiques du Journal ([LoggedTrackRepository.backfillStatsFields]) ;
+ * 3. les statistiques de la Banque ([BankedTrackRepository.backfillStatsFields]) ;
+ * puis, silencieusement et sans jamais compter dans ce total (elle ne lit que des sommes déjà en
+ * base, conception §5.3) : la recalibration Auto/Sélection ([CalibrationRefresh.refreshIfNeeded]).
+ * Une installation qui n'a rien à rattraper sur 1-3 ne montre donc jamais le popup, même si la
+ * phase 4 (calibration) a du travail (cas d'une installation neuve).
+ *
  * AndroidViewModel plutôt qu'un simple état local à BivouacApp : obtenu via `viewModel()`, il
  * survit à une rotation d'écran pendant que le rattrapage tourne (le ViewModelStore appartient à
  * l'Activity, pas au composable), sans quoi une rotation malheureuse le relancerait depuis zéro.
@@ -50,20 +64,48 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
     }
 
     private val repository = LoggedTrackRepository(application)
+    private val bankedRepository = BankedTrackRepository(application)
+    private val settingsPreferences = SettingsPreferences(application)
     private val _state = MutableStateFlow<State>(State.Checking)
     val state: StateFlow<State> = _state.asStateFlow()
 
     init {
         viewModelScope.launch {
-            val remaining = withContext(Dispatchers.IO) { repository.countDaysNeedingElevationBackfill() }
-            if (remaining == 0) {
+            val elevationRemaining = withContext(Dispatchers.IO) { repository.countDaysNeedingElevationBackfill() }
+            val journalStatsRemaining = withContext(Dispatchers.IO) { repository.countTracksNeedingStatsBackfill() }
+            val bankedStatsRemaining = withContext(Dispatchers.IO) { bankedRepository.countTracksNeedingStatsBackfill() }
+            val total = elevationRemaining + journalStatsRemaining + bankedStatsRemaining
+            if (total == 0) {
                 // Cas de très loin le plus fréquent (banque déjà à jour, ou toute nouvelle
                 // installation) : aucun popup ne doit même apparaître, pas même une frame.
                 _state.value = State.Ready
-                return@launch
+            } else {
+                var base = 0
+                if (elevationRemaining > 0) {
+                    withContext(Dispatchers.IO) {
+                        repository.backfillElevationFields { done, _ -> _state.value = State.Running(base + done, total) }
+                    }
+                    base += elevationRemaining
+                }
+                if (journalStatsRemaining > 0) {
+                    withContext(Dispatchers.IO) {
+                        repository.backfillStatsFields { done, _ -> _state.value = State.Running(base + done, total) }
+                    }
+                    base += journalStatsRemaining
+                }
+                if (bankedStatsRemaining > 0) {
+                    withContext(Dispatchers.IO) {
+                        bankedRepository.backfillStatsFields { done, _ -> _state.value = State.Running(base + done, total) }
+                    }
+                    base += bankedStatsRemaining
+                }
             }
             withContext(Dispatchers.IO) {
-                repository.backfillElevationFields { done, total -> _state.value = State.Running(done, total) }
+                CalibrationRefresh.refreshIfNeeded(
+                    repository = repository,
+                    settingsPreferences = settingsPreferences,
+                    staleJournalStatsBackfilled = journalStatsRemaining > 0,
+                )
             }
             _state.value = State.Ready
         }
