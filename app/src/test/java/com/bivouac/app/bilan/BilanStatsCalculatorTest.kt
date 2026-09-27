@@ -55,6 +55,12 @@ class BilanStatsCalculatorTest {
         steepHours: Double? = null,
         maxElevationMeters: Double? = null,
         lastPointElevationMeters: Double? = null,
+        // RIC-207 : totaux du jour, distincts des sommes de segments ci-dessus (voir
+        // LoggedTrackDayEntity) : c'est ce que lisent désormais maxDistanceDayRecord/
+        // maxGainDayRecord.
+        distanceMeters: Double? = null,
+        elevationGainMeters: Double? = null,
+        elevationLossMeters: Double? = null,
     ) = LoggedTrackDayEntity(
         id = (trackId.hashCode().toLong() * 100) + dayIndex,
         trackId = trackId,
@@ -71,6 +77,9 @@ class BilanStatsCalculatorTest {
         maxElevationMeters = maxElevationMeters,
         lastPointElevationMeters = lastPointElevationMeters,
         elevationBackfilled = true,
+        distanceMeters = distanceMeters,
+        elevationGainMeters = elevationGainMeters,
+        elevationLossMeters = elevationLossMeters,
     )
 
     @Test
@@ -215,20 +224,57 @@ class BilanStatsCalculatorTest {
         assertEquals(1, stats.highestBivouacRecord?.dayIndex)
     }
 
+    // RIC-207 : ces deux records lisent désormais les totaux dénormalisés du jour (distanceMeters/
+    // elevationGainMeters), pas les sommes de segments de calibration (flatDistanceMeters+
+    // steepDistanceMeters/steepGainMeters, toujours renseignées ici pour prouver qu'elles sont bien
+    // ignorées par ces deux records précis).
     @Test
-    fun maxDistanceAndGainDayRecordsUseSegmentSums() {
+    fun maxDistanceAndGainDayRecordsUseDayTotalsNotSegmentSums() {
         val tracks = listOf(track("trek", 2025, 7))
         val daysByTrackId = mapOf(
             "trek" to listOf(
-                day("trek", 0, flatDistanceMeters = 5_000.0, steepDistanceMeters = 2_000.0, steepGainMeters = 400.0),
-                day("trek", 1, flatDistanceMeters = 8_000.0, steepDistanceMeters = 6_000.0, steepGainMeters = 1_800.0),
+                day(
+                    "trek", 0,
+                    flatDistanceMeters = 5_000.0, steepDistanceMeters = 2_000.0, steepGainMeters = 400.0,
+                    distanceMeters = 7_300.0, elevationGainMeters = 410.0,
+                ),
+                day(
+                    "trek", 1,
+                    flatDistanceMeters = 8_000.0, steepDistanceMeters = 6_000.0, steepGainMeters = 1_800.0,
+                    distanceMeters = 14_500.0, elevationGainMeters = 1_950.0,
+                ),
             ),
         )
         val stats = BilanStatsCalculator.compute(tracks, daysByTrackId, SpeedCalibration.DEFAULT, zone)
 
-        assertEquals(14.0, stats.maxDistanceDayRecord!!.value, 1e-9) // (8000+6000)/1000
-        assertEquals(1_800.0, stats.maxGainDayRecord!!.value, 1e-9)
+        assertEquals(14.5, stats.maxDistanceDayRecord!!.value, 1e-9) // 14500/1000, pas (8000+6000)/1000
+        assertEquals(1_950.0, stats.maxGainDayRecord!!.value, 1e-9) // pas steepGainMeters (1800)
         assertNull("mono-jour, pas de positionnement day-level", stats.maxDistanceDayRecord?.dayIndex)
+    }
+
+    // RIC-207 : un jour pas encore rattrapé (distanceMeters/elevationGainMeters null) ne doit
+    // jamais gagner, même défaut : au lieu de retomber sur l'ancien calcul par segments (comme les
+    // agrégats flatDistanceMeters/steepGainMeters ci-dessous le suggéreraient), il est ignoré, même
+    // convention que maxAltitudeRecord vis-à-vis de maxElevationMeters.
+    @Test
+    fun maxDistanceAndGainDayRecordsIgnoreDaysNotYetBackfilled() {
+        val tracks = listOf(track("a", 2025, 5), track("b", 2025, 6))
+        val daysByTrackId = mapOf(
+            "a" to listOf(
+                day(
+                    "a", 0,
+                    flatDistanceMeters = 50_000.0, steepDistanceMeters = 50_000.0, steepGainMeters = 9_000.0,
+                    distanceMeters = null, elevationGainMeters = null,
+                ),
+            ),
+            "b" to listOf(day("b", 0, distanceMeters = 4_000.0, elevationGainMeters = 200.0)),
+        )
+        val stats = BilanStatsCalculator.compute(tracks, daysByTrackId, SpeedCalibration.DEFAULT, zone)
+
+        assertEquals("b", stats.maxDistanceDayRecord?.trackId)
+        assertEquals(4.0, stats.maxDistanceDayRecord!!.value, 1e-9)
+        assertEquals("b", stats.maxGainDayRecord?.trackId)
+        assertEquals(200.0, stats.maxGainDayRecord!!.value, 1e-9)
     }
 
     @Test

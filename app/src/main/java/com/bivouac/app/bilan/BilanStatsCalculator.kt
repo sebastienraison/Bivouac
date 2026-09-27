@@ -199,8 +199,11 @@ object BilanStatsCalculator {
     // Par jour et non par trace entière (contrairement à la première version de ce calcul) : la
     // distance/D+ cumulés d'un trek de plusieurs jours dépassent presque toujours ceux d'une seule
     // journée, aussi sportive soit-elle : un trek gagnait donc systématiquement, quelle que soit
-    // l'intensité réelle de chaque jour qui le compose. Mêmes colonnes que maxDistanceDayRecord/
-    // maxGainDayRecord ci-dessous (flatDistanceMeters+steepDistanceMeters, steepGainMeters).
+    // l'intensité réelle de chaque jour qui le compose. Formule d'effort équivalent (RIC-19 §3),
+    // volontairement encore lue sur les sommes de segments (flatDistanceMeters+steepDistanceMeters,
+    // steepGainMeters) : contrairement à maxDistanceDayRecord/maxGainDayRecord (RIC-207, lus sur les
+    // totaux du jour), ce record veut spécifiquement la distance hors arrêts et le D+ des seuls
+    // segments pentus, cohérents avec la pénalité d'effort qu'il applique.
     private fun kmEffortRecord(
         tracks: List<LoggedTrackEntity>,
         daysByTrackId: Map<String, List<LoggedTrackDayEntity>>,
@@ -299,26 +302,26 @@ object BilanStatsCalculator {
 
     // --- Records secondaires (RIC-19 §4) -----------------------------------------------------
 
-    // Distance/D+ du jour reconstruits depuis les sommes de segments RIC-109 (flatDistanceMeters +
-    // steepDistanceMeters pour la distance, steepGainMeters pour le D+) plutôt qu'à partir de
-    // nouvelles colonnes dédiées : elles existent déjà pour toute la banque (calibration), et
-    // TrackSegmenter ne perd qu'un reliquat de fin de journée < 100 m (sa propre kdoc), négligeable
-    // à l'affichage en km. Le D+ peut en revanche légèrement sous-compter le D+ des segments classés
-    // "plats" (pente nette < 2 %, mais pas rigoureusement nulle) : compromis documenté dans le
-    // rapport final plutôt qu'une nouvelle colonne dénormalisée hors du périmètre du ticket.
+    // RIC-207 : distance/D+ du jour lus sur les totaux dénormalisés (day.distanceMeters/
+    // elevationGainMeters, voir LoggedTrackDayEntity), pas sur les sommes de segments RIC-109
+    // (flatDistanceMeters+steepDistanceMeters/steepGainMeters) : ces agrégats de calibration
+    // excluent la distance des arrêts (segments écartés sous PAUSE_SPEED_KMH) et ne comptent le D+
+    // que des segments classés pentus, donc ne correspondaient pas aux totaux du jour affichés dans
+    // le détail de la rando. Les colonnes de segments restent en base, elles ne servent plus qu'à
+    // SpeedCalibrationCalculator. day.distanceMeters/elevationGainMeters valent null si et
+    // seulement si ce jour n'a pas encore été rattrapé (bestDayRecord l'ignore alors) : ce cas ne
+    // devrait plus exister une fois le rattrapage RIC-114/207 passé.
     private fun maxDistanceDayRecord(
         tracks: List<LoggedTrackEntity>,
         daysByTrackId: Map<String, List<LoggedTrackDayEntity>>,
     ): BilanRecord? = bestDayRecord(tracks, daysByTrackId, BilanRecordKind.MAX_DISTANCE_DAY) { day ->
-        val flat = day.flatDistanceMeters ?: return@bestDayRecord null
-        val steep = day.steepDistanceMeters ?: return@bestDayRecord null
-        (flat + steep) / 1000.0
+        day.distanceMeters?.let { it / 1000.0 }
     }
 
     private fun maxGainDayRecord(
         tracks: List<LoggedTrackEntity>,
         daysByTrackId: Map<String, List<LoggedTrackDayEntity>>,
-    ): BilanRecord? = bestDayRecord(tracks, daysByTrackId, BilanRecordKind.MAX_GAIN_DAY) { it.steepGainMeters }
+    ): BilanRecord? = bestDayRecord(tracks, daysByTrackId, BilanRecordKind.MAX_GAIN_DAY) { it.elevationGainMeters }
 
     // Nombre de jours d'abord (ce que "trek" veut dire ici) ; à égalité, la distance cumulée
     // départage ; à égalité sur les deux, le D+ cumulé. compareBy en cascade : ne regarde la clé
