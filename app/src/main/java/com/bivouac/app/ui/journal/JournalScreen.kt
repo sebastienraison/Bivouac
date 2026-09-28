@@ -2280,11 +2280,31 @@ internal fun ThreeStopJournalDetail(
         } else {
             fallbackSummaryHeightPx + navigationBarHeightPx
         }).coerceAtMost(fullHeightPx * 0.46f)
-        val profileHeightPx = maxOf(
-            summaryHeightPx + with(density) { 102.dp.toPx() },
-            fullHeightPx * 0.39f,
-        )
-            .coerceIn(summaryHeightPx, fullHeightPx * 0.67f)
+        // RIC-146 lot 5 (brief Partie A.1) : en mode normal et en Planification, le cran Profil
+        // n'ajoute que l'ElevationProfile (86.dp + ses paddings verticaux, soit 102.dp) au-dessus
+        // de la Synthèse ; ce montant fixe reste inchangé ici (brief "les hauteurs ne changent
+        // pas"). En mode Analyse, ce même bloc ajoute aussi le sélecteur de coloration/axe et la
+        // ligne de lecture (AnalysisProfileControlsRow, AnalysisReadoutLine), plus haut et de
+        // hauteur variable (deux lignes de texte, coloration disponible ou non) : un montant fixe
+        // coupait le profil (défaut signalé, cap02/cap09). On mesure donc réellement ce bloc,
+        // comme measuredSummaryHeightPx mesure déjà la Synthèse, et on ne s'en sert qu'en mode
+        // Analyse.
+        var measuredAnalysisProfileExtraHeightPx by remember(entry.id) { mutableIntStateOf(0) }
+        val profileHeightPx = if (analysisModeActive) {
+            val fallbackExtraPx = with(density) { 220.dp.toPx() }
+            val extraPx = if (measuredAnalysisProfileExtraHeightPx > 0) {
+                measuredAnalysisProfileExtraHeightPx.toFloat()
+            } else {
+                fallbackExtraPx
+            }
+            (summaryHeightPx + extraPx).coerceIn(summaryHeightPx, fullHeightPx * 0.92f)
+        } else {
+            maxOf(
+                summaryHeightPx + with(density) { 102.dp.toPx() },
+                fullHeightPx * 0.39f,
+            )
+                .coerceIn(summaryHeightPx, fullHeightPx * 0.67f)
+        }
         val detailHeightPx = fullHeightPx
         val anchors = remember(fullHeightPx, summaryHeightPx, profileHeightPx, detailHeightPx) {
             mapOf(
@@ -2294,6 +2314,17 @@ internal fun ThreeStopJournalDetail(
             )
         }
         val drawer = rememberThreeStopDrawerState(anchors, entry.id)
+        // RIC-146 lot 5 (brief Partie A.6, anomalie signalée par le lot 4 non reproduite alors) :
+        // detailScrollState (ThreeStopDrawerState, partagé entre Journal et Planification) n'est
+        // recréé qu'au changement de trace (remember(trackKey) dans rememberThreeStopDrawerState),
+        // jamais à l'entrée ou à la sortie du mode Analyse : le contenu du cran Détails change
+        // pourtant complètement (liste des jours/tags/notes/photos <-> quatre sections d'Analyse,
+        // bien plus courtes). Sans remise à zéro, un cran Détails scrollé avant de changer de mode
+        // restait au même offset sur le nouveau contenu : sur les sections d'Analyse, ça ne
+        // laissait qu'une ligne du tableau d'allure visible, le titre de section étant scrollé
+        // au-dessus de l'écran (symptôme du lot 4 : "une seule ligne, sans titre" plutôt qu'un
+        // écran vide, cohérent avec un scroll trop bas sur un contenu devenu plus court).
+        LaunchedEffect(analysisModeActive) { drawer.detailScrollState.scrollTo(0) }
         // RIC-146 lot 3 : la légende (hissée au niveau de l'écran) doit se masquer au cran Détails.
         LaunchedEffect(drawer.stop) { onDrawerStopChanged(drawer.stop) }
         // RIC-184 : le tiroir descend sur PhotoPlacementDrawerStop à l'entrée du mode placement
@@ -2362,7 +2393,25 @@ internal fun ThreeStopJournalDetail(
                         .padding(
                             start = 20.dp,
                             end = 20.dp,
-                            bottom = with(density) { navigationBarHeightPx.toDp() } + 8.dp,
+                            // RIC-146 lot 5 (brief Partie A.5) : ce padding se retrouve une seconde
+                            // fois dans summaryHeightPx plus haut (measuredSummaryHeightPx + navBar +
+                            // 8dp), qui mesure pourtant CE Column, padding bas compris : la vraie
+                            // marge sous la Synthèse valait donc le double de navigationBarHeightPx.
+                            // Invisible en mode normal (elle finit sous le pli, au bord du cran
+                            // Synthèse), elle devenait un vide d'une centaine de pixels bien visible
+                            // en mode Analyse une fois le tiroir tiré au cran Profil : le sélecteur
+                            // de coloration semblait détaché de la ligne des crans (défaut
+                            // cap02/cap09, brief Partie A.5). Correction ciblée au mode Analyse
+                            // seulement (brief "en mode normal et en Planification, les hauteurs ne
+                            // changent pas") : l'espacement habituel du tiroir (8.dp, comme
+                            // Arrangement.spacedBy(8.dp) plus bas) suffit, le dégagement sous la
+                            // barre de navigation restant assuré une fois par l'ajout externe déjà
+                            // présent dans summaryHeightPx.
+                            bottom = if (analysisModeActive) {
+                                8.dp
+                            } else {
+                                with(density) { navigationBarHeightPx.toDp() } + 8.dp
+                            },
                         )
                         .onGloballyPositioned { measuredSummaryHeightPx = it.size.height },
                 ) {
@@ -2447,7 +2496,13 @@ internal fun ThreeStopJournalDetail(
                 }
 
                 AnimatedVisibility(visible = !noteTakesAllSpace) {
-                    Column {
+                    Column(
+                        // RIC-146 lot 5 (brief Partie A.1) : hauteur réelle du bloc Profil en mode
+                        // Analyse, voir measuredAnalysisProfileExtraHeightPx plus haut. Mesurée
+                        // systématiquement (coût négligeable) mais seule l'ancre du cran Profil s'en
+                        // sert, et seulement en mode Analyse.
+                        modifier = Modifier.onGloballyPositioned { measuredAnalysisProfileExtraHeightPx = it.size.height },
+                    ) {
                         // RIC-146 lot 4 (brief §4/§6) : coloration du profil et pauses, dérivées du
                         // même résultat d'Analyse que la carte (com.bivouac.app.ui.map.HikeMapView,
                         // classOf/colorGroups) mais résolues ici en Color plutôt qu'en argb osmdroid.
