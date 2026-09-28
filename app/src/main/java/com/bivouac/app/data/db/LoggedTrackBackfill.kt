@@ -2,10 +2,9 @@ package com.bivouac.app.data.db
 
 import android.content.Context
 import android.util.Log
-import com.bivouac.app.data.gpx.DaySegmentAggregate
+import com.bivouac.app.data.gpx.DaySegmentSums
 import com.bivouac.app.data.gpx.GpxParser
 import com.bivouac.app.data.gpx.SpeedCalibration
-import com.bivouac.app.data.gpx.TrackSegmenter
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.gpx.TrackStatsParameters
 import com.bivouac.app.data.model.TrackPoint
@@ -76,11 +75,11 @@ object LoggedTrackBackfill {
         val rawGpx = runCatching { file.readText(StandardCharsets.UTF_8) }.getOrElse {
             // Fichier absent ou illisible : rien à dénormaliser, mais il faut sortir cette ligne
             // de la file d'attente. Un hash de chaîne vide n'entrera en collision avec aucun
-            // fichier réel, donc la détection de doublon n'en est pas faussée. DaySegmentAggregate
-            // .EMPTY (des zéros, pas des nuls) marque ce jour comme traité au même titre que les
-            // trois colonnes historiques.
+            // fichier réel, donc la détection de doublon n'en est pas faussée. DaySegmentSums.EMPTY
+            // (des zéros, pas des nuls) marque ce jour comme traité au même titre que les trois
+            // colonnes historiques.
             Log.w(TAG, "Jour ${day.id} illisible, marqué traité sans donnée", it)
-            dao.writeDenormalizedFields(day.id, sha256(""), null, null, DaySegmentAggregate.EMPTY)
+            dao.writeDenormalizedFields(day.id, sha256(""), null, null, DaySegmentSums.EMPTY)
             return
         }
         val contentHash = sha256(rawGpx)
@@ -88,7 +87,7 @@ object LoggedTrackBackfill {
             rawGpx.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }.points
         }.getOrElse {
             Log.w(TAG, "Jour ${day.id} non parsable, hash seul", it)
-            dao.writeDenormalizedFields(day.id, contentHash, null, null, DaySegmentAggregate.EMPTY)
+            dao.writeDenormalizedFields(day.id, contentHash, null, null, DaySegmentSums.EMPTY)
             return
         }
         val first = points.firstOrNull()?.time
@@ -98,31 +97,26 @@ object LoggedTrackBackfill {
         } else {
             null
         }
-        val aggregate = DaySegmentAggregate.of(TrackSegmenter.segment(points))
-        dao.writeDenormalizedFields(day.id, contentHash, first?.toEpochMilli(), elapsed, aggregate)
+        dao.writeDenormalizedFields(day.id, contentHash, first?.toEpochMilli(), elapsed, DaySegmentSums.of(points))
     }
 
-    // Regroupe les sept paramètres de segments en un seul appel lisible, plutôt que de répéter
-    // aggregate.flatCount, aggregate.flatDistanceMeters, ... aux trois points d'appel ci-dessus.
+    // Regroupe les paramètres de segments en un seul appel lisible aux trois points d'appel
+    // ci-dessus. RIC-146 : pausedSeconds et les lignes de rythme suivent les sommes de calibration,
+    // dans la même transaction (voir LoggedTrackDao.applyDayBackfill).
     private suspend fun LoggedTrackDao.writeDenormalizedFields(
         id: Long,
         contentHash: String,
         startedAtMillis: Long?,
         elapsedSeconds: Long?,
-        aggregate: DaySegmentAggregate,
-    ) = updateDayDenormalizedFields(
+        sums: DaySegmentSums,
+    ) = applyDayBackfill(
         id = id,
         contentHash = contentHash,
         startedAtMillis = startedAtMillis,
         elapsedSeconds = elapsedSeconds,
-        flatCount = aggregate.flatCount,
-        flatDistanceMeters = aggregate.flatDistanceMeters,
-        flatHours = aggregate.flatHours,
-        steepCount = aggregate.steepCount,
-        steepDistanceMeters = aggregate.steepDistanceMeters,
-        steepGainMeters = aggregate.steepGainMeters,
-        steepHours = aggregate.steepHours,
-        stoppedHours = aggregate.stoppedHours,
+        aggregate = sums.aggregate,
+        pausedSeconds = sums.pausedSeconds,
+        paceBands = sums.paceBands,
     )
 
     private fun sha256(text: String): String =
@@ -278,16 +272,23 @@ object LoggedTrackBackfill {
         // construction égale à la somme passée à applyStatsBackfill pour la trace ci-dessous, ce qui
         // est exactement l'invariant "somme des jours == total de la rando".
         val dayStats = parsed.map { TrackStatsCalculator.compute(it.points, SpeedCalibration.DEFAULT) }
+        //
+        // RIC-146 (ALGORITHM_VERSION 3) : les sommes de calibration passent à la définition fine
+        // des pauses, et chaque jour reçoit pausedSeconds et ses lignes de rythme par pente dans
+        // la même transaction (DaySegmentSums).
         val dayUpdates = parsed.zip(dayStats).map { (p, stats) ->
+            val sums = DaySegmentSums.of(p.points)
             DayStatsUpdate(
                 id = p.day.id,
                 contentHash = p.contentHash,
                 startedAtMillis = p.startedAtMillis,
                 elapsedSeconds = p.elapsedSeconds,
-                aggregate = DaySegmentAggregate.of(TrackSegmenter.segment(p.points)),
+                aggregate = sums.aggregate,
                 distanceMeters = stats.distanceMeters,
                 elevationGainMeters = stats.elevationGainMeters,
                 elevationLossMeters = stats.elevationLossMeters,
+                pausedSeconds = sums.pausedSeconds,
+                paceBands = sums.paceBands,
             )
         }
         dao.applyStatsBackfill(

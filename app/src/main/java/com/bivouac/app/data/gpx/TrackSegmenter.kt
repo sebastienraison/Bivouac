@@ -19,7 +19,11 @@ import kotlin.math.abs
 //     segment réellement plat vaut encore 13 m/km en médiane).
 //   - aucun segment n'est écarté au découpage, y compris ceux contenant un long arrêt : ce temps
 //     fait partie de la durée que l'estimation doit reproduire. C'est à la classification
-//     (DaySegmentAggregate.of) de décider quoi en faire (voir PAUSE_SPEED_KMH).
+//     (DaySegmentAggregate.of) de décider quoi en faire (voir AnalysisParameters).
+//
+// RIC-146 : le découpage ne change pas, mais chaque segment connaît désormais ses bornes (index des
+// points) et la part des pauses fines (TrackPauseDetector) qui tombe entre elles : son temps de
+// marche est son temps écoulé moins ces pauses.
 
 /** Un segment de trace : distance parcourue à peu près constante, dénivelé et durée réels. */
 data class TrackSegment(
@@ -27,10 +31,25 @@ data class TrackSegment(
     val elevationGainMeters: Double,
     /** Dénivelé net (altitude lissée fin - début) : bien plus robuste au bruit capteur que le D+. */
     val netElevationMeters: Double,
+    /** Temps écoulé du premier au dernier point du segment, pauses comprises. */
     val hours: Double,
+    // RIC-146 : valeurs par défaut pour les segments construits à la main (tests de calibration),
+    // qui n'ont ni points ni pauses : un segment sans pause marche pendant tout son temps écoulé.
+    /** Index du point qui ouvre le segment dans la liste passée à [TrackSegmenter.segment]. */
+    val startIndex: Int = 0,
+    /** Index du point qui ferme le segment ; le point suivant ouvre le segment d'après. */
+    val endIndex: Int = 0,
+    /** Part des pauses du jour comprise entre [startIndex] et [endIndex], en heures. */
+    val pausedHours: Double = 0.0,
 ) {
     val speedKmh: Double get() = if (hours > 0) (distanceMeters / 1000.0) / hours else Double.MAX_VALUE
     val netSlopePercent: Double get() = if (distanceMeters > 0) 100.0 * netElevationMeters / distanceMeters else 0.0
+
+    /** Temps de marche : temps écoulé moins les pauses, jamais négatif. */
+    val movingHours: Double get() = (hours - pausedHours).coerceAtLeast(0.0)
+
+    /** Vitesse en marche, ou null si le segment n'a aucun temps de marche. */
+    val movingSpeedKmh: Double? get() = if (movingHours > 0) (distanceMeters / 1000.0) / movingHours else null
 }
 
 object TrackSegmenter {
@@ -42,11 +61,6 @@ object TrackSegmenter {
     // l'incertitude de pente sur 200 m (0,3 % en Garmin, 1,3 % en Geo Tracker) et laisse le D+
     // résiduel des segments retenus rester du bruit).
     const val FLAT_SLOPE_PERCENT = 2.0
-
-    // En deçà, le segment est à l'arrêt (pause, photo, casse-croûte) et ne renseigne pas sur
-    // l'allure de marche. Exclusion impérative et non un bonus (CR section 6.1 : sans elle
-    // l'estimateur par segments est PIRE que l'ancien calcul par ligne-rando).
-    const val PAUSE_SPEED_KMH = 1.0
 
     private const val KEEP_TAIL_RATIO = 0.5
 
@@ -64,11 +78,16 @@ object TrackSegmenter {
      * Un segment ne s'ouvre et ne se ferme que sur un point horodaté, puisque sa durée en dépend :
      * le seuil de distance atteint, il se ferme au premier point horodaté qui suit. Les points
      * avant le premier ou après le dernier point horodaté ne sont dans aucun segment.
+     *
+     * RIC-146 : [pauses] sont les pauses du jour ([TrackPauseDetector.detect] sur ces mêmes
+     * points) ; l'appelant qui en a aussi besoin ailleurs les passe pour ne pas les détecter deux
+     * fois.
      */
     fun segment(
         points: List<TrackPoint>,
         segmentLengthMeters: Double = SEGMENT_LENGTH_METERS,
         parameters: TrackStatsParameters = TrackStatsParameters.DEFAULT,
+        pauses: List<TrackPause> = TrackPauseDetector.detect(points),
     ): List<TrackSegment> {
         val firstTimed = points.indexOfFirst { it.time != null }
         val lastTimed = points.indexOfLast { it.time != null }
@@ -90,6 +109,9 @@ object TrackSegmenter {
                     elevationGainMeters = accumulatedGain,
                     netElevationMeters = smoothed[endIndex] - smoothed[startIndex],
                     hours = hours,
+                    startIndex = startIndex,
+                    endIndex = endIndex,
+                    pausedHours = TrackPauseDetector.pausedSecondsBetween(points, pauses, startIndex, endIndex) / 3_600.0,
                 )
             }
         }
@@ -126,9 +148,9 @@ data class DaySegmentAggregate(
     val steepDistanceMeters: Double,
     val steepGainMeters: Double,
     val steepHours: Double,
-    // RIC-115 : heures cumulées de TOUS les segments écartés par PAUSE_SPEED_KMH, plat comme
-    // pentu : jusqu'ici ce temps était simplement jeté (voir la kdoc de `of` ci-dessous) ; il sert
-    // désormais à mesurer automatiquement la provision de pause (SpeedCalibrationCalculator).
+    // RIC-115 : heures cumulées à l'arrêt, qui servent à mesurer automatiquement la provision de
+    // pause (SpeedCalibrationCalculator). RIC-146 : c'est désormais le temps de pause fin de chaque
+    // segment retenu, plus le temps écoulé entier des segments écartés (voir `of`).
     val stoppedHours: Double,
 ) {
     operator fun plus(other: DaySegmentAggregate) = DaySegmentAggregate(
@@ -146,35 +168,136 @@ data class DaySegmentAggregate(
         val EMPTY = DaySegmentAggregate(0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, 0.0)
 
         /**
-         * Classe [segments] en plat/pentu selon [TrackSegmenter.FLAT_SLOPE_PERCENT], en écartant
-         * des deux catégories les segments à l'arrêt ([TrackSegmenter.PAUSE_SPEED_KMH]) : voir la
-         * kdoc de ces constantes pour pourquoi. RIC-129 : l'exclusion portait initialement sur le
-         * plat seul ; un arrêt pris en pleine montée gonflait `steepHours` sans y ajouter de D+,
-         * ce qui biaisait la pénalité calibrée à la hausse (mesuré sur le Journal réel : jusqu'à
-         * 18 % du temps « pentu » cumulé était en fait du temps à l'arrêt). La classification a
-         * lieu une seule fois, ici, à l'import ou au rattrapage ; [SpeedCalibrationCalculator] ne
-         * voit plus jamais un [TrackSegment] individuel.
+         * Classe [segments] en plat/pentu selon [TrackSegmenter.FLAT_SLOPE_PERCENT], sur leur temps
+         * de marche. La classification a lieu une seule fois, ici, à l'import ou au rattrapage ;
+         * [SpeedCalibrationCalculator] ne voit plus jamais un [TrackSegment] individuel.
          *
-         * RIC-115 : les segments écartés (plat ET pentu, peu importe la pente, seul le critère de
-         * vitesse compte) ne sont plus perdus : leurs heures sont sommées dans [stoppedHours].
+         * RIC-146 : une seule définition de la pause dans toute l'app (voir [AnalysisParameters]),
+         * portage de `day_sums` (docs/pilotage/ric-146/reference_lot1.py). Pour chaque segment :
+         *   - si son temps de marche est nul, ou sa vitesse en marche hors de
+         *     [AnalysisParameters.minMovingSpeedKmh, AnalysisParameters.maxMovingSpeedKmh], il ne
+         *     renseigne pas sur l'allure : tout son temps écoulé va dans [stoppedHours] ;
+         *   - sinon [stoppedHours] reçoit ses pauses, et [flatHours] ou [steepHours] son temps de
+         *     marche.
+         * Invariant : flatHours + steepHours + stoppedHours égale la somme des temps écoulés des
+         * segments. Avant RIC-146, un segment était à l'arrêt ou en marche tout entier (vitesse
+         * écoulée sous 1 km/h) : un arrêt de 3 minutes dans une montée comptait comme de la marche,
+         * et gonflait la pénalité D+ calibrée.
+         *
+         * RIC-129 (inchangé) : l'exclusion porte sur le plat ET le pentu ; un arrêt pris en pleine
+         * montée ne doit pas gonfler `steepHours` sans y ajouter de D+.
          */
-        fun of(segments: List<TrackSegment>): DaySegmentAggregate {
-            val flat = segments.filter {
-                abs(it.netSlopePercent) < TrackSegmenter.FLAT_SLOPE_PERCENT && it.speedKmh >= TrackSegmenter.PAUSE_SPEED_KMH
+        fun of(
+            segments: List<TrackSegment>,
+            parameters: AnalysisParameters = AnalysisParameters.DEFAULT,
+        ): DaySegmentAggregate {
+            var flatCount = 0
+            var flatDistance = 0.0
+            var flatHours = 0.0
+            var steepCount = 0
+            var steepDistance = 0.0
+            var steepGain = 0.0
+            var steepHours = 0.0
+            var stoppedHours = 0.0
+            for (segment in segments) {
+                if (!segment.isRetainedForPace(parameters)) {
+                    stoppedHours += segment.hours
+                    continue
+                }
+                val moving = segment.movingHours
+                stoppedHours += segment.hours - moving
+                if (abs(segment.netSlopePercent) < TrackSegmenter.FLAT_SLOPE_PERCENT) {
+                    flatCount++
+                    flatDistance += segment.distanceMeters
+                    flatHours += moving
+                } else {
+                    steepCount++
+                    steepDistance += segment.distanceMeters
+                    steepGain += segment.elevationGainMeters
+                    steepHours += moving
+                }
             }
-            val steep = segments.filter {
-                abs(it.netSlopePercent) >= TrackSegmenter.FLAT_SLOPE_PERCENT && it.speedKmh >= TrackSegmenter.PAUSE_SPEED_KMH
-            }
-            val stopped = segments.filter { it.speedKmh < TrackSegmenter.PAUSE_SPEED_KMH }
             return DaySegmentAggregate(
-                flatCount = flat.size,
-                flatDistanceMeters = flat.sumOf { it.distanceMeters },
-                flatHours = flat.sumOf { it.hours },
-                steepCount = steep.size,
-                steepDistanceMeters = steep.sumOf { it.distanceMeters },
-                steepGainMeters = steep.sumOf { it.elevationGainMeters },
-                steepHours = steep.sumOf { it.hours },
-                stoppedHours = stopped.sumOf { it.hours },
+                flatCount = flatCount,
+                flatDistanceMeters = flatDistance,
+                flatHours = flatHours,
+                steepCount = steepCount,
+                steepDistanceMeters = steepDistance,
+                steepGainMeters = steepGain,
+                steepHours = steepHours,
+                stoppedHours = stoppedHours,
+            )
+        }
+    }
+}
+
+/**
+ * RIC-146 : un segment ne renseigne sur l'allure que s'il a un temps de marche et une vitesse en
+ * marche plausible (voir [AnalysisParameters]). Critère commun aux sommes de calibration et au
+ * rythme par bande de pente : les deux doivent écarter exactement les mêmes segments.
+ */
+fun TrackSegment.isRetainedForPace(parameters: AnalysisParameters = AnalysisParameters.DEFAULT): Boolean {
+    val speed = movingSpeedKmh ?: return false
+    return speed >= parameters.minMovingSpeedKmh && speed <= parameters.maxMovingSpeedKmh
+}
+
+/**
+ * RIC-146 : sommes d'un jour (ou d'un ensemble de randos, une fois additionnées) pour une bande de
+ * pente nette : de quoi calculer le rythme habituel d'un marcheur sur cette pente (distance totale
+ * divisée par temps de marche total, conception section 5.4). Seuls les segments retenus pour
+ * l'allure y sont comptés ([isRetainedForPace]).
+ *
+ * Rangées une fois par jour et par bande dans `logged_track_day_pace`, à l'import et au rattrapage,
+ * pour la même raison que [DaySegmentAggregate] : ne jamais re-parser un GPX pour calculer une
+ * référence sur tout le Journal.
+ */
+data class PaceBandSum(
+    /** Numéro de bande, de 0 à [AnalysisParameters.slopeBandCount] - 1 (voir [AnalysisParameters.slopeBandOf]). */
+    val band: Int,
+    val segmentCount: Int,
+    val distanceMeters: Double,
+    val movingSeconds: Double,
+) {
+    companion object {
+        /** Une ligne par bande non vide, triées par bande : une bande sans segment n'a pas de ligne. */
+        fun of(segments: List<TrackSegment>, parameters: AnalysisParameters = AnalysisParameters.DEFAULT): List<PaceBandSum> =
+            segments
+                .filter { it.isRetainedForPace(parameters) }
+                .groupBy { parameters.slopeBandOf(it.netSlopePercent) }
+                .map { (band, inBand) ->
+                    PaceBandSum(
+                        band = band,
+                        segmentCount = inBand.size,
+                        distanceMeters = inBand.sumOf { it.distanceMeters },
+                        movingSeconds = inBand.sumOf { it.movingHours * 3_600.0 },
+                    )
+                }
+                .sortedBy { it.band }
+    }
+}
+
+/**
+ * RIC-146 : tout ce qu'un jour range à côté de ses points, à l'import comme au rattrapage, calculé
+ * en une passe : les pauses sont détectées une seule fois et servent à la fois au total du jour et
+ * au temps de marche de chaque segment.
+ */
+data class DaySegmentSums(
+    val aggregate: DaySegmentAggregate,
+    /** Somme des durées des pauses du jour, en secondes (voir [TrackPauseDetector]). */
+    val pausedSeconds: Double,
+    val paceBands: List<PaceBandSum>,
+) {
+    companion object {
+        /** Jour sans donnée exploitable (fichier illisible) : des zéros, pas des nuls. */
+        val EMPTY = DaySegmentSums(DaySegmentAggregate.EMPTY, 0.0, emptyList())
+
+        fun of(points: List<TrackPoint>, parameters: AnalysisParameters = AnalysisParameters.DEFAULT): DaySegmentSums {
+            val pauses = TrackPauseDetector.detect(points, parameters)
+            val segments = TrackSegmenter.segment(points, pauses = pauses)
+            return DaySegmentSums(
+                aggregate = DaySegmentAggregate.of(segments, parameters),
+                pausedSeconds = pauses.sumOf { it.seconds },
+                paceBands = PaceBandSum.of(segments, parameters),
             )
         }
     }

@@ -61,6 +61,7 @@ import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
 import com.bivouac.app.data.db.PhotoDisplayOrder
+import com.bivouac.app.data.gpx.TrackAnalysisMapMapping
 import com.bivouac.app.data.gpx.TrackGeometry
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.gpx.TrackStatsParameters
@@ -176,6 +177,20 @@ private const val PHOTO_PLACEMENT_HALO_RADIUS_FACTOR = 0.9f
 
 // Journal-only (BIV-48): one track among several shown together in the multi-trace overview.
 data class ColoredTrack(val id: String, val track: HikeTrack, val color: Color)
+
+/**
+ * RIC-146 lot 3 : ce que le mode Analyse du détail Journal ajoute au rendu (conception section
+ * 7.2, brief lot 3 §3). [daySegments]/[dayPauses] sont les [com.bivouac.app.data.gpx.DayAnalysis]
+ * de [com.bivouac.app.data.gpx.TrackAnalysis.days], un élément par jour, dans le même ordre que
+ * les jours concaténés dans `track.points` : c'est ce qui permet à [renderTrack] de retomber sur
+ * les jonctions de jours déjà utilisées ailleurs (voir [TrackAnalysisMapMapping.dayOffsets]).
+ */
+data class AnalysisMapData(
+    val daySegments: List<List<com.bivouac.app.data.gpx.AnalyzedSegment>>,
+    val dayPauses: List<List<com.bivouac.app.data.gpx.AnalyzedPause>>,
+    val dayPointCounts: List<Int>,
+    val coloring: AnalysisColoring,
+)
 
 // Compose updates HikeMapView whenever the Journal cursor index or the photo draft changes. While
 // osmdroid owns an active drag, rebuilding all overlays would replace the marker under the finger
@@ -314,6 +329,10 @@ fun HikeMapView(
     multiTracks: List<ColoredTrack> = emptyList(),
     highlightedTrackId: String? = null,
     onTraceTapped: (id: String) -> Unit = {},
+    // RIC-146 lot 3 : non nul pendant le mode Analyse du détail Journal (conception section 7.2).
+    // Remplace la coloration unie du tracé par une coloration par tronçon, ajoute les marqueurs de
+    // pause et masque les marqueurs photo (voir renderTrack).
+    analysisData: AnalysisMapData? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -452,6 +471,7 @@ fun HikeMapView(
                     photos, missingPhotoIds, onCursorCleared, onPhotoBubbleClick,
                     photoPlacementTarget, onPhotoPlacementDrag,
                     multiTracks, highlightedTrackId, onTraceTapped, copyrightOverlay,
+                    analysisData,
                 )
                 pendingHeightCorrection.value = when {
                     trackChanged || recenterRequested -> visibleHeightPx == Int.MAX_VALUE
@@ -568,6 +588,7 @@ private fun renderTrack(
     highlightedTrackId: String?,
     onTraceTapped: (String) -> Unit,
     copyrightOverlay: WrappingCopyrightOverlay,
+    analysisData: AnalysisMapData?,
 ) {
     // onCursorChanged deliberately updates Compose on every snapped point so the elevation
     // profile follows live. Do not let that recomposition destroy osmdroid's current drag.
@@ -669,8 +690,41 @@ private fun renderTrack(
     continuousRuns.forEach { run ->
         mapView.overlays.add(strokedPolyline(run, R.color.track_line_outline, 10f, dashed = false))
     }
-    continuousRuns.forEach { run ->
-        mapView.overlays.add(strokedPolyline(run, R.color.track_line, 4f, dashed = false))
+    // RIC-146 lot 3 : liseré blanc conservé (juste au-dessus), coloration par tronçon à la place de
+    // la ligne unie du tracé normal (brief lot 3 §3). Un tronçon sans classe garde la couleur
+    // neutre plutôt que de percer le liseré : jamais de trou dans le tracé.
+    if (analysisData != null) {
+        fun coloredPolyline(pts: List<GeoPoint>, color: Int) = Polyline(mapView).apply {
+            setPoints(pts)
+            paint.apply {
+                this.color = color
+                style = Paint.Style.STROKE
+                strokeWidth = 4f * density
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+            }
+            setOnClickListener(suppressDefaultInfoWindow)
+        }
+        val classOf: (com.bivouac.app.data.gpx.AnalyzedSegment) -> Int? = when (analysisData.coloring) {
+            AnalysisColoring.PACE -> { s -> s.paceClass }
+            AnalysisColoring.SLOPE -> { s -> s.slopeClass }
+            AnalysisColoring.SPEED -> { s -> s.speedClass }
+        }
+        val dayOffsets = TrackAnalysisMapMapping.dayOffsets(analysisData.dayPointCounts)
+        analysisData.daySegments.forEachIndexed { dayIndex, segments ->
+            val groups = TrackAnalysisMapMapping.colorGroups(segments, dayOffsets, dayIndex, classOf)
+            groups.forEach { group ->
+                if (group.startScreenIndex !in geoPoints.indices || group.endScreenIndex !in geoPoints.indices) return@forEach
+                val pts = geoPoints.subList(group.startScreenIndex, group.endScreenIndex + 1)
+                if (pts.size < 2) return@forEach
+                val color = AnalysisColors.colorFor(analysisData.coloring, group.colorClass).toArgb()
+                mapView.overlays.add(coloredPolyline(pts, color))
+            }
+        }
+    } else {
+        continuousRuns.forEach { run ->
+            mapView.overlays.add(strokedPolyline(run, R.color.track_line, 4f, dashed = false))
+        }
     }
     gaps.forEach { gapEnd ->
         val bridge = listOf(geoPoints[gapEnd], geoPoints[gapEnd + 1])
@@ -710,7 +764,8 @@ private fun renderTrack(
     // carrousel : voir shownOnMap. Elle reste présente dans le bandeau, la grille et la
     // visionneuse, qui ne passent pas par ici. `mapVisiblePhotos` remplace `photos` pour tout ce
     // qui suit dans cette fonction (marqueurs, cluster, curseur, bulle).
-    val mapVisiblePhotos = photos.filter { it.shownOnMap }
+    // RIC-146 lot 3 (brief §3) : les marqueurs photo sont masqués en mode Analyse.
+    val mapVisiblePhotos = if (analysisData != null) emptyList() else photos.filter { it.shownOnMap }
 
     // RIC-43 : une photo dont la copie locale a disparu n'a aucun marqueur : taper un repère qui
     // n'ouvrirait rien serait pire que son absence. Elle reste néanmoins dans `mapVisiblePhotos`
@@ -849,7 +904,140 @@ private fun renderTrack(
     // plus haut, pour pourquoi c'est ce qui lui fait gagner tout conflit de toucher dans sa zone.
     placementMarker?.let { mapView.overlays.add(it) }
 
+    // RIC-146 lot 3 : marqueurs de pause, puis (brief §3 "les textes sont dessinés après tous les
+    // marqueurs") l'overlay de texte des durées, ajouté en tout dernier pour peindre par-dessus
+    // absolument tout le reste (bivouacs, extrémités, curseur compris).
+    if (analysisData != null) {
+        val dayOffsets = TrackAnalysisMapMapping.dayOffsets(analysisData.dayPointCounts)
+        val durationLabels = mutableListOf<Pair<GeoPoint, String>>()
+        analysisData.dayPauses.forEachIndexed { dayIndex, pauses ->
+            pauses.forEach { pause ->
+                val screenIndex = TrackAnalysisMapMapping.toScreenIndex(dayOffsets, dayIndex, pause.startIndex)
+                if (screenIndex !in geoPoints.indices) return@forEach
+                val position = geoPoints[screenIndex]
+                val kind = TrackAnalysisMapMapping.pauseMarkerKind(pause.seconds)
+                mapView.overlays.add(analysisPauseMarker(mapView, position, kind))
+                if (kind == TrackAnalysisMapMapping.PauseMarkerKind.ICON_WITH_DURATION) {
+                    durationLabels += position to formatShortDuration(context, pause.seconds)
+                }
+            }
+        }
+        if (durationLabels.isNotEmpty()) {
+            mapView.overlays.add(AnalysisPauseLabelsOverlay(durationLabels, density))
+        }
+    }
+
     mapView.invalidate()
+}
+
+// RIC-146 lot 4 correction 3 (brief Partie A.3) : durée d'une pause affichée sur la carte à partir
+// de 10 min (conception section 7.2). Sous l'heure, "12 min" (journal_analysis_pause_minutes,
+// ajoutée à l'inventaire v14 pour cette correction : le lot 3 n'avait pas de chaîne compacte
+// validée et repliait sur le format heures/minutes existant, ce qui donnait "0h 12m"). À partir
+// d'une heure, ce format existant (StatsRows.formatDuration) s'applique toujours. Context.getString
+// plutôt que la variante @Composable, cette fonction tournant hors composition.
+// internal (pas private) : testée directement par PauseDurationFormattingTest (Robolectric).
+internal fun formatShortDuration(context: Context, seconds: Double): String {
+    val totalMinutes = (seconds / 60.0).roundToInt()
+    if (totalMinutes < 60) {
+        return context.getString(R.string.journal_analysis_pause_minutes, totalMinutes.toString())
+    }
+    return context.getString(
+        R.string.fmt_stats_rows_duration,
+        totalMinutes / 60,
+        (totalMinutes % 60).toString().padStart(2, '0'),
+    )
+}
+
+// Rayon des marqueurs de pause, en dp (conception section 7.2 : "point simple sous 5 min,
+// pictogramme à partir de 5 min").
+private const val PAUSE_DOT_RADIUS_DP = 4f
+private const val PAUSE_ICON_RADIUS_DP = 11f
+
+private fun analysisPauseMarker(mapView: MapView, position: GeoPoint, kind: TrackAnalysisMapMapping.PauseMarkerKind): Marker {
+    val density = mapView.context.resources.displayMetrics.density
+    val marker = Marker(mapView)
+    marker.position = position
+    marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+    marker.icon = analysisPauseIcon(mapView.context, kind, density)
+    marker.setInfoWindow(null)
+    marker.setOnMarkerClickListener { _, _ -> false }
+    return marker
+}
+
+// Icône dessinée au Canvas plutôt qu'une ressource vectorielle dédiée : seules deux formes existent
+// (un point, un pictogramme pause), toutes deux simples, et ça évite un nouvel asset XML pour un
+// glyphe generique. Régénérée à chaque renderTrack (liste de pauses courte, coût négligeable).
+private fun analysisPauseIcon(context: Context, kind: TrackAnalysisMapMapping.PauseMarkerKind, density: Float): Drawable {
+    val radiusPx = when (kind) {
+        TrackAnalysisMapMapping.PauseMarkerKind.DOT -> PAUSE_DOT_RADIUS_DP
+        else -> PAUSE_ICON_RADIUS_DP
+    } * density
+    val sizePx = (radiusPx * 2 + density).toInt().coerceAtLeast(1)
+    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val center = sizePx / 2f
+    val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = AndroidColor.parseColor("#CC1B1B1B"); style = Paint.Style.FILL }
+    val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = AndroidColor.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = density
+    }
+    when (kind) {
+        TrackAnalysisMapMapping.PauseMarkerKind.DOT -> {
+            canvas.drawCircle(center, center, radiusPx - density / 2, fillPaint)
+            canvas.drawCircle(center, center, radiusPx - density / 2, strokePaint)
+        }
+        TrackAnalysisMapMapping.PauseMarkerKind.ICON, TrackAnalysisMapMapping.PauseMarkerKind.ICON_WITH_DURATION -> {
+            canvas.drawCircle(center, center, radiusPx - density / 2, fillPaint)
+            canvas.drawCircle(center, center, radiusPx - density / 2, strokePaint)
+            // Pictogramme pause : deux barres verticales blanches, comme l'icône Material "Pause".
+            val barWidth = radiusPx * 0.28f
+            val barHeight = radiusPx * 1.1f
+            val gap = radiusPx * 0.26f
+            val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = AndroidColor.WHITE; style = Paint.Style.FILL }
+            canvas.drawRect(center - gap - barWidth, center - barHeight / 2, center - gap, center + barHeight / 2, barPaint)
+            canvas.drawRect(center + gap, center - barHeight / 2, center + gap + barWidth, center + barHeight / 2, barPaint)
+        }
+    }
+    return BitmapDrawable(context.resources, bitmap)
+}
+
+/**
+ * RIC-146 lot 3 : durées des pauses de 10 min et plus, peintes en dernier (brief §3) pour rester
+ * lisibles par-dessus tout le reste des overlays. Un Overlay dédié plutôt qu'un Marker de plus :
+ * un Marker se redessinerait sous les marqueurs ajoutés après lui, alors que cet overlay doit
+ * rester strictement au-dessus, quel que soit l'ordre d'ajout des marqueurs eux-mêmes.
+ */
+private class AnalysisPauseLabelsOverlay(
+    private val labels: List<Pair<GeoPoint, String>>,
+    private val density: Float,
+) : Overlay() {
+    private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = AndroidColor.WHITE
+        textSize = 12f * density
+        textAlign = Paint.Align.CENTER
+    }
+    private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = AndroidColor.parseColor("#CC1B1B1B")
+        style = Paint.Style.FILL
+    }
+
+    override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
+        if (shadow) return
+        val point = Point()
+        val verticalOffset = PAUSE_ICON_RADIUS_DP * density + 4f * density
+        labels.forEach { (position, text) ->
+            mapView.projection.toPixels(position, point)
+            val textWidth = textPaint.measureText(text)
+            val left = point.x - textWidth / 2 - 4f * density
+            val right = point.x + textWidth / 2 + 4f * density
+            val top = point.y - verticalOffset - 14f * density
+            val bottom = point.y - verticalOffset
+            canvas.drawRoundRect(left, top, right, bottom, 4f * density, 4f * density, backgroundPaint)
+            canvas.drawText(text, point.x.toFloat(), bottom - 4f * density, textPaint)
+        }
+    }
 }
 
 // BIV-48: a contemplative overview, but still legible: each trace keeps the single-track

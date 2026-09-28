@@ -6,10 +6,11 @@ import android.net.Uri
 import android.util.Log
 import android.webkit.MimeTypeMap
 import com.bivouac.app.data.gpx.DaySegmentAggregate
+import com.bivouac.app.data.gpx.DaySegmentSums
 import com.bivouac.app.data.gpx.GpxParser
+import com.bivouac.app.data.gpx.PaceBandSum
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
-import com.bivouac.app.data.gpx.TrackSegmenter
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.gpx.TrackStatsParameters
 import com.bivouac.app.data.model.HikeTrack
@@ -28,6 +29,7 @@ import com.bivouac.app.data.photo.PhotoReducer
 import com.bivouac.app.data.photo.PhotoSourceMetadata
 import com.bivouac.app.data.photo.PhotoStorageMode
 import com.bivouac.app.data.photo.withAdjustments
+import com.bivouac.app.data.prefs.SpeedCalibrationMode
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -73,6 +75,11 @@ data class PreparedDay(
     val distanceMeters: Double? = null,
     val elevationGainMeters: Double? = null,
     val elevationLossMeters: Double? = null,
+    // RIC-146 : pauses fines et rythme par pente du jour, calculés dans la même passe que
+    // segmentAggregate (voir DaySegmentSums). Défauts pour les fixtures de test qui n'en ont que
+    // faire, même raisonnement que distanceMeters ci-dessus.
+    val pausedSeconds: Double? = null,
+    val paceBands: List<PaceBandSum> = emptyList(),
 )
 
 // Une trace du Journal ouverte pour affichage : [track] est l'ensemble des jours concaténés (la
@@ -81,10 +88,13 @@ data class PreparedDay(
 // ventilation « Total » + « Jour N » de la vue détail (RIC-41). Une trace d'un seul jour donne une
 // liste à un élément ; l'affichage de la ventilation ne se déclenche qu'au-delà, même convention
 // que les segments de Planification.
-data class LoggedTrackDetail(val track: HikeTrack, val daySegments: List<Segment>)
-
-// Ce que la liste du Journal doit savoir des jours d'une trace, sans ouvrir de fichier.
-data class DaySummary(val dayCount: Int, val startMillis: List<Long>)
+//
+// RIC-209 (brief Partie B) : [days], les mêmes lignes que [daySegments] (même ordre, même taille)
+// mais non reparsées : c'est elles qui portent elapsedSeconds/pausedSeconds, la vue détail n'a donc
+// pas besoin de rouvrir de fichier pour la durée réelle non plus. Un doublon d'information plutôt
+// qu'un couplage entre Segment et LoggedTrackDayEntity (Segment reste un type de
+// com.bivouac.app.data.model, partagé avec la Planification qui n'a pas de ligne de base pour ça).
+data class LoggedTrackDetail(val track: HikeTrack, val daySegments: List<Segment>, val days: List<LoggedTrackDayEntity>)
 
 /**
  * RIC-43 : issue d'un lot d'ajout de photos, photo par photo : voir [LoggedTrackRepository.addPhotosFromPicker].
@@ -237,25 +247,14 @@ class LoggedTrackRepository(context: Context) {
         LoggedTrackBackfill.runStats(appContext, dao, onProgress)
 
     /**
-     * Ce que la liste doit savoir des jours d'une trace sans ouvrir le moindre fichier : combien
-     * elle en compte, et quand chacun a commencé. Une requête pour toute la banque.
-     */
-    suspend fun daySummariesByTrackId(): Map<String, DaySummary> =
-        allDaysByTrackId()
-            .mapValues { (_, days) ->
-                DaySummary(
-                    dayCount = days.size,
-                    // Les jours sans horodatage exploitable, et ceux que le rattrapage n'a pas
-                    // encore traités, sont absents : afficher les dates connues vaut mieux
-                    // qu'inventer les autres. dayCount, lui, est toujours juste.
-                    startMillis = days.mapNotNull { it.startedAtMillis },
-                )
-            }
-
-    /**
      * RIC-19 : ce dont [com.bivouac.app.bilan.BilanStatsCalculator] a besoin pour les records de
      * granularité "jour" (VAM, altitude, bivouac le plus haut, distance/D+ max journée) : les jours
      * de chaque trace, triés, sans ouvrir le moindre fichier (colonnes dénormalisées uniquement).
+     *
+     * RIC-209 : sert aussi la liste du Journal (dayCount/dates, ex-daySummariesByTrackId, RIC-19,
+     * fondue ici faute d'un second appelant) et la durée réelle de chaque rando
+     * ([com.bivouac.app.data.gpx.RealDurationCalculator], colonnes elapsedSeconds/pausedSeconds du
+     * lot 1 de ce même chantier).
      */
     suspend fun allDaysByTrackId(): Map<String, List<LoggedTrackDayEntity>> =
         dao.getAllDays().groupBy { it.trackId }.mapValues { (_, days) -> days.sortedBy { it.dayIndex } }
@@ -308,12 +307,15 @@ class LoggedTrackRepository(context: Context) {
         )
         val days = ordered.mapIndexed { index, (rawGpx, track) ->
             val stats = dayStats[index]
+            val sums = DaySegmentSums.of(track.points)
             PreparedDay(
                 rawGpx = rawGpx,
                 contentHash = sha256(rawGpx),
                 startedAtMillis = track.points.firstOrNull()?.time?.toEpochMilli(),
                 elapsedSeconds = elapsedSeconds(track),
-                segmentAggregate = DaySegmentAggregate.of(TrackSegmenter.segment(track.points)),
+                segmentAggregate = sums.aggregate,
+                pausedSeconds = sums.pausedSeconds,
+                paceBands = sums.paceBands,
                 maxElevationMeters = track.points.mapNotNull { it.elevationMeters }.maxOrNull(),
                 lastPointElevationMeters = track.points.lastOrNull()?.elevationMeters,
                 // RIC-207 : mêmes stats par jour que celles sommées juste au-dessus pour
@@ -406,10 +408,12 @@ class LoggedTrackRepository(context: Context) {
                 distanceMeters = day.distanceMeters,
                 elevationGainMeters = day.elevationGainMeters,
                 elevationLossMeters = day.elevationLossMeters,
+                pausedSeconds = day.pausedSeconds,
             )
         }
         try {
-            dao.insert(prepared.entity, days)
+            // RIC-146 : les lignes de rythme dans la même transaction que la trace et ses jours.
+            dao.insert(prepared.entity, days, prepared.days.map { it.paceBands })
         } catch (e: Exception) {
             days.forEach { LoggedTrackGpxStore.resolve(appContext, it.rawGpxFilePath).delete() }
             throw e
@@ -445,6 +449,7 @@ class LoggedTrackRepository(context: Context) {
         return LoggedTrackDetail(
             track = HikeTrack(name = entity.name, points = dayTracks.flatMap { it.points }),
             daySegments = dayTracks.map { Segment(it.points, TrackStatsCalculator.compute(it.points)) },
+            days = days,
         )
     }
 
@@ -1272,6 +1277,42 @@ class LoggedTrackRepository(context: Context) {
         }
 
         return SegmentCalibrationInput(aggregate, fallbackSamples)
+    }
+
+    /**
+     * RIC-146 : rythme par bande de pente sommé sur les randos de référence de la vue Analyse
+     * (conception section 5.4) : [trackIds] en mode Sélection, tout le Journal quand null ;
+     * [excludedTrackId], la rando analysée, n'est jamais comptée dans sa propre référence. Une
+     * ligne par bande non vide, triées par bande.
+     *
+     * Un jour pas encore rattrapé n'a aucune ligne de rythme : il ne contribue simplement pas, sans
+     * fausser les autres (le rythme d'une bande est un rapport de deux sommes). Le rattrapage
+     * bloquant passe de toute façon avant tout écran.
+     */
+    suspend fun paceBandSums(trackIds: Set<String>?, excludedTrackId: String?): List<PaceBandSum> {
+        val totals = if (trackIds == null) {
+            dao.sumAllPaces(excludedTrackId)
+        } else {
+            val ids = trackIds - setOfNotNull(excludedTrackId)
+            if (ids.isEmpty()) emptyList() else dao.sumPacesForTracks(ids)
+        }
+        return totals.map { it.toPaceBandSum() }
+    }
+
+    /**
+     * RIC-146 (lot 2) : randos de référence de l'Analyse pour [analyzedTrackId] (conception section
+     * 2, "Randos de référence") : la sélection en mode [SpeedCalibrationMode.SELECTION], tout le
+     * Journal en mode Auto ou Manuel (mêmes randos que la calibration active, voir
+     * [com.bivouac.app.data.prefs.SettingsPreferences]). La rando analysée est toujours exclue de sa
+     * propre référence, ici comme dans [paceBandSums].
+     */
+    suspend fun analysisReferencePaceBands(
+        mode: SpeedCalibrationMode,
+        selectedTrackIds: Set<String>,
+        analyzedTrackId: String,
+    ): List<PaceBandSum> {
+        val trackIds = if (mode == SpeedCalibrationMode.SELECTION) selectedTrackIds else null
+        return paceBandSums(trackIds, analyzedTrackId)
     }
 
     private fun LoggedTrackDayEntity.toSegmentAggregate(): DaySegmentAggregate = DaySegmentAggregate(

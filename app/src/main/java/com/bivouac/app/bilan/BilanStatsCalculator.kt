@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackDayEntity
 import com.bivouac.app.data.db.LoggedTrackEntity
+import com.bivouac.app.data.gpx.RealDurationCalculator
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackStats
@@ -67,6 +68,11 @@ data class BilanRecord(
 data class BilanStats(
     val totalCount: Int,
     val totals: TrackStats,
+    // RIC-209 (brief Partie B) : durée réelle agrégée (cartouche du Bilan), à côté de
+    // totals.estimatedDurationMinutes qui reste la seule source pour distance/D+/D- ci-dessus.
+    // Voir RealDurationCalculator : réelle rando par rando quand elle existe, estimation de repli
+    // sinon, jamais un recalcul indépendant sur la distance/D+ cumulés du Bilan entier.
+    val durationAggregate: RealDurationCalculator.AggregatedDuration,
     val bivouacCount: Int,
     val progression: List<ProgressionSeries>,
     // RIC-19 §2 : mois calendaire (toutes années confondues) avec le plus de sorties cumulées :
@@ -110,10 +116,21 @@ object BilanStatsCalculator {
         )
         val bivouacCountByTrack = tracks.associate { it.id to bivouacCount(daysByTrackId[it.id].orEmpty()) }
         val totalBivouacs = bivouacCountByTrack.values.sum()
+        // RIC-209 (brief Partie B) : réelle rando par rando (daysByTrackId, colonnes du lot 1) si
+        // elle existe, estimation individuelle (même calibration) sinon.
+        val durationAggregate = RealDurationCalculator.aggregate(
+            tracks.map { entry ->
+                val real = RealDurationCalculator.forDays(daysByTrackId[entry.id].orEmpty())
+                val estimatedSeconds = TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), calibration)
+                    .estimatedDurationMinutes * 60L
+                real to estimatedSeconds
+            },
+        )
 
         return BilanStats(
             totalCount = tracks.size,
             totals = totals,
+            durationAggregate = durationAggregate,
             bivouacCount = totalBivouacs,
             progression = buildProgression(tracks, daysByTrackId, zone, now),
             mostActiveMonthInsight = buildInsight(tracks, zone),
@@ -126,6 +143,22 @@ object BilanStatsCalculator {
             biggestTrekRecord = biggestTrekRecord(tracks, daysByTrackId),
         )
     }
+
+    /**
+     * RIC-146 (lot 2) : les records de [stats] détenus par la rando [trackId] (conception section
+     * 7.3, cran Détails de l'Analyse, "Records détenus"). Ne recalcule rien : filtre les records
+     * déjà produits par [compute], elle-même appelée une fois par l'écran Bilan.
+     */
+    fun recordsHeldBy(stats: BilanStats, trackId: String): List<BilanRecord> =
+        listOfNotNull(
+            stats.kmEffortRecord,
+            stats.vamRecord,
+            stats.maxAltitudeRecord,
+            stats.highestBivouacRecord,
+            stats.maxDistanceDayRecord,
+            stats.maxGainDayRecord,
+            stats.biggestTrekRecord,
+        ).filter { it.trackId == trackId }
 
     // dayCount - 1 : même convention que JournalDayInfo.bivouacCount côté Journal (une nuit dehors
     // est une coupure entre deux jours, pas un décompte de dates connues).
@@ -305,7 +338,7 @@ object BilanStatsCalculator {
     // RIC-207 : distance/D+ du jour lus sur les totaux dénormalisés (day.distanceMeters/
     // elevationGainMeters, voir LoggedTrackDayEntity), pas sur les sommes de segments RIC-109
     // (flatDistanceMeters+steepDistanceMeters/steepGainMeters) : ces agrégats de calibration
-    // excluent la distance des arrêts (segments écartés sous PAUSE_SPEED_KMH) et ne comptent le D+
+    // excluent la distance des arrêts (segments écartés, voir AnalysisParameters) et ne comptent le D+
     // que des segments classés pentus, donc ne correspondaient pas aux totaux du jour affichés dans
     // le détail de la rando. Les colonnes de segments restent en base, elles ne servent plus qu'à
     // SpeedCalibrationCalculator. day.distanceMeters/elevationGainMeters valent null si et

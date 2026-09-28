@@ -7,9 +7,12 @@ import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.bivouac.app.R
+import com.bivouac.app.bilan.BilanRecord
+import com.bivouac.app.bilan.BilanStatsCalculator
 import com.bivouac.app.bilan.JournalOpenRequest
 import com.bivouac.app.data.db.CalibrationRefresh
 import com.bivouac.app.data.db.DuplicateMatch
+import com.bivouac.app.data.db.LoggedTrackDayEntity
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackRepository
@@ -19,8 +22,11 @@ import com.bivouac.app.data.db.PhotoDisplayOrder
 import com.bivouac.app.data.db.PhotoPositionUpdate
 import com.bivouac.app.data.db.PreparedImport
 import com.bivouac.app.data.db.SystemTag
+import com.bivouac.app.data.gpx.RealDurationCalculator
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
+import com.bivouac.app.data.gpx.TrackAnalysis
+import com.bivouac.app.data.gpx.TrackAnalysisCalculator
 import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
@@ -75,12 +81,25 @@ sealed interface JournalUiState {
         val track: HikeTrack,
         val daySegments: List<Segment>,
         val initialCursorIndex: Int? = null,
+        // RIC-209 (brief Partie B) : mêmes lignes que daySegments (même ordre/taille), pour la
+        // durée réelle (elapsedSeconds/pausedSeconds, lot 1) ; voir LoggedTrackRepository.LoggedTrackDetail.
+        val days: List<LoggedTrackDayEntity> = emptyList(),
     ) : JournalUiState
     // BIV-48: a contemplative overview of several traces at once, entries in the order they
     // should get their (rotating) legend color, each paired with its parsed track.
     data class MultiTrack(val entries: List<Pair<LoggedTrackEntity, HikeTrack>>) : JournalUiState
     data class Error(val message: String) : JournalUiState
 }
+
+/**
+ * RIC-146 lot 3 : résultat complet du mode Analyse d'un détail du Journal (conception section 5,
+ * "Records" du cran Détails), rendu par [JournalViewModel.computeAnalysis]. [records] vient de
+ * [BilanStatsCalculator.recordsHeldBy] : les records du Bilan détenus par cette rando précise.
+ */
+data class JournalAnalysisResult(
+    val analysis: TrackAnalysis,
+    val records: List<BilanRecord>,
+)
 
 // RIC-65 écran 3 : le sélecteur a renvoyé plusieurs fichiers, et rien ne permet de deviner s'il
 // s'agit d'un trek en plusieurs jours ou de plusieurs sorties indépendantes : l'utilisateur
@@ -120,7 +139,14 @@ sealed interface ImportProgress {
  * D'où [bivouacCount] tiré de [dayCount] et non du nombre de dates : sur une trace importée, une
  * nuit dehors est exactement une coupure entre deux fichiers, connue même sans horodatage.
  */
-data class JournalDayInfo(val dayCount: Int, val dates: List<LocalDate>) {
+data class JournalDayInfo(
+    val dayCount: Int,
+    val dates: List<LocalDate>,
+    // RIC-209 (brief Partie B) : durée réelle de la rando entière (somme des elapsedSeconds de ses
+    // jours, nuits exclues) ; `null` si au moins un jour n'a pas d'horodatage exploitable (brief
+    // "rando sans horodatage" : l'app n'a pas de durée réelle, repli sur l'estimation ailleurs).
+    val realDuration: RealDurationCalculator.RealDuration? = null,
+) {
     val bivouacCount: Int get() = (dayCount - 1).coerceAtLeast(0)
 }
 
@@ -652,11 +678,20 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 _tagsByTrackId.value = repository.tagsByTrackId()
                 _trackIdsWithPhotos.value = repository.trackIdsWithPhotos()
                 val zone = ZoneId.systemDefault()
-                _dayInfoByTrackId.value = repository.daySummariesByTrackId()
-                    .mapValues { (_, summary) ->
+                // RIC-209 (brief Partie B) : allDaysByTrackId() (RIC-19) donne aussi
+                // elapsedSeconds/pausedSeconds (lot 1), nécessaires à la durée réelle de la liste et
+                // des totaux ; remplace l'ancien daySummariesByTrackId, qui n'avait plus qu'un
+                // appelant et ne portait pas ces deux colonnes (fondu dans allDaysByTrackId, voir
+                // son commentaire).
+                _dayInfoByTrackId.value = repository.allDaysByTrackId()
+                    .mapValues { (_, days) ->
                         JournalDayInfo(
-                            dayCount = summary.dayCount,
-                            dates = summary.startMillis.map { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() },
+                            dayCount = days.size,
+                            // Les jours sans horodatage exploitable, et ceux que le rattrapage n'a
+                            // pas encore traités, sont absents : afficher les dates connues vaut
+                            // mieux qu'inventer les autres. dayCount, lui, est toujours juste.
+                            dates = days.mapNotNull { it.startedAtMillis }.map { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() },
+                            realDuration = RealDurationCalculator.forDays(days),
                         )
                     }
             }
@@ -714,7 +749,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                         detail.daySegments.take(idx).sumOf { it.points.size }
                             .coerceIn(0, (detail.track.points.size - 1).coerceAtLeast(0))
                     }
-                    JournalUiState.Detail(entry, detail.track, detail.daySegments, cursor)
+                    JournalUiState.Detail(entry, detail.track, detail.daySegments, cursor, detail.days)
                 } else {
                     JournalUiState.Error(string(R.string.journal_error_track_not_found))
                 }
@@ -839,7 +874,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             _tracks.value = _tracks.value.map { if (it.id == entry.id) it.copy(name = trimmed) else it }
             val state = _uiState.value as? JournalUiState.Detail
             if (state != null && state.entry.id == entry.id) {
-                _uiState.value = JournalUiState.Detail(state.entry.copy(name = trimmed), state.track, state.daySegments)
+                _uiState.value = JournalUiState.Detail(state.entry.copy(name = trimmed), state.track, state.daySegments, days = state.days)
             }
         }
     }
@@ -1057,7 +1092,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _tracks.value = _tracks.value.map { if (it.id == id) it.copy(note = note) else it }
         val state = _uiState.value as? JournalUiState.Detail
         if (state != null && state.entry.id == id) {
-            _uiState.value = JournalUiState.Detail(state.entry.copy(note = note), state.track, state.daySegments)
+            _uiState.value = JournalUiState.Detail(state.entry.copy(note = note), state.track, state.daySegments, days = state.days)
         }
     }
 
@@ -1865,6 +1900,35 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     // troisième fois par la phase 3 du rattrapage.
     private suspend fun refreshAutoCalibration() {
         CalibrationRefresh.refreshAuto(repository, settingsPreferences)
+    }
+
+    /**
+     * RIC-146 lot 3 : calcule l'Analyse de [detail] (conception section 5), hors du fil principal.
+     * Pur du point de vue de l'appelant (n'écrit aucun état du ViewModel) : c'est l'écran, via
+     * ThreeStopJournalDetail, qui garde le résultat en mémoire tant que le détail reste ouvert
+     * (brief lot 3 §2, "résultat gardé tant que le détail reste ouvert").
+     *
+     * Randos de référence : [com.bivouac.app.data.db.LoggedTrackRepository.analysisReferencePaceBands]
+     * lit le même mode de calibration que [activeCalibration] (conception section 2, "Randos de
+     * référence"). Records détenus : même calcul en mémoire que [com.bivouac.app.bilan.
+     * BilanViewModel.refresh] (colonnes déjà dénormalisées, aucun reparsing de GPX), pas de flux
+     * dédié : ce calcul n'est déclenché qu'à l'entrée dans le mode Analyse, jamais en continu.
+     */
+    suspend fun computeAnalysis(detail: JournalUiState.Detail): JournalAnalysisResult = withContext(Dispatchers.IO) {
+        val calibration = activeCalibration.value
+        val mode = settingsPreferences.speedCalibrationMode.first()
+        val selectedIds = settingsPreferences.selectedTrackIds.first()
+        val referenceBands = repository.analysisReferencePaceBands(mode, selectedIds, detail.entry.id)
+        val analysis = TrackAnalysisCalculator.compute(
+            pointsByDay = detail.daySegments.map { it.points },
+            calibration = calibration,
+            referencePaceBands = referenceBands,
+        )
+        val tracks = repository.list()
+        val daysByTrackId = repository.allDaysByTrackId()
+        val bilanStats = BilanStatsCalculator.compute(tracks, daysByTrackId, calibration)
+        val records = BilanStatsCalculator.recordsHeldBy(bilanStats, detail.entry.id)
+        JournalAnalysisResult(analysis, records)
     }
 
     private companion object {

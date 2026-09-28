@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import com.bivouac.app.data.gpx.DaySegmentAggregate
+import com.bivouac.app.data.gpx.PaceBandSum
 import com.bivouac.app.data.photo.PhotoStorageMode
 
 // RIC-114 lot 2 : ce qu'un jour a besoin d'écrire pendant le rattrapage des statistiques (voir
@@ -16,6 +17,9 @@ import com.bivouac.app.data.photo.PhotoStorageMode
 // RIC-207 : distanceMeters/elevationGainMeters/elevationLossMeters rejoignent l'aggregate de
 // segments ci-dessous : les totaux du jour, calculés dans la même passe (backfillStatsOne a déjà
 // TrackStatsCalculator.compute pour ce jour, avant même de construire cette mise à jour).
+//
+// RIC-146 : pausedSeconds et paceBands (voir DaySegmentSums) suivent le même chemin, pour que le
+// rythme par pente d'un jour ne soit jamais d'une autre génération que ses sommes de calibration.
 data class DayStatsUpdate(
     val id: Long,
     val contentHash: String,
@@ -25,6 +29,8 @@ data class DayStatsUpdate(
     val distanceMeters: Double,
     val elevationGainMeters: Double,
     val elevationLossMeters: Double,
+    val pausedSeconds: Double,
+    val paceBands: List<PaceBandSum>,
 )
 
 @Dao
@@ -66,8 +72,8 @@ interface LoggedTrackDao {
             "flatDistanceMeters = :flatDistanceMeters, flatHours = :flatHours, steepCount = :steepCount, " +
             "steepDistanceMeters = :steepDistanceMeters, steepGainMeters = :steepGainMeters, " +
             "steepHours = :steepHours, stoppedHours = :stoppedHours, distanceMeters = :distanceMeters, " +
-            "elevationGainMeters = :elevationGainMeters, elevationLossMeters = :elevationLossMeters " +
-            "WHERE id = :id",
+            "elevationGainMeters = :elevationGainMeters, elevationLossMeters = :elevationLossMeters, " +
+            "pausedSeconds = :pausedSeconds WHERE id = :id",
     )
     suspend fun updateDayDenormalizedFields(
         id: Long,
@@ -85,7 +91,78 @@ interface LoggedTrackDao {
         distanceMeters: Double? = null,
         elevationGainMeters: Double? = null,
         elevationLossMeters: Double? = null,
+        pausedSeconds: Double? = null,
     )
+
+    // RIC-146 : les lignes de rythme d'un jour sont toujours remplacées en bloc, jamais mises à
+    // jour une à une : une bande qui s'est vidée au nouveau calcul doit disparaître, pas garder
+    // sa valeur de la génération précédente.
+    @Query("DELETE FROM logged_track_day_pace WHERE dayId = :dayId")
+    suspend fun deleteDayPaces(dayId: Long)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertDayPaces(paces: List<LoggedTrackDayPaceEntity>)
+
+    @Transaction
+    suspend fun replaceDayPaces(dayId: Long, paceBands: List<PaceBandSum>) {
+        deleteDayPaces(dayId)
+        if (paceBands.isNotEmpty()) insertDayPaces(paceBands.map { it.toEntity(dayId) })
+    }
+
+    // RIC-146 : rattrapage RIC-109/115 d'un jour (LoggedTrackBackfill.run) : colonnes et lignes de
+    // rythme dans une même transaction, comme applyStatsBackfill ci-dessous.
+    @Transaction
+    suspend fun applyDayBackfill(
+        id: Long,
+        contentHash: String,
+        startedAtMillis: Long?,
+        elapsedSeconds: Long?,
+        aggregate: DaySegmentAggregate,
+        pausedSeconds: Double,
+        paceBands: List<PaceBandSum>,
+    ) {
+        updateDayDenormalizedFields(
+            id = id,
+            contentHash = contentHash,
+            startedAtMillis = startedAtMillis,
+            elapsedSeconds = elapsedSeconds,
+            flatCount = aggregate.flatCount,
+            flatDistanceMeters = aggregate.flatDistanceMeters,
+            flatHours = aggregate.flatHours,
+            steepCount = aggregate.steepCount,
+            steepDistanceMeters = aggregate.steepDistanceMeters,
+            steepGainMeters = aggregate.steepGainMeters,
+            steepHours = aggregate.steepHours,
+            stoppedHours = aggregate.stoppedHours,
+            pausedSeconds = pausedSeconds,
+        )
+        replaceDayPaces(id, paceBands)
+    }
+
+    @Query("SELECT * FROM logged_track_day_pace WHERE dayId = :dayId ORDER BY band")
+    suspend fun getDayPaces(dayId: Long): List<LoggedTrackDayPaceEntity>
+
+    // RIC-146 : le rythme par bande sommé sur un ensemble de randos, pour la référence de la vue
+    // Analyse (conception section 5.4) : la Sélection en mode Sélection, tout le Journal sinon, la
+    // rando analysée toujours exclue. Deux requêtes plutôt qu'une liste d'identifiants dans tous
+    // les cas : une clause IN porte une variable par identifiant, et SQLite en plafonne le nombre ;
+    // le Journal entier ne doit pas dépendre de ce plafond, une Sélection saisie à la main, si.
+    @Query(
+        "SELECT p.band AS band, SUM(p.segmentCount) AS segmentCount, " +
+            "SUM(p.distanceMeters) AS distanceMeters, SUM(p.movingSeconds) AS movingSeconds " +
+            "FROM logged_track_day_pace p JOIN logged_track_day d ON d.id = p.dayId " +
+            "WHERE d.trackId IN (:trackIds) GROUP BY p.band ORDER BY p.band",
+    )
+    suspend fun sumPacesForTracks(trackIds: Collection<String>): List<PaceBandTotal>
+
+    @Query(
+        "SELECT p.band AS band, SUM(p.segmentCount) AS segmentCount, " +
+            "SUM(p.distanceMeters) AS distanceMeters, SUM(p.movingSeconds) AS movingSeconds " +
+            "FROM logged_track_day_pace p JOIN logged_track_day d ON d.id = p.dayId " +
+            "WHERE :excludedTrackId IS NULL OR d.trackId <> :excludedTrackId " +
+            "GROUP BY p.band ORDER BY p.band",
+    )
+    suspend fun sumAllPaces(excludedTrackId: String?): List<PaceBandTotal>
 
     // RIC-114 lot 2 : statsVersion < version, pas une colonne IS NULL (voir LoggedTrackEntity.
     // statsVersion) : le prochain changement d'algorithme montera encore ALGORITHM_VERSION plutôt
@@ -144,7 +221,9 @@ interface LoggedTrackDao {
                 distanceMeters = day.distanceMeters,
                 elevationGainMeters = day.elevationGainMeters,
                 elevationLossMeters = day.elevationLossMeters,
+                pausedSeconds = day.pausedSeconds,
             )
+            replaceDayPaces(day.id, day.paceBands)
         }
         updateTrackStats(
             id = trackId,
@@ -181,12 +260,23 @@ interface LoggedTrackDao {
     suspend fun insertTrack(entity: LoggedTrackEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertDays(days: List<LoggedTrackDayEntity>)
+    suspend fun insertDays(days: List<LoggedTrackDayEntity>): List<Long>
 
+    // RIC-146 : [dayPaceBands] porte les lignes de rythme de chaque jour, dans l'ordre de [days] :
+    // elles ont besoin de l'identifiant que la base attribue au jour, d'où l'insertion ici, dans la
+    // même transaction, plutôt qu'à l'appelant. Liste vide (défaut) : aucun jour n'a de rythme.
     @Transaction
-    suspend fun insert(entity: LoggedTrackEntity, days: List<LoggedTrackDayEntity>) {
+    suspend fun insert(
+        entity: LoggedTrackEntity,
+        days: List<LoggedTrackDayEntity>,
+        dayPaceBands: List<List<PaceBandSum>> = emptyList(),
+    ) {
         insertTrack(entity)
-        insertDays(days)
+        val dayIds = insertDays(days)
+        dayIds.forEachIndexed { index, dayId ->
+            val paces = dayPaceBands.getOrNull(index).orEmpty()
+            if (paces.isNotEmpty()) insertDayPaces(paces.map { it.toEntity(dayId) })
+        }
     }
 
     // logged_track_day rows cascade-delete with their parent (ForeignKey.CASCADE).

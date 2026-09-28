@@ -43,6 +43,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -55,6 +56,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Save
@@ -70,11 +72,13 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -120,11 +124,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.R
 import com.bivouac.app.bilan.JournalOpenRequest
 import com.bivouac.app.data.db.DuplicateMatch
+import com.bivouac.app.data.db.LoggedTrackDayEntity
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
 import com.bivouac.app.data.db.PhotoAddReport
 import com.bivouac.app.data.db.SystemTag
+import com.bivouac.app.data.gpx.RealDurationCalculator
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackStats
@@ -147,6 +153,7 @@ import com.bivouac.app.ui.components.BlockingProgress
 import com.bivouac.app.ui.components.BlockingProgressDialog
 import com.bivouac.app.ui.components.ChoiceOptionCard
 import com.bivouac.app.ui.components.DrawerStop
+import com.bivouac.app.ui.components.DurationDisplay
 import com.bivouac.app.ui.components.DurationIconColor
 import com.bivouac.app.ui.components.ElevationProfile
 import com.bivouac.app.ui.components.FullScreenEmptyState
@@ -156,6 +163,7 @@ import com.bivouac.app.ui.components.StatsRows
 import com.bivouac.app.ui.components.ThreeStopDrawerHandle
 import com.bivouac.app.ui.components.ThreeStopDrawerStopRow
 import com.bivouac.app.ui.components.TotalsCapsule
+import com.bivouac.app.ui.components.toDurationDisplay
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.halfWindowHeight
 import com.bivouac.app.ui.components.rememberThreeStopDrawerState
@@ -377,6 +385,36 @@ fun JournalScreen(
     // RIC-161/166 : le mode édition de ThreeStopJournalDetail, répercuté ici pour la visionneuse et
     // le mode placement, tous deux hissés au niveau de l'écran (voir ThreeStopJournalDetail.onEditingChanged).
     var isEditingDetail by remember(detail?.entry?.id) { mutableStateOf(false) }
+    // RIC-146 lot 3 : mode Analyse du détail Journal (brief §1). Propre à l'écran : repart à faux
+    // à chaque ouverture d'un détail (remember(detail?.entry?.id)), et se ferme tout seul en
+    // fermant le détail (l'état disparaît avec la recomposition qui l'a créé).
+    var analysisModeActive by remember(detail?.entry?.id) { mutableStateOf(false) }
+    var analysisColoring by remember(detail?.entry?.id) { mutableStateOf(com.bivouac.app.ui.map.AnalysisColoring.PACE) }
+    // RIC-146 lot 4 (brief §5) : axe du profil en mode Analyse. Même mécanique que analysisColoring
+    // ci-dessus : repart à DISTANCE à chaque ouverture d'un détail.
+    var analysisAxis by remember(detail?.entry?.id) { mutableStateOf(com.bivouac.app.ui.components.ElevationProfileAxis.DISTANCE) }
+    var analysisResult by remember(detail?.entry?.id) { mutableStateOf<com.bivouac.app.journal.JournalAnalysisResult?>(null) }
+    var analysisLoading by remember(detail?.entry?.id) { mutableStateOf(false) }
+    var drawerStop by remember(detail?.entry?.id) { mutableStateOf(com.bivouac.app.ui.components.DrawerStop.PROFILE) }
+    // Entrer en édition quitte le mode Analyse (brief §1, "les deux modes sont exclusifs").
+    LaunchedEffect(isEditingDetail) { if (isEditingDetail) analysisModeActive = false }
+    // Calcul lancé une seule fois par entrée dans le mode (brief §2, "résultat gardé tant que le
+    // détail reste ouvert") : le remember(detail?.entry?.id) ci-dessus vide analysisResult à
+    // l'ouverture d'un autre détail, mais pas à un simple aller-retour dans le mode.
+    LaunchedEffect(detail?.entry?.id, analysisModeActive) {
+        val current = detail
+        if (analysisModeActive && current != null && analysisResult == null && !analysisLoading) {
+            analysisLoading = true
+            val computed = viewModel.computeAnalysis(current)
+            analysisResult = computed
+            analysisLoading = false
+            // Brief §5 : trace sans horodatage, seule la coloration Pente est proposée. Le
+            // sélecteur (AnalysisColoringSelector) le fait déjà à l'affichage, mais sans ce
+            // repli la carte resterait sur l'Allure par défaut (paceClass toujours nul sans
+            // horodatage, donc un tracé entièrement neutre) tant que personne n'a tapé Pente.
+            if (computed.analysis.totals == null) analysisColoring = com.bivouac.app.ui.map.AnalysisColoring.SLOPE
+        }
+    }
     // RIC-166 : la position aimantée du glissement en cours, pour que le profil altimétrique suive
     // (voir ThreeStopJournalDetail -> ElevationProfile.cursorIndex). Initialisée à la position déjà
     // connue de la photo dès l'ouverture du mode placement, et non à null : le profil montre alors
@@ -414,6 +452,18 @@ fun JournalScreen(
                 val target = photoPlacementTarget
                 viewModel.cancelPhotoPlacement()
                 viewedPhotoIndex = target?.let { photoIndexToReopenAfterPlacement(it.id, currentPhotos) }
+            }
+            // RIC-146 lot 3 : ce que la carte a besoin de savoir du résultat de l'Analyse (brief §3),
+            // reconstruit seulement quand le résultat ou la coloration choisie change.
+            val analysisMapData = remember(analysisResult, analysisColoring) {
+                analysisResult?.let { result ->
+                    com.bivouac.app.ui.map.AnalysisMapData(
+                        daySegments = result.analysis.days.map { it.segments },
+                        dayPauses = result.analysis.days.map { it.pauses },
+                        dayPointCounts = detail.daySegments.map { it.points.size },
+                        coloring = analysisColoring,
+                    )
+                }
             }
             Box(modifier = modifier.fillMaxSize()) {
                 JournalMap(
@@ -455,11 +505,48 @@ fun JournalScreen(
                     onPhotoPlacementDone = handlePhotoPlacementDone,
                     onPhotoPlacementCancel = handlePhotoPlacementCancel,
                     nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
+                    // RIC-146 lot 3 : le bouton n'existe que dans le détail d'une rando du Journal
+                    // (brief §1) : ce call site, pas celui de la vue multi-traces plus bas.
+                    // Masqué en édition (isEditingDetail), et pendant le mode placement photo (les
+                    // deux modes n'ont pas de sens ensemble, même famille que le badge Analyse).
+                    analysisModeAvailable = !isEditingDetail && photoPlacementTarget == null,
+                    analysisModeActive = analysisModeActive,
+                    onToggleAnalysisMode = { analysisModeActive = !analysisModeActive },
+                    analysisData = analysisMapData,
                 )
+                if (analysisModeActive && drawerStop != com.bivouac.app.ui.components.DrawerStop.DETAIL) {
+                    // Brief §3 : légende en bas à gauche de la carte, au-dessus du tiroir, masquée
+                    // au cran Détails (le tiroir plein écran la recouvrirait de toute façon, mais
+                    // cache-la explicitement plutôt que de compter sur l'empilement des calques).
+                    // Un sous-Box de la hauteur visible de la carte (même valeur que la carte
+                    // elle-même reçoit pour son propre cadrage) fait flotter la légende juste
+                    // au-dessus du bord haut du tiroir, quelle que soit sa hauteur exacte à cet
+                    // instant (poignée en cours de glissement comprise).
+                    val density = LocalDensity.current
+                    val visibleHeightDp = if (visibleMapHeightPx != Int.MAX_VALUE) {
+                        with(density) { visibleMapHeightPx.toDp() }
+                    } else {
+                        // Repli avant la toute première mesure du tiroir (même ordre de grandeur
+                        // que fallbackSummaryHeightPx plus bas dans ThreeStopJournalDetail).
+                        400.dp
+                    }
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .fillMaxWidth()
+                            .height(visibleHeightDp),
+                    ) {
+                        AnalysisLegend(
+                            coloring = analysisColoring,
+                            modifier = Modifier.align(Alignment.BottomStart).statusBarsPadding().padding(start = 16.dp, bottom = 12.dp),
+                        )
+                    }
+                }
                 ThreeStopJournalDetail(
                     entry = detail.entry,
                     track = detail.track,
                     daySegments = detail.daySegments,
+                    days = detail.days,
                     bivouacPoints = journalBivouacs,
                     activeCalibration = activeCalibration,
                     onCloseClick = viewModel::closeTrack,
@@ -496,6 +583,15 @@ fun JournalScreen(
                     // cran d'avant (voir le LaunchedEffect sur drawer, plus bas).
                     photoPlacementActive = photoPlacementTarget != null,
                     onPhotoPlacementCancel = handlePhotoPlacementCancel,
+                    // RIC-146 lot 3 : contenu des trois crans en mode Analyse (brief §4).
+                    analysisModeActive = analysisModeActive,
+                    analysisLoading = analysisLoading,
+                    analysisResult = analysisResult,
+                    analysisColoring = analysisColoring,
+                    onAnalysisColoringChanged = { analysisColoring = it },
+                    analysisAxis = analysisAxis,
+                    onAnalysisAxisChanged = { analysisAxis = it },
+                    onDrawerStopChanged = { drawerStop = it },
                 )
             }
         }
@@ -1145,6 +1241,12 @@ private fun JournalMap(
     highlightedTrackId: String? = null,
     onTraceTapped: (String) -> Unit = {},
     nonFreeFeaturesDisabled: Boolean = false,
+    // RIC-146 lot 3 : le bouton n'existe que dans le détail d'une rando du Journal (brief §1) ;
+    // false partout ailleurs (accueil, vue multi-traces), qui n'appellent pas ces trois paramètres.
+    analysisModeAvailable: Boolean = false,
+    analysisModeActive: Boolean = false,
+    onToggleAnalysisMode: () -> Unit = {},
+    analysisData: com.bivouac.app.ui.map.AnalysisMapData? = null,
 ) {
     Box(
         modifier = Modifier.fillMaxSize().onGloballyPositioned {
@@ -1174,6 +1276,7 @@ private fun JournalMap(
             multiTracks = multiTracks,
             highlightedTrackId = highlightedTrackId,
             onTraceTapped = onTraceTapped,
+            analysisData = if (analysisModeActive) analysisData else null,
             modifier = Modifier.fillMaxSize(),
         )
         Column(
@@ -1188,6 +1291,9 @@ private fun JournalMap(
                 onRecenterClick = onRecenter,
                 nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
             )
+            if (analysisModeAvailable) {
+                AnalysisModeButton(active = analysisModeActive, onClick = onToggleAnalysisMode)
+            }
         }
         // RIC-43 : la bannière « Fais glisser le repère sur la carte » vivait ici. Elle est revenue
         // avec RIC-166, sous une autre forme (bandeau + bouton « Terminé », écran 4 de la maquette
@@ -1199,6 +1305,27 @@ private fun JournalMap(
                 modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(16.dp),
             )
         }
+    }
+}
+
+/**
+ * RIC-146 lot 3 : bouton du mode Analyse, dans la colonne de droite de la carte, sous le bouton de
+ * recentrage, même taille que ses voisins (brief §1). Actif : fond `primaryContainer`, icône
+ * `onPrimaryContainer`, anneau `primary` (conception section 7.1, brief §1).
+ */
+@Composable
+private fun AnalysisModeButton(active: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    FilledIconButton(
+        onClick = onClick,
+        modifier = modifier.let {
+            if (active) it.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape) else it
+        },
+        colors = IconButtonDefaults.filledIconButtonColors(
+            containerColor = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+            contentColor = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
+    ) {
+        Icon(Icons.Filled.Insights, contentDescription = stringResource(R.string.journal_analysis_mode_button))
     }
 }
 
@@ -1392,7 +1519,7 @@ private fun JournalHomeScreen(
 @Composable
 private fun JournalBilanCard(
     total: Int,
-    stats: TrackStats,
+    stats: AggregatedStats,
     bivouacCount: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1405,10 +1532,14 @@ private fun JournalBilanCard(
             total,
             formatGroupedInt(total),
         ),
-        stats = stats,
+        stats = stats.stats,
         bivouacCount = bivouacCount,
         modifier = modifier,
         onClick = onClick,
+        // RIC-209 (brief Partie B) : durée réelle agrégée et temps de marche (seconde ligne du
+        // cartouche).
+        duration = stats.duration.toDurationDisplay(),
+        walkingSeconds = stats.duration.walkingSeconds,
     )
 }
 
@@ -1448,11 +1579,15 @@ private fun JournalPopulatedList(
     scrollState: ScrollState,
     modifier: Modifier = Modifier,
 ) {
-    val groups = remember(filteredTracks, activeCalibration) { groupByYear(filteredTracks, activeCalibration) }
+    val groups = remember(filteredTracks, activeCalibration, dayInfoByTrackId) {
+        groupByYear(filteredTracks, activeCalibration, dayInfoByTrackId)
+    }
     val resolvedExpandedYears = expandedYears ?: setOfNotNull(groups.firstOrNull()?.year)
     // Sur `tracks` et non `filteredTracks` : le Bilan reste global, un filtre actif n'en retire
     // rien (RIC-65 écran 3).
-    val bilanStats = remember(tracks, activeCalibration) { aggregateStats(tracks, activeCalibration) }
+    val bilanStats = remember(tracks, activeCalibration, dayInfoByTrackId) {
+        aggregateStats(tracks, activeCalibration, dayInfoByTrackId)
+    }
     // RIC-19 : bivouacCount découle de dayCount, toujours connu (contrairement aux dates, qui
     // dépendent d'un horodatage GPX exploitable) : voir JournalDayInfo.bivouacCount.
     val bilanBivouacCount = remember(tracks, dayInfoByTrackId) {
@@ -1631,23 +1766,47 @@ private fun JournalPopulatedList(
     }
 }
 
+// RIC-209 (brief Partie B) : durée réelle si RealDurationCalculator en a trouvé une pour cette
+// rando/ce jour, repli sur l'estimation (calibration active) avec le préfixe "≈" sinon (brief
+// §Règles, "rando sans horodatage"). Un seul endroit pour ce repli, réutilisé par la ligne de
+// liste, le total du détail et chaque jour du détail.
+private fun resolvedDuration(real: RealDurationCalculator.RealDuration?, estimatedMinutes: Int): DurationDisplay =
+    real?.let { DurationDisplay.Resolved(it.elapsedSeconds, isEstimated = false) }
+        ?: DurationDisplay.Resolved(estimatedMinutes * 60L, isEstimated = true)
+
+// RIC-209 : stats (distance/D+/D-, inchangées) et durée agrégée (brief Partie B) d'un ensemble de
+// randos, produites ensemble pour que le total de l'écran et la somme de ses sections tombent
+// juste l'un par rapport à l'autre (même raison d'être que l'ancien TrackStats seul, RIC-65).
+private data class AggregatedStats(val stats: TrackStats, val duration: RealDurationCalculator.AggregatedDuration)
+
 private data class YearGroup(
     val year: Int,
     val entries: List<LoggedTrackEntity>,
-    val totalStats: TrackStats,
+    val total: AggregatedStats,
 )
 
-// Duration is recomputed from the aggregate distance/gain under the *current* calibration rather
-// than summed from each entry's own stored estimate: those were frozen at whatever calibration
-// was active when each hike was imported, so summing them would mix calibrations together instead
-// of reflecting the one currently active (BIV-16 feedback: the Planification list had the same
-// staleness, fixed the same way; see TrackStatsCalculator.recomputeDuration).
+// Distance/D+/D- sont recalculés depuis la somme des jours sous la calibration ACTUELLE plutôt que
+// sommés depuis l'estimation stockée de chaque entrée : celle-ci est figée à la calibration active
+// au moment de l'import de chaque rando, sommer des entrées reviendrait à mélanger des calibrations
+// (BIV-16 feedback : la Planification avait le même défaut de fraîcheur, corrigé pareil ; voir
+// TrackStatsCalculator.recomputeDuration).
+//
+// RIC-209 (brief Partie B) : la DURÉE affichée, elle, ne vient plus de ce recalcul (qui reste posé
+// ci-dessous mais dont estimatedDurationMinutes n'est plus lu que comme repli individuel, rando par
+// rando) : brief §Règles, "un total additionne les durées réelles des randos horodatées et les
+// estimations des autres", jamais une estimation recalculée sur la distance/D+ CUMULÉS du groupe
+// (un nombre différent). Voir RealDurationCalculator.aggregate : réelle si dayInfoByTrackId en
+// connaît une pour cette rando, estimation individuelle (même calibration) sinon.
 //
 // Partagé entre les en-têtes d'année et la carte Bilan (RIC-65) : le total de l'écran et la somme
 // de ses sections doivent tomber juste l'un par rapport à l'autre, ce que deux calculs séparés ne
 // garantiraient plus dès qu'un seul des deux évoluerait.
-private fun aggregateStats(tracks: List<LoggedTrackEntity>, activeCalibration: SpeedCalibration): TrackStats =
-    TrackStatsCalculator.recomputeDuration(
+private fun aggregateStats(
+    tracks: List<LoggedTrackEntity>,
+    activeCalibration: SpeedCalibration,
+    dayInfoByTrackId: Map<String, JournalDayInfo>,
+): AggregatedStats {
+    val stats = TrackStatsCalculator.recomputeDuration(
         TrackStats(
             distanceMeters = tracks.sumOf { it.distanceMeters },
             elevationGainMeters = tracks.sumOf { it.elevationGainMeters },
@@ -1656,8 +1815,22 @@ private fun aggregateStats(tracks: List<LoggedTrackEntity>, activeCalibration: S
         ),
         activeCalibration,
     )
+    val duration = RealDurationCalculator.aggregate(
+        tracks.map { entry ->
+            val real = dayInfoByTrackId[entry.id]?.realDuration
+            val estimatedSeconds = TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration)
+                .estimatedDurationMinutes * 60L
+            real to estimatedSeconds
+        },
+    )
+    return AggregatedStats(stats, duration)
+}
 
-private fun groupByYear(tracks: List<LoggedTrackEntity>, activeCalibration: SpeedCalibration): List<YearGroup> {
+private fun groupByYear(
+    tracks: List<LoggedTrackEntity>,
+    activeCalibration: SpeedCalibration,
+    dayInfoByTrackId: Map<String, JournalDayInfo>,
+): List<YearGroup> {
     val zone = ZoneId.systemDefault()
     return tracks
         .groupBy { Instant.ofEpochMilli(it.startedAt).atZone(zone).year }
@@ -1666,7 +1839,7 @@ private fun groupByYear(tracks: List<LoggedTrackEntity>, activeCalibration: Spee
             YearGroup(
                 year = year,
                 entries = entries,
-                totalStats = aggregateStats(entries, activeCalibration),
+                total = aggregateStats(entries, activeCalibration, dayInfoByTrackId),
             )
         }
 }
@@ -1720,7 +1893,7 @@ private fun YearHeader(
             )
         }
         Column(modifier = Modifier.padding(start = 24.dp, top = 2.dp)) {
-            StatsRows(group.totalStats, muted = true)
+            StatsRows(group.total.stats, muted = true, duration = group.total.duration.toDurationDisplay())
         }
     }
 }
@@ -1825,7 +1998,10 @@ private fun JournalTrackRow(
                 }
             }
             Spacer(Modifier.height(4.dp))
-            StatsRows(TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration))
+            // RIC-209 (brief Partie B) : durée réelle si dayInfo en connaît une pour cette rando,
+            // repli sur l'estimation avec préfixe "≈" sinon.
+            val rowStats = TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration)
+            StatsRows(rowStats, duration = resolvedDuration(dayInfo?.realDuration, rowStats.estimatedDurationMinutes))
         }
     }
 }
@@ -1984,6 +2160,10 @@ internal fun ThreeStopJournalDetail(
     // RIC-41 : un élément par jour importé, dans l'ordre : la ventilation ne s'affiche qu'au-delà
     // d'un jour, même convention que les segments de Planification.
     daySegments: List<Segment> = emptyList(),
+    // RIC-209 (brief Partie B) : mêmes jours que daySegments (même ordre/taille), pour la durée
+    // réelle (elapsedSeconds/pausedSeconds) : voir LoggedTrackRepository.LoggedTrackDetail. Vide
+    // par défaut comme daySegments (Planification n'appelle jamais ce composable).
+    days: List<LoggedTrackDayEntity> = emptyList(),
     // Constat E : un point par jonction entre deux jours, en lecture seule : le profil les trace
     // comme la Planification, mais rien ici ne se déplace ni ne se supprime.
     bivouacPoints: List<BivouacPoint> = emptyList(),
@@ -2038,6 +2218,20 @@ internal fun ThreeStopJournalDetail(
     // détail et donc pas hissé).
     photoPlacementActive: Boolean = false,
     onPhotoPlacementCancel: () -> Unit = {},
+    // RIC-146 lot 3 : le mode Analyse (brief §1/§4). analysisResult reste `null` pendant le calcul
+    // (analysisLoading) et une fois qu'il a fini si la trace a moins de deux points exploitables ;
+    // voir AnalysisHeadlineHeader pour le repli "trace sans horodatage" (JournalAnalysisContent.kt).
+    analysisModeActive: Boolean = false,
+    analysisLoading: Boolean = false,
+    analysisResult: com.bivouac.app.journal.JournalAnalysisResult? = null,
+    analysisColoring: com.bivouac.app.ui.map.AnalysisColoring = com.bivouac.app.ui.map.AnalysisColoring.PACE,
+    onAnalysisColoringChanged: (com.bivouac.app.ui.map.AnalysisColoring) -> Unit = {},
+    // RIC-146 lot 4 (brief §5) : axe du profil (distance/durée), même mécanique que analysisColoring.
+    analysisAxis: com.bivouac.app.ui.components.ElevationProfileAxis = com.bivouac.app.ui.components.ElevationProfileAxis.DISTANCE,
+    onAnalysisAxisChanged: (com.bivouac.app.ui.components.ElevationProfileAxis) -> Unit = {},
+    // Brief §3 : la légende (hissée au niveau de l'écran, voir JournalScreen) doit se masquer au
+    // cran Détails ; ce callback est ce qui le lui fait savoir, le tiroir lui-même restant interne.
+    onDrawerStopChanged: (com.bivouac.app.ui.components.DrawerStop) -> Unit = {},
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = LocalDensity.current
@@ -2144,11 +2338,31 @@ internal fun ThreeStopJournalDetail(
         } else {
             fallbackSummaryHeightPx + navigationBarHeightPx
         }).coerceAtMost(fullHeightPx * 0.46f)
-        val profileHeightPx = maxOf(
-            summaryHeightPx + with(density) { 102.dp.toPx() },
-            fullHeightPx * 0.39f,
-        )
-            .coerceIn(summaryHeightPx, fullHeightPx * 0.67f)
+        // RIC-146 lot 5 (brief Partie A.1) : en mode normal et en Planification, le cran Profil
+        // n'ajoute que l'ElevationProfile (86.dp + ses paddings verticaux, soit 102.dp) au-dessus
+        // de la Synthèse ; ce montant fixe reste inchangé ici (brief "les hauteurs ne changent
+        // pas"). En mode Analyse, ce même bloc ajoute aussi le sélecteur de coloration/axe et la
+        // ligne de lecture (AnalysisProfileControlsRow, AnalysisReadoutLine), plus haut et de
+        // hauteur variable (deux lignes de texte, coloration disponible ou non) : un montant fixe
+        // coupait le profil (défaut signalé, cap02/cap09). On mesure donc réellement ce bloc,
+        // comme measuredSummaryHeightPx mesure déjà la Synthèse, et on ne s'en sert qu'en mode
+        // Analyse.
+        var measuredAnalysisProfileExtraHeightPx by remember(entry.id) { mutableIntStateOf(0) }
+        val profileHeightPx = if (analysisModeActive) {
+            val fallbackExtraPx = with(density) { 220.dp.toPx() }
+            val extraPx = if (measuredAnalysisProfileExtraHeightPx > 0) {
+                measuredAnalysisProfileExtraHeightPx.toFloat()
+            } else {
+                fallbackExtraPx
+            }
+            (summaryHeightPx + extraPx).coerceIn(summaryHeightPx, fullHeightPx * 0.92f)
+        } else {
+            maxOf(
+                summaryHeightPx + with(density) { 102.dp.toPx() },
+                fullHeightPx * 0.39f,
+            )
+                .coerceIn(summaryHeightPx, fullHeightPx * 0.67f)
+        }
         val detailHeightPx = fullHeightPx
         val anchors = remember(fullHeightPx, summaryHeightPx, profileHeightPx, detailHeightPx) {
             mapOf(
@@ -2158,6 +2372,19 @@ internal fun ThreeStopJournalDetail(
             )
         }
         val drawer = rememberThreeStopDrawerState(anchors, entry.id)
+        // RIC-146 lot 5 (brief Partie A.6, anomalie signalée par le lot 4 non reproduite alors) :
+        // detailScrollState (ThreeStopDrawerState, partagé entre Journal et Planification) n'est
+        // recréé qu'au changement de trace (remember(trackKey) dans rememberThreeStopDrawerState),
+        // jamais à l'entrée ou à la sortie du mode Analyse : le contenu du cran Détails change
+        // pourtant complètement (liste des jours/tags/notes/photos <-> quatre sections d'Analyse,
+        // bien plus courtes). Sans remise à zéro, un cran Détails scrollé avant de changer de mode
+        // restait au même offset sur le nouveau contenu : sur les sections d'Analyse, ça ne
+        // laissait qu'une ligne du tableau d'allure visible, le titre de section étant scrollé
+        // au-dessus de l'écran (symptôme du lot 4 : "une seule ligne, sans titre" plutôt qu'un
+        // écran vide, cohérent avec un scroll trop bas sur un contenu devenu plus court).
+        LaunchedEffect(analysisModeActive) { drawer.detailScrollState.scrollTo(0) }
+        // RIC-146 lot 3 : la légende (hissée au niveau de l'écran) doit se masquer au cran Détails.
+        LaunchedEffect(drawer.stop) { onDrawerStopChanged(drawer.stop) }
         // RIC-184 : le tiroir descend sur PhotoPlacementDrawerStop à l'entrée du mode placement
         // (carte visible pour le glissement), et revient au cran qu'il avait avant une fois le
         // mode quitté par Terminé ou Annuler. remember (pas rememberSaveable) suffit : la rotation
@@ -2224,7 +2451,25 @@ internal fun ThreeStopJournalDetail(
                         .padding(
                             start = 20.dp,
                             end = 20.dp,
-                            bottom = with(density) { navigationBarHeightPx.toDp() } + 8.dp,
+                            // RIC-146 lot 5 (brief Partie A.5) : ce padding se retrouve une seconde
+                            // fois dans summaryHeightPx plus haut (measuredSummaryHeightPx + navBar +
+                            // 8dp), qui mesure pourtant CE Column, padding bas compris : la vraie
+                            // marge sous la Synthèse valait donc le double de navigationBarHeightPx.
+                            // Invisible en mode normal (elle finit sous le pli, au bord du cran
+                            // Synthèse), elle devenait un vide d'une centaine de pixels bien visible
+                            // en mode Analyse une fois le tiroir tiré au cran Profil : le sélecteur
+                            // de coloration semblait détaché de la ligne des crans (défaut
+                            // cap02/cap09, brief Partie A.5). Correction ciblée au mode Analyse
+                            // seulement (brief "en mode normal et en Planification, les hauteurs ne
+                            // changent pas") : l'espacement habituel du tiroir (8.dp, comme
+                            // Arrangement.spacedBy(8.dp) plus bas) suffit, le dégagement sous la
+                            // barre de navigation restant assuré une fois par l'ajout externe déjà
+                            // présent dans summaryHeightPx.
+                            bottom = if (analysisModeActive) {
+                                8.dp
+                            } else {
+                                with(density) { navigationBarHeightPx.toDp() } + 8.dp
+                            },
                         )
                         .onGloballyPositioned { measuredSummaryHeightPx = it.size.height },
                 ) {
@@ -2239,7 +2484,25 @@ internal fun ThreeStopJournalDetail(
                             verticalAlignment = Alignment.Top,
                         ) {
                             Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                Text(text = entry.name, style = MaterialTheme.typography.titleMedium)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    // RIC-146 lot 4, defaut visuel du lot 3 corrige en verification
+                                    // visuelle (brief Partie D) : le titre est mesure avant le badge
+                                    // dans un Row sans poids, donc un titre long (ex. "Carlit depuis
+                                    // les Bouillouses") lui laissait a peine assez de place, et
+                                    // "Analyse" se coupait sur deux lignes ("Analys"/"e") au lieu de
+                                    // rester d'un bloc. weight(1f, fill = false) sur le titre inverse
+                                    // l'ordre de mesure (Row mesure d'abord les enfants sans poids) :
+                                    // le badge obtient toujours sa largeur naturelle en un mot, et
+                                    // c'est le titre qui s'adapte (repli sur plusieurs lignes s'il le
+                                    // faut, jamais le badge).
+                                    Text(
+                                        text = entry.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        modifier = Modifier.weight(1f, fill = false),
+                                    )
+                                    // Brief §1 : étiquette à côté du titre quand le mode est actif.
+                                    if (analysisModeActive) AnalysisBadge()
+                                }
                                 // Même plage de dates que dans la liste : une sortie ouverte ne
                                 // doit pas en dire moins qu'une sortie survolée. Les dates
                                 // viennent ici des points déjà chargés, pas des colonnes
@@ -2265,38 +2528,133 @@ internal fun ThreeStopJournalDetail(
                             }
                         }
                     }
-                    // Sur une sortie de plusieurs jours, la ligne agrégée devient un « Total » en
-                    // retrait : c'est la ventilation par jour, au cran Détails, qui porte
-                    // l'information utile, même hiérarchie visuelle qu'en Planification.
-                    if (daySegments.size > 1) {
-                        Text(
-                            text = stringResource(R.string.journal_detail_total_label),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (analysisModeActive) {
+                        // RIC-146 lot 3 (brief §4) : le chiffre de tête et les quatre valeurs
+                        // remplacent StatsRows, quel que soit le cran (même mécanique que le
+                        // reste de cet en-tête : toujours dans l'arbre, seule la hauteur du
+                        // tiroir décide de ce qui reste visible).
+                        AnalysisHeadlineHeader(result = analysisResult, loading = analysisLoading)
+                    } else {
+                        // Sur une sortie de plusieurs jours, la ligne agrégée devient un « Total »
+                        // en retrait : c'est la ventilation par jour, au cran Détails, qui porte
+                        // l'information utile, même hiérarchie visuelle qu'en Planification.
+                        if (daySegments.size > 1) {
+                            Text(
+                                text = stringResource(R.string.journal_detail_total_label),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        // RIC-209 (brief Partie B) : durée réelle (somme des jours horodatés) si
+                        // disponible, repli sur l'estimation avec préfixe "≈" sinon (brief §Règles,
+                        // "rando sans horodatage").
+                        val totalStats = TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration)
+                        val totalReal = remember(days) { RealDurationCalculator.forDays(days) }
+                        StatsRows(
+                            totalStats,
+                            muted = daySegments.size > 1,
+                            duration = resolvedDuration(totalReal, totalStats.estimatedDurationMinutes),
                         )
                     }
-                    StatsRows(
-                        TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration),
-                        muted = daySegments.size > 1,
-                    )
                     ThreeStopDrawerStopRow(drawer)
                 }
 
                 AnimatedVisibility(visible = !noteTakesAllSpace) {
-                    ElevationProfile(
-                        points = track.points,
-                        bivouacPoints = bivouacPoints,
-                        dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
-                        // RIC-114 : le lissage ne traverse plus les jonctions de jours, et le pas
-                        // de jonction n'est plus compté : la série affichée est la concaténation
-                        // des séries par jour, celles qui ont produit les chiffres stockés.
-                        seriesBreaks = remember(bivouacPoints) {
+                    Column(
+                        // RIC-146 lot 5 (brief Partie A.1) : hauteur réelle du bloc Profil en mode
+                        // Analyse, voir measuredAnalysisProfileExtraHeightPx plus haut. Mesurée
+                        // systématiquement (coût négligeable) mais seule l'ancre du cran Profil s'en
+                        // sert, et seulement en mode Analyse.
+                        modifier = Modifier.onGloballyPositioned { measuredAnalysisProfileExtraHeightPx = it.size.height },
+                    ) {
+                        // RIC-146 lot 4 (brief §4/§6) : coloration du profil et pauses, dérivées du
+                        // même résultat d'Analyse que la carte (com.bivouac.app.ui.map.HikeMapView,
+                        // classOf/colorGroups) mais résolues ici en Color plutôt qu'en argb osmdroid.
+                        // `remember` sur (analysisResult, analysisColoring) : inchangé tant que ni
+                        // l'un ni l'autre ne change, comme analysisMapData dans JournalScreen.
+                        val analysisProfileData = remember(analysisResult, analysisColoring) {
+                            analysisResult?.let { result ->
+                                val dayPointCounts = daySegments.map { it.points.size }
+                                val dayOffsets = com.bivouac.app.data.gpx.TrackAnalysisMapMapping.dayOffsets(dayPointCounts)
+                                val classOf: (com.bivouac.app.data.gpx.AnalyzedSegment) -> Int? = when (analysisColoring) {
+                                    com.bivouac.app.ui.map.AnalysisColoring.PACE -> { s -> s.paceClass }
+                                    com.bivouac.app.ui.map.AnalysisColoring.SLOPE -> { s -> s.slopeClass }
+                                    com.bivouac.app.ui.map.AnalysisColoring.SPEED -> { s -> s.speedClass }
+                                }
+                                val colorRanges = result.analysis.days.flatMapIndexed { dayIndex, day ->
+                                    com.bivouac.app.data.gpx.TrackAnalysisMapMapping.colorGroups(day.segments, dayOffsets, dayIndex, classOf)
+                                        .map { group ->
+                                            com.bivouac.app.ui.components.ProfileColorRange(
+                                                startIndex = group.startScreenIndex,
+                                                endIndex = group.endScreenIndex,
+                                                color = com.bivouac.app.ui.map.AnalysisColors.colorFor(analysisColoring, group.colorClass),
+                                            )
+                                        }
+                                }
+                                val pauses = result.analysis.days.flatMapIndexed { dayIndex, day ->
+                                    day.pauses.map { pause ->
+                                        com.bivouac.app.ui.components.ProfilePause(
+                                            startIndex = com.bivouac.app.data.gpx.TrackAnalysisMapMapping.toScreenIndex(
+                                                dayOffsets, dayIndex, pause.startIndex,
+                                            ),
+                                            endIndex = com.bivouac.app.data.gpx.TrackAnalysisMapMapping.toScreenIndex(
+                                                dayOffsets, dayIndex, pause.endIndex,
+                                            ),
+                                            seconds = pause.seconds,
+                                        )
+                                    }
+                                }
+                                colorRanges to pauses
+                            }
+                        }
+                        if (analysisModeActive) {
+                            // Brief §4 "Profil"/§5 : sélecteur de coloration et bascule d'axe, sur
+                            // la même ligne (maquette validée), avant le profil altimétrique
+                            // lui-même. Trace sans horodatage : seule la coloration Pente est
+                            // proposée et la bascule d'axe n'est pas affichée (brief §5).
+                            AnalysisProfileControlsRow(
+                                coloring = analysisColoring,
+                                onColoringChanged = onAnalysisColoringChanged,
+                                hasTimestamps = analysisResult?.analysis?.totals != null,
+                                axis = analysisAxis,
+                                onAxisChanged = onAnalysisAxisChanged,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                            )
+                        }
+                        val seriesBreaks = remember(bivouacPoints) {
                             DayJunctions.journalSeriesBreaks(bivouacPoints.map { it.trackPointIndex })
-                        },
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                        cursorIndex = cursorIndex,
-                        onCursorDragged = onCursorDragged,
-                    )
+                        }
+                        ElevationProfile(
+                            points = track.points,
+                            bivouacPoints = bivouacPoints,
+                            dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
+                            // RIC-114 : le lissage ne traverse plus les jonctions de jours, et le
+                            // pas de jonction n'est plus compté : la série affichée est la
+                            // concaténation des séries par jour, celles qui ont produit les
+                            // chiffres stockés.
+                            seriesBreaks = seriesBreaks,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                            cursorIndex = cursorIndex,
+                            onCursorDragged = onCursorDragged,
+                            // RIC-146 lot 4 (brief §4/§5/§6) : vides en mode normal (analysisModeActive
+                            // faux ou pas encore calculé) -> ElevationProfile retombe sur son
+                            // comportement d'origine, y compris en Planification (brief "périmètre").
+                            axis = if (analysisModeActive) analysisAxis else com.bivouac.app.ui.components.ElevationProfileAxis.DISTANCE,
+                            colorRanges = if (analysisModeActive) analysisProfileData?.first.orEmpty() else emptyList(),
+                            pauses = if (analysisModeActive) analysisProfileData?.second.orEmpty() else emptyList(),
+                        )
+                        if (analysisModeActive) {
+                            // Brief §7 : ligne de lecture, sous le profil.
+                            AnalysisReadoutLine(
+                                cursorIndex = cursorIndex,
+                                result = analysisResult,
+                                points = track.points,
+                                dayPointCounts = daySegments.map { it.points.size },
+                                seriesBreaks = seriesBreaks,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                            )
+                        }
+                    }
                 }
 
                 Column(
@@ -2321,324 +2679,342 @@ internal fun ThreeStopJournalDetail(
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    // RIC-41 : uniquement pour un import de plusieurs jours : sur un seul jour, la
-                    // ligne « Total » ci-dessus dit déjà tout, une ventilation à une entrée ne
-                    // serait que du bruit.
-                    if (daySegments.size > 1) {
-                        Text(
-                            stringResource(R.string.journal_detail_days_title),
-                            style = MaterialTheme.typography.titleSmall,
+                    // RIC-146 lot 4 correction 1 (brief Partie A.1) : en mode Analyse, le cran
+                    // Détails ne montre QUE les quatre sections de l'Analyse ; le contenu normal
+                    // (jours, tags, notes, photos) est masqué, pas seulement repoussé sous lui
+                    // (défaut du lot 3, signalé alors et corrigé ici). Entrer en édition quitte de
+                    // toute façon le mode Analyse (voir plus haut), donc rien de ce bloc normal
+                    // n'est jamais éditable pendant que l'Analyse est visible.
+                    if (analysisModeActive && analysisResult != null) {
+                        AnalysisDetailsContent(
+                            result = analysisResult,
+                            points = track.points,
+                            dayPointCounts = daySegments.map { it.points.size },
                         )
-                        Column {
-                            daySegments.forEachIndexed { index, segment ->
-                                HorizontalDivider()
-                                Column(modifier = Modifier.padding(vertical = 10.dp)) {
-                                    // RIC-112 : jour de semaine + quantième réels plutôt qu'un ordinal,
-                                    // tirés du même horodatage GPX que dayStartDates ci-dessus. Repli sur
-                                    // "Jour N" si ce jour précis n'a pas d'horodatage exploitable : un
-                                    // trou isolé ne doit pas casser la ventilation des autres jours.
-                                    val dayLabel = segment.points.firstOrNull()?.time
-                                        ?.let { formatDayLabel(it) }
-                                        ?: stringResource(R.string.journal_detail_day_fallback_label, index + 1)
-                                    Text(text = dayLabel, style = MaterialTheme.typography.labelLarge)
-                                    StatsRows(TrackStatsCalculator.recomputeDuration(segment.stats, activeCalibration))
-                                }
-                                // La nuit s'intercale entre deux jours, exactement comme la
-                                // Planification l'intercale entre deux segments : c'est la même
-                                // lecture d'un même itinéraire, seulement figée. Sans action
-                                // possible ici, ni suppression ni météo : la trace est immuable et
-                                // la nuit a déjà eu lieu.
-                                val bivouac = bivouacPoints.getOrNull(index)
-                                if (bivouac != null) {
-                                    HorizontalDivider()
-                                    ReadOnlyBivouacRow(
-                                        arrival = track.points.getOrNull(bivouac.trackPointIndex),
-                                        departure = track.points.getOrNull(bivouac.trackPointIndex + 1),
-                                    )
-                                }
-                            }
-                            HorizontalDivider()
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            stringResource(R.string.journal_detail_tags_title),
-                            style = MaterialTheme.typography.titleSmall,
-                        )
-                        if (isEditing) {
-                            IconButton(onClick = { saveAndStopEditing() }) {
-                                Icon(
-                                    Icons.Default.Save,
-                                    contentDescription = if (isDirty) {
-                                        stringResource(R.string.journal_detail_save_dirty_description)
-                                    } else {
-                                        stringResource(R.string.common_save_button)
-                                    },
-                                    tint = if (isDirty) GainIconColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        } else {
-                            IconButton(onClick = { beginEditing() }) {
-                                Icon(
-                                    Icons.Default.Edit,
-                                    contentDescription = stringResource(R.string.journal_detail_edit_description),
-                                )
-                            }
-                        }
-                    }
-                    if (isEditing) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            SystemTag.entries.forEach { systemTag ->
-                                val color = tagColor(systemTag.value)
-                                FilterChip(
-                                    selected = systemTag.value in draftTags,
-                                    onClick = { toggleSystemDraftTag(systemTag) },
-                                    label = { Text(stringResource(systemTag.labelRes)) },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = color.copy(alpha = 0.14f),
-                                        selectedLabelColor = color,
-                                    ),
-                                )
-                            }
-                        }
-                        val freeTags = draftTags.filterNot { tag -> SystemTag.entries.any { it.value == tag } }
-                        if (freeTags.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                freeTags.forEach { tag ->
-                                    FilterChip(
-                                        selected = true,
-                                        onClick = { draftTags = draftTags - tag },
-                                        label = { Text(tag) },
-                                    )
-                                }
-                            }
-                        }
-                        // Ajouter un tag insère une ligne de chips juste au-dessus de cette
-                        // ligne-ci, qui descend donc d'autant et finit sous le clavier. Le champ
-                        // garde le focus et rien ne déclencherait de défilement : c'est la mise en
-                        // page qui a bougé, pas le curseur. D'où ce rappel explicite à chaque
-                        // changement du nombre de tags.
-                        val tagFieldVisibility = remember { BringIntoViewRequester() }
-                        var tagFieldFocused by remember { mutableStateOf(false) }
-                        LaunchedEffect(draftTags.size, tagFieldFocused) {
-                            if (tagFieldFocused) tagFieldVisibility.bringIntoView()
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .bringIntoViewRequester(tagFieldVisibility),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            TextField(
-                                value = newTagText,
-                                onValueChange = { newTagText = it },
-                                placeholder = { Text(stringResource(R.string.journal_detail_add_tag_placeholder)) },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .onFocusChanged { tagFieldFocused = it.isFocused },
+                    } else if (!analysisModeActive) {
+                        // RIC-41 : uniquement pour un import de plusieurs jours : sur un seul jour, la
+                        // ligne « Total » ci-dessus dit déjà tout, une ventilation à une entrée ne
+                        // serait que du bruit.
+                        if (daySegments.size > 1) {
+                            Text(
+                                stringResource(R.string.journal_detail_days_title),
+                                style = MaterialTheme.typography.titleSmall,
                             )
-                            TextButton(
-                                onClick = {
-                                    val trimmed = newTagText.trim()
-                                    if (trimmed.isNotEmpty()) draftTags = draftTags + trimmed
-                                    newTagText = ""
-                                },
-                                enabled = newTagText.isNotBlank(),
-                            ) { Text(stringResource(R.string.common_add_button)) }
-                        }
-                        val suggestedTags = knownFreeTags.filterNot { it in draftTags }
-                        if (suggestedTags.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                suggestedTags.forEach { tag ->
-                                    FilterChip(
-                                        selected = false,
-                                        onClick = { draftTags = draftTags + tag },
-                                        label = { Text(tag) },
-                                    )
+                            Column {
+                                daySegments.forEachIndexed { index, segment ->
+                                    HorizontalDivider()
+                                    Column(modifier = Modifier.padding(vertical = 10.dp)) {
+                                        // RIC-112 : jour de semaine + quantième réels plutôt qu'un ordinal,
+                                        // tirés du même horodatage GPX que dayStartDates ci-dessus. Repli sur
+                                        // "Jour N" si ce jour précis n'a pas d'horodatage exploitable : un
+                                        // trou isolé ne doit pas casser la ventilation des autres jours.
+                                        val dayLabel = segment.points.firstOrNull()?.time
+                                            ?.let { formatDayLabel(it) }
+                                            ?: stringResource(R.string.journal_detail_day_fallback_label, index + 1)
+                                        Text(text = dayLabel, style = MaterialTheme.typography.labelLarge)
+                                        // RIC-209 (brief Partie B) : durée réelle DE CE JOUR (pas de
+                                        // la rando entière), voir RealDurationCalculator.forDays.
+                                        val dayStats = TrackStatsCalculator.recomputeDuration(segment.stats, activeCalibration)
+                                        val dayReal = days.getOrNull(index)?.let { RealDurationCalculator.forDays(listOf(it)) }
+                                        StatsRows(dayStats, duration = resolvedDuration(dayReal, dayStats.estimatedDurationMinutes))
+                                    }
+                                    // La nuit s'intercale entre deux jours, exactement comme la
+                                    // Planification l'intercale entre deux segments : c'est la même
+                                    // lecture d'un même itinéraire, seulement figée. Sans action
+                                    // possible ici, ni suppression ni météo : la trace est immuable et
+                                    // la nuit a déjà eu lieu.
+                                    val bivouac = bivouacPoints.getOrNull(index)
+                                    if (bivouac != null) {
+                                        HorizontalDivider()
+                                        ReadOnlyBivouacRow(
+                                            arrival = track.points.getOrNull(bivouac.trackPointIndex),
+                                            departure = track.points.getOrNull(bivouac.trackPointIndex + 1),
+                                        )
+                                    }
                                 }
+                                HorizontalDivider()
                             }
                         }
-                    } else if (currentTags.isEmpty()) {
-                        NotebookEmptyHint()
-                    } else {
                         Row(
-                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            currentTags.forEach { tag -> ReadOnlyTagChip(tagLabel(tag), tagColor(tag)) }
-                        }
-                    }
-                    // RIC-152 : tout le bandeau Photos, d'un bloc. Débrayée, la
-                    // fonctionnalité ne laisse rien derrière elle ici, pas même un titre de
-                    // section vide, et la carte n'a pas non plus de marqueur ni de bulle
-                    // photo, currentPhotos étant déjà vide en amont (voir JournalViewModel).
-                    if (photosEnabled) {
-                        // RIC-149 : le séparateur qui marquait ici la frontière entre deux régimes
-                        // (Tags sous le crayon, Photos écrivant toujours immédiatement) n'a plus
-                        // d'objet, les deux blocs obéissant désormais au même mode édition. Retiré :
-                        // c'était un pansement sur une incohérence, pas un élément de mise en page.
-                        //
-                        // rememberSaveable, pas remember : même filet que viewedPhotoIndex plus
-                        // haut, pour la galerie ouverte : la rotation ne recrée plus l'Activity
-                        // (voir configChanges au manifest), la mort du process en arrière-plan
-                        // reste possible.
-                        var galleryOpen by rememberSaveable { mutableStateOf(false) }
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(
-                                    stringResource(R.string.journal_photos_section_title),
-                                    style = MaterialTheme.typography.titleSmall,
-                                )
-                                if (currentPhotos.isNotEmpty()) {
-                                    Text(
-                                        stringResource(R.string.journal_photos_view_all_link),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.clickable { galleryOpen = true },
+                            Text(
+                                stringResource(R.string.journal_detail_tags_title),
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            if (isEditing) {
+                                IconButton(onClick = { saveAndStopEditing() }) {
+                                    Icon(
+                                        Icons.Default.Save,
+                                        contentDescription = if (isDirty) {
+                                            stringResource(R.string.journal_detail_save_dirty_description)
+                                        } else {
+                                            stringResource(R.string.common_save_button)
+                                        },
+                                        tint = if (isDirty) GainIconColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            } else {
+                                IconButton(onClick = { beginEditing() }) {
+                                    Icon(
+                                        Icons.Default.Edit,
+                                        contentDescription = stringResource(R.string.journal_detail_edit_description),
                                     )
                                 }
                             }
-                            // RIC-149 : l'ajout n'existe qu'en mode édition, comme les tags et la
-                            // note. Le bouton reste dans l'en-tête de la section plutôt que de
-                            // devenir une tuile « + » en fin de bandeau : le bandeau disparaît
-                            // quand il n'y a aucune photo (« Aucune photo pour l'instant »), une
-                            // tuile aurait donc eu besoin d'un second point d'entrée pour ce
-                            // cas-là, et l'en-tête porte déjà l'autre action de la section
-                            // (« tout voir »).
-                            //
-                            // RIC-149 : l'indicateur circulaire qui prenait la place du bouton
-                            // pendant un import a été retiré, le dialogue bloquant le remplace.
-                            // Il ne disait que « quelque chose tourne », sans dire quoi ni
-                            // combien il en restait, et il était en marge d'un écran qui, lui,
-                            // restait entièrement manipulable, croix comprise.
-                            if (isEditing) {
-                                TextButton(onClick = onAddPhotosClick) {
-                                    Text(stringResource(R.string.common_add_button))
-                                }
-                            }
                         }
-                        // RIC-43 : accès galerie refusé sur une tentative d'ajout réelle. Le WIP
-                        // retombait ici sur le Photo Picker système, qui ne demandait rien mais
-                        // rendait des photos sans GPS : le repli est retiré, l'état est expliqué, et
-                        // il porte sa propre sortie de secours vers les réglages système de l'app,
-                        // seul endroit où un refus définitif se défait.
-                        if (photoPermissionDenied && isEditing) {
-                            Text(
-                                stringResource(R.string.journal_photos_permission_required_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp),
-                            )
-                            TextButton(
-                                onClick = onOpenAppSettingsClick,
-                                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
-                            ) {
-                                Text(stringResource(R.string.journal_photos_open_app_settings_button))
-                            }
-                        }
-                        if (currentPhotos.isEmpty()) {
-                            Text(
-                                stringResource(R.string.journal_photos_empty_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        } else if (currentPhotos.isNotEmpty()) {
-                            LazyRow(
-                                modifier = Modifier.fillMaxWidth(),
+                        if (isEditing) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                itemsIndexed(currentPhotos, key = { _, photo -> photo.id }) { index, photo ->
-                                    PhotoThumbnail(
-                                        photo = photo,
-                                        editing = isEditing,
-                                        onClick = { onPhotoClick(index) },
-                                        onAdjustClick = { onAdjustPhotoClick(photo) },
-                                        onDeleteClick = { onDeletePhotoClick(photo) },
+                                SystemTag.entries.forEach { systemTag ->
+                                    val color = tagColor(systemTag.value)
+                                    FilterChip(
+                                        selected = systemTag.value in draftTags,
+                                        onClick = { toggleSystemDraftTag(systemTag) },
+                                        label = { Text(stringResource(systemTag.labelRes)) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = color.copy(alpha = 0.14f),
+                                            selectedLabelColor = color,
+                                        ),
                                     )
                                 }
                             }
-                            if (galleryOpen) {
-                                PhotoGalleryDialog(
-                                    photos = currentPhotos,
-                                    onPhotoClick = { index -> galleryOpen = false; onPhotoClick(index) },
-                                    onDismiss = { galleryOpen = false },
+                            val freeTags = draftTags.filterNot { tag -> SystemTag.entries.any { it.value == tag } }
+                            if (freeTags.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    freeTags.forEach { tag ->
+                                        FilterChip(
+                                            selected = true,
+                                            onClick = { draftTags = draftTags - tag },
+                                            label = { Text(tag) },
+                                        )
+                                    }
+                                }
+                            }
+                            // Ajouter un tag insère une ligne de chips juste au-dessus de cette
+                            // ligne-ci, qui descend donc d'autant et finit sous le clavier. Le champ
+                            // garde le focus et rien ne déclencherait de défilement : c'est la mise en
+                            // page qui a bougé, pas le curseur. D'où ce rappel explicite à chaque
+                            // changement du nombre de tags.
+                            val tagFieldVisibility = remember { BringIntoViewRequester() }
+                            var tagFieldFocused by remember { mutableStateOf(false) }
+                            LaunchedEffect(draftTags.size, tagFieldFocused) {
+                                if (tagFieldFocused) tagFieldVisibility.bringIntoView()
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .bringIntoViewRequester(tagFieldVisibility),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                TextField(
+                                    value = newTagText,
+                                    onValueChange = { newTagText = it },
+                                    placeholder = { Text(stringResource(R.string.journal_detail_add_tag_placeholder)) },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .onFocusChanged { tagFieldFocused = it.isFocused },
                                 )
+                                TextButton(
+                                    onClick = {
+                                        val trimmed = newTagText.trim()
+                                        if (trimmed.isNotEmpty()) draftTags = draftTags + trimmed
+                                        newTagText = ""
+                                    },
+                                    enabled = newTagText.isNotBlank(),
+                                ) { Text(stringResource(R.string.common_add_button)) }
+                            }
+                            val suggestedTags = knownFreeTags.filterNot { it in draftTags }
+                            if (suggestedTags.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    suggestedTags.forEach { tag ->
+                                        FilterChip(
+                                            selected = false,
+                                            onClick = { draftTags = draftTags + tag },
+                                            label = { Text(tag) },
+                                        )
+                                    }
+                                }
+                            }
+                        } else if (currentTags.isEmpty()) {
+                            NotebookEmptyHint()
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                currentTags.forEach { tag -> ReadOnlyTagChip(tagLabel(tag), tagColor(tag)) }
                             }
                         }
-                    }
-                    Text(
-                        stringResource(R.string.journal_detail_notes_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(top = 12.dp),
-                    )
-                    if (isEditing) {
-                        // RIC-100. La note n'a pas de plafond de hauteur, donc le champ peut
-                        // dépasser la fenêtre de saisie ; le défilement que Compose déclenche de
-                        // lui-même vise le champ entier, et faute de pouvoir le contenir il en
-                        // aligne le haut : le bas déborde sous le clavier, curseur compris.
-                        //
-                        // On demande donc à voir le bas du champ, là où atterrit le curseur quand
-                        // on complète une note, avec une marge pour que la ligne suivante respire.
-                        // Le TextField de Material3 n'expose pas son TextLayoutResult, donc viser
-                        // le rectangle exact du curseur supposerait de repasser par
-                        // BasicTextField et de reconstruire tout le décor : hors de proportion
-                        // tant que ce repli suffit. Conséquence assumée : une frappe insérée au
-                        // milieu d'une note longue n'est pas suivie, seule la fin de texte l'est.
-                        val noteVisibility = remember { BringIntoViewRequester() }
-                        var noteHeightPx by remember(entry.id) { mutableIntStateOf(0) }
-                        val cursorBandPx = with(density) { 56.dp.toPx() }
-                        LaunchedEffect(draftNote, noteFocused, noteHeightPx) {
-                            if (!noteFocused) return@LaunchedEffect
-                            if (noteHeightPx == 0) return@LaunchedEffect
-                            // trimEnd et non length : une note qui se termine par un retour à la
-                            // ligne ou une espace laisse le curseur juste avant sa toute fin, et
-                            // une comparaison stricte cesserait alors de suivre la frappe sans
-                            // raison.
-                            if (draftNote.selection.end < draftNote.text.trimEnd().length) return@LaunchedEffect
-                            val bottom = noteHeightPx.toFloat()
-                            noteVisibility.bringIntoView(
-                                Rect(0f, (bottom - cursorBandPx).coerceAtLeast(0f), 1f, bottom),
-                            )
+                        // RIC-152 : tout le bandeau Photos, d'un bloc. Débrayée, la
+                        // fonctionnalité ne laisse rien derrière elle ici, pas même un titre de
+                        // section vide, et la carte n'a pas non plus de marqueur ni de bulle
+                        // photo, currentPhotos étant déjà vide en amont (voir JournalViewModel).
+                        if (photosEnabled) {
+                            // RIC-149 : le séparateur qui marquait ici la frontière entre deux régimes
+                            // (Tags sous le crayon, Photos écrivant toujours immédiatement) n'a plus
+                            // d'objet, les deux blocs obéissant désormais au même mode édition. Retiré :
+                            // c'était un pansement sur une incohérence, pas un élément de mise en page.
+                            //
+                            // rememberSaveable, pas remember : même filet que viewedPhotoIndex plus
+                            // haut, pour la galerie ouverte : la rotation ne recrée plus l'Activity
+                            // (voir configChanges au manifest), la mort du process en arrière-plan
+                            // reste possible.
+                            var galleryOpen by rememberSaveable { mutableStateOf(false) }
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        stringResource(R.string.journal_photos_section_title),
+                                        style = MaterialTheme.typography.titleSmall,
+                                    )
+                                    if (currentPhotos.isNotEmpty()) {
+                                        Text(
+                                            stringResource(R.string.journal_photos_view_all_link),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.clickable { galleryOpen = true },
+                                        )
+                                    }
+                                }
+                                // RIC-149 : l'ajout n'existe qu'en mode édition, comme les tags et la
+                                // note. Le bouton reste dans l'en-tête de la section plutôt que de
+                                // devenir une tuile « + » en fin de bandeau : le bandeau disparaît
+                                // quand il n'y a aucune photo (« Aucune photo pour l'instant »), une
+                                // tuile aurait donc eu besoin d'un second point d'entrée pour ce
+                                // cas-là, et l'en-tête porte déjà l'autre action de la section
+                                // (« tout voir »).
+                                //
+                                // RIC-149 : l'indicateur circulaire qui prenait la place du bouton
+                                // pendant un import a été retiré, le dialogue bloquant le remplace.
+                                // Il ne disait que « quelque chose tourne », sans dire quoi ni
+                                // combien il en restait, et il était en marge d'un écran qui, lui,
+                                // restait entièrement manipulable, croix comprise.
+                                if (isEditing) {
+                                    TextButton(onClick = onAddPhotosClick) {
+                                        Text(stringResource(R.string.common_add_button))
+                                    }
+                                }
+                            }
+                            // RIC-43 : accès galerie refusé sur une tentative d'ajout réelle. Le WIP
+                            // retombait ici sur le Photo Picker système, qui ne demandait rien mais
+                            // rendait des photos sans GPS : le repli est retiré, l'état est expliqué, et
+                            // il porte sa propre sortie de secours vers les réglages système de l'app,
+                            // seul endroit où un refus définitif se défait.
+                            if (photoPermissionDenied && isEditing) {
+                                Text(
+                                    stringResource(R.string.journal_photos_permission_required_hint),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                                TextButton(
+                                    onClick = onOpenAppSettingsClick,
+                                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
+                                ) {
+                                    Text(stringResource(R.string.journal_photos_open_app_settings_button))
+                                }
+                            }
+                            if (currentPhotos.isEmpty()) {
+                                Text(
+                                    stringResource(R.string.journal_photos_empty_hint),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            } else if (currentPhotos.isNotEmpty()) {
+                                LazyRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    itemsIndexed(currentPhotos, key = { _, photo -> photo.id }) { index, photo ->
+                                        PhotoThumbnail(
+                                            photo = photo,
+                                            editing = isEditing,
+                                            onClick = { onPhotoClick(index) },
+                                            onAdjustClick = { onAdjustPhotoClick(photo) },
+                                            onDeleteClick = { onDeletePhotoClick(photo) },
+                                        )
+                                    }
+                                }
+                                if (galleryOpen) {
+                                    PhotoGalleryDialog(
+                                        photos = currentPhotos,
+                                        onPhotoClick = { index -> galleryOpen = false; onPhotoClick(index) },
+                                        onDismiss = { galleryOpen = false },
+                                    )
+                                }
+                            }
                         }
-                        TextField(
-                            value = draftNote,
-                            onValueChange = { draftNote = it },
-                            visualTransformation = BulletVisualTransformation,
-                            placeholder = { Text(stringResource(R.string.journal_detail_note_placeholder)) },
-                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                            // Volontairement sans hauteur maximale : c'est un journal, la note
-                            // doit se lire d'un bloc, en consultation comme en édition.
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 120.dp)
-                                .bringIntoViewRequester(noteVisibility)
-                                .onFocusChanged { noteFocused = it.isFocused }
-                                .onGloballyPositioned { coordinates -> noteHeightPx = coordinates.size.height },
+                        Text(
+                            stringResource(R.string.journal_detail_notes_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.padding(top = 12.dp),
                         )
-                    } else if (entry.note.isBlank()) {
-                        NotebookEmptyHint()
-                    } else {
-                        Text(withBullets(entry.note), style = MaterialTheme.typography.bodyMedium)
+                        if (isEditing) {
+                            // RIC-100. La note n'a pas de plafond de hauteur, donc le champ peut
+                            // dépasser la fenêtre de saisie ; le défilement que Compose déclenche de
+                            // lui-même vise le champ entier, et faute de pouvoir le contenir il en
+                            // aligne le haut : le bas déborde sous le clavier, curseur compris.
+                            //
+                            // On demande donc à voir le bas du champ, là où atterrit le curseur quand
+                            // on complète une note, avec une marge pour que la ligne suivante respire.
+                            // Le TextField de Material3 n'expose pas son TextLayoutResult, donc viser
+                            // le rectangle exact du curseur supposerait de repasser par
+                            // BasicTextField et de reconstruire tout le décor : hors de proportion
+                            // tant que ce repli suffit. Conséquence assumée : une frappe insérée au
+                            // milieu d'une note longue n'est pas suivie, seule la fin de texte l'est.
+                            val noteVisibility = remember { BringIntoViewRequester() }
+                            var noteHeightPx by remember(entry.id) { mutableIntStateOf(0) }
+                            val cursorBandPx = with(density) { 56.dp.toPx() }
+                            LaunchedEffect(draftNote, noteFocused, noteHeightPx) {
+                                if (!noteFocused) return@LaunchedEffect
+                                if (noteHeightPx == 0) return@LaunchedEffect
+                                // trimEnd et non length : une note qui se termine par un retour à la
+                                // ligne ou une espace laisse le curseur juste avant sa toute fin, et
+                                // une comparaison stricte cesserait alors de suivre la frappe sans
+                                // raison.
+                                if (draftNote.selection.end < draftNote.text.trimEnd().length) return@LaunchedEffect
+                                val bottom = noteHeightPx.toFloat()
+                                noteVisibility.bringIntoView(
+                                    Rect(0f, (bottom - cursorBandPx).coerceAtLeast(0f), 1f, bottom),
+                                )
+                            }
+                            TextField(
+                                value = draftNote,
+                                onValueChange = { draftNote = it },
+                                visualTransformation = BulletVisualTransformation,
+                                placeholder = { Text(stringResource(R.string.journal_detail_note_placeholder)) },
+                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                                // Volontairement sans hauteur maximale : c'est un journal, la note
+                                // doit se lire d'un bloc, en consultation comme en édition.
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 120.dp)
+                                    .bringIntoViewRequester(noteVisibility)
+                                    .onFocusChanged { noteFocused = it.isFocused }
+                                    .onGloballyPositioned { coordinates -> noteHeightPx = coordinates.size.height },
+                            )
+                        } else if (entry.note.isBlank()) {
+                            NotebookEmptyHint()
+                        } else {
+                            Text(withBullets(entry.note), style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                     Spacer(Modifier.height(36.dp))
                 }
