@@ -19,7 +19,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.bivouac.app.R
+import com.bivouac.app.data.gpx.RealDurationCalculator
 import com.bivouac.app.data.gpx.TrackStats
+import kotlin.math.roundToInt
 
 // Shared between the open-trace toolbar (Planification), the banked-trace list rows, and the
 // Journal: same color roles wherever a distance/duration/D+/D- readout appears.
@@ -34,8 +36,35 @@ val LossIconColor = Color(0xFFD4B94E)
 // les quatre constantes ci-dessus (déjà des valeurs fixes, pas des lookups de thème).
 val BivouacIconColor = Color(0xFFF57C00)
 
+// RIC-209 (brief Partie B) : comment StatsRows/TotalsCapsule affichent la durée. [PlainEstimate]
+// est le comportement d'origine, gardé comme valeur par défaut des deux composants pour que rien
+// ne change là où personne ne migre (Planification, brief "périmètre" : "ce qui ne change pas") :
+// stats.estimatedDurationMinutes, jamais de préfixe "≈". [Resolved] est du Journal (lot 5) : une
+// durée déjà résolue en secondes par l'appelant (réelle si RealDurationCalculator en a trouvé une,
+// sinon l'estimation de repli), avec ou sans préfixe "≈" selon [Resolved.isEstimated].
+sealed interface DurationDisplay {
+    data object PlainEstimate : DurationDisplay
+    data class Resolved(val seconds: Long, val isEstimated: Boolean) : DurationDisplay
+}
+
+/** Bascule [RealDurationCalculator.AggregatedDuration] (calcul pur) vers [DurationDisplay]
+ * (affichage) : un seul endroit pour ce mapping, réutilisé par le Journal et le Bilan. */
+fun RealDurationCalculator.AggregatedDuration.toDurationDisplay(): DurationDisplay =
+    DurationDisplay.Resolved(totalSeconds, isEstimated)
+
+// internal, pas private : TotalsCapsule.kt (même package, fichier différent) le réutilise pour sa
+// propre ligne de durée.
 @Composable
-fun StatsRows(stats: TrackStats, muted: Boolean = false) {
+internal fun formatDurationDisplay(display: DurationDisplay, estimatedMinutes: Int): String = when (display) {
+    DurationDisplay.PlainEstimate -> formatDuration(estimatedMinutes)
+    is DurationDisplay.Resolved -> {
+        val text = formatDuration((display.seconds / 60.0).roundToInt())
+        if (display.isEstimated) stringResource(R.string.fmt_stats_rows_duration_estimated, text) else text
+    }
+}
+
+@Composable
+fun StatsRows(stats: TrackStats, muted: Boolean = false, duration: DurationDisplay = DurationDisplay.PlainEstimate) {
     val neutral = MaterialTheme.colorScheme.onSurfaceVariant
     val distanceColor = if (muted) neutral else DistanceIconColor
     val durationColor = if (muted) neutral else DurationIconColor
@@ -48,7 +77,7 @@ fun StatsRows(stats: TrackStats, muted: Boolean = false) {
             Icons.Filled.Route,
             distanceColor,
         )
-        InfoText(formatDuration(stats.estimatedDurationMinutes), Icons.Filled.Schedule, durationColor)
+        InfoText(formatDurationDisplay(duration, stats.estimatedDurationMinutes), Icons.Filled.Schedule, durationColor)
     }
     Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
         InfoText(
