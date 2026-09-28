@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : strings-inventaire-v13.csv (inventaire de l'agent de pilotage,
+    Source : strings-inventaire-v14.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v13.csv
+        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v14.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -626,6 +626,7 @@
     <string name="journal_analysis_band_uphill_over">Montée &gt; %1$s %%</string>
     <string name="journal_analysis_section_breaks">Pauses</string>
     <string name="journal_analysis_break_position">km %1$s · %2$s</string>
+    <string name="journal_analysis_pause_minutes">%1$s min</string>
     <plurals name="journal_analysis_short_breaks">
         <item quantity="one">Et %1$s pause de moins de 5 minutes.</item>
         <item quantity="many">Et %1$s pauses de moins de 5 minutes.</item>
