@@ -12,6 +12,7 @@ import com.bivouac.app.bilan.BilanStatsCalculator
 import com.bivouac.app.bilan.JournalOpenRequest
 import com.bivouac.app.data.db.CalibrationRefresh
 import com.bivouac.app.data.db.DuplicateMatch
+import com.bivouac.app.data.db.LoggedTrackDayEntity
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackRepository
@@ -21,6 +22,7 @@ import com.bivouac.app.data.db.PhotoDisplayOrder
 import com.bivouac.app.data.db.PhotoPositionUpdate
 import com.bivouac.app.data.db.PreparedImport
 import com.bivouac.app.data.db.SystemTag
+import com.bivouac.app.data.gpx.RealDurationCalculator
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackAnalysis
@@ -79,6 +81,9 @@ sealed interface JournalUiState {
         val track: HikeTrack,
         val daySegments: List<Segment>,
         val initialCursorIndex: Int? = null,
+        // RIC-209 (brief Partie B) : mêmes lignes que daySegments (même ordre/taille), pour la
+        // durée réelle (elapsedSeconds/pausedSeconds, lot 1) ; voir LoggedTrackRepository.LoggedTrackDetail.
+        val days: List<LoggedTrackDayEntity> = emptyList(),
     ) : JournalUiState
     // BIV-48: a contemplative overview of several traces at once, entries in the order they
     // should get their (rotating) legend color, each paired with its parsed track.
@@ -134,7 +139,14 @@ sealed interface ImportProgress {
  * D'où [bivouacCount] tiré de [dayCount] et non du nombre de dates : sur une trace importée, une
  * nuit dehors est exactement une coupure entre deux fichiers, connue même sans horodatage.
  */
-data class JournalDayInfo(val dayCount: Int, val dates: List<LocalDate>) {
+data class JournalDayInfo(
+    val dayCount: Int,
+    val dates: List<LocalDate>,
+    // RIC-209 (brief Partie B) : durée réelle de la rando entière (somme des elapsedSeconds de ses
+    // jours, nuits exclues) ; `null` si au moins un jour n'a pas d'horodatage exploitable (brief
+    // "rando sans horodatage" : l'app n'a pas de durée réelle, repli sur l'estimation ailleurs).
+    val realDuration: RealDurationCalculator.RealDuration? = null,
+) {
     val bivouacCount: Int get() = (dayCount - 1).coerceAtLeast(0)
 }
 
@@ -666,11 +678,20 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 _tagsByTrackId.value = repository.tagsByTrackId()
                 _trackIdsWithPhotos.value = repository.trackIdsWithPhotos()
                 val zone = ZoneId.systemDefault()
-                _dayInfoByTrackId.value = repository.daySummariesByTrackId()
-                    .mapValues { (_, summary) ->
+                // RIC-209 (brief Partie B) : allDaysByTrackId() (RIC-19) donne aussi
+                // elapsedSeconds/pausedSeconds (lot 1), nécessaires à la durée réelle de la liste et
+                // des totaux ; remplace l'ancien daySummariesByTrackId, qui n'avait plus qu'un
+                // appelant et ne portait pas ces deux colonnes (fondu dans allDaysByTrackId, voir
+                // son commentaire).
+                _dayInfoByTrackId.value = repository.allDaysByTrackId()
+                    .mapValues { (_, days) ->
                         JournalDayInfo(
-                            dayCount = summary.dayCount,
-                            dates = summary.startMillis.map { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() },
+                            dayCount = days.size,
+                            // Les jours sans horodatage exploitable, et ceux que le rattrapage n'a
+                            // pas encore traités, sont absents : afficher les dates connues vaut
+                            // mieux qu'inventer les autres. dayCount, lui, est toujours juste.
+                            dates = days.mapNotNull { it.startedAtMillis }.map { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() },
+                            realDuration = RealDurationCalculator.forDays(days),
                         )
                     }
             }
@@ -728,7 +749,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                         detail.daySegments.take(idx).sumOf { it.points.size }
                             .coerceIn(0, (detail.track.points.size - 1).coerceAtLeast(0))
                     }
-                    JournalUiState.Detail(entry, detail.track, detail.daySegments, cursor)
+                    JournalUiState.Detail(entry, detail.track, detail.daySegments, cursor, detail.days)
                 } else {
                     JournalUiState.Error(string(R.string.journal_error_track_not_found))
                 }
@@ -853,7 +874,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             _tracks.value = _tracks.value.map { if (it.id == entry.id) it.copy(name = trimmed) else it }
             val state = _uiState.value as? JournalUiState.Detail
             if (state != null && state.entry.id == entry.id) {
-                _uiState.value = JournalUiState.Detail(state.entry.copy(name = trimmed), state.track, state.daySegments)
+                _uiState.value = JournalUiState.Detail(state.entry.copy(name = trimmed), state.track, state.daySegments, days = state.days)
             }
         }
     }
@@ -1071,7 +1092,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _tracks.value = _tracks.value.map { if (it.id == id) it.copy(note = note) else it }
         val state = _uiState.value as? JournalUiState.Detail
         if (state != null && state.entry.id == id) {
-            _uiState.value = JournalUiState.Detail(state.entry.copy(note = note), state.track, state.daySegments)
+            _uiState.value = JournalUiState.Detail(state.entry.copy(note = note), state.track, state.daySegments, days = state.days)
         }
     }
 

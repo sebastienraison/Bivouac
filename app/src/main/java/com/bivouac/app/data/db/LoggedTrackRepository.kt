@@ -88,10 +88,13 @@ data class PreparedDay(
 // ventilation « Total » + « Jour N » de la vue détail (RIC-41). Une trace d'un seul jour donne une
 // liste à un élément ; l'affichage de la ventilation ne se déclenche qu'au-delà, même convention
 // que les segments de Planification.
-data class LoggedTrackDetail(val track: HikeTrack, val daySegments: List<Segment>)
-
-// Ce que la liste du Journal doit savoir des jours d'une trace, sans ouvrir de fichier.
-data class DaySummary(val dayCount: Int, val startMillis: List<Long>)
+//
+// RIC-209 (brief Partie B) : [days], les mêmes lignes que [daySegments] (même ordre, même taille)
+// mais non reparsées : c'est elles qui portent elapsedSeconds/pausedSeconds, la vue détail n'a donc
+// pas besoin de rouvrir de fichier pour la durée réelle non plus. Un doublon d'information plutôt
+// qu'un couplage entre Segment et LoggedTrackDayEntity (Segment reste un type de
+// com.bivouac.app.data.model, partagé avec la Planification qui n'a pas de ligne de base pour ça).
+data class LoggedTrackDetail(val track: HikeTrack, val daySegments: List<Segment>, val days: List<LoggedTrackDayEntity>)
 
 /**
  * RIC-43 : issue d'un lot d'ajout de photos, photo par photo : voir [LoggedTrackRepository.addPhotosFromPicker].
@@ -244,25 +247,14 @@ class LoggedTrackRepository(context: Context) {
         LoggedTrackBackfill.runStats(appContext, dao, onProgress)
 
     /**
-     * Ce que la liste doit savoir des jours d'une trace sans ouvrir le moindre fichier : combien
-     * elle en compte, et quand chacun a commencé. Une requête pour toute la banque.
-     */
-    suspend fun daySummariesByTrackId(): Map<String, DaySummary> =
-        allDaysByTrackId()
-            .mapValues { (_, days) ->
-                DaySummary(
-                    dayCount = days.size,
-                    // Les jours sans horodatage exploitable, et ceux que le rattrapage n'a pas
-                    // encore traités, sont absents : afficher les dates connues vaut mieux
-                    // qu'inventer les autres. dayCount, lui, est toujours juste.
-                    startMillis = days.mapNotNull { it.startedAtMillis },
-                )
-            }
-
-    /**
      * RIC-19 : ce dont [com.bivouac.app.bilan.BilanStatsCalculator] a besoin pour les records de
      * granularité "jour" (VAM, altitude, bivouac le plus haut, distance/D+ max journée) : les jours
      * de chaque trace, triés, sans ouvrir le moindre fichier (colonnes dénormalisées uniquement).
+     *
+     * RIC-209 : sert aussi la liste du Journal (dayCount/dates, ex-daySummariesByTrackId, RIC-19,
+     * fondue ici faute d'un second appelant) et la durée réelle de chaque rando
+     * ([com.bivouac.app.data.gpx.RealDurationCalculator], colonnes elapsedSeconds/pausedSeconds du
+     * lot 1 de ce même chantier).
      */
     suspend fun allDaysByTrackId(): Map<String, List<LoggedTrackDayEntity>> =
         dao.getAllDays().groupBy { it.trackId }.mapValues { (_, days) -> days.sortedBy { it.dayIndex } }
@@ -457,6 +449,7 @@ class LoggedTrackRepository(context: Context) {
         return LoggedTrackDetail(
             track = HikeTrack(name = entity.name, points = dayTracks.flatMap { it.points }),
             daySegments = dayTracks.map { Segment(it.points, TrackStatsCalculator.compute(it.points)) },
+            days = days,
         )
     }
 
