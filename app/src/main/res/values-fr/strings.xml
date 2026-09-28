@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : strings-inventaire-v12.csv (inventaire de l'agent de pilotage,
+    Source : strings-inventaire-v13.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v12.csv
+        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v13.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -211,7 +211,7 @@
     <string name="bilan_metric_chart_title_bivouacs">Bivouacs par mois</string>
     <string name="bilan_totals_label_distance">Distance</string>
     <string name="bilan_totals_label_gain">D+ cumulé</string>
-    <string name="bilan_totals_label_duration">Temps de marche</string>
+    <string name="bilan_totals_label_duration">Durée totale</string>
 
     <!-- Réglages -->
     <string name="settings_credits_esri_name">Esri</string>
@@ -580,4 +580,63 @@
 
     <!-- Planification (import GPX) -->
     <string name="gpximport_restore_failed_message">La session précédente n\'a pas pu être restaurée.</string>
+
+    <!-- Journal détail, mode Analyse -->
+    <string name="journal_analysis_mode_button">Mode Analyse</string>
+    <string name="journal_analysis_badge">Analyse</string>
+    <string name="journal_analysis_coloring_pace">Allure</string>
+    <string name="journal_analysis_coloring_slope">Pente</string>
+    <string name="journal_analysis_coloring_speed">Vitesse</string>
+    <string name="journal_analysis_legend_pace_title">Écart au rythme habituel</string>
+    <string name="journal_analysis_legend_pace_slower">plus lent</string>
+    <string name="journal_analysis_legend_pace_usual">habituel</string>
+    <string name="journal_analysis_legend_pace_faster">plus rapide</string>
+    <string name="journal_analysis_legend_slope_title">Pente, montée ou descente</string>
+    <string name="journal_analysis_legend_speed_title">Vitesse en marche</string>
+    <string name="journal_analysis_legend_below">moins de %1$s</string>
+    <string name="journal_analysis_legend_above">plus de %1$s</string>
+    <string name="journal_analysis_headline_less">%1$s, soit %2$s de moins que l\'estimation (%3$s)</string>
+    <string name="journal_analysis_headline_more">%1$s, soit %2$s de plus que l\'estimation (%3$s)</string>
+    <string name="journal_analysis_headline_same">%1$s, comme l\'estimation</string>
+    <string name="journal_analysis_headline_detail">Marche %1$s contre %2$s · Pauses %3$s contre %4$s</string>
+    <string name="journal_analysis_stat_walking_time">en marche</string>
+    <plurals name="journal_analysis_stat_breaks">
+        <item quantity="one">%1$s pause</item>
+        <item quantity="many">%1$s pauses</item>
+        <item quantity="other">%1$s pauses</item>
+    </plurals>
+    <string name="journal_analysis_stat_moving_speed">en marche</string>
+    <string name="journal_analysis_stat_climbing">en montée</string>
+    <string name="journal_analysis_axis_distance">km</string>
+    <string name="journal_analysis_axis_time">h</string>
+    <string name="journal_analysis_axis_distance_description">Axe en distance</string>
+    <string name="journal_analysis_axis_time_description">Axe en durée</string>
+    <string name="journal_analysis_readout_hint">Glisser sur le profil pour lire un tronçon.</string>
+    <string name="journal_analysis_readout_section">km %1$s · %2$s · %3$s · pente %4$s · %5$s</string>
+    <string name="journal_analysis_readout_slower">%1$s plus lent que d\'habitude</string>
+    <string name="journal_analysis_readout_faster">%1$s plus rapide que d\'habitude</string>
+    <string name="journal_analysis_readout_usual">rythme habituel</string>
+    <string name="journal_analysis_readout_stopped">à l\'arrêt</string>
+    <string name="journal_analysis_section_pace_by_slope">Allure selon la pente</string>
+    <string name="journal_analysis_pace_by_slope_hint">Cette rando, puis l\'habitude. Barre à gauche : plus lent.</string>
+    <string name="journal_analysis_band_downhill_over">Descente &gt; %1$s %%</string>
+    <string name="journal_analysis_band_downhill_range">Descente %1$s-%2$s %%</string>
+    <string name="journal_analysis_band_flat">Plat</string>
+    <string name="journal_analysis_band_uphill_range">Montée %1$s-%2$s %%</string>
+    <string name="journal_analysis_band_uphill_over">Montée &gt; %1$s %%</string>
+    <string name="journal_analysis_section_breaks">Pauses</string>
+    <string name="journal_analysis_break_position">km %1$s · %2$s</string>
+    <plurals name="journal_analysis_short_breaks">
+        <item quantity="one">Et %1$s pause de moins de 5 minutes.</item>
+        <item quantity="many">Et %1$s pauses de moins de 5 minutes.</item>
+        <item quantity="other">Et %1$s pauses de moins de 5 minutes.</item>
+    </plurals>
+    <string name="journal_analysis_section_best">Meilleurs passages</string>
+    <string name="journal_analysis_best_climb">Montée soutenue la plus rapide, sur 20 min</string>
+    <string name="journal_analysis_best_flat">Passage à plat le plus rapide, sur 10 min</string>
+    <string name="journal_analysis_section_records">Records</string>
+    <string name="journal_analysis_no_timestamps">Cette trace n\'a pas d\'horodatage : seule la pente peut être analysée.</string>
+
+    <!-- Bilan -->
+    <string name="bilan_totals_label_walking">dont %1$s de marche</string>
 </resources>
