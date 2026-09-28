@@ -124,11 +124,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.R
 import com.bivouac.app.bilan.JournalOpenRequest
 import com.bivouac.app.data.db.DuplicateMatch
+import com.bivouac.app.data.db.LoggedTrackDayEntity
 import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoEntity
 import com.bivouac.app.data.db.LoggedTrackPhotoStore
 import com.bivouac.app.data.db.PhotoAddReport
 import com.bivouac.app.data.db.SystemTag
+import com.bivouac.app.data.gpx.RealDurationCalculator
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackStats
@@ -151,6 +153,7 @@ import com.bivouac.app.ui.components.BlockingProgress
 import com.bivouac.app.ui.components.BlockingProgressDialog
 import com.bivouac.app.ui.components.ChoiceOptionCard
 import com.bivouac.app.ui.components.DrawerStop
+import com.bivouac.app.ui.components.DurationDisplay
 import com.bivouac.app.ui.components.DurationIconColor
 import com.bivouac.app.ui.components.ElevationProfile
 import com.bivouac.app.ui.components.FullScreenEmptyState
@@ -160,6 +163,7 @@ import com.bivouac.app.ui.components.StatsRows
 import com.bivouac.app.ui.components.ThreeStopDrawerHandle
 import com.bivouac.app.ui.components.ThreeStopDrawerStopRow
 import com.bivouac.app.ui.components.TotalsCapsule
+import com.bivouac.app.ui.components.toDurationDisplay
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.halfWindowHeight
 import com.bivouac.app.ui.components.rememberThreeStopDrawerState
@@ -542,6 +546,7 @@ fun JournalScreen(
                     entry = detail.entry,
                     track = detail.track,
                     daySegments = detail.daySegments,
+                    days = detail.days,
                     bivouacPoints = journalBivouacs,
                     activeCalibration = activeCalibration,
                     onCloseClick = viewModel::closeTrack,
@@ -1514,7 +1519,7 @@ private fun JournalHomeScreen(
 @Composable
 private fun JournalBilanCard(
     total: Int,
-    stats: TrackStats,
+    stats: AggregatedStats,
     bivouacCount: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1527,10 +1532,14 @@ private fun JournalBilanCard(
             total,
             formatGroupedInt(total),
         ),
-        stats = stats,
+        stats = stats.stats,
         bivouacCount = bivouacCount,
         modifier = modifier,
         onClick = onClick,
+        // RIC-209 (brief Partie B) : durée réelle agrégée et temps de marche (seconde ligne du
+        // cartouche).
+        duration = stats.duration.toDurationDisplay(),
+        walkingSeconds = stats.duration.walkingSeconds,
     )
 }
 
@@ -1570,11 +1579,15 @@ private fun JournalPopulatedList(
     scrollState: ScrollState,
     modifier: Modifier = Modifier,
 ) {
-    val groups = remember(filteredTracks, activeCalibration) { groupByYear(filteredTracks, activeCalibration) }
+    val groups = remember(filteredTracks, activeCalibration, dayInfoByTrackId) {
+        groupByYear(filteredTracks, activeCalibration, dayInfoByTrackId)
+    }
     val resolvedExpandedYears = expandedYears ?: setOfNotNull(groups.firstOrNull()?.year)
     // Sur `tracks` et non `filteredTracks` : le Bilan reste global, un filtre actif n'en retire
     // rien (RIC-65 écran 3).
-    val bilanStats = remember(tracks, activeCalibration) { aggregateStats(tracks, activeCalibration) }
+    val bilanStats = remember(tracks, activeCalibration, dayInfoByTrackId) {
+        aggregateStats(tracks, activeCalibration, dayInfoByTrackId)
+    }
     // RIC-19 : bivouacCount découle de dayCount, toujours connu (contrairement aux dates, qui
     // dépendent d'un horodatage GPX exploitable) : voir JournalDayInfo.bivouacCount.
     val bilanBivouacCount = remember(tracks, dayInfoByTrackId) {
@@ -1753,23 +1766,47 @@ private fun JournalPopulatedList(
     }
 }
 
+// RIC-209 (brief Partie B) : durée réelle si RealDurationCalculator en a trouvé une pour cette
+// rando/ce jour, repli sur l'estimation (calibration active) avec le préfixe "≈" sinon (brief
+// §Règles, "rando sans horodatage"). Un seul endroit pour ce repli, réutilisé par la ligne de
+// liste, le total du détail et chaque jour du détail.
+private fun resolvedDuration(real: RealDurationCalculator.RealDuration?, estimatedMinutes: Int): DurationDisplay =
+    real?.let { DurationDisplay.Resolved(it.elapsedSeconds, isEstimated = false) }
+        ?: DurationDisplay.Resolved(estimatedMinutes * 60L, isEstimated = true)
+
+// RIC-209 : stats (distance/D+/D-, inchangées) et durée agrégée (brief Partie B) d'un ensemble de
+// randos, produites ensemble pour que le total de l'écran et la somme de ses sections tombent
+// juste l'un par rapport à l'autre (même raison d'être que l'ancien TrackStats seul, RIC-65).
+private data class AggregatedStats(val stats: TrackStats, val duration: RealDurationCalculator.AggregatedDuration)
+
 private data class YearGroup(
     val year: Int,
     val entries: List<LoggedTrackEntity>,
-    val totalStats: TrackStats,
+    val total: AggregatedStats,
 )
 
-// Duration is recomputed from the aggregate distance/gain under the *current* calibration rather
-// than summed from each entry's own stored estimate: those were frozen at whatever calibration
-// was active when each hike was imported, so summing them would mix calibrations together instead
-// of reflecting the one currently active (BIV-16 feedback: the Planification list had the same
-// staleness, fixed the same way; see TrackStatsCalculator.recomputeDuration).
+// Distance/D+/D- sont recalculés depuis la somme des jours sous la calibration ACTUELLE plutôt que
+// sommés depuis l'estimation stockée de chaque entrée : celle-ci est figée à la calibration active
+// au moment de l'import de chaque rando, sommer des entrées reviendrait à mélanger des calibrations
+// (BIV-16 feedback : la Planification avait le même défaut de fraîcheur, corrigé pareil ; voir
+// TrackStatsCalculator.recomputeDuration).
+//
+// RIC-209 (brief Partie B) : la DURÉE affichée, elle, ne vient plus de ce recalcul (qui reste posé
+// ci-dessous mais dont estimatedDurationMinutes n'est plus lu que comme repli individuel, rando par
+// rando) : brief §Règles, "un total additionne les durées réelles des randos horodatées et les
+// estimations des autres", jamais une estimation recalculée sur la distance/D+ CUMULÉS du groupe
+// (un nombre différent). Voir RealDurationCalculator.aggregate : réelle si dayInfoByTrackId en
+// connaît une pour cette rando, estimation individuelle (même calibration) sinon.
 //
 // Partagé entre les en-têtes d'année et la carte Bilan (RIC-65) : le total de l'écran et la somme
 // de ses sections doivent tomber juste l'un par rapport à l'autre, ce que deux calculs séparés ne
 // garantiraient plus dès qu'un seul des deux évoluerait.
-private fun aggregateStats(tracks: List<LoggedTrackEntity>, activeCalibration: SpeedCalibration): TrackStats =
-    TrackStatsCalculator.recomputeDuration(
+private fun aggregateStats(
+    tracks: List<LoggedTrackEntity>,
+    activeCalibration: SpeedCalibration,
+    dayInfoByTrackId: Map<String, JournalDayInfo>,
+): AggregatedStats {
+    val stats = TrackStatsCalculator.recomputeDuration(
         TrackStats(
             distanceMeters = tracks.sumOf { it.distanceMeters },
             elevationGainMeters = tracks.sumOf { it.elevationGainMeters },
@@ -1778,8 +1815,22 @@ private fun aggregateStats(tracks: List<LoggedTrackEntity>, activeCalibration: S
         ),
         activeCalibration,
     )
+    val duration = RealDurationCalculator.aggregate(
+        tracks.map { entry ->
+            val real = dayInfoByTrackId[entry.id]?.realDuration
+            val estimatedSeconds = TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration)
+                .estimatedDurationMinutes * 60L
+            real to estimatedSeconds
+        },
+    )
+    return AggregatedStats(stats, duration)
+}
 
-private fun groupByYear(tracks: List<LoggedTrackEntity>, activeCalibration: SpeedCalibration): List<YearGroup> {
+private fun groupByYear(
+    tracks: List<LoggedTrackEntity>,
+    activeCalibration: SpeedCalibration,
+    dayInfoByTrackId: Map<String, JournalDayInfo>,
+): List<YearGroup> {
     val zone = ZoneId.systemDefault()
     return tracks
         .groupBy { Instant.ofEpochMilli(it.startedAt).atZone(zone).year }
@@ -1788,7 +1839,7 @@ private fun groupByYear(tracks: List<LoggedTrackEntity>, activeCalibration: Spee
             YearGroup(
                 year = year,
                 entries = entries,
-                totalStats = aggregateStats(entries, activeCalibration),
+                total = aggregateStats(entries, activeCalibration, dayInfoByTrackId),
             )
         }
 }
@@ -1842,7 +1893,7 @@ private fun YearHeader(
             )
         }
         Column(modifier = Modifier.padding(start = 24.dp, top = 2.dp)) {
-            StatsRows(group.totalStats, muted = true)
+            StatsRows(group.total.stats, muted = true, duration = group.total.duration.toDurationDisplay())
         }
     }
 }
@@ -1947,7 +1998,10 @@ private fun JournalTrackRow(
                 }
             }
             Spacer(Modifier.height(4.dp))
-            StatsRows(TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration))
+            // RIC-209 (brief Partie B) : durée réelle si dayInfo en connaît une pour cette rando,
+            // repli sur l'estimation avec préfixe "≈" sinon.
+            val rowStats = TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration)
+            StatsRows(rowStats, duration = resolvedDuration(dayInfo?.realDuration, rowStats.estimatedDurationMinutes))
         }
     }
 }
@@ -2106,6 +2160,10 @@ internal fun ThreeStopJournalDetail(
     // RIC-41 : un élément par jour importé, dans l'ordre : la ventilation ne s'affiche qu'au-delà
     // d'un jour, même convention que les segments de Planification.
     daySegments: List<Segment> = emptyList(),
+    // RIC-209 (brief Partie B) : mêmes jours que daySegments (même ordre/taille), pour la durée
+    // réelle (elapsedSeconds/pausedSeconds) : voir LoggedTrackRepository.LoggedTrackDetail. Vide
+    // par défaut comme daySegments (Planification n'appelle jamais ce composable).
+    days: List<LoggedTrackDayEntity> = emptyList(),
     // Constat E : un point par jonction entre deux jours, en lecture seule : le profil les trace
     // comme la Planification, mais rien ici ne se déplace ni ne se supprime.
     bivouacPoints: List<BivouacPoint> = emptyList(),
@@ -2487,9 +2545,15 @@ internal fun ThreeStopJournalDetail(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                        // RIC-209 (brief Partie B) : durée réelle (somme des jours horodatés) si
+                        // disponible, repli sur l'estimation avec préfixe "≈" sinon (brief §Règles,
+                        // "rando sans horodatage").
+                        val totalStats = TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration)
+                        val totalReal = remember(days) { RealDurationCalculator.forDays(days) }
                         StatsRows(
-                            TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration),
+                            totalStats,
                             muted = daySegments.size > 1,
+                            duration = resolvedDuration(totalReal, totalStats.estimatedDurationMinutes),
                         )
                     }
                     ThreeStopDrawerStopRow(drawer)
@@ -2648,7 +2712,11 @@ internal fun ThreeStopJournalDetail(
                                             ?.let { formatDayLabel(it) }
                                             ?: stringResource(R.string.journal_detail_day_fallback_label, index + 1)
                                         Text(text = dayLabel, style = MaterialTheme.typography.labelLarge)
-                                        StatsRows(TrackStatsCalculator.recomputeDuration(segment.stats, activeCalibration))
+                                        // RIC-209 (brief Partie B) : durée réelle DE CE JOUR (pas de
+                                        // la rando entière), voir RealDurationCalculator.forDays.
+                                        val dayStats = TrackStatsCalculator.recomputeDuration(segment.stats, activeCalibration)
+                                        val dayReal = days.getOrNull(index)?.let { RealDurationCalculator.forDays(listOf(it)) }
+                                        StatsRows(dayStats, duration = resolvedDuration(dayReal, dayStats.estimatedDurationMinutes))
                                     }
                                     // La nuit s'intercale entre deux jours, exactement comme la
                                     // Planification l'intercale entre deux segments : c'est la même
