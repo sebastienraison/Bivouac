@@ -13,18 +13,23 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bivouac.app.R
@@ -36,15 +41,18 @@ import com.bivouac.app.data.gpx.AnalysisParameters
 import com.bivouac.app.data.gpx.AnalyzedPause
 import com.bivouac.app.data.gpx.ReferenceSource
 import com.bivouac.app.data.gpx.TrackAnalysisMapMapping
+import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.journal.JournalAnalysisResult
 import com.bivouac.app.ui.components.DurationIconColor
+import com.bivouac.app.ui.components.ElevationProfileAxis
 import com.bivouac.app.ui.components.formatDuration
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.formatKm1
 import com.bivouac.app.ui.map.AnalysisColoring
 import com.bivouac.app.ui.map.AnalysisColors
 import java.time.Instant
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -158,8 +166,14 @@ private fun AnalysisStatItem(value: String, label: String, modifier: Modifier = 
     }
 }
 
-// --- Sélecteur de coloration, cran Profil (brief lot 3 §4) -----------------------------------------
+// --- Sélecteur de coloration et bascule d'axe, cran Profil (brief lot 3 §4, lot 4 §5) --------------
+//
+// RIC-146 lot 4 correction 2 : remplace les FilterChip du lot 3 par le composant segmenté déjà
+// utilisé pour le choix Manuel/Auto/Sélection des Réglages (SettingsScreen.SpeedCalibrationSection),
+// pour la cohérence de l'app (brief §Partie A.2). SegmentedButton reste @ExperimentalMaterial3Api,
+// comme dans les Réglages.
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AnalysisColoringSelector(
     coloring: AnalysisColoring,
@@ -169,23 +183,80 @@ internal fun AnalysisColoringSelector(
 ) {
     // Brief lot 3 §5 : trace sans horodatage, seule la coloration Pente est proposée.
     val available = if (hasTimestamps) AnalysisColoring.entries else listOf(AnalysisColoring.SLOPE)
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        available.forEach { candidate ->
+    SingleChoiceSegmentedButtonRow(modifier = modifier) {
+        available.forEachIndexed { index, candidate ->
             val labelRes = when (candidate) {
                 AnalysisColoring.PACE -> R.string.journal_analysis_coloring_pace
                 AnalysisColoring.SLOPE -> R.string.journal_analysis_coloring_slope
                 AnalysisColoring.SPEED -> R.string.journal_analysis_coloring_speed
             }
-            FilterChip(
+            SegmentedButton(
                 selected = coloring == candidate,
                 onClick = { onColoringChanged(candidate) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = available.size),
                 label = { Text(stringResource(labelRes)) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
             )
         }
+    }
+}
+
+/**
+ * RIC-146 lot 4 (brief §5) : bascule à deux choix km/h de l'axe du profil, sur la même ligne que
+ * [AnalysisColoringSelector], à sa droite (voir [AnalysisProfileControlsRow]). N'existe pas sur une
+ * trace sans horodatage (brief §5, "la bascule n'est pas affichée, l'axe reste en distance") :
+ * l'appelant ne la monte alors pas du tout, voir [AnalysisProfileControlsRow].
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun AnalysisAxisSelector(
+    axis: ElevationProfileAxis,
+    onAxisChanged: (ElevationProfileAxis) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SingleChoiceSegmentedButtonRow(modifier = modifier) {
+        ElevationProfileAxis.entries.forEachIndexed { index, candidate ->
+            val (labelRes, descriptionRes) = when (candidate) {
+                ElevationProfileAxis.DISTANCE -> R.string.journal_analysis_axis_distance to R.string.journal_analysis_axis_distance_description
+                ElevationProfileAxis.DURATION -> R.string.journal_analysis_axis_time to R.string.journal_analysis_axis_time_description
+            }
+            // contentDescription posé sur le bouton entier : "km"/"h" seuls ne disent rien en
+            // lecture d'écran, la chaîne dédiée si (brief §5, chaînes "AJOUT DU PILOTAGE pour la
+            // lecture d'écran").
+            val description = stringResource(descriptionRes)
+            SegmentedButton(
+                selected = axis == candidate,
+                onClick = { onAxisChanged(candidate) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = ElevationProfileAxis.entries.size),
+                label = { Text(stringResource(labelRes)) },
+                modifier = Modifier.semantics { contentDescription = description },
+            )
+        }
+    }
+}
+
+/**
+ * RIC-146 lot 4 (brief §5) : le sélecteur de coloration et, s'il y a lieu, la bascule d'axe, sur la
+ * même ligne (maquette validée du 2026-09-28, planche section Profil). Remplace l'appel direct à
+ * [AnalysisColoringSelector] du lot 3 dans ThreeStopJournalDetail.
+ */
+@Composable
+internal fun AnalysisProfileControlsRow(
+    coloring: AnalysisColoring,
+    onColoringChanged: (AnalysisColoring) -> Unit,
+    hasTimestamps: Boolean,
+    axis: ElevationProfileAxis,
+    onAxisChanged: (ElevationProfileAxis) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AnalysisColoringSelector(coloring = coloring, onColoringChanged = onColoringChanged, hasTimestamps = hasTimestamps)
+        // Brief §5 : trace sans horodatage, la bascule n'est pas affichée du tout (pas seulement
+        // désactivée), l'axe restant en distance.
+        if (hasTimestamps) AnalysisAxisSelector(axis = axis, onAxisChanged = onAxisChanged)
     }
 }
 
@@ -406,6 +477,20 @@ private fun PausesSection(pauses: List<TimedPause>) {
     }
 }
 
+// RIC-146 lot 4 correction 3 (brief Partie A.3) : sous l'heure, "12 min" (journal_analysis_pause_minutes,
+// ajoutée à l'inventaire v14 pour cette correction) ; à partir d'une heure, le format existant
+// (StatsRows.formatDuration). Même règle sur la carte, voir HikeMapView.formatShortDuration
+// (dupliquée là-bas, hors composition : pas de fonction commune simple entre les deux).
+@Composable
+private fun formatPauseDuration(seconds: Double): String {
+    val totalMinutes = (seconds / 60.0).roundToInt()
+    return if (totalMinutes < 60) {
+        stringResource(R.string.journal_analysis_pause_minutes, totalMinutes.toString())
+    } else {
+        formatDuration(totalMinutes)
+    }
+}
+
 @Composable
 private fun PauseRow(timed: TimedPause) {
     val pause = timed.pause
@@ -413,7 +498,7 @@ private fun PauseRow(timed: TimedPause) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             timed.time?.let { Text(text = formatTimeOfDay(it), style = MaterialTheme.typography.bodySmall) }
             Text(
-                text = formatDuration((pause.seconds / 60.0).roundToInt()),
+                text = formatPauseDuration(pause.seconds),
                 style = MaterialTheme.typography.bodySmall,
                 color = DurationIconColor,
             )
@@ -472,5 +557,112 @@ private fun RecordsSection(records: List<com.bivouac.app.bilan.BilanRecord>) {
                 }
             }
         }
+    }
+}
+
+// --- Ligne de lecture, sous le profil, en mode Analyse (brief lot 4 §7) -----------------------------
+
+// Pente signée : "+1%"/"-5%" (settings_pause_percent_value gère déjà le signe négatif via %d, seul
+// le "+" du cas positif ou nul manque). Pas d'espace avant le "%" : même formatage que la légende
+// (journal_analysis_legend_below/above, lot 3), pour rester cohérent dans l'écran.
+@Composable
+private fun formatSignedSlopePercent(percent: Double): String {
+    val rounded = percent.roundToInt()
+    val formatted = stringResource(R.string.settings_pause_percent_value, rounded)
+    return if (rounded >= 0) "+$formatted" else formatted
+}
+
+// Écart d'allure en valeur absolue : le sens (plus lent/plus rapide) est déjà dans le libellé qui
+// suit (journal_analysis_readout_slower/faster), la chaîne n'a donc pas à porter de signe.
+@Composable
+private fun deviationPercentText(movingSpeedKmh: Double?, referenceSpeedKmh: Double?): String {
+    if (movingSpeedKmh == null || referenceSpeedKmh == null || referenceSpeedKmh <= 0.0) return "-"
+    val deviation = ((movingSpeedKmh / referenceSpeedKmh) - 1.0) * 100.0
+    return stringResource(R.string.settings_pause_percent_value, abs(deviation).roundToInt())
+}
+
+/**
+ * RIC-146 lot 4 (brief §7) : quelle formule de la ligne de lecture suit la classe d'allure d'un
+ * tronçon. Extrait de [AnalysisReadoutLine] en fonction pure (pas de `@Composable`, pas de
+ * `stringResource`) pour rester testable en JVM : `internal`, testé directement par
+ * AnalysisReadoutWordingTest.
+ */
+internal enum class ReadoutPaceWording { SLOWER, USUAL, FASTER, STOPPED }
+
+/** [paceClass] : 0-4 (voir [com.bivouac.app.data.gpx.AnalysisParameters.paceClassOf]), `null` pour
+ * un tronçon sans vitesse exploitable. Classe 2 = milieu des cinq, "rythme habituel" (brief §7). */
+internal fun readoutPaceWordingFor(paceClass: Int?): ReadoutPaceWording = when {
+    paceClass == null -> ReadoutPaceWording.STOPPED
+    paceClass in 0..1 -> ReadoutPaceWording.SLOWER
+    paceClass in 3..4 -> ReadoutPaceWording.FASTER
+    else -> ReadoutPaceWording.USUAL
+}
+
+/**
+ * RIC-146 lot 4 (brief §7) : ce que le geste sur le profil raconte du tronçon sous le doigt.
+ * [cursorIndex] : même index que la carte et le profil (écran, toutes journées concaténées).
+ *
+ * Distance et altitude reprises de la série commune concaténée ([TrackStatsCalculator.series],
+ * mêmes [seriesBreaks] que [com.bivouac.app.ui.components.ElevationProfile]) et non de
+ * [AnalyzedPause.distanceMeters] (local à son jour, brief non concerné ici) : c'est cette série qui
+ * positionne la courbe sous le doigt, la ligne de lecture doit décrire exactement ce point-là,
+ * y compris sur une sortie de plusieurs jours.
+ *
+ * Choix non tranché par la conception, pris ici par prudence : un tronçon sans vitesse exploitable
+ * (movingSpeedKmh nul, brief §7 "tronçon sans vitesse exploitable") affiche "-" à la place de la
+ * vitesse dans la première ligne plutôt que de supprimer la ligne, la conception ne prévoyant pas
+ * de variante plus courte du format ; voir le rapport du lot.
+ */
+@Composable
+internal fun AnalysisReadoutLine(
+    cursorIndex: Int?,
+    result: JournalAnalysisResult?,
+    points: List<TrackPoint>,
+    dayPointCounts: List<Int>,
+    seriesBreaks: Set<Int>,
+    modifier: Modifier = Modifier,
+) {
+    val analysis = result?.analysis
+    val segmentAndPoint = if (cursorIndex == null || analysis == null || analysis.totals == null) {
+        null
+    } else {
+        val dayOffsets = TrackAnalysisMapMapping.dayOffsets(dayPointCounts)
+        val (dayIndex, localIndex) = TrackAnalysisMapMapping.dayAndLocalIndex(dayOffsets, cursorIndex)
+        val segment = analysis.days.getOrNull(dayIndex)?.segments?.let { TrackAnalysisMapMapping.segmentAt(it, localIndex) }
+        val point = points.getOrNull(cursorIndex)
+        if (segment != null && point?.time != null) segment to point else null
+    }
+    val series = remember(points, seriesBreaks) { TrackStatsCalculator.series(points, seriesBreaks) }
+    val distanceKm = cursorIndex?.let { series.cumulativeDistanceMeters.getOrNull(it) }?.div(1000.0)
+    val elevation = cursorIndex?.let { series.smoothedElevationMeters?.getOrNull(it) }
+
+    if (segmentAndPoint == null || distanceKm == null || elevation == null) {
+        Text(
+            text = stringResource(R.string.journal_analysis_readout_hint),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = modifier,
+        )
+        return
+    }
+    val (segment, point) = segmentAndPoint
+    val line1 = stringResource(
+        R.string.journal_analysis_readout_section,
+        formatKm1(distanceKm),
+        formatTimeOfDay(point.time!!),
+        stringResource(R.string.format_elevation_meters, formatGroupedInt(elevation.roundToInt())),
+        formatSignedSlopePercent(segment.netSlopePercent),
+        segment.movingSpeedKmh?.let { stringResource(R.string.settings_speed_value_format, formatKm1(it)) } ?: "-",
+    )
+    val deviationText = deviationPercentText(segment.movingSpeedKmh, segment.referenceSpeedKmh)
+    val line2 = when (readoutPaceWordingFor(segment.paceClass)) {
+        ReadoutPaceWording.STOPPED -> stringResource(R.string.journal_analysis_readout_stopped)
+        ReadoutPaceWording.SLOWER -> stringResource(R.string.journal_analysis_readout_slower, deviationText)
+        ReadoutPaceWording.FASTER -> stringResource(R.string.journal_analysis_readout_faster, deviationText)
+        ReadoutPaceWording.USUAL -> stringResource(R.string.journal_analysis_readout_usual)
+    }
+    Column(modifier = modifier) {
+        Text(text = line1, style = MaterialTheme.typography.bodySmall)
+        Text(text = line2, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
