@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import com.bivouac.app.R
 import com.bivouac.app.data.db.LoggedTrackDayEntity
 import com.bivouac.app.data.db.LoggedTrackEntity
+import com.bivouac.app.data.gpx.RealDurationCalculator
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
 import com.bivouac.app.data.gpx.TrackStats
@@ -67,6 +68,11 @@ data class BilanRecord(
 data class BilanStats(
     val totalCount: Int,
     val totals: TrackStats,
+    // RIC-209 (brief Partie B) : durée réelle agrégée (cartouche du Bilan), à côté de
+    // totals.estimatedDurationMinutes qui reste la seule source pour distance/D+/D- ci-dessus.
+    // Voir RealDurationCalculator : réelle rando par rando quand elle existe, estimation de repli
+    // sinon, jamais un recalcul indépendant sur la distance/D+ cumulés du Bilan entier.
+    val durationAggregate: RealDurationCalculator.AggregatedDuration,
     val bivouacCount: Int,
     val progression: List<ProgressionSeries>,
     // RIC-19 §2 : mois calendaire (toutes années confondues) avec le plus de sorties cumulées :
@@ -110,10 +116,21 @@ object BilanStatsCalculator {
         )
         val bivouacCountByTrack = tracks.associate { it.id to bivouacCount(daysByTrackId[it.id].orEmpty()) }
         val totalBivouacs = bivouacCountByTrack.values.sum()
+        // RIC-209 (brief Partie B) : réelle rando par rando (daysByTrackId, colonnes du lot 1) si
+        // elle existe, estimation individuelle (même calibration) sinon.
+        val durationAggregate = RealDurationCalculator.aggregate(
+            tracks.map { entry ->
+                val real = RealDurationCalculator.forDays(daysByTrackId[entry.id].orEmpty())
+                val estimatedSeconds = TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), calibration)
+                    .estimatedDurationMinutes * 60L
+                real to estimatedSeconds
+            },
+        )
 
         return BilanStats(
             totalCount = tracks.size,
             totals = totals,
+            durationAggregate = durationAggregate,
             bivouacCount = totalBivouacs,
             progression = buildProgression(tracks, daysByTrackId, zone, now),
             mostActiveMonthInsight = buildInsight(tracks, zone),

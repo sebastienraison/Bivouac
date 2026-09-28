@@ -52,6 +52,7 @@ import com.bivouac.app.ui.components.FullScreenEmptyState
 import com.bivouac.app.ui.components.GainIconColor
 import com.bivouac.app.ui.components.TotalsCapsule
 import com.bivouac.app.ui.components.formatGroupedInt
+import com.bivouac.app.ui.components.toDurationDisplay
 import com.bivouac.app.ui.nav.AppScreenHeader
 import com.bivouac.app.ui.nav.AppSection
 
@@ -130,6 +131,9 @@ private fun BilanContent(stats: BilanStats, onOpenJournalEntry: (JournalOpenRequ
             ),
             stats = stats.totals,
             bivouacCount = stats.bivouacCount,
+            // RIC-209 (brief Partie B) : durée réelle agrégée et temps de marche (seconde ligne).
+            duration = stats.durationAggregate.toDurationDisplay(),
+            walkingSeconds = stats.durationAggregate.walkingSeconds,
         )
 
         if (stats.progression.isNotEmpty()) {
