@@ -12,7 +12,7 @@ package com.bivouac.app.data.gpx
  * comme de la marche un arrêt de 3 minutes pris dans une montée.
  *
  * Mesures (conception du 2026-09-28, section 3) :
- *   Roc de Frausa (18,7 km, D+ 1 389 m), marche prévue / réelle :
+ *   une rando réelle de 18,7 km et 1 389 m de D+, marche prévue / réelle :
  *     deux définitions  6h50 / 6h12 ; une seule  6h03 / 6h08
  *   calibration de la sélection de 11 randos, ancienne définition puis définition fine :
  *     vitesse à plat 3,64 puis 3,73 km/h ; pénalité D+ 223 puis 353 m/km ; pauses 19,1 puis 23,3 %
