@@ -222,6 +222,45 @@ class TrackAnalysisMapMappingTest {
     }
 
     @Test
+    fun clockGridlinesWidenTheStepOnALongSingleDayToAvoidOverlap() {
+        // RIC-146 lot 5 (brief Partie A.3, défaut cap14-2day-duration-axis.png) : une seule
+        // journée de presque 14h (09:12 à 23:05) donnerait 12 marques à l'heure (11h à 22h) une
+        // fois les bords retirés, bien plus que MAX_INTERMEDIATE_DURATION_TICKS (5) : le pas
+        // s'élargit à 3h, la première valeur de CLOCK_GRIDLINE_STEPS_HOURS qui repasse sous ce
+        // plafond, et ne laisse que 4 marques bien espacées.
+        val start = Instant.parse("2026-08-27T09:12:00Z")
+        val end = Instant.parse("2026-08-27T23:05:00Z")
+        val points = listOf(point(start), point(end))
+        val gridlines = TrackAnalysisMapMapping.clockGridlines(points, emptyList(), ZoneId.of("UTC"))
+        assertEquals(
+            listOf(LocalTime.of(12, 0), LocalTime.of(15, 0), LocalTime.of(18, 0), LocalTime.of(21, 0)),
+            gridlines?.map { it.time },
+        )
+    }
+
+    @Test
+    fun clockGridlinesWidenTheStepOnTwoDaysToAvoidOverlap() {
+        // RIC-146 lot 5 (brief Partie A.3) : une rando de deux jours (09:12-17:20 puis
+        // 09:05-15:11) cumule 12 marques à l'heure une fois les bords retirés : le pas s'élargit à
+        // 3h, comme pour la journée unique ci-dessus ("sur un jour comme sur plusieurs", brief).
+        val day0Start = Instant.parse("2026-08-27T09:12:00Z")
+        val day0End = Instant.parse("2026-08-27T17:20:00Z")
+        val day1Start = Instant.parse("2026-08-28T09:05:00Z")
+        val day1End = Instant.parse("2026-08-28T15:11:00Z")
+        val points = listOf(point(day0Start), point(day0End), point(day1Start), point(day1End))
+        val gridlines = TrackAnalysisMapMapping.clockGridlines(points, listOf(1), ZoneId.of("UTC"))
+        assertEquals(
+            listOf(LocalTime.of(12, 0), LocalTime.of(15, 0), LocalTime.of(12, 0)),
+            gridlines?.map { it.time },
+        )
+        // Aucune paire de marques voisines ne se touche : au moins une heure d'écart partout
+        // (brief "que deux libellés voisins ne se touchent jamais"), y compris entre le dernier
+        // repère du jour 0 (15h) et le premier du jour 1 (12h, sur l'axe concaténé).
+        val elapsedGaps = gridlines!!.map { it.elapsedSeconds }.zipWithNext { a, b -> b - a }
+        assertEquals(true, elapsedGaps.all { it >= 3_600.0 })
+    }
+
+    @Test
     fun clockGridlinesIsNullWithoutTimestamps() {
         val points = listOf(point(baseInstant), point(null))
         assertNull(TrackAnalysisMapMapping.clockGridlines(points, emptyList(), ZoneId.of("UTC")))

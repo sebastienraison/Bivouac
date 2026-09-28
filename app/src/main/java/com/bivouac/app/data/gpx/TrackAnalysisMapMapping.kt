@@ -157,12 +157,27 @@ object TrackAnalysisMapMapping {
     // chevaucherait le libellé de départ ou d'arrivée.
     private const val EDGE_GAP_SECONDS = 3_600.0
 
+    // RIC-146 lot 5 (brief Partie A.3) : défaut trouvé en vérification visuelle
+    // (cap14-2day-duration-axis.png) : une rando de deux jours cumule assez d'heures pour que la
+    // graduation à une marque par heure se chevauche sous le profil. Le pas s'élargit donc, du plus
+    // fin au plus large : le premier de ces pas qui ne laisse pas plus de
+    // MAX_INTERMEDIATE_DURATION_TICKS marques est retenu. MAX_INTERMEDIATE_DURATION_TICKS = 5 pour
+    // que la rando d'un jour de la maquette validée (08:11-15:51, 5 marques à l'heure) ne change
+    // pas (voir clockGridlinesAreRoundHoursNotTooCloseToEitherEdge). Choix pris ici, à défaut de
+    // connaître la largeur réelle du profil dans cette fonction pure et testable en JVM : comme le
+    // reste de ce fichier (EDGE_GAP_SECONDS, DISTANCE_MIN_SPACING_KM côté ElevationProfile), un
+    // seuil fixe plutôt qu'une mesure de pixels.
+    private val CLOCK_GRIDLINE_STEPS_HOURS = listOf(1, 2, 3, 4, 6)
+    private const val MAX_INTERMEDIATE_DURATION_TICKS = 5
+
     /**
      * Graduations en heures d'horloge rondes de l'axe en durée (conception section 7.4, brief §5),
      * une par jour, dans le fuseau [zone] : l'heure de départ et d'arrivée de la rando sont à la
      * charge de l'appelant (toujours dessinées, jamais arrondies, voir [ElevationProfile]). Une
      * graduation à moins de [EDGE_GAP_SECONDS] d'une des deux extrémités de la rando entière est
-     * retirée. `null` si un jour n'a pas d'horodatage.
+     * retirée, puis le pas s'adapte (brief Partie A.3, [CLOCK_GRIDLINE_STEPS_HOURS]) pour que deux
+     * marques voisines ne se touchent jamais, qu'il s'agisse d'un jour ou de plusieurs. `null` si un
+     * jour n'a pas d'horodatage.
      */
     fun clockGridlines(points: List<TrackPoint>, dayBoundaryIndices: List<Int>, zone: ZoneId): List<ClockGridline>? {
         if (points.isEmpty()) return null
@@ -185,7 +200,11 @@ object TrackAnalysisMapMapping {
             if (dayStart > points.lastIndex) break
         }
         val total = carry
-        return marks.filter { it.elapsedSeconds > EDGE_GAP_SECONDS && it.elapsedSeconds < total - EDGE_GAP_SECONDS }
+        val edgeFiltered = marks.filter { it.elapsedSeconds > EDGE_GAP_SECONDS && it.elapsedSeconds < total - EDGE_GAP_SECONDS }
+        val step = CLOCK_GRIDLINE_STEPS_HOURS.firstOrNull { candidate ->
+            edgeFiltered.count { it.time.hour % candidate == 0 } <= MAX_INTERMEDIATE_DURATION_TICKS
+        } ?: CLOCK_GRIDLINE_STEPS_HOURS.last()
+        return edgeFiltered.filter { it.time.hour % step == 0 }
     }
 
     /** Position en secondes écoulées la plus proche de [instant] dans [values] (recherche binaire,
