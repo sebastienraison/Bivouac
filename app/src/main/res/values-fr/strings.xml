@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : strings-inventaire-v14.csv (inventaire de l'agent de pilotage,
+    Source : strings-inventaire-v15.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v14.csv
+        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v15.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -549,6 +549,7 @@
     <string name="fmt_stats_rows_gain">D+ %1$s m</string>
     <string name="fmt_stats_rows_loss">D- %1$s m</string>
     <string name="fmt_stats_rows_duration">%1$dh%2$s</string>
+    <string name="fmt_stats_rows_duration_estimated">≈ %1$s</string>
     <string name="gpximport_saved_today_format">aujourd\'hui à %1$s</string>
     <string name="gpximport_saved_date_format">d MMMM</string>
     <string name="gpximport_saved_at_with_bivouac_count_format">%1$s · %2$d</string>
