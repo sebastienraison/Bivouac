@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -297,7 +298,13 @@ internal fun AnalysisLegend(coloring: AnalysisColoring, modifier: Modifier = Mod
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
-        Text(text = stringResource(titleRes), style = MaterialTheme.typography.labelSmall)
+        // RIC-146 lot 5 (brief Partie A.2) : couleur explicite, assortie au fond `colorScheme.surface`
+        // juste au-dessus. Sans elle, ce Text retombe sur le LocalContentColor ambiant : cette
+        // légende flotte directement sur la carte, hors de tout Surface qui l'aurait fixé au thème
+        // (contrairement à LegendCaption plus bas, déjà explicite) ; l'ambiant valait alors le noir
+        // par défaut de Compose, illisible sur un fond sombre en thème sombre (mais invisible en
+        // thème clair, d'où le défaut signalé uniquement là).
+        Text(text = stringResource(titleRes), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface)
         Row(modifier = Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             palette.forEach { color ->
                 Box(modifier = Modifier.size(width = 20.dp, height = 6.dp).background(color))
@@ -410,6 +417,36 @@ private fun PaceBySlopeSection(bands: List<AnalysisBand>) {
     }
 }
 
+/**
+ * RIC-146 lot 5 (brief Partie A.4) : géométrie de la barre d'écart centrée, en fonction pure (pas
+ * de `@Composable`, pas de couleur résolue) pour rester testable en JVM, même raison que
+ * [readoutPaceWordingFor] plus bas. [halfFraction] : 0..1, la part de CHAQUE MOITIÉ de piste que la
+ * barre occupe (donc jusqu'à 50 % de la largeur totale, brief "plafonnée à 50 %"). [slower] :
+ * `null` sans écart exploitable (pas de barre à dessiner, seul le trait central reste) ; sinon vrai
+ * si cette rando est plus lente que la référence sur cette bande (barre vers la gauche, brief), faux
+ * si plus rapide (vers la droite). [paceClass] : 0-4 (voir [AnalysisParameters.paceClassOf]),
+ * `null` sans écart exploitable (le composant retombe alors sur une couleur neutre indépendante de
+ * la palette).
+ */
+internal data class PaceBarGeometry(val halfFraction: Float, val slower: Boolean?, val paceClass: Int?)
+
+internal fun paceBarGeometryFor(band: AnalysisBand): PaceBarGeometry {
+    val deviationPercent = if (
+        band.hikeSpeedKmh != null && band.referenceSpeedKmh != null &&
+        band.referenceSpeedKmh > 0 && band.referenceSource != ReferenceSource.NONE
+    ) {
+        (band.hikeSpeedKmh / band.referenceSpeedKmh - 1.0) * 100.0
+    } else {
+        null
+    }
+    val halfFraction = deviationPercent?.let { (abs(it) / 50.0).toFloat().coerceIn(0f, 1f) } ?: 0f
+    return PaceBarGeometry(
+        halfFraction = halfFraction,
+        slower = deviationPercent?.let { it < 0.0 },
+        paceClass = deviationPercent?.let { AnalysisParameters.DEFAULT.paceClassOf(it) },
+    )
+}
+
 @Composable
 private fun PaceBandRow(band: AnalysisBand) {
     Column {
@@ -419,19 +456,20 @@ private fun PaceBandRow(band: AnalysisBand) {
             val referenceText = band.referenceSpeedKmh?.let { stringResource(R.string.settings_speed_value_format, formatKm1(it)) } ?: "-"
             Text(text = "$hikeText / $referenceText", style = MaterialTheme.typography.bodySmall)
         }
-        // Barre d'écart centrée : ratio hike/référence, bornée à [0.5x, 1.5x] pour rester lisible
-        // même avec un écart extrême, la valeur exacte étant déjà donnée en toutes lettres au-dessus.
-        val ratio = if (band.hikeSpeedKmh != null && band.referenceSpeedKmh != null && band.referenceSpeedKmh > 0) {
-            (band.hikeSpeedKmh / band.referenceSpeedKmh).coerceIn(0.5, 1.5)
-        } else {
-            1.0
-        }
-        val fraction = ((ratio - 0.5) / 1.0).toFloat().coerceIn(0f, 1f)
-        val barColor = if (band.referenceSource == ReferenceSource.NONE) {
-            MaterialTheme.colorScheme.outlineVariant
-        } else {
-            AnalysisColors.pace[(fraction * 4).roundToInt().coerceIn(0, 4)]
-        }
+        // RIC-146 lot 5 (brief Partie A.4, maquette validée) : barre centrée sur un trait vertical
+        // au milieu de la piste, plutôt que partant de la gauche (défaut cap05-final-details-top.png,
+        // qui contredisait le texte d'aide "Barre à gauche : plus lent"). Écart signé (même formule
+        // que TrackAnalysisCalculator.paceClass, "hikeSpeedKmh / referenceSpeedKmh - 1") : négatif
+        // (plus lent) étale la barre vers la gauche du trait, positif (plus rapide) vers la droite.
+        // Longueur proportionnelle à l'écart en %, plafonnée à 50 % de la largeur TOTALE de la piste
+        // (brief) : dans chaque moitié de piste (elle-même 50 % de la largeur), la barre occupe
+        // jusqu'à 100 % de cette moitié à 50 points d'écart ou plus. Géométrie calculée par
+        // paceBarGeometryFor (fonction pure, testée séparément) : ce composant ne fait plus que la
+        // dessiner.
+        val geometry = paceBarGeometryFor(band)
+        // Classe d'allure de l'écart : couleur neutre dans la classe du milieu (brief), déjà vraie
+        // par construction puisque AnalysisColors.pace[2] == AnalysisColors.neutral.
+        val barColor = geometry.paceClass?.let { AnalysisColors.pace[it] } ?: MaterialTheme.colorScheme.outlineVariant
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -440,13 +478,28 @@ private fun PaceBandRow(band: AnalysisBand) {
                 .clip(RoundedCornerShape(3.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest),
         ) {
+            // Trait central : repère du "0 %" (référence égalée), toujours visible, même sans écart.
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(fraction.coerceIn(0.02f, 1f))
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(barColor),
+                    .align(Alignment.Center)
+                    .width(1.5.dp)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant),
             )
+            if (geometry.halfFraction > 0f) {
+                val slower = geometry.slower == true
+                val halfBoxAlignment = if (slower) Alignment.CenterStart else Alignment.CenterEnd
+                val fillAlignment = if (slower) Alignment.CenterEnd else Alignment.CenterStart
+                Box(modifier = Modifier.fillMaxWidth(0.5f).fillMaxHeight().align(halfBoxAlignment)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(geometry.halfFraction)
+                            .fillMaxHeight()
+                            .align(fillAlignment)
+                            .background(barColor),
+                    )
+                }
+            }
         }
     }
 }
