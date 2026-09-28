@@ -1473,6 +1473,11 @@ private fun JournalPopulatedList(
             .padding(top = 4.dp, bottom = 96.dp),
     ) {
         JournalBilanCard(total = tracks.size, stats = bilanStats, bivouacCount = bilanBivouacCount, onClick = onOpenBilan)
+        // RIC-197 : le cartouche compte TOUJOURS tout le Journal, jamais la liste filtrée
+        // ci-dessous (voir le commentaire de JournalBilanCard) ; ce trait les sépare visuellement
+        // pour ne pas laisser croire, filtre actif, que le total suit le filtre. Placé avant les
+        // chips : elles filtrent la liste, elles en font partie, pas du cartouche.
+        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
         if (allFilterTags.isNotEmpty()) {
             Row(
                 modifier = Modifier
