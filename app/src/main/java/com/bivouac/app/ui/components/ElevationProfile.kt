@@ -403,6 +403,13 @@ fun ElevationProfile(
 
         // Bivouac markers: dot on the curve, drop line down to the axis, and (since that line
         // already marks the spot) its exact distance labelled right there on the axis.
+        //
+        // RIC-146 lot 4, défaut visuel trouvé en vérification (brief Partie D) : cette étiquette de
+        // distance se dessine à la même abscisse que les graduations d'heure de l'axe en durée
+        // (xForIndex dépend de l'axe), et venait s'y superposer illisiblement ("7,2" collé à
+        // "11:00"). En axe durée, la ligne de lecture (AnalysisReadoutLine, sous le profil) porte
+        // déjà la distance en toutes lettres : l'étiquette sur le graphique n'est plus nécessaire,
+        // seuls le trait et le point restent.
         val bivouacXs = bivouacPoints.map { bivouac ->
             val index = bivouac.trackPointIndex.coerceIn(0, elevations.lastIndex)
             val x = xForIndex(index)
@@ -416,19 +423,24 @@ fun ElevationProfile(
                 pathEffect = PathEffect.dashPathEffect(floatArrayOf(2.dp.toPx(), 2.dp.toPx())),
             )
             drawCircle(color = bivouacColor, radius = 4.dp.toPx(), center = Offset(x, y))
-            drawCenteredLabel(formatKm(cumulativeDistances[index] / 1000.0), x, plotHeight + 2.dp.toPx(), bivouacColor)
+            if (effectiveAxis == ElevationProfileAxis.DISTANCE) {
+                drawCenteredLabel(formatKm(cumulativeDistances[index] / 1000.0), x, plotHeight + 2.dp.toPx(), bivouacColor)
+            }
             x
         }
 
         // Cursor (BIV-52): a solid line (vs. bivouacs' dashed ones) so it reads as "live" rather
-        // than a fixed waypoint: distance labelled the same way a bivouac's is, for consistency.
+        // than a fixed waypoint: distance labelled the same way a bivouac's is, for consistency
+        // (même exception en axe durée, voir le commentaire ci-dessus).
         if (cursorIndex != null) {
             val index = cursorIndex.coerceIn(0, elevations.lastIndex)
             val x = xForIndex(index)
             val y = yFor(elevations[index])
             drawLine(color = cursorColor, start = Offset(x, y), end = Offset(x, plotHeight), strokeWidth = 1.5.dp.toPx())
             drawCircle(color = cursorColor, radius = 5.dp.toPx(), center = Offset(x, y))
-            drawCenteredLabel(formatKm(cumulativeDistances[index] / 1000.0), x, plotHeight + 2.dp.toPx(), cursorColor)
+            if (effectiveAxis == ElevationProfileAxis.DISTANCE) {
+                drawCenteredLabel(formatKm(cumulativeDistances[index] / 1000.0), x, plotHeight + 2.dp.toPx(), cursorColor)
+            }
         }
 
         if (effectiveAxis == ElevationProfileAxis.DISTANCE) {

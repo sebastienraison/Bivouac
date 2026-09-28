@@ -2378,7 +2378,21 @@ internal fun ThreeStopJournalDetail(
                         ) {
                             Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(text = entry.name, style = MaterialTheme.typography.titleMedium)
+                                    // RIC-146 lot 4, defaut visuel du lot 3 corrige en verification
+                                    // visuelle (brief Partie D) : le titre est mesure avant le badge
+                                    // dans un Row sans poids, donc un titre long (ex. "Carlit depuis
+                                    // les Bouillouses") lui laissait a peine assez de place, et
+                                    // "Analyse" se coupait sur deux lignes ("Analys"/"e") au lieu de
+                                    // rester d'un bloc. weight(1f, fill = false) sur le titre inverse
+                                    // l'ordre de mesure (Row mesure d'abord les enfants sans poids) :
+                                    // le badge obtient toujours sa largeur naturelle en un mot, et
+                                    // c'est le titre qui s'adapte (repli sur plusieurs lignes s'il le
+                                    // faut, jamais le badge).
+                                    Text(
+                                        text = entry.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        modifier = Modifier.weight(1f, fill = false),
+                                    )
                                     // Brief §1 : étiquette à côté du titre quand le mode est actif.
                                     if (analysisModeActive) AnalysisBadge()
                                 }

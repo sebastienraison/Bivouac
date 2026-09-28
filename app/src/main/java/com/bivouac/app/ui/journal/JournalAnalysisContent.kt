@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -183,6 +184,9 @@ internal fun AnalysisColoringSelector(
 ) {
     // Brief lot 3 §5 : trace sans horodatage, seule la coloration Pente est proposée.
     val available = if (hasTimestamps) AnalysisColoring.entries else listOf(AnalysisColoring.SLOPE)
+    // RIC-146 lot 4 : chaque SegmentedButton se répartit la largeur qu'on offre à ce
+    // SingleChoiceSegmentedButtonRow (comportement du composant M3, voir le commentaire de
+    // AnalysisProfileControlsRow pour la contrainte que ça impose côté appelant).
     SingleChoiceSegmentedButtonRow(modifier = modifier) {
         available.forEachIndexed { index, candidate ->
             val labelRes = when (candidate) {
@@ -253,10 +257,28 @@ internal fun AnalysisProfileControlsRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AnalysisColoringSelector(coloring = coloring, onColoringChanged = onColoringChanged, hasTimestamps = hasTimestamps)
+        // RIC-146 lot 4, défaut visuel trouvé en vérification (brief Partie D) : chaque
+        // SegmentedButton se partage la largeur que son SingleChoiceSegmentedButtonRow reçoit
+        // (comportement du composant M3, pas de notre fait) plutôt que de ne prendre que la
+        // largeur nécessaire à son contenu. Dans un Row sans poids, le premier enfant mesuré
+        // (AnalysisColoringSelector) recevait alors TOUTE la largeur de la ligne et la consommait
+        // en entier, ne laissant presque rien à la bascule d'axe mesurée ensuite : "km"/"h" se
+        // coupaient en deux lignes ("k"/"m"). Solution : mesurer la bascule d'axe EN PREMIER, avec
+        // une largeur fixe généreuse (garantit qu'elle ne se coupe jamais, quel que soit le reste),
+        // puis laisser le sélecteur de coloration prendre tout ce qu'il reste (weight(1f,
+        // fill = false) : il ne demande que ce qu'il lui faut, mais ne peut plus déborder sur la
+        // bascule puisqu'elle a déjà réservé sa place).
+        AnalysisColoringSelector(
+            coloring = coloring,
+            onColoringChanged = onColoringChanged,
+            hasTimestamps = hasTimestamps,
+            modifier = Modifier.weight(1f, fill = false),
+        )
         // Brief §5 : trace sans horodatage, la bascule n'est pas affichée du tout (pas seulement
         // désactivée), l'axe restant en distance.
-        if (hasTimestamps) AnalysisAxisSelector(axis = axis, onAxisChanged = onAxisChanged)
+        if (hasTimestamps) {
+            AnalysisAxisSelector(axis = axis, onAxisChanged = onAxisChanged, modifier = Modifier.width(150.dp))
+        }
     }
 }
 
