@@ -305,7 +305,7 @@ object BilanStatsCalculator {
     // RIC-207 : distance/D+ du jour lus sur les totaux dénormalisés (day.distanceMeters/
     // elevationGainMeters, voir LoggedTrackDayEntity), pas sur les sommes de segments RIC-109
     // (flatDistanceMeters+steepDistanceMeters/steepGainMeters) : ces agrégats de calibration
-    // excluent la distance des arrêts (segments écartés sous PAUSE_SPEED_KMH) et ne comptent le D+
+    // excluent la distance des arrêts (segments écartés, voir AnalysisParameters) et ne comptent le D+
     // que des segments classés pentus, donc ne correspondaient pas aux totaux du jour affichés dans
     // le détail de la rando. Les colonnes de segments restent en base, elles ne servent plus qu'à
     // SpeedCalibrationCalculator. day.distanceMeters/elevationGainMeters valent null si et
