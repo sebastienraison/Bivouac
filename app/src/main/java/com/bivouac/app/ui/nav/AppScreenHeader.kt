@@ -26,11 +26,16 @@ fun AppScreenHeader(
     onSectionSelected: (AppSection) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // RIC-203 : end et top alignés sur le bouton des écrans carte (GpxImportScreen,
+    // statusBarsPadding().padding(16.dp)) pour que le rond du menu tombe au même endroit partout,
+    // mesuré ~8dp d'écart sur chaque axe sur le S22 avant ce correctif. bottom inchangé (8dp) :
+    // rien ne signalait de problème sous l'en-tête, seule sa position par rapport à la barre de
+    // statut et au bord droit divergeait.
     Row(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = 20.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
