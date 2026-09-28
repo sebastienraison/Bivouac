@@ -930,12 +930,18 @@ private fun renderTrack(
     mapView.invalidate()
 }
 
-// RIC-146 lot 3 : durée d'une pause affichée sur la carte/le profil à partir de 10 min (conception
-// section 7.2). Réutilise le format existant de StatsRows.formatDuration (pas de nouvelle chaîne :
-// aucune clé "X min" compacte n'est validée dans l'inventaire v13, voir le rapport du lot) via
-// Context.getString plutôt que la variante @Composable, cette fonction tournant hors composition.
-private fun formatShortDuration(context: Context, seconds: Double): String {
+// RIC-146 lot 4 correction 3 (brief Partie A.3) : durée d'une pause affichée sur la carte à partir
+// de 10 min (conception section 7.2). Sous l'heure, "12 min" (journal_analysis_pause_minutes,
+// ajoutée à l'inventaire v14 pour cette correction : le lot 3 n'avait pas de chaîne compacte
+// validée et repliait sur le format heures/minutes existant, ce qui donnait "0h 12m"). À partir
+// d'une heure, ce format existant (StatsRows.formatDuration) s'applique toujours. Context.getString
+// plutôt que la variante @Composable, cette fonction tournant hors composition.
+// internal (pas private) : testée directement par PauseDurationFormattingTest (Robolectric).
+internal fun formatShortDuration(context: Context, seconds: Double): String {
     val totalMinutes = (seconds / 60.0).roundToInt()
+    if (totalMinutes < 60) {
+        return context.getString(R.string.journal_analysis_pause_minutes, totalMinutes.toString())
+    }
     return context.getString(
         R.string.fmt_stats_rows_duration,
         totalMinutes / 60,
