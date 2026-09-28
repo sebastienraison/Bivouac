@@ -48,7 +48,12 @@ data class TrackStatsParameters(
          *
          * v2 : ajout des totaux par jour (distanceMeters/elevationGainMeters/elevationLossMeters sur
          * logged_track_day, RIC-207), sans changement de calcul.
+         *
+         * v3 : définition fine des pauses (RIC-146, voir AnalysisParameters) : les sommes de
+         * calibration des jours sont recalculées sur le temps de marche, pausedSeconds et le
+         * rythme par pente (logged_track_day_pace) sont remplis. Distance, D+ et D- ne changent pas ;
+         * la Banque est recalculée à l'identique, le marqueur étant commun.
          */
-        const val ALGORITHM_VERSION = 2
+        const val ALGORITHM_VERSION = 3
     }
 }

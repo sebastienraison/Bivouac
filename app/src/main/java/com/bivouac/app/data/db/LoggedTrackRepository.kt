@@ -6,10 +6,11 @@ import android.net.Uri
 import android.util.Log
 import android.webkit.MimeTypeMap
 import com.bivouac.app.data.gpx.DaySegmentAggregate
+import com.bivouac.app.data.gpx.DaySegmentSums
 import com.bivouac.app.data.gpx.GpxParser
+import com.bivouac.app.data.gpx.PaceBandSum
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
-import com.bivouac.app.data.gpx.TrackSegmenter
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.gpx.TrackStatsParameters
 import com.bivouac.app.data.model.HikeTrack
@@ -73,6 +74,11 @@ data class PreparedDay(
     val distanceMeters: Double? = null,
     val elevationGainMeters: Double? = null,
     val elevationLossMeters: Double? = null,
+    // RIC-146 : pauses fines et rythme par pente du jour, calculés dans la même passe que
+    // segmentAggregate (voir DaySegmentSums). Défauts pour les fixtures de test qui n'en ont que
+    // faire, même raisonnement que distanceMeters ci-dessus.
+    val pausedSeconds: Double? = null,
+    val paceBands: List<PaceBandSum> = emptyList(),
 )
 
 // Une trace du Journal ouverte pour affichage : [track] est l'ensemble des jours concaténés (la
@@ -308,12 +314,15 @@ class LoggedTrackRepository(context: Context) {
         )
         val days = ordered.mapIndexed { index, (rawGpx, track) ->
             val stats = dayStats[index]
+            val sums = DaySegmentSums.of(track.points)
             PreparedDay(
                 rawGpx = rawGpx,
                 contentHash = sha256(rawGpx),
                 startedAtMillis = track.points.firstOrNull()?.time?.toEpochMilli(),
                 elapsedSeconds = elapsedSeconds(track),
-                segmentAggregate = DaySegmentAggregate.of(TrackSegmenter.segment(track.points)),
+                segmentAggregate = sums.aggregate,
+                pausedSeconds = sums.pausedSeconds,
+                paceBands = sums.paceBands,
                 maxElevationMeters = track.points.mapNotNull { it.elevationMeters }.maxOrNull(),
                 lastPointElevationMeters = track.points.lastOrNull()?.elevationMeters,
                 // RIC-207 : mêmes stats par jour que celles sommées juste au-dessus pour
@@ -406,10 +415,12 @@ class LoggedTrackRepository(context: Context) {
                 distanceMeters = day.distanceMeters,
                 elevationGainMeters = day.elevationGainMeters,
                 elevationLossMeters = day.elevationLossMeters,
+                pausedSeconds = day.pausedSeconds,
             )
         }
         try {
-            dao.insert(prepared.entity, days)
+            // RIC-146 : les lignes de rythme dans la même transaction que la trace et ses jours.
+            dao.insert(prepared.entity, days, prepared.days.map { it.paceBands })
         } catch (e: Exception) {
             days.forEach { LoggedTrackGpxStore.resolve(appContext, it.rawGpxFilePath).delete() }
             throw e
@@ -1272,6 +1283,26 @@ class LoggedTrackRepository(context: Context) {
         }
 
         return SegmentCalibrationInput(aggregate, fallbackSamples)
+    }
+
+    /**
+     * RIC-146 : rythme par bande de pente sommé sur les randos de référence de la vue Analyse
+     * (conception section 5.4) : [trackIds] en mode Sélection, tout le Journal quand null ;
+     * [excludedTrackId], la rando analysée, n'est jamais comptée dans sa propre référence. Une
+     * ligne par bande non vide, triées par bande.
+     *
+     * Un jour pas encore rattrapé n'a aucune ligne de rythme : il ne contribue simplement pas, sans
+     * fausser les autres (le rythme d'une bande est un rapport de deux sommes). Le rattrapage
+     * bloquant passe de toute façon avant tout écran.
+     */
+    suspend fun paceBandSums(trackIds: Set<String>?, excludedTrackId: String?): List<PaceBandSum> {
+        val totals = if (trackIds == null) {
+            dao.sumAllPaces(excludedTrackId)
+        } else {
+            val ids = trackIds - setOfNotNull(excludedTrackId)
+            if (ids.isEmpty()) emptyList() else dao.sumPacesForTracks(ids)
+        }
+        return totals.map { it.toPaceBandSum() }
     }
 
     private fun LoggedTrackDayEntity.toSegmentAggregate(): DaySegmentAggregate = DaySegmentAggregate(
