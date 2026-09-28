@@ -1,6 +1,7 @@
 package com.bivouac.app.data.db
 
 import android.content.Context
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.bivouac.app.data.gpx.DaySegmentAggregate
 import com.bivouac.app.data.gpx.GpxParser
@@ -11,6 +12,7 @@ import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.gpx.TrackStatsParameters
 import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.data.prefs.SettingsPreferences
+import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
@@ -25,6 +27,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 
 /**
  * RIC-114 lot 2 (conception §6.2) : verrouille le rattrapage des quatre statistiques dérivées
@@ -140,6 +143,20 @@ class TrackStatsBackfillTest {
         assertEquals(expectedAggregate0.flatCount, days[0].flatCount)
         assertEquals(expectedAggregate0.flatDistanceMeters, days[0].flatDistanceMeters!!, 1e-6)
         assertEquals(expectedAggregate0.stoppedHours, days[0].stoppedHours!!, 1e-9)
+
+        // RIC-207 : les totaux du jour (distance/D+/D-) sont eux aussi renseignés, avec exactement
+        // les valeurs de la même série commune que celles sommées pour la trace ci-dessus.
+        assertEquals(expectedDay0.distanceMeters, days[0].distanceMeters!!, 1e-6)
+        assertEquals(expectedDay0.elevationGainMeters, days[0].elevationGainMeters!!, 1e-6)
+        assertEquals(expectedDay0.elevationLossMeters, days[0].elevationLossMeters!!, 1e-6)
+        assertEquals(expectedDay1.distanceMeters, days[1].distanceMeters!!, 1e-6)
+        assertEquals(expectedDay1.elevationGainMeters, days[1].elevationGainMeters!!, 1e-6)
+        assertEquals(expectedDay1.elevationLossMeters, days[1].elevationLossMeters!!, 1e-6)
+
+        // Invariant RIC-207 : la somme des jours égale le total de la rando, au mètre près.
+        assertEquals(track.distanceMeters, days.sumOf { it.distanceMeters!! }, 1e-6)
+        assertEquals(track.elevationGainMeters, days.sumOf { it.elevationGainMeters!! }, 1e-6)
+        assertEquals(track.elevationLossMeters, days.sumOf { it.elevationLossMeters!! }, 1e-6)
     }
 
     @Test
@@ -300,5 +317,42 @@ class TrackStatsBackfillTest {
         CalibrationRefresh.refreshIfNeeded(loggedRepository, settingsPreferences, staleJournalStatsBackfilled = false)
         assertEquals(-42.0, settingsPreferences.selectionCalibration.first().walkingSpeedKmh, 1e-9)
         assertEquals(setOf("sentinel-id"), settingsPreferences.selectedTrackIds.first())
+    }
+
+    // RIC-207 : le même invariant que recomputesTrackAndDayColumnsToMatchAFreshCalculation
+    // ci-dessus, mais sur le chemin d'import RÉEL (prepareImport + commitImport), pas seulement le
+    // rattrapage : une trace fraîchement importée doit déjà porter les totaux par jour, et leur
+    // somme doit déjà égaler le total de la trace, sans passer par LoggedTrackBackfill.
+    @Test
+    fun commitImportWritesDayTotalsThatSumToTheTrackTotal() = runBlocking {
+        val day0 = flatGpx(latOffsetDeg = 0.0)
+        val day1 = flatGpx(latOffsetDeg = 0.02, baseTimeIso = "2026-06-02T08:00:00Z")
+        val uri0 = Uri.parse("content://test/track/day0")
+        val uri1 = Uri.parse("content://test/track/day1")
+        val resolver = context.contentResolver
+        shadowOf(resolver).registerInputStreamSupplier(uri0) { ByteArrayInputStream(day0.toByteArray(StandardCharsets.UTF_8)) }
+        shadowOf(resolver).registerInputStreamSupplier(uri1) { ByteArrayInputStream(day1.toByteArray(StandardCharsets.UTF_8)) }
+
+        val prepared = loggedRepository.prepareImport(resolver, listOf(uri0, uri1))
+        val trackId = loggedRepository.commitImport(prepared)
+
+        val track = loggedDao.get(trackId)!!
+        val days = loggedDao.getDays(trackId).sortedBy { it.dayIndex }
+        assertEquals(2, days.size)
+
+        // Chaque jour porte déjà ses totaux, jamais nuls dès l'import.
+        assertNotNull(days[0].distanceMeters)
+        assertNotNull(days[1].distanceMeters)
+
+        assertEquals(track.distanceMeters, days.sumOf { it.distanceMeters!! }, 1e-6)
+        assertEquals(track.elevationGainMeters, days.sumOf { it.elevationGainMeters!! }, 1e-6)
+        assertEquals(track.elevationLossMeters, days.sumOf { it.elevationLossMeters!! }, 1e-6)
+
+        // Et ces totaux par jour sont bien ceux de la série commune du jour calculé seul (aucune
+        // coupure), même valeurs que ce que le rattrapage RIC-114/207 recalculerait.
+        val expectedDay0 = TrackStatsCalculator.compute(pointsOf(day0), SpeedCalibration.DEFAULT)
+        val expectedDay1 = TrackStatsCalculator.compute(pointsOf(day1), SpeedCalibration.DEFAULT)
+        assertEquals(expectedDay0.distanceMeters, days[0].distanceMeters!!, 1e-6)
+        assertEquals(expectedDay1.distanceMeters, days[1].distanceMeters!!, 1e-6)
     }
 }

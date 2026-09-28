@@ -232,6 +232,7 @@ class BivouacDatabaseMigrationTest {
             BivouacDatabase.MIGRATION_16_17,
             BivouacDatabase.MIGRATION_17_18,
             BivouacDatabase.MIGRATION_18_19,
+            BivouacDatabase.MIGRATION_19_20,
         )
 
         // RIC-97 : la ligne saved_track née en v1 avec gpxContent en colonne doit ressortir avec
@@ -283,6 +284,35 @@ class BivouacDatabaseMigrationTest {
             // RIC-114 lot 2 : une ligne insérée sans énumérer statsVersion retombe sur 0, à
             // rattraper, jamais sur ALGORITHM_VERSION (qui ne vaut que côté code applicatif).
             assertEquals(0, cursor.getInt(1))
+        }
+
+        // RIC-207 : logged_track_day.distanceMeters/elevationGainMeters/elevationLossMeters,
+        // nullables, utilisables dans les deux sens dès la version courante.
+        migrated.execSQL(
+            "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxFilePath) VALUES " +
+                "(9001, 'track-1', 0, 'gpx/track-1-day0.gpx')",
+        )
+        migrated.query(
+            "SELECT distanceMeters, elevationGainMeters, elevationLossMeters " +
+                "FROM logged_track_day WHERE id = 9001",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertTrue("distanceMeters doit arriver vide", cursor.isNull(0))
+            assertTrue("elevationGainMeters doit arriver vide", cursor.isNull(1))
+            assertTrue("elevationLossMeters doit arriver vide", cursor.isNull(2))
+        }
+        migrated.execSQL(
+            "UPDATE logged_track_day SET distanceMeters = 7300.0, elevationGainMeters = 410.0, " +
+                "elevationLossMeters = 120.0 WHERE id = 9001",
+        )
+        migrated.query(
+            "SELECT distanceMeters, elevationGainMeters, elevationLossMeters " +
+                "FROM logged_track_day WHERE id = 9001",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(7300.0, cursor.getDouble(0), 1e-9)
+            assertEquals(410.0, cursor.getDouble(1), 1e-9)
+            assertEquals(120.0, cursor.getDouble(2), 1e-9)
         }
 
         // logged_track_photo (MIGRATION_14_15) est la seule table apparue entre la v11 où ce test
@@ -1233,6 +1263,91 @@ class BivouacDatabaseMigrationTest {
         migrated.query("SELECT statsVersion FROM logged_track WHERE id = 'track-2'").use { cursor ->
             assertTrue(cursor.moveToFirst())
             assertEquals(0, cursor.getInt(0))
+        }
+
+        migrated.close()
+    }
+
+    /**
+     * RIC-207 : trois colonnes sur logged_track_day (distanceMeters/elevationGainMeters/
+     * elevationLossMeters, les totaux du jour), nullables, sans recréation de table ni rattrapage
+     * ici (voir MIGRATION_19_20 et LoggedTrackBackfill.runStats pour le rattrapage, fait après
+     * coup, derrière la même porte bloquante que RIC-114 lot 2 puisque monter ALGORITHM_VERSION à 2
+     * la redéclenche).
+     *
+     * Ce que ce test doit prouver : les jours déjà en base survivent intacts et ressortent avec les
+     * trois colonnes à NULL, c'est-à-dire « totaux pas encore calculés », jamais 0.0, qui serait une
+     * valeur réelle possible (jour entièrement sur place) indiscernable de « pas encore rattrapé ».
+     */
+    @Test
+    fun migrate19To20_addsDayTotalsAsNullWithoutTouchingExistingRows() {
+        helper.createDatabase(testDbName, 19).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note, statsVersion) VALUES " +
+                    "('track-1', 'Randonnee Belledonne', 1780300800000, 'hash-track-1', " +
+                    "8200.0, 650.0, 300.0, 3, 240, '', 1)",
+            )
+            execSQL(
+                // elevationBackfilled énuméré explicitement : NOT NULL sans DEFAULT dans le schéma
+                // exporté (le DEFAULT 0 de MIGRATION_12_13 n'existe qu'au fil de l'ALTER TABLE réel,
+                // pas dans le CREATE TABLE que helper.createDatabase(19) reconstruit ici).
+                "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxFilePath, " +
+                    "contentHash, startedAtMillis, elapsedSeconds, flatCount, flatDistanceMeters, " +
+                    "flatHours, steepCount, steepDistanceMeters, steepGainMeters, steepHours, " +
+                    "stoppedHours, elevationBackfilled) VALUES (1, 'track-1', 0, " +
+                    "'gpx/track-1-day0.gpx', 'day0-hash', 1780300800000, 3600, 10, 4000.0, 1.2, 5, " +
+                    "4200.0, 650.0, 1.5, 0.3, 1)",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            20,
+            true,
+            BivouacDatabase.MIGRATION_19_20,
+        )
+
+        migrated.query(
+            "SELECT id, contentHash, flatCount, steepGainMeters, distanceMeters, " +
+                "elevationGainMeters, elevationLossMeters FROM logged_track_day WHERE id = 1",
+        ).use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            // Colonnes RIC-98/99/109/115 déjà rattrapées avant cette migration : intouchées.
+            assertEquals("day0-hash", cursor.getString(1))
+            assertEquals(10, cursor.getInt(2))
+            assertEquals(650.0, cursor.getDouble(3), 1e-9)
+            // Les trois nouvelles colonnes arrivent vides, même sur un jour déjà entièrement
+            // rattrapé par RIC-109/115 : c'est justement ce que LoggedTrackBackfill.runStats doit
+            // combler après coup.
+            assertTrue("distanceMeters doit arriver vide", cursor.isNull(4))
+            assertTrue("elevationGainMeters doit arriver vide", cursor.isNull(5))
+            assertTrue("elevationLossMeters doit arriver vide", cursor.isNull(6))
+        }
+
+        migrated.query("SELECT name, statsVersion FROM logged_track WHERE id = 'track-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Randonnee Belledonne", cursor.getString(0))
+            assertEquals(1, cursor.getInt(1))
+        }
+
+        // Utilisable dans les deux sens dès la migration faite : c'est ce que
+        // LoggedTrackBackfill.runStats / LoggedTrackRepository.commitImport écrivent.
+        migrated.execSQL(
+            "UPDATE logged_track_day SET distanceMeters = 8200.0, elevationGainMeters = 650.0, " +
+                "elevationLossMeters = 300.0 WHERE id = 1",
+        )
+        migrated.query(
+            "SELECT distanceMeters, elevationGainMeters, elevationLossMeters " +
+                "FROM logged_track_day WHERE id = 1",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(8200.0, cursor.getDouble(0), 1e-9)
+            assertEquals(650.0, cursor.getDouble(1), 1e-9)
+            assertEquals(300.0, cursor.getDouble(2), 1e-9)
         }
 
         migrated.close()
