@@ -233,6 +233,7 @@ class BivouacDatabaseMigrationTest {
             BivouacDatabase.MIGRATION_17_18,
             BivouacDatabase.MIGRATION_18_19,
             BivouacDatabase.MIGRATION_19_20,
+            BivouacDatabase.MIGRATION_20_21,
         )
 
         // RIC-97 : la ligne saved_track née en v1 avec gpxContent en colonne doit ressortir avec
@@ -1348,6 +1349,110 @@ class BivouacDatabaseMigrationTest {
             assertEquals(8200.0, cursor.getDouble(0), 1e-9)
             assertEquals(650.0, cursor.getDouble(1), 1e-9)
             assertEquals(300.0, cursor.getDouble(2), 1e-9)
+        }
+
+        migrated.close()
+    }
+
+    /**
+     * RIC-146 : logged_track_day gagne pausedSeconds (nullable) et la table logged_track_day_pace
+     * apparaît, vide, sans rattrapage ici : c'est ALGORITHM_VERSION 3 qui redéclenche
+     * LoggedTrackBackfill.runStats derrière la porte bloquante.
+     *
+     * Ce que ce test doit prouver : les jours existants survivent intacts avec pausedSeconds à
+     * NULL (pas encore calculé, jamais 0.0 qui voudrait dire « aucune pause »), la nouvelle table
+     * accepte ses lignes et suit son jour en cascade, et la clé primaire (jour, bande) refuse un
+     * doublon.
+     */
+    @Test
+    fun migrate20To21_addsPausedSecondsAsNullAndAnEmptyPaceTable() {
+        helper.createDatabase(testDbName, 20).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note, statsVersion) VALUES " +
+                    "('track-1', 'Randonnee Belledonne', 1780300800000, 'hash-track-1', " +
+                    "8200.0, 650.0, 300.0, 3, 240, '', 2)",
+            )
+            execSQL(
+                "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxFilePath, " +
+                    "contentHash, startedAtMillis, elapsedSeconds, flatCount, flatDistanceMeters, " +
+                    "flatHours, steepCount, steepDistanceMeters, steepGainMeters, steepHours, " +
+                    "stoppedHours, elevationBackfilled, distanceMeters, elevationGainMeters, " +
+                    "elevationLossMeters) VALUES (1, 'track-1', 0, 'gpx/track-1-day0.gpx', " +
+                    "'day0-hash', 1780300800000, 3600, 10, 4000.0, 1.2, 5, 4200.0, 650.0, 1.5, " +
+                    "0.3, 1, 8200.0, 650.0, 300.0)",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            21,
+            true,
+            BivouacDatabase.MIGRATION_20_21,
+        )
+
+        migrated.query(
+            "SELECT contentHash, flatCount, stoppedHours, distanceMeters, pausedSeconds " +
+                "FROM logged_track_day WHERE id = 1",
+        ).use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("day0-hash", cursor.getString(0))
+            assertEquals(10, cursor.getInt(1))
+            assertEquals(0.3, cursor.getDouble(2), 1e-9)
+            assertEquals(8200.0, cursor.getDouble(3), 1e-9)
+            assertTrue("pausedSeconds doit arriver vide", cursor.isNull(4))
+        }
+        migrated.query("SELECT statsVersion FROM logged_track WHERE id = 'track-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            // Intouché : c'est le code (ALGORITHM_VERSION 3) qui déclenche le rattrapage.
+            assertEquals(2, cursor.getInt(0))
+        }
+        migrated.query("SELECT COUNT(*) FROM logged_track_day_pace").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+
+        // Utilisable dans les deux sens dès la migration faite : c'est ce que
+        // LoggedTrackBackfill.runStats / LoggedTrackRepository.commitImport écrivent.
+        migrated.execSQL("UPDATE logged_track_day SET pausedSeconds = 1234.5 WHERE id = 1")
+        migrated.execSQL(
+            "INSERT INTO logged_track_day_pace (dayId, band, segmentCount, distanceMeters, movingSeconds) " +
+                "VALUES (1, 5, 12, 2430.0, 2280.0), (1, 7, 8, 1650.0, 2710.0)",
+        )
+        migrated.query("SELECT pausedSeconds FROM logged_track_day WHERE id = 1").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1234.5, cursor.getDouble(0), 1e-9)
+        }
+        migrated.query(
+            "SELECT band, segmentCount, distanceMeters, movingSeconds FROM logged_track_day_pace " +
+                "WHERE dayId = 1 ORDER BY band",
+        ).use { cursor ->
+            assertEquals(2, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals(5, cursor.getInt(0))
+            assertEquals(12, cursor.getInt(1))
+            assertEquals(2430.0, cursor.getDouble(2), 1e-9)
+            assertEquals(2280.0, cursor.getDouble(3), 1e-9)
+        }
+
+        // Clé primaire (jour, bande) : une seconde ligne pour la même bande est refusée.
+        val duplicateRejected = runCatching {
+            migrated.execSQL(
+                "INSERT INTO logged_track_day_pace (dayId, band, segmentCount, distanceMeters, movingSeconds) " +
+                    "VALUES (1, 5, 1, 200.0, 180.0)",
+            )
+        }.isFailure
+        assertTrue("doublon (jour, bande) refusé", duplicateRejected)
+
+        // Cascade : supprimer la trace emporte le jour, qui emporte ses lignes de rythme.
+        migrated.execSQL("PRAGMA foreign_keys = ON")
+        migrated.execSQL("DELETE FROM logged_track WHERE id = 'track-1'")
+        migrated.query("SELECT COUNT(*) FROM logged_track_day_pace").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
         }
 
         migrated.close()
