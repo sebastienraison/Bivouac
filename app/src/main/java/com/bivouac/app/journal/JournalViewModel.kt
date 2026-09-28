@@ -7,6 +7,8 @@ import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.bivouac.app.R
+import com.bivouac.app.bilan.BilanRecord
+import com.bivouac.app.bilan.BilanStatsCalculator
 import com.bivouac.app.bilan.JournalOpenRequest
 import com.bivouac.app.data.db.CalibrationRefresh
 import com.bivouac.app.data.db.DuplicateMatch
@@ -21,6 +23,8 @@ import com.bivouac.app.data.db.PreparedImport
 import com.bivouac.app.data.db.SystemTag
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
+import com.bivouac.app.data.gpx.TrackAnalysis
+import com.bivouac.app.data.gpx.TrackAnalysisCalculator
 import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
@@ -81,6 +85,16 @@ sealed interface JournalUiState {
     data class MultiTrack(val entries: List<Pair<LoggedTrackEntity, HikeTrack>>) : JournalUiState
     data class Error(val message: String) : JournalUiState
 }
+
+/**
+ * RIC-146 lot 3 : résultat complet du mode Analyse d'un détail du Journal (conception section 5,
+ * "Records" du cran Détails), rendu par [JournalViewModel.computeAnalysis]. [records] vient de
+ * [BilanStatsCalculator.recordsHeldBy] : les records du Bilan détenus par cette rando précise.
+ */
+data class JournalAnalysisResult(
+    val analysis: TrackAnalysis,
+    val records: List<BilanRecord>,
+)
 
 // RIC-65 écran 3 : le sélecteur a renvoyé plusieurs fichiers, et rien ne permet de deviner s'il
 // s'agit d'un trek en plusieurs jours ou de plusieurs sorties indépendantes : l'utilisateur
@@ -1865,6 +1879,35 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     // troisième fois par la phase 3 du rattrapage.
     private suspend fun refreshAutoCalibration() {
         CalibrationRefresh.refreshAuto(repository, settingsPreferences)
+    }
+
+    /**
+     * RIC-146 lot 3 : calcule l'Analyse de [detail] (conception section 5), hors du fil principal.
+     * Pur du point de vue de l'appelant (n'écrit aucun état du ViewModel) : c'est l'écran, via
+     * ThreeStopJournalDetail, qui garde le résultat en mémoire tant que le détail reste ouvert
+     * (brief lot 3 §2, "résultat gardé tant que le détail reste ouvert").
+     *
+     * Randos de référence : [com.bivouac.app.data.db.LoggedTrackRepository.analysisReferencePaceBands]
+     * lit le même mode de calibration que [activeCalibration] (conception section 2, "Randos de
+     * référence"). Records détenus : même calcul en mémoire que [com.bivouac.app.bilan.
+     * BilanViewModel.refresh] (colonnes déjà dénormalisées, aucun reparsing de GPX), pas de flux
+     * dédié : ce calcul n'est déclenché qu'à l'entrée dans le mode Analyse, jamais en continu.
+     */
+    suspend fun computeAnalysis(detail: JournalUiState.Detail): JournalAnalysisResult = withContext(Dispatchers.IO) {
+        val calibration = activeCalibration.value
+        val mode = settingsPreferences.speedCalibrationMode.first()
+        val selectedIds = settingsPreferences.selectedTrackIds.first()
+        val referenceBands = repository.analysisReferencePaceBands(mode, selectedIds, detail.entry.id)
+        val analysis = TrackAnalysisCalculator.compute(
+            pointsByDay = detail.daySegments.map { it.points },
+            calibration = calibration,
+            referencePaceBands = referenceBands,
+        )
+        val tracks = repository.list()
+        val daysByTrackId = repository.allDaysByTrackId()
+        val bilanStats = BilanStatsCalculator.compute(tracks, daysByTrackId, calibration)
+        val records = BilanStatsCalculator.recordsHeldBy(bilanStats, detail.entry.id)
+        JournalAnalysisResult(analysis, records)
     }
 
     private companion object {
