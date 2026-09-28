@@ -93,13 +93,28 @@ internal fun ProgressionChart(series: ProgressionSeries, color: Color, modifier:
                             // retomber sur deux lignes, sans élargir la colonne elle-même (les trois
                             // Row doivent garder exactement la même largeur totale pour rester
                             // synchronisées au défilement).
+                            // RIC-196 : au tout premier point, il n'y a rien à gauche pour absorber
+                            // le débordement gauche du centrage : la zone défilante le coupe net.
+                            // Cette seule colonne s'aligne donc à gauche (débordement uniquement vers
+                            // la droite, dans la place déjà occupée par les mois suivants). Reproduit
+                            // au dernier point pour la même raison côté droit : si la série se
+                            // termine sur un mois de janvier (cas réel chaque année), ce jalon-là est
+                            // aussi le dernier de la zone défilante et se fait couper à droite sans ce
+                            // traitement (vérifié à la date système, voir rapport). Les autres jalons
+                            // d'année, au milieu de la série, gardent le centrage existant, qui a
+                            // toujours de la marge des deux côtés.
+                            val lastIndex = series.points.lastIndex
                             Text(
                                 text = "${point.yearMonth.year}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 softWrap = false,
-                                modifier = Modifier.wrapContentWidth(unbounded = true),
+                                modifier = when (index) {
+                                    0 -> Modifier.wrapContentWidth(align = Alignment.Start, unbounded = true)
+                                    lastIndex -> Modifier.wrapContentWidth(align = Alignment.End, unbounded = true)
+                                    else -> Modifier.wrapContentWidth(unbounded = true)
+                                },
                             )
                         }
                     }
