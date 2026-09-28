@@ -398,8 +398,14 @@ fun JournalScreen(
         val current = detail
         if (analysisModeActive && current != null && analysisResult == null && !analysisLoading) {
             analysisLoading = true
-            analysisResult = viewModel.computeAnalysis(current)
+            val computed = viewModel.computeAnalysis(current)
+            analysisResult = computed
             analysisLoading = false
+            // Brief §5 : trace sans horodatage, seule la coloration Pente est proposée. Le
+            // sélecteur (AnalysisColoringSelector) le fait déjà à l'affichage, mais sans ce
+            // repli la carte resterait sur l'Allure par défaut (paceClass toujours nul sans
+            // horodatage, donc un tracé entièrement neutre) tant que personne n'a tapé Pente.
+            if (computed.analysis.totals == null) analysisColoring = com.bivouac.app.ui.map.AnalysisColoring.SLOPE
         }
     }
     // RIC-166 : la position aimantée du glissement en cours, pour que le profil altimétrique suive
