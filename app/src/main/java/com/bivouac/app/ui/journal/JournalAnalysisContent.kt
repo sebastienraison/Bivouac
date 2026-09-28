@@ -210,11 +210,45 @@ internal fun AnalysisLegend(coloring: AnalysisColoring, modifier: Modifier = Mod
                 Box(modifier = Modifier.size(width = 20.dp, height = 6.dp).background(color))
             }
         }
-        if (coloring == AnalysisColoring.PACE) {
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                LegendCaption(stringResource(R.string.journal_analysis_legend_pace_slower))
-                LegendCaption(stringResource(R.string.journal_analysis_legend_pace_usual))
-                LegendCaption(stringResource(R.string.journal_analysis_legend_pace_faster))
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            when (coloring) {
+                AnalysisColoring.PACE -> {
+                    LegendCaption(stringResource(R.string.journal_analysis_legend_pace_slower))
+                    LegendCaption(stringResource(R.string.journal_analysis_legend_pace_usual))
+                    LegendCaption(stringResource(R.string.journal_analysis_legend_pace_faster))
+                }
+                AnalysisColoring.SLOPE -> {
+                    // Brief §3 : "libellés des extrémités" ; bornes = classes de couleur (pas les
+                    // onze bandes de référence), mêmes seuils que AnalysisParameters.slopeClassOf.
+                    val bounds = AnalysisParameters.SLOPE_CLASS_BOUNDS_PERCENT
+                    LegendCaption(
+                        stringResource(
+                            R.string.journal_analysis_legend_below,
+                            stringResource(R.string.settings_pause_percent_value, bounds.first().toInt()),
+                        ),
+                    )
+                    LegendCaption(
+                        stringResource(
+                            R.string.journal_analysis_legend_above,
+                            stringResource(R.string.settings_pause_percent_value, bounds.last().toInt()),
+                        ),
+                    )
+                }
+                AnalysisColoring.SPEED -> {
+                    val bounds = AnalysisParameters.SPEED_CLASS_BOUNDS_KMH
+                    LegendCaption(
+                        stringResource(
+                            R.string.journal_analysis_legend_below,
+                            stringResource(R.string.settings_speed_value_format, formatKm1(bounds.first())),
+                        ),
+                    )
+                    LegendCaption(
+                        stringResource(
+                            R.string.journal_analysis_legend_above,
+                            stringResource(R.string.settings_speed_value_format, formatKm1(bounds.last())),
+                        ),
+                    )
+                }
             }
         }
     }
