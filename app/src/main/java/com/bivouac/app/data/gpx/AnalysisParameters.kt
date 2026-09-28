@@ -1,5 +1,7 @@
 package com.bivouac.app.data.gpx
 
+import kotlin.math.abs
+
 /**
  * RIC-146 : paramètres de la définition fine de la pause et du rythme par pente, source unique.
  * Une seule définition de la pause dans toute l'app : la calibration (DaySegmentAggregate) et la
@@ -34,6 +36,20 @@ package com.bivouac.app.data.gpx
  * Au-delà de 8 km/h, la vitesse n'est pas crédible pour de la marche : c'est une pause qui déborde
  * sur le tronçon et ne lui laisse qu'un temps de marche minuscule.
  *
+ * RIC-146 lot 2 (conception section 5.4, 5.6, 7.5) : classes de couleur et meilleurs passages de la
+ * vue Analyse.
+ *   - [paceClassBoundsPercent] : classe d'allure selon l'écart e (%) entre la vitesse en marche
+ *     d'un tronçon et sa vitesse de référence : e < bornes[0], e < bornes[1], e <= bornes[2],
+ *     e <= bornes[3], sinon. Deux bornes strictes puis deux inclusives, comme le portage de
+ *     référence (`reference_lot2.py`) : ce n'est pas une coquille, ni un cas symétrique.
+ *   - [slopeClassBoundsPercent] : classe de pente selon la valeur ABSOLUE de la pente nette
+ *     (sans distinguer montée et descente, décision de Seb section 2), bornes toutes strictes.
+ *   - [speedClassBoundsKmh] : classe de vitesse en marche, bornes toutes strictes.
+ *   - [minReferenceSegmentsPerBand] : sous ce nombre de tronçons dans la référence, une bande
+ *     replie sur la vitesse de la rando elle-même (section 5.4).
+ *   - [bestClimbMinMovingSeconds]/[bestFlatMinMovingSeconds] : temps de marche cumulé minimal
+ *     d'un meilleur passage (section 5.6).
+ *
  * Conception, portage Python de référence et scripts de validation : docs/pilotage/ric-146/ (hors
  * dépôt, non publié).
  */
@@ -50,11 +66,75 @@ data class AnalysisParameters(
     val minMovingSpeedKmh: Double,
     /** Vitesse en marche maximale d'un tronçon retenu, en km/h (incluse). */
     val maxMovingSpeedKmh: Double,
+    /** Bornes de la classe d'allure, en % d'écart à la référence : 2 strictes puis 2 inclusives. */
+    val paceClassBoundsPercent: List<Double>,
+    /** Bornes de la classe de pente, en % de pente nette absolue, toutes strictes. */
+    val slopeClassBoundsPercent: List<Double>,
+    /** Bornes de la classe de vitesse en marche, en km/h, toutes strictes. */
+    val speedClassBoundsKmh: List<Double>,
+    /** Nombre minimal de tronçons d'une bande de référence, sous lequel elle replie (section 5.4). */
+    val minReferenceSegmentsPerBand: Int,
+    /** Temps de marche cumulé minimal d'une meilleure montée soutenue, en secondes. */
+    val bestClimbMinMovingSeconds: Double,
+    /** Temps de marche cumulé minimal d'un meilleur passage à plat, en secondes. */
+    val bestFlatMinMovingSeconds: Double,
 ) {
     val slopeBandCount: Int get() = slopeBandBoundsPercent.size + 1
 
     /** Bande d'une pente nette : nombre de bornes inférieures ou égales à [slopePercent]. */
     fun slopeBandOf(slopePercent: Double): Int = slopeBandBoundsPercent.count { it <= slopePercent }
+
+    /**
+     * Centre de la bande [band] (0 à [slopeBandCount] - 1), pour l'interpolation entre bandes
+     * (section 5.4) : moyenne des deux bornes qui l'encadrent, ou une extrémité ouverte étendue de
+     * [OPEN_BAND_CENTER_MARGIN_PERCENT] au-delà de la dernière borne connue, comme le portage de
+     * référence (`analyse.py`, fonction `band_center`).
+     */
+    fun slopeBandCenter(band: Int): Double {
+        val bounds = slopeBandBoundsPercent
+        return when (band) {
+            0 -> bounds.first() - OPEN_BAND_CENTER_MARGIN_PERCENT
+            bounds.size -> bounds.last() + OPEN_BAND_CENTER_MARGIN_PERCENT
+            else -> (bounds[band - 1] + bounds[band]) / 2.0
+        }
+    }
+
+    /** Classe d'allure : voir [paceClassBoundsPercent]. */
+    fun paceClassOf(deltaPercent: Double): Int {
+        val b = paceClassBoundsPercent
+        return when {
+            deltaPercent < b[0] -> 0
+            deltaPercent < b[1] -> 1
+            deltaPercent <= b[2] -> 2
+            deltaPercent <= b[3] -> 3
+            else -> 4
+        }
+    }
+
+    /** Classe de pente sur la valeur absolue de [netSlopePercent] : voir [slopeClassBoundsPercent]. */
+    fun slopeClassOf(netSlopePercent: Double): Int {
+        val absolute = abs(netSlopePercent)
+        val b = slopeClassBoundsPercent
+        return when {
+            absolute < b[0] -> 0
+            absolute < b[1] -> 1
+            absolute < b[2] -> 2
+            absolute < b[3] -> 3
+            else -> 4
+        }
+    }
+
+    /** Classe de vitesse en marche : voir [speedClassBoundsKmh]. */
+    fun speedClassOf(movingSpeedKmh: Double): Int {
+        val b = speedClassBoundsKmh
+        return when {
+            movingSpeedKmh < b[0] -> 0
+            movingSpeedKmh < b[1] -> 1
+            movingSpeedKmh < b[2] -> 2
+            movingSpeedKmh < b[3] -> 3
+            else -> 4
+        }
+    }
 
     companion object {
         const val PAUSE_RADIUS_METERS = 15.0
@@ -64,6 +144,18 @@ data class AnalysisParameters(
         const val MIN_MOVING_SPEED_KMH = 1.0
         const val MAX_MOVING_SPEED_KMH = 8.0
 
+        // Écart maximal au-delà duquel band_center étend une bande ouverte (bornée d'un seul côté) :
+        // valeur du portage de référence, sans autre justification qu'une extrapolation raisonnable
+        // au-delà de la dernière borne connue.
+        private const val OPEN_BAND_CENTER_MARGIN_PERCENT = 7.5
+
+        val PACE_CLASS_BOUNDS_PERCENT = listOf(-25.0, -10.0, 10.0, 25.0)
+        val SLOPE_CLASS_BOUNDS_PERCENT = listOf(5.0, 10.0, 15.0, 25.0)
+        val SPEED_CLASS_BOUNDS_KMH = listOf(2.0, 3.0, 4.0, 5.0)
+        const val MIN_REFERENCE_SEGMENTS_PER_BAND = 20
+        const val BEST_CLIMB_MIN_MOVING_SECONDS = 1_200.0
+        const val BEST_FLAT_MIN_MOVING_SECONDS = 600.0
+
         val DEFAULT = AnalysisParameters(
             pauseRadiusMeters = PAUSE_RADIUS_METERS,
             pauseMinSeconds = PAUSE_MIN_SECONDS,
@@ -71,6 +163,12 @@ data class AnalysisParameters(
             slopeBandBoundsPercent = SLOPE_BAND_BOUNDS_PERCENT,
             minMovingSpeedKmh = MIN_MOVING_SPEED_KMH,
             maxMovingSpeedKmh = MAX_MOVING_SPEED_KMH,
+            paceClassBoundsPercent = PACE_CLASS_BOUNDS_PERCENT,
+            slopeClassBoundsPercent = SLOPE_CLASS_BOUNDS_PERCENT,
+            speedClassBoundsKmh = SPEED_CLASS_BOUNDS_KMH,
+            minReferenceSegmentsPerBand = MIN_REFERENCE_SEGMENTS_PER_BAND,
+            bestClimbMinMovingSeconds = BEST_CLIMB_MIN_MOVING_SECONDS,
+            bestFlatMinMovingSeconds = BEST_FLAT_MIN_MOVING_SECONDS,
         )
     }
 }
