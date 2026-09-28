@@ -8,6 +8,7 @@ import com.bivouac.app.data.gpx.GpxParser
 import com.bivouac.app.data.gpx.PaceBandSum
 import com.bivouac.app.data.gpx.TrackStatsParameters
 import com.bivouac.app.data.model.TrackPoint
+import com.bivouac.app.data.prefs.SpeedCalibrationMode
 import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
 import java.time.Instant
@@ -236,5 +237,32 @@ class PaceAndPauseStorageTest {
         assertSameSums(expectedFor("c"), repository.paceBandSums(trackIds = setOf("a", "c"), excludedTrackId = "a"))
         // Sélection réduite à la rando analysée : aucune référence.
         assertEquals(emptyList<PaceBandSum>(), repository.paceBandSums(trackIds = setOf("a"), excludedTrackId = "a"))
+    }
+
+    @Test
+    fun analysisReferencePaceBandsResolvesTheReferenceTracksFromTheCalibrationMode() = runBlocking {
+        insertVersion2Track("a", listOf(hillyGpx(latOffsetDeg = 0.0)))
+        insertVersion2Track("b", listOf(hillyGpx(latOffsetDeg = 0.02)))
+        insertVersion2Track("c", listOf(hillyGpx(latOffsetDeg = 0.04)))
+        LoggedTrackBackfill.runStats(context, dao)
+
+        // Auto et Manuel : tout le Journal, la rando analysée (b) exclue de sa propre référence.
+        val auto = repository.analysisReferencePaceBands(SpeedCalibrationMode.AUTO, selectedTrackIds = emptySet(), analyzedTrackId = "b")
+        val manual = repository.analysisReferencePaceBands(SpeedCalibrationMode.MANUAL, selectedTrackIds = emptySet(), analyzedTrackId = "b")
+        val wholeJournalExceptB = repository.paceBandSums(trackIds = null, excludedTrackId = "b")
+        assertEquals(wholeJournalExceptB, auto)
+        assertEquals(wholeJournalExceptB, manual)
+
+        // Sélection : seules les randos sélectionnées, la rando analysée en fait partie et en est
+        // retirée (même si elle est aussi la seule autre trace du Journal).
+        val selection = repository.analysisReferencePaceBands(
+            SpeedCalibrationMode.SELECTION,
+            selectedTrackIds = setOf("a", "b"),
+            analyzedTrackId = "b",
+        )
+        assertEquals(repository.paceBandSums(trackIds = setOf("a", "b"), excludedTrackId = "b"), selection)
+        // "c" n'est pas dans la sélection : il ne doit apparaître dans aucune des deux ci-dessus.
+        assertTrue(selection.isNotEmpty())
+        assertEquals(repository.paceBandSums(trackIds = setOf("a"), excludedTrackId = null), selection)
     }
 }

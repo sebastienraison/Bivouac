@@ -29,6 +29,7 @@ import com.bivouac.app.data.photo.PhotoReducer
 import com.bivouac.app.data.photo.PhotoSourceMetadata
 import com.bivouac.app.data.photo.PhotoStorageMode
 import com.bivouac.app.data.photo.withAdjustments
+import com.bivouac.app.data.prefs.SpeedCalibrationMode
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -1303,6 +1304,22 @@ class LoggedTrackRepository(context: Context) {
             if (ids.isEmpty()) emptyList() else dao.sumPacesForTracks(ids)
         }
         return totals.map { it.toPaceBandSum() }
+    }
+
+    /**
+     * RIC-146 (lot 2) : randos de référence de l'Analyse pour [analyzedTrackId] (conception section
+     * 2, "Randos de référence") : la sélection en mode [SpeedCalibrationMode.SELECTION], tout le
+     * Journal en mode Auto ou Manuel (mêmes randos que la calibration active, voir
+     * [com.bivouac.app.data.prefs.SettingsPreferences]). La rando analysée est toujours exclue de sa
+     * propre référence, ici comme dans [paceBandSums].
+     */
+    suspend fun analysisReferencePaceBands(
+        mode: SpeedCalibrationMode,
+        selectedTrackIds: Set<String>,
+        analyzedTrackId: String,
+    ): List<PaceBandSum> {
+        val trackIds = if (mode == SpeedCalibrationMode.SELECTION) selectedTrackIds else null
+        return paceBandSums(trackIds, analyzedTrackId)
     }
 
     private fun LoggedTrackDayEntity.toSegmentAggregate(): DaySegmentAggregate = DaySegmentAggregate(
