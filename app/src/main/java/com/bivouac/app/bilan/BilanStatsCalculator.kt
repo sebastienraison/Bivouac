@@ -127,6 +127,22 @@ object BilanStatsCalculator {
         )
     }
 
+    /**
+     * RIC-146 (lot 2) : les records de [stats] détenus par la rando [trackId] (conception section
+     * 7.3, cran Détails de l'Analyse, "Records détenus"). Ne recalcule rien : filtre les records
+     * déjà produits par [compute], elle-même appelée une fois par l'écran Bilan.
+     */
+    fun recordsHeldBy(stats: BilanStats, trackId: String): List<BilanRecord> =
+        listOfNotNull(
+            stats.kmEffortRecord,
+            stats.vamRecord,
+            stats.maxAltitudeRecord,
+            stats.highestBivouacRecord,
+            stats.maxDistanceDayRecord,
+            stats.maxGainDayRecord,
+            stats.biggestTrekRecord,
+        ).filter { it.trackId == trackId }
+
     // dayCount - 1 : même convention que JournalDayInfo.bivouacCount côté Journal (une nuit dehors
     // est une coupure entre deux jours, pas un décompte de dates connues).
     private fun bivouacCount(days: List<LoggedTrackDayEntity>): Int = (days.size - 1).coerceAtLeast(0)

@@ -410,4 +410,61 @@ class BilanStatsCalculatorTest {
         assertEquals(4.0, vitesse.points[1].value!!, 1e-9) // avril : reporté (aucune sortie)
         assertEquals(4.0, vitesse.points[2].value!!, 1e-9) // mai : reporté (sortie sans plat mesurable)
     }
+
+    // --- recordsHeldBy (RIC-146 lot 2) --------------------------------------------------------
+
+    // RIC-146 : la vue Analyse liste, dans son cran Détails, les records du Bilan détenus par la
+    // rando affichée. recordsHeldBy ne recalcule rien : elle filtre les 7 records déjà produits par
+    // compute() sur celui dont trackId correspond. "champion" gagne les 7 (distance/D+/altitude/VAM/
+    // km-effort bien au-dessus, 2 jours pour le bivouac et le trek) ; "also_ran" ne gagne jamais,
+    // preuve que le filtre ne renvoie pas les records d'une autre rando par erreur.
+    @Test
+    fun recordsHeldByReturnsOnlyTheRecordsWonByThatTrack() {
+        val tracks = listOf(
+            track("champion", 2025, 7, distanceMeters = 40_000.0, elevationGainMeters = 2_500.0),
+            track("also_ran", 2025, 8, distanceMeters = 5_000.0, elevationGainMeters = 100.0),
+        )
+        val daysByTrackId = mapOf(
+            "champion" to listOf(
+                day(
+                    "champion", 0,
+                    flatDistanceMeters = 10_000.0, flatHours = 3.0,
+                    steepCount = 20, steepDistanceMeters = 8_000.0, steepGainMeters = 1_500.0, steepHours = 3.0,
+                    maxElevationMeters = 2_900.0, lastPointElevationMeters = 2_200.0,
+                    distanceMeters = 20_000.0, elevationGainMeters = 1_500.0, elevationLossMeters = 1_500.0,
+                ),
+                day(
+                    "champion", 1,
+                    distanceMeters = 20_000.0, elevationGainMeters = 1_000.0, elevationLossMeters = 1_000.0,
+                ),
+            ),
+            "also_ran" to listOf(
+                day(
+                    "also_ran", 0,
+                    flatDistanceMeters = 2_000.0, flatHours = 1.0,
+                    steepCount = 5, steepDistanceMeters = 500.0, steepGainMeters = 50.0, steepHours = 1.0,
+                    maxElevationMeters = 900.0, lastPointElevationMeters = 850.0,
+                    distanceMeters = 2_500.0, elevationGainMeters = 50.0, elevationLossMeters = 50.0,
+                ),
+                day(
+                    "also_ran", 1,
+                    distanceMeters = 2_500.0, elevationGainMeters = 50.0, elevationLossMeters = 50.0,
+                ),
+            ),
+        )
+        val stats = BilanStatsCalculator.compute(tracks, daysByTrackId, SpeedCalibration.DEFAULT, zone)
+
+        val championRecords = BilanStatsCalculator.recordsHeldBy(stats, "champion")
+        assertEquals(
+            setOf(
+                BilanRecordKind.KM_EFFORT, BilanRecordKind.VAM, BilanRecordKind.MAX_ALTITUDE,
+                BilanRecordKind.HIGHEST_BIVOUAC, BilanRecordKind.MAX_DISTANCE_DAY,
+                BilanRecordKind.MAX_GAIN_DAY, BilanRecordKind.BIGGEST_TREK,
+            ),
+            championRecords.map { it.kind }.toSet(),
+        )
+        assertTrue(championRecords.all { it.trackId == "champion" })
+        assertEquals(emptyList<BilanRecord>(), BilanStatsCalculator.recordsHeldBy(stats, "also_ran"))
+        assertEquals(emptyList<BilanRecord>(), BilanStatsCalculator.recordsHeldBy(stats, "unknown"))
+    }
 }
