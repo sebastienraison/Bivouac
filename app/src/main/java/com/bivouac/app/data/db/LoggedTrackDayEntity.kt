@@ -107,4 +107,11 @@ data class LoggedTrackDayEntity(
     val distanceMeters: Double? = null,
     val elevationGainMeters: Double? = null,
     val elevationLossMeters: Double? = null,
+    // RIC-146 : somme des durées des pauses fines du jour, en secondes (voir TrackPauseDetector et
+    // AnalysisParameters), écrite dans la même passe que les sommes de calibration et que les
+    // lignes de logged_track_day_pace. Secondes flottantes : c'est une somme de différences
+    // d'horodatages que rien n'oblige à être entiers. Même convention que distanceMeters
+    // ci-dessus : null si et seulement si ce jour n'a pas encore été rattrapé (statsVersion de la
+    // trace < 3) ; 0.0 pour un jour sans pause, ou sans horodatage exploitable.
+    val pausedSeconds: Double? = null,
 )

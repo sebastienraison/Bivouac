@@ -14,6 +14,7 @@ import java.io.File
         BankedTrackEntity::class,
         LoggedTrackEntity::class,
         LoggedTrackDayEntity::class,
+        LoggedTrackDayPaceEntity::class,
         LoggedTrackTagEntity::class,
         LoggedTrackPhotoEntity::class,
     ],
@@ -30,7 +31,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open"): a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 20
+        const val SCHEMA_VERSION = 21
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -542,6 +543,30 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-146 : une seule définition de la pause dans toute l'app (voir AnalysisParameters).
+        // logged_track_day gagne pausedSeconds, la somme des pauses fines du jour, et la table
+        // logged_track_day_pace porte le rythme par bande de pente (voir LoggedTrackDayPaceEntity).
+        //
+        // Même patron que MIGRATION_19_20 : une colonne nullable, une table vide, aucun rattrapage
+        // ici. Le calcul relit tous les GPX, il n'a rien à faire dans une migration : c'est
+        // TrackStatsParameters.ALGORITHM_VERSION, monté à 3, qui redéclenche
+        // LoggedTrackBackfill.runStats derrière la porte bloquante, puis la recalibration. Une
+        // sauvegarde de schéma 20 ou antérieur restaurée passe par ici puis par ce même rattrapage,
+        // ses traces arrivant avec statsVersion < 3. Cible : schemas/21.json.
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `pausedSeconds` REAL")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `logged_track_day_pace` (" +
+                        "`dayId` INTEGER NOT NULL, `band` INTEGER NOT NULL, " +
+                        "`segmentCount` INTEGER NOT NULL, `distanceMeters` REAL NOT NULL, " +
+                        "`movingSeconds` REAL NOT NULL, PRIMARY KEY(`dayId`, `band`), " +
+                        "FOREIGN KEY(`dayId`) REFERENCES `logged_track_day`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+            }
+        }
+
         // ~256K points de code par tranche : au pire quadruplé en UTF-8 ça reste sous la fenêtre de
         // 2 Mo, et un GPX réel (ASCII pour l'essentiel) en est très loin.
         private const val MIGRATION_CHUNK_CODE_POINTS = 256 * 1024
@@ -621,6 +646,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                         MIGRATION_17_18,
                         MIGRATION_18_19,
                         MIGRATION_19_20,
+                        MIGRATION_20_21,
                     )
                     .build()
                     .also { instance = it }
