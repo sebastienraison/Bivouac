@@ -597,7 +597,7 @@
     <string name="journal_analysis_timeline_day">Day %1$s · %2$s · %3$s · %4$s</string>
     <string name="journal_analysis_timeline_start">Start, %1$s</string>
     <string name="journal_analysis_timeline_finish">Finish, %1$s</string>
-    <string name="journal_analysis_timeline_bivouac">%1$s at the bivouac</string>
+    <string name="journal_analysis_timeline_bivouac">%1$s at camp</string>
     <string name="journal_analysis_phase_climb">Climb</string>
     <string name="journal_analysis_phase_descent">Descent</string>
     <string name="journal_analysis_phase_rolling">Rolling</string>
