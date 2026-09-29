@@ -112,10 +112,11 @@ internal object TimelineLayout {
      * RIC-212 (brief Partie A, "Hauteur : fixe, hors échelle de la frise") : hauteur du bloc
      * bivouac, entre deux jours. Il ne suit PAS [MINUTE_HEIGHT_DP] comme une phase ou une pause :
      * une nuit de 14h10 y ferait 1 326 dp (14h10 = 850 min × 1,56 dp/min), largement hors écran.
-     * Valeur choisie pour ce lot : assez haute pour le pictogramme de 24 dp (même taille que le
-     * badge du mode Carnet, JournalScreen.kt) centré verticalement avec un peu d'air, pas plus.
+     * Valeur : le plancher d'une phase ([PHASE_MIN_HEIGHT_DP]), décision du propriétaire pour la
+     * seconde passe : le bloc a le gabarit d'une phase courte, avec son logo de 24 dp (même taille
+     * que le badge du mode Carnet, JournalScreen.kt) centré sur des hachures de pause.
      */
-    const val BIVOUAC_ROW_HEIGHT_DP = 40f
+    const val BIVOUAC_ROW_HEIGHT_DP = PHASE_MIN_HEIGHT_DP
 }
 
 /** Hauteur d'une phase ou d'une pause à l'échelle de la frise, avec son plancher. */
@@ -288,6 +289,33 @@ internal fun bivouacMarkerLocalIndex(points: List<TrackPoint>): Int? =
  */
 internal fun bivouacBlockCount(displayedDayCount: Int): Int = maxOf(0, displayedDayCount - 1)
 
+// --- Trait de liaison entre deux jours ----------------------------------------------------------------
+
+/**
+ * RIC-212 (seconde passe, brief Partie B) : quelle part de la hauteur d'un élément de la frise
+ * porte le trait de liaison de la nuit. Chaque élément placé entre le rond de "Arrivée" du jour N et
+ * le rond de "Départ" du jour N+1 dessine SA portion du trait sur toute sa hauteur ([FULL]), y
+ * compris ses propres marges ; seules les deux lignes d'extrémité n'en dessinent qu'une moitié, de
+ * leur centre (là où est le rond) vers l'intérieur de la liaison.
+ */
+internal enum class NightLinkPortion { FULL, LOWER_HALF, UPPER_HALF }
+
+/** Bornes verticales (px, dans le repère de l'élément) d'une portion du trait de liaison. */
+internal data class NightLinkSpan(val startPx: Float, val endPx: Float)
+
+/**
+ * Fonction pure, testée directement par TimelineNightLinkTest : pour un élément de [heightPx] de
+ * haut, où commence et où finit son morceau du trait. Deux éléments verticalement adjacents dont
+ * les portions se complètent ([NightLinkPortion.LOWER_HALF] puis [NightLinkPortion.FULL] puis
+ * [NightLinkPortion.UPPER_HALF]) se raccordent donc sans recouvrement ni trou, quelles que soient
+ * leurs hauteurs.
+ */
+internal fun nightLinkSpanFor(portion: NightLinkPortion, heightPx: Float): NightLinkSpan = when (portion) {
+    NightLinkPortion.FULL -> NightLinkSpan(0f, heightPx)
+    NightLinkPortion.LOWER_HALF -> NightLinkSpan(heightPx / 2f, heightPx)
+    NightLinkPortion.UPPER_HALF -> NightLinkSpan(0f, heightPx / 2f)
+}
+
 // --- Mise en page ------------------------------------------------------------------------------------
 
 // RIC-146 lot 8, défaut trouvé en vérification visuelle à 360 points en anglais : 44 dp coupait
@@ -299,6 +327,15 @@ private val DotColumnWidth = 24.dp
 private val DotSize = 18.dp
 private val MarkerDotSize = 8.dp
 private val TraitWidth = 3.dp
+
+// Retrait du texte par rapport à la colonne des ronds : celui des phases, repris par le bloc bivouac
+// et par le titre de jour pour que les trois commencent au même bord gauche (RIC-212, seconde passe).
+private val TextStartPadding = 8.dp
+
+// Espacement vertical entre deux blocs de la frise (fin d'un jour, bloc bivouac, début du suivant).
+// Ce n'est plus un Arrangement.spacedBy : un espacement du parent ne serait pas dans le trait de
+// liaison de la nuit, alors qu'une Spacer de cette hauteur, si (voir NightLinkSpacer).
+private val BlockSpacing = 20.dp
 
 private fun phaseIcon(kind: TimelinePhaseKind): ImageVector = when (kind) {
     TimelinePhaseKind.CLIMB -> Icons.AutoMirrored.Filled.TrendingUp
@@ -369,6 +406,42 @@ private fun TimelinePaceChip(paceClass: Int?, paceDeltaPercent: Int?, color: Col
     }
 }
 
+/**
+ * Titre d'une phase ("Descente · 1,3 km · −127 m") et texte du bloc bivouac ("13h10 au bivouac") :
+ * un seul composable pour que les deux gardent le même style, la même graisse et la même couleur
+ * (décision du propriétaire, RIC-212 seconde passe). La couleur est celle du contenu, non forcée.
+ */
+@Composable
+private fun TimelineHeadlineText(text: String, modifier: Modifier = Modifier) {
+    Text(text = text, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, modifier = modifier)
+}
+
+/** Abscisse du centre de la colonne des ronds, dans le repère d'une ligne pleine largeur de la frise. */
+private val DotColumnCenterX = TimeColumnWidth + DotColumnWidth / 2
+
+/**
+ * Trait de liaison de la nuit (brief Partie B) : même épaisseur que le trait d'une phase, couleur
+ * neutre (la nuit n'a pas d'allure). [centerXPx] est dans le repère de la [DrawScope] appelante.
+ */
+private fun DrawScope.drawNightLink(centerXPx: Float, span: NightLinkSpan) {
+    if (span.endPx > span.startPx) {
+        drawLine(AnalysisColors.neutral, Offset(centerXPx, span.startPx), Offset(centerXPx, span.endPx), strokeWidth = TraitWidth.toPx())
+    }
+}
+
+/**
+ * Dessine, derrière le contenu d'une ligne pleine largeur, la portion [portion] du trait de liaison
+ * dans la colonne des ronds. `null` : rien (ligne hors liaison, ou extrémité sans jour voisin).
+ */
+private fun Modifier.nightLink(portion: NightLinkPortion?): Modifier =
+    if (portion == null) this else drawBehind { drawNightLink(DotColumnCenterX.toPx(), nightLinkSpanFor(portion, size.height)) }
+
+/** Espacement vertical qui appartient à la liaison : le trait le traverse, aucun trou possible. */
+@Composable
+private fun NightLinkSpacer() {
+    Spacer(modifier = Modifier.fillMaxWidth().height(BlockSpacing).nightLink(NightLinkPortion.FULL))
+}
+
 /** Le rond + trait d'une phase : trait plein à la couleur de l'écart, coupé net (vide, pas de
  * trait du tout) aux pauses courtes qu'elle contient (voir [traitInterruptionsFor]) : même rendu
  * que frise-hybride-reference.png, où l'interruption est un blanc, jamais un pointillé. */
@@ -417,8 +490,8 @@ private fun TimelinePhaseRow(phase: TimelinePhase, shortPauses: List<ShortTimeli
             modifier = Modifier.width(TimeColumnWidth).padding(top = 2.dp),
         )
         PhaseDotAndTrait(kind = phase.kind, color = color, heightDp = heightDp, interruptions = interruptions)
-        Column(modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)) {
-            Text(text = phaseTitle(phase), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+        Column(modifier = Modifier.padding(start = TextStartPadding, bottom = 8.dp)) {
+            TimelineHeadlineText(text = phaseTitle(phase))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -449,11 +522,32 @@ private fun DrawScope.drawHachures(color: Color) {
     }
 }
 
+/**
+ * Fond d'une pause, réutilisé par le bloc bivouac (RIC-212, seconde passe : "les mêmes hachures
+ * qu'une pause, sur la même largeur") : la largeur restante après la colonne de l'heure, fond de
+ * piste et [drawHachures], rond et texte posés par [content]. [overlay] dessine par-dessus les
+ * hachures mais sous [content] (le trait de liaison de la nuit, sous le logo du bivouac).
+ */
+@Composable
+private fun HachuredBand(modifier: Modifier = Modifier, overlay: DrawScope.() -> Unit = {}, content: @Composable () -> Unit) {
+    val hachureColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+    val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+    Box(
+        modifier = modifier
+            .clipToBounds()
+            .background(trackColor)
+            .drawBehind {
+                drawHachures(hachureColor)
+                overlay()
+            },
+    ) {
+        content()
+    }
+}
+
 @Composable
 private fun TimelinePauseRow(pause: TimelinePause, clockTime: Instant, onClick: () -> Unit) {
     val heightDp = pauseHeightDp(pause.endSeconds - pause.startSeconds)
-    val hachureColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-    val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
     Row(modifier = Modifier.fillMaxWidth().height(heightDp.dp).clickable(onClick = onClick)) {
         Text(
             text = formatTimeOfDay(clockTime),
@@ -464,14 +558,7 @@ private fun TimelinePauseRow(pause: TimelinePause, clockTime: Instant, onClick: 
         )
         // Hachurée sur toute la largeur du trait ET du texte (brief), donc les deux colonnes
         // restantes réunies dans un seul fond, rond et texte dessinés par-dessus.
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .clipToBounds()
-                .background(trackColor)
-                .drawBehind { drawHachures(hachureColor) },
-        ) {
+        HachuredBand(modifier = Modifier.weight(1f).fillMaxHeight()) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxHeight()) {
                 Box(modifier = Modifier.width(DotColumnWidth), contentAlignment = Alignment.Center) {
                     Box(
@@ -496,8 +583,11 @@ private fun TimelinePauseRow(pause: TimelinePause, clockTime: Instant, onClick: 
 }
 
 @Composable
-private fun TimelineMarkerRow(time: Instant, elevationMeters: Double, labelRes: Int) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+private fun TimelineMarkerRow(time: Instant, elevationMeters: Double, labelRes: Int, link: NightLinkPortion? = null) {
+    // [link] : la moitié du trait de liaison de la nuit que porte cette ligne, de son centre (le rond)
+    // vers la liaison : LOWER_HALF pour "Arrivée" (le trait part vers le bas), UPPER_HALF pour
+    // "Départ" (il arrive par le haut). Le rond, dessiné après, recouvre l'extrémité du trait.
+    Row(modifier = Modifier.fillMaxWidth().nightLink(link), verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = formatTimeOfDay(time),
             style = MaterialTheme.typography.labelSmall,
@@ -522,25 +612,32 @@ private fun TimelineMarkerRow(time: Instant, elevationMeters: Double, labelRes: 
 }
 
 @Composable
-private fun ShortPausesNote(shortPauses: List<ShortTimelinePause>) {
+private fun ShortPausesNote(shortPauses: List<ShortTimelinePause>, link: Boolean) {
     val count = shortPauses.size
     val totalDurationText = formatPauseDuration(shortPauses.sumOf { it.pausedSeconds })
     Text(
         text = pluralStringResource(R.plurals.journal_analysis_timeline_short_breaks, count, count, totalDurationText),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = TimeColumnWidth + DotColumnWidth, top = 4.dp),
+        // Le trait passe derrière la note : nightLink avant padding, donc sur toute la hauteur
+        // marge haute comprise.
+        modifier = Modifier
+            .fillMaxWidth()
+            .nightLink(if (link) NightLinkPortion.FULL else null)
+            .padding(start = TimeColumnWidth + DotColumnWidth, top = 4.dp),
     )
 }
 
 /**
- * RIC-212 (brief Partie A) : le bloc bivouac entre deux jours affichés. Rond de la colonne du
- * milieu (pas de trait, pas de hachures : distinct d'une pause, brief "sobre, aéré") : le logo du
- * mode Carnet (JournalScreen.kt, ReadOnlyBivouacRow), avec sa teinte habituelle (pas d'Icon avec
- * tint : un Image, comme là-bas, le vectoriel porte déjà ses propres couleurs). Colonne de gauche
- * vide (brief : "pas d'heure, la ligne Arrivée la donne déjà"). [nightDurationSeconds] : `null` ->
- * logo seul (voir [bivouacNightDurationSeconds]), sinon le texte "%1$s au bivouac" à droite, au
- * format de durée existant ([formatPauseDuration]).
+ * RIC-212 (brief Partie A, seconde passe) : le bloc bivouac entre deux jours affichés, dessiné comme
+ * une pause mais à hauteur fixe, hors échelle du temps ([TimelineLayout.BIVOUAC_ROW_HEIGHT_DP]) :
+ * mêmes hachures que [TimelinePauseRow] ([HachuredBand]), sur la même largeur. À la place du rond de
+ * pause, le logo du mode Carnet (JournalScreen.kt, ReadOnlyBivouacRow), avec sa teinte habituelle
+ * (un Image, pas un Icon teinté : le vectoriel porte ses propres couleurs), posé sur le trait de
+ * liaison de la nuit, qui traverse les hachures. Colonne de gauche vide (l'heure est sur la ligne
+ * "Arrivée" au-dessus). [nightDurationSeconds] : `null` -> logo seul (voir
+ * [bivouacNightDurationSeconds]), sinon "%1$s au bivouac" dans le style du titre d'une phase
+ * ([TimelineHeadlineText]), à durée au format existant ([formatPauseDuration]).
  */
 @Composable
 private fun TimelineBivouacRow(nightDurationSeconds: Double?, onClick: () -> Unit) {
@@ -549,32 +646,51 @@ private fun TimelineBivouacRow(nightDurationSeconds: Double?, onClick: () -> Uni
             .fillMaxWidth()
             .height(TimelineLayout.BIVOUAC_ROW_HEIGHT_DP.dp)
             .clickable(onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
         Spacer(modifier = Modifier.width(TimeColumnWidth))
-        Box(modifier = Modifier.width(DotColumnWidth), contentAlignment = Alignment.Center) {
-            Image(
-                painter = painterResource(R.drawable.ic_bivouac_badge),
-                contentDescription = stringResource(R.string.journal_detail_bivouac_night_description),
-                modifier = Modifier.size(24.dp),
-            )
-        }
-        if (nightDurationSeconds != null) {
-            Text(
-                text = stringResource(R.string.journal_analysis_timeline_bivouac, formatPauseDuration(nightDurationSeconds)),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp),
-            )
+        // Repère de la bande : elle commence à la colonne des ronds, le centre du trait y est à la
+        // moitié de [DotColumnWidth].
+        HachuredBand(
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            overlay = { drawNightLink(DotColumnWidth.toPx() / 2, nightLinkSpanFor(NightLinkPortion.FULL, size.height)) },
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxHeight()) {
+                Box(modifier = Modifier.width(DotColumnWidth), contentAlignment = Alignment.Center) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_bivouac_badge),
+                        contentDescription = stringResource(R.string.journal_detail_bivouac_night_description),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+                if (nightDurationSeconds != null) {
+                    TimelineHeadlineText(
+                        text = stringResource(R.string.journal_analysis_timeline_bivouac, formatPauseDuration(nightDurationSeconds)),
+                        modifier = Modifier.padding(start = TextStartPadding, end = 8.dp),
+                    )
+                }
+            }
         }
     }
 }
 
 /** Un jour de la frise : départ, éléments (phases et pauses) dans l'ordre, arrivée. */
 @Composable
-private fun DayTimelineView(day: DayTimeline, dayStartInstant: Instant, dayIndex: Int, dayOffsets: List<Int>, onElementSelected: (Int) -> Unit) {
+private fun DayTimelineView(
+    day: DayTimeline,
+    dayStartInstant: Instant,
+    dayIndex: Int,
+    dayOffsets: List<Int>,
+    linkBefore: Boolean,
+    linkAfter: Boolean,
+    onElementSelected: (Int) -> Unit,
+) {
     Column {
-        TimelineMarkerRow(time = dayStartInstant, elevationMeters = day.startElevationMeters, labelRes = R.string.journal_analysis_timeline_start)
+        TimelineMarkerRow(
+            time = dayStartInstant,
+            elevationMeters = day.startElevationMeters,
+            labelRes = R.string.journal_analysis_timeline_start,
+            link = if (linkBefore) NightLinkPortion.UPPER_HALF else null,
+        )
         for (element: TimelineElement in day.elements) {
             when (element) {
                 is TimelinePhase -> TimelinePhaseRow(
@@ -594,9 +710,10 @@ private fun DayTimelineView(day: DayTimeline, dayStartInstant: Instant, dayIndex
             time = dayStartInstant.plusMillis((day.elapsedSeconds * 1_000).toLong()),
             elevationMeters = day.endElevationMeters,
             labelRes = R.string.journal_analysis_timeline_finish,
+            link = if (linkAfter) NightLinkPortion.LOWER_HALF else null,
         )
         if (day.shortPauses.isNotEmpty()) {
-            ShortPausesNote(day.shortPauses)
+            ShortPausesNote(day.shortPauses, link = linkAfter)
         }
     }
 }
@@ -619,6 +736,10 @@ private fun DayTimelineView(day: DayTimeline, dayStartInstant: Instant, dayIndex
  * toute façon pas rendu), un [TimelineBivouacRow] : sa durée vient de
  * [bivouacNightDurationSeconds] entre le dernier point horodaté du jour qui s'achève et le premier
  * du jour suivant, son toucher place le repère sur ce dernier point ([bivouacMarkerLocalIndex]).
+ *
+ * RIC-212 (seconde passe) : un trait continu ([NightLinkPortion]) relie le rond de "Arrivée" du jour
+ * au rond de "Départ" du suivant, derrière la note des pauses courtes, le bloc bivouac, les
+ * espacements et le titre du jour suivant, qui commence au bord du texte des phases.
  */
 @Composable
 internal fun AnalysisTimelineSection(days: List<DayTimeline>, daySegments: List<Segment>, onElementSelected: (Int) -> Unit, modifier: Modifier = Modifier) {
@@ -630,7 +751,11 @@ internal fun AnalysisTimelineSection(days: List<DayTimeline>, daySegments: List<
     val displayedDayIndices = remember(days) { days.indices.filter { days[it].elements.isNotEmpty() } }
     Column(modifier = modifier) {
         SectionTitle(stringResource(R.string.journal_analysis_section_timeline))
-        Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        // Pas d'Arrangement.spacedBy : entre "Arrivée" du jour N et "Départ" du jour N+1, chaque
+        // élément dessine sa portion du trait de liaison sur toute sa hauteur et les espacements
+        // sont des Spacer qui le dessinent aussi (voir NightLinkSpacer). Un espacement du parent
+        // laisserait un trou.
+        Column {
             displayedDayIndices.forEachIndexed { position, dayIndex ->
                 val day = days[dayIndex]
                 // Non-null : day.elements non vide implique qu'au moins un point horodaté existe
@@ -638,53 +763,65 @@ internal fun AnalysisTimelineSection(days: List<DayTimeline>, daySegments: List<
                 // qui rend un DayTimeline vide sinon), et daySegments[dayIndex].points est
                 // exactement la liste passée en entrée de ce calcul (voir kdoc ci-dessus).
                 val dayStartInstant = daySegments[dayIndex].points.first { it.time != null }.time!!
-                Column {
-                    if (multiDay) {
-                        val distanceText = stringResource(R.string.format_distance_km, formatKm1(day.distanceMeters / 1_000.0))
-                        val durationText = formatPauseDuration(day.elapsedSeconds)
-                        // RIC-212 (brief Partie B) : espaces insécables du côté des paramètres pour
-                        // qu'aucune coupure de ligne ne tombe DANS la distance ni DANS la durée
-                        // (l'anglais porte un espace, "5h 32m") ; timelineDayTitleWithLineBreakHints
-                        // s'occupe ensuite du séparateur ENTRE elles.
-                        val titleText = timelineDayTitleWithLineBreakHints(
-                            stringResource(
-                                R.string.journal_analysis_timeline_day,
-                                (dayIndex + 1).toString(),
-                                formatTimelineDayDate(dayStartInstant),
-                                distanceText.replace(' ', NON_BREAKING_SPACE),
-                                durationText.replace(' ', NON_BREAKING_SPACE),
-                            ),
-                        )
-                        Text(
-                            text = titleText,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 8.dp),
-                        )
-                    }
-                    DayTimelineView(
-                        day = day,
-                        dayStartInstant = dayStartInstant,
-                        dayIndex = dayIndex,
-                        dayOffsets = dayOffsets,
-                        onElementSelected = onElementSelected,
-                    )
-                }
-                val nextDayIndex = displayedDayIndices.getOrNull(position + 1)
-                if (nextDayIndex != null) {
-                    val arrival = daySegments[dayIndex].points.lastOrNull { it.time != null }?.time
-                    val departure = daySegments[nextDayIndex].points.firstOrNull { it.time != null }?.time
+                val previousDayIndex = displayedDayIndices.getOrNull(position - 1)
+                val hasNextDay = position < displayedDayIndices.lastIndex
+                if (previousDayIndex != null) {
+                    // Fin du jour précédent (son "Arrivée" ou sa note), espace, bloc bivouac, espace,
+                    // puis le titre du jour : tout ce qui est entre les deux ronds est sur le trait.
+                    NightLinkSpacer()
+                    val arrival = daySegments[previousDayIndex].points.lastOrNull { it.time != null }?.time
+                    val departure = daySegments[dayIndex].points.firstOrNull { it.time != null }?.time
                     val nightDurationSeconds = bivouacNightDurationSeconds(arrival, departure)
-                    val markerLocalIndex = bivouacMarkerLocalIndex(daySegments[dayIndex].points)
+                    val markerLocalIndex = bivouacMarkerLocalIndex(daySegments[previousDayIndex].points)
                     TimelineBivouacRow(
                         nightDurationSeconds = nightDurationSeconds,
                         onClick = {
                             markerLocalIndex?.let {
-                                onElementSelected(TrackAnalysisMapMapping.toScreenIndex(dayOffsets, dayIndex, it))
+                                onElementSelected(TrackAnalysisMapMapping.toScreenIndex(dayOffsets, previousDayIndex, it))
                             }
                         },
                     )
+                    NightLinkSpacer()
                 }
+                if (multiDay) {
+                    val distanceText = stringResource(R.string.format_distance_km, formatKm1(day.distanceMeters / 1_000.0))
+                    val durationText = formatPauseDuration(day.elapsedSeconds)
+                    // RIC-212 (brief Partie B) : espaces insécables du côté des paramètres pour
+                    // qu'aucune coupure de ligne ne tombe DANS la distance ni DANS la durée
+                    // (l'anglais porte un espace, "5h 32m") ; timelineDayTitleWithLineBreakHints
+                    // s'occupe ensuite du séparateur ENTRE elles.
+                    val titleText = timelineDayTitleWithLineBreakHints(
+                        stringResource(
+                            R.string.journal_analysis_timeline_day,
+                            (dayIndex + 1).toString(),
+                            formatTimelineDayDate(dayStartInstant),
+                            distanceText.replace(' ', NON_BREAKING_SPACE),
+                            durationText.replace(' ', NON_BREAKING_SPACE),
+                        ),
+                    )
+                    // RIC-212 seconde passe : le titre commence au bord du texte des phases, jamais
+                    // à celui de l'écran ; colonnes de l'heure et des ronds vides à sa hauteur, sauf
+                    // le trait de liaison (nightLink avant padding : marge basse comprise). Pas de
+                    // maxLines : le titre passe sur autant de lignes qu'il lui en faut.
+                    Text(
+                        text = titleText,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .nightLink(if (previousDayIndex != null) NightLinkPortion.FULL else null)
+                            .padding(start = TimeColumnWidth + DotColumnWidth + TextStartPadding, bottom = 8.dp),
+                    )
+                }
+                DayTimelineView(
+                    day = day,
+                    dayStartInstant = dayStartInstant,
+                    dayIndex = dayIndex,
+                    dayOffsets = dayOffsets,
+                    linkBefore = previousDayIndex != null,
+                    linkAfter = hasNextDay,
+                    onElementSelected = onElementSelected,
+                )
             }
         }
     }
