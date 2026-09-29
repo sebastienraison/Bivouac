@@ -50,6 +50,34 @@ import kotlin.math.abs
  *   - [bestClimbMinMovingSeconds]/[bestFlatMinMovingSeconds] : temps de marche cumulé minimal
  *     d'un meilleur passage (section 5.6).
  *
+ * RIC-146 lot 6 (conception section 3, mesures section 3.4) : paramètres du découpage d'une
+ * journée en phases pour la frise chronologique de la vue Analyse, portage de référence
+ * `banc_frise.py` (fonction `phases`).
+ *   - [pauseEventSeconds] : durée à partir de laquelle une pause coupe la journée en tronçons de
+ *     marche ; une phase ne contient jamais une telle pause et ne la franchit jamais.
+ *   - [minWalkBetweenPausesMeters] : deux pauses séparées par moins de cette distance de marche
+ *     sont réunies en une seule (durée affichée = somme des deux, bloc = tout l'intervalle) ; en
+ *     tête ou en queue de journée, un tronçon de marche plus court que ça est rattaché à la pause
+ *     voisine.
+ *   - [minPhaseMeters] : une phase de terrain plus courte est fondue dans sa voisine la plus
+ *     longue, ou dans ses deux voisines si elles sont de même nature.
+ *   - [phaseSlopePercent] : seuil de pente nette d'un tronçon de 200 m pour le classer montée,
+ *     descente ou plat, à la fois pour grouper les tronçons d'une phase et pour relire la nature
+ *     d'ensemble d'une phase une fois ses bornes fixées. Même valeur que
+ *     [TrackSegmenter.FLAT_SLOPE_PERCENT] aujourd'hui, mais un réglage distinct : celui-ci classe
+ *     une phase de frise, l'autre un tronçon entier pour la calibration vitesse/pénalité ; rien
+ *     n'impose qu'ils bougent ensemble à l'avenir.
+ *   - [rollingThresholdMetersPerKm] : au-delà de ce dénivelé cumulé (D+ plus D-) par km, une
+ *     phase sans pente nette (ni montée ni descente) est dite vallonnée plutôt que plate.
+ *
+ * Mesures sur les 103 randos de la sauvegarde utilisée pour la conception (section 3.4) :
+ *   lignes de frise par rando 1 à 32, médiane 7 ; part de la distance en montée/descente/vallonné/
+ *   plat 40/41/12/7 % ; pauses réunies au seuil de 100 m : 11 sur l'ensemble ; trous et
+ *   chevauchements de l'invariant de partage du temps (chaque élément commence où le précédent
+ *   finit) : 0 et 0. Avec l'ancienne règle (seuil de pente 4 %, pas de nature vallonnée), 34 % de
+ *   la distance était dite plate, pour un dénivelé cumulé médian de 50 m/km sur ces phases : d'où
+ *   l'ajout de la nature vallonnée et l'abaissement du seuil à 2 %.
+ *
  * Conception, portage Python de référence et scripts de validation : docs/pilotage/ric-146/ (hors
  * dépôt, non publié).
  */
@@ -78,6 +106,16 @@ data class AnalysisParameters(
     val bestClimbMinMovingSeconds: Double,
     /** Temps de marche cumulé minimal d'un meilleur passage à plat, en secondes. */
     val bestFlatMinMovingSeconds: Double,
+    /** RIC-146 lot 6 : durée minimale d'une pause qui coupe la journée en tronçons de marche. */
+    val pauseEventSeconds: Double,
+    /** RIC-146 lot 6 : marche minimale entre deux pauses d'événement pour ne pas les réunir. */
+    val minWalkBetweenPausesMeters: Double,
+    /** RIC-146 lot 6 : longueur minimale d'une phase de terrain avant fusion avec sa voisine. */
+    val minPhaseMeters: Double,
+    /** RIC-146 lot 6 : seuil de pente nette (%) qui classe un tronçon ou une phase montée/descente/plat. */
+    val phaseSlopePercent: Double,
+    /** RIC-146 lot 6 : dénivelé cumulé (m/km) au-delà duquel une phase plate est dite vallonnée. */
+    val rollingThresholdMetersPerKm: Double,
 ) {
     val slopeBandCount: Int get() = slopeBandBoundsPercent.size + 1
 
@@ -156,6 +194,12 @@ data class AnalysisParameters(
         const val BEST_CLIMB_MIN_MOVING_SECONDS = 1_200.0
         const val BEST_FLAT_MIN_MOVING_SECONDS = 600.0
 
+        const val PAUSE_EVENT_SECONDS = 300.0
+        const val MIN_WALK_BETWEEN_PAUSES_METERS = 100.0
+        const val MIN_PHASE_METERS = 1_000.0
+        const val PHASE_SLOPE_PERCENT = 2.0
+        const val ROLLING_THRESHOLD_METERS_PER_KM = 30.0
+
         val DEFAULT = AnalysisParameters(
             pauseRadiusMeters = PAUSE_RADIUS_METERS,
             pauseMinSeconds = PAUSE_MIN_SECONDS,
@@ -169,6 +213,11 @@ data class AnalysisParameters(
             minReferenceSegmentsPerBand = MIN_REFERENCE_SEGMENTS_PER_BAND,
             bestClimbMinMovingSeconds = BEST_CLIMB_MIN_MOVING_SECONDS,
             bestFlatMinMovingSeconds = BEST_FLAT_MIN_MOVING_SECONDS,
+            pauseEventSeconds = PAUSE_EVENT_SECONDS,
+            minWalkBetweenPausesMeters = MIN_WALK_BETWEEN_PAUSES_METERS,
+            minPhaseMeters = MIN_PHASE_METERS,
+            phaseSlopePercent = PHASE_SLOPE_PERCENT,
+            rollingThresholdMetersPerKm = ROLLING_THRESHOLD_METERS_PER_KM,
         )
     }
 }
