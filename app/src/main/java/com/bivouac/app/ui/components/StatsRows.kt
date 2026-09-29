@@ -1,6 +1,9 @@
 package com.bivouac.app.ui.components
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -16,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.bivouac.app.R
@@ -42,18 +46,25 @@ val BivouacIconColor = Color(0xFFF57C00)
 // stats.estimatedDurationMinutes, jamais de préfixe "≈". [Resolved] est du Journal (lot 5) : une
 // durée déjà résolue en secondes par l'appelant (réelle si RealDurationCalculator en a trouvé une,
 // sinon l'estimation de repli), avec ou sans préfixe "≈" selon [Resolved.isEstimated].
+//
+// RIC-209 (brief Partie C, lot 9) : [Resolved.walkingSharePercent], `null` par défaut comme les
+// deux autres champs sont couverts par PlainEstimate côté Planification -- une rando sans
+// horodatage (isEstimated = true) ou un jour horodaté sans pausedSeconds encore rattrapé n'en a
+// pas (brief §Règles), StatsRows/TotalsCapsule affichent alors la durée seule.
 sealed interface DurationDisplay {
     data object PlainEstimate : DurationDisplay
-    data class Resolved(val seconds: Long, val isEstimated: Boolean) : DurationDisplay
+    data class Resolved(val seconds: Long, val isEstimated: Boolean, val walkingSharePercent: Int? = null) : DurationDisplay
 }
 
 /** Bascule [RealDurationCalculator.AggregatedDuration] (calcul pur) vers [DurationDisplay]
  * (affichage) : un seul endroit pour ce mapping, réutilisé par le Journal et le Bilan. */
 fun RealDurationCalculator.AggregatedDuration.toDurationDisplay(): DurationDisplay =
-    DurationDisplay.Resolved(totalSeconds, isEstimated)
+    DurationDisplay.Resolved(totalSeconds, isEstimated, walkingSharePercent)
 
 // internal, pas private : TotalsCapsule.kt (même package, fichier différent) le réutilise pour sa
-// propre ligne de durée.
+// propre ligne de durée. Ne porte jamais la part de marche (brief §Règles, lot 9 : le cartouche la
+// met dans le LIBELLÉ de la case, pas dans la valeur) : voir [formatDurationWithShare] pour la
+// variante StatsRows qui, elle, la met en évidence à côté de la durée.
 @Composable
 internal fun formatDurationDisplay(display: DurationDisplay, estimatedMinutes: Int): String = when (display) {
     DurationDisplay.PlainEstimate -> formatDuration(estimatedMinutes)
@@ -63,6 +74,30 @@ internal fun formatDurationDisplay(display: DurationDisplay, estimatedMinutes: I
     }
 }
 
+// RIC-209 (brief Partie C, lot 9) : suffixe de part de marche, factorisé en fonction pure (Context
+// plutôt que stringResource) pour être testable en JVM/Robolectric sans règle de test Compose --
+// même principe que JournalCountsLocaleTest, qui vérifie les ressources via context.getString
+// plutôt que le rendu du composable. `null` : la durée seule, inchangée (Planification, rando sans
+// horodatage, ou jour horodaté sans pausedSeconds encore rattrapé, brief §Règles).
+internal fun withWalkingShareText(context: Context, durationText: String, walkingSharePercent: Int?): String =
+    // .toString() : fmt_stats_rows_duration_share déclare %2$s (chaîne, cf. l'inventaire i18n),
+    // pas %2$d -- lint (StringFormatMatches) rejette un Int cru en argument d'un %s.
+    walkingSharePercent?.let { context.getString(R.string.fmt_stats_rows_duration_share, durationText, it.toString()) } ?: durationText
+
+// RIC-209 (brief Partie C, lot 9) : durée + part de marche sur la ligne du Journal ("7h40 · 80 %
+// de marche"), quand [DurationDisplay.Resolved.walkingSharePercent] est connu.
+@Composable
+private fun formatDurationWithShare(display: DurationDisplay, estimatedMinutes: Int): String {
+    val text = formatDurationDisplay(display, estimatedMinutes)
+    val share = (display as? DurationDisplay.Resolved)?.walkingSharePercent
+    return withWalkingShareText(LocalContext.current, text, share)
+}
+
+// FlowRow (brief §Largeur, même correction que AnalysisLegendAxisRow lot 7/8) : distance et durée
+// gardent chacune leur largeur naturelle ; si "7h40 · 80 % de marche" ne tient pas à côté de la
+// distance à 360 points, elle passe ENTIÈRE à la ligne suivante plutôt que d'être tronquée ou
+// coupée en son milieu (aucun des deux InfoText ne porte de maxLines/ellipsis).
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StatsRows(stats: TrackStats, muted: Boolean = false, duration: DurationDisplay = DurationDisplay.PlainEstimate) {
     val neutral = MaterialTheme.colorScheme.onSurfaceVariant
@@ -71,13 +106,13 @@ fun StatsRows(stats: TrackStats, muted: Boolean = false, duration: DurationDispl
     val gainColor = if (muted) neutral else GainIconColor
     val lossColor = if (muted) neutral else LossIconColor
 
-    Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         InfoText(
             stringResource(R.string.format_distance_km, formatKm1(stats.distanceMeters / 1000)),
             Icons.Filled.Route,
             distanceColor,
         )
-        InfoText(formatDurationDisplay(duration, stats.estimatedDurationMinutes), Icons.Filled.Schedule, durationColor)
+        InfoText(formatDurationWithShare(duration, stats.estimatedDurationMinutes), Icons.Filled.Schedule, durationColor)
     }
     Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
         InfoText(

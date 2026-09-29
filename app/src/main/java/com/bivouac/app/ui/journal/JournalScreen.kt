@@ -1734,8 +1734,12 @@ private fun JournalPopulatedList(
 // rando/ce jour, repli sur l'estimation (calibration active) avec le préfixe "≈" sinon (brief
 // §Règles, "rando sans horodatage"). Un seul endroit pour ce repli, réutilisé par la ligne de
 // liste, le total du détail et chaque jour du détail.
+//
+// RIC-209 (brief Partie C, lot 9) : walkingSharePercent suit le même repli -- `null` d'office pour
+// une rando estimée (pas de part de marche sans horodatage, brief §Règles), sinon celui de `real`
+// (déjà `null` si ce jour n'a pas encore `pausedSeconds`, voir RealDuration.walkingSharePercent).
 private fun resolvedDuration(real: RealDurationCalculator.RealDuration?, estimatedMinutes: Int): DurationDisplay =
-    real?.let { DurationDisplay.Resolved(it.elapsedSeconds, isEstimated = false) }
+    real?.let { DurationDisplay.Resolved(it.elapsedSeconds, isEstimated = false, walkingSharePercent = it.walkingSharePercent) }
         ?: DurationDisplay.Resolved(estimatedMinutes * 60L, isEstimated = true)
 
 // RIC-209 : stats (distance/D+/D-, inchangées) et durée agrégée (brief Partie B) d'un ensemble de
