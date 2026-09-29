@@ -29,7 +29,6 @@ import com.bivouac.app.R
 import com.bivouac.app.data.gpx.TrackStats
 import java.text.NumberFormat
 import java.util.Locale
-import kotlin.math.roundToInt
 
 /**
  * RIC-19 §1 : capsule de totaux partagée entre le Journal (`JournalBilanCard`, en tête de liste) et
@@ -59,9 +58,6 @@ fun TotalsCapsule(
     // RIC-209 (brief Partie B) : défaut = comportement d'origine (voir DurationDisplay.PlainEstimate) :
     // la valeur affichée reste stats.estimatedDurationMinutes, sans préfixe.
     duration: DurationDisplay = DurationDisplay.PlainEstimate,
-    // RIC-209 : temps de marche des randos horodatées, seconde ligne sous « Durée totale » (brief
-    // §Règles). `null` (défaut) : pas de seconde ligne, comportement d'origine.
-    walkingSeconds: Long? = null,
 ) {
     Column(
         modifier = modifier
@@ -104,11 +100,10 @@ fun TotalsCapsule(
                 icon = Icons.Filled.Schedule,
                 color = DurationIconColor,
                 modifier = Modifier.weight(1f),
-                // RIC-209 : seconde ligne "dont X de marche" (brief §Règles), seulement quand
-                // walkingSeconds est connu (voir RealDurationCalculator.AggregatedDuration).
-                extraLine = walkingSeconds?.let {
-                    stringResource(R.string.bilan_totals_label_walking, formatDuration((it / 60.0).roundToInt()))
-                },
+                // RIC-146 lot 7 (brief Partie A) : seconde ligne "dont X de marche" retirée,
+                // bilan_totals_label_walking sortie de l'inventaire v16. Le lot 9 la remplacera par
+                // la part de marche (fmt_walking_share comme libellé de la case, conception 2
+                // section 5.5) : ne rien ajouter ici en attendant, extraLine reste `null`.
             )
             TotalsStatItem(
                 value = "$bivouacCount",

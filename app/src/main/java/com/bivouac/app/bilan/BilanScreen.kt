@@ -131,9 +131,8 @@ private fun BilanContent(stats: BilanStats, onOpenJournalEntry: (JournalOpenRequ
             ),
             stats = stats.totals,
             bivouacCount = stats.bivouacCount,
-            // RIC-209 (brief Partie B) : durée réelle agrégée et temps de marche (seconde ligne).
+            // RIC-209 (brief Partie B) : durée réelle agrégée.
             duration = stats.durationAggregate.toDurationDisplay(),
-            walkingSeconds = stats.durationAggregate.walkingSeconds,
         )
 
         if (stats.progression.isNotEmpty()) {
