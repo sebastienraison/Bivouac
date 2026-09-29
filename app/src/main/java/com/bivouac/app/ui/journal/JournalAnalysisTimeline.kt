@@ -114,7 +114,7 @@ internal object TimelineLayout {
      * une nuit de 14h10 y ferait 1 326 dp (14h10 = 850 min × 1,56 dp/min), largement hors écran.
      * Valeur : le plancher d'une phase ([PHASE_MIN_HEIGHT_DP]), décision du propriétaire pour la
      * seconde passe : le bloc a le gabarit d'une phase courte, avec son logo de 24 dp (même taille
-     * que le badge du mode Carnet, JournalScreen.kt) centré sur des hachures de pause.
+     * que le badge du mode Carnet, JournalScreen.kt) centré sur le trait de liaison de la nuit.
      */
     const val BIVOUAC_ROW_HEIGHT_DP = PHASE_MIN_HEIGHT_DP
 }
@@ -523,23 +523,18 @@ private fun DrawScope.drawHachures(color: Color) {
 }
 
 /**
- * Fond d'une pause, réutilisé par le bloc bivouac (RIC-212, seconde passe : "les mêmes hachures
- * qu'une pause, sur la même largeur") : la largeur restante après la colonne de l'heure, fond de
- * piste et [drawHachures], rond et texte posés par [content]. [overlay] dessine par-dessus les
- * hachures mais sous [content] (le trait de liaison de la nuit, sous le logo du bivouac).
+ * Fond d'une pause : la largeur restante après la colonne de l'heure, fond de piste et
+ * [drawHachures], rond et texte posés par [content].
  */
 @Composable
-private fun HachuredBand(modifier: Modifier = Modifier, overlay: DrawScope.() -> Unit = {}, content: @Composable () -> Unit) {
+private fun HachuredBand(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val hachureColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
     val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
     Box(
         modifier = modifier
             .clipToBounds()
             .background(trackColor)
-            .drawBehind {
-                drawHachures(hachureColor)
-                overlay()
-            },
+            .drawBehind { drawHachures(hachureColor) },
     ) {
         content()
     }
@@ -629,15 +624,17 @@ private fun ShortPausesNote(shortPauses: List<ShortTimelinePause>, link: Boolean
 }
 
 /**
- * RIC-212 (brief Partie A, seconde passe) : le bloc bivouac entre deux jours affichés, dessiné comme
- * une pause mais à hauteur fixe, hors échelle du temps ([TimelineLayout.BIVOUAC_ROW_HEIGHT_DP]) :
- * mêmes hachures que [TimelinePauseRow] ([HachuredBand]), sur la même largeur. À la place du rond de
- * pause, le logo du mode Carnet (JournalScreen.kt, ReadOnlyBivouacRow), avec sa teinte habituelle
- * (un Image, pas un Icon teinté : le vectoriel porte ses propres couleurs), posé sur le trait de
- * liaison de la nuit, qui traverse les hachures. Colonne de gauche vide (l'heure est sur la ligne
- * "Arrivée" au-dessus). [nightDurationSeconds] : `null` -> logo seul (voir
- * [bivouacNightDurationSeconds]), sinon "%1$s au bivouac" dans le style du titre d'une phase
- * ([TimelineHeadlineText]), à durée au format existant ([formatPauseDuration]).
+ * RIC-212 (brief Partie A, troisième passe) : le bloc bivouac entre deux jours affichés, à hauteur
+ * fixe, hors échelle du temps ([TimelineLayout.BIVOUAC_ROW_HEIGHT_DP]), sans fond ni hachures : le
+ * fond de la frise (décision du propriétaire, "enlève les hachures pour le bivouac"). À la place du
+ * rond de pause, le logo du mode Carnet (JournalScreen.kt, ReadOnlyBivouacRow), avec sa teinte
+ * habituelle (un Image, pas un Icon teinté : le vectoriel porte ses propres couleurs), posé sur le
+ * trait de liaison de la nuit. Ce trait est dessiné par la ligne pleine largeur elle-même
+ * ([nightLink] avant tout padding, comme les autres éléments entre deux jours), donc sur toute la
+ * hauteur du bloc, sous le logo. Colonne de gauche vide (l'heure est sur la ligne "Arrivée"
+ * au-dessus). [nightDurationSeconds] : `null` -> logo seul (voir [bivouacNightDurationSeconds]),
+ * sinon "%1$s au bivouac" dans le style du titre d'une phase ([TimelineHeadlineText]), à durée au
+ * format existant ([formatPauseDuration]).
  */
 @Composable
 private fun TimelineBivouacRow(nightDurationSeconds: Double?, onClick: () -> Unit) {
@@ -645,30 +642,23 @@ private fun TimelineBivouacRow(nightDurationSeconds: Double?, onClick: () -> Uni
         modifier = Modifier
             .fillMaxWidth()
             .height(TimelineLayout.BIVOUAC_ROW_HEIGHT_DP.dp)
+            .nightLink(NightLinkPortion.FULL)
             .clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Spacer(modifier = Modifier.width(TimeColumnWidth))
-        // Repère de la bande : elle commence à la colonne des ronds, le centre du trait y est à la
-        // moitié de [DotColumnWidth].
-        HachuredBand(
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-            overlay = { drawNightLink(DotColumnWidth.toPx() / 2, nightLinkSpanFor(NightLinkPortion.FULL, size.height)) },
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxHeight()) {
-                Box(modifier = Modifier.width(DotColumnWidth), contentAlignment = Alignment.Center) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_bivouac_badge),
-                        contentDescription = stringResource(R.string.journal_detail_bivouac_night_description),
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-                if (nightDurationSeconds != null) {
-                    TimelineHeadlineText(
-                        text = stringResource(R.string.journal_analysis_timeline_bivouac, formatPauseDuration(nightDurationSeconds)),
-                        modifier = Modifier.padding(start = TextStartPadding, end = 8.dp),
-                    )
-                }
-            }
+        Box(modifier = Modifier.width(DotColumnWidth), contentAlignment = Alignment.Center) {
+            Image(
+                painter = painterResource(R.drawable.ic_bivouac_badge),
+                contentDescription = stringResource(R.string.journal_detail_bivouac_night_description),
+                modifier = Modifier.size(24.dp),
+            )
+        }
+        if (nightDurationSeconds != null) {
+            TimelineHeadlineText(
+                text = stringResource(R.string.journal_analysis_timeline_bivouac, formatPauseDuration(nightDurationSeconds)),
+                modifier = Modifier.padding(start = TextStartPadding, end = 8.dp),
+            )
         }
     }
 }
