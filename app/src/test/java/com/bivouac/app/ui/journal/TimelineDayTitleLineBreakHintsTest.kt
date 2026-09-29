@@ -1,45 +1,44 @@
 package com.bivouac.app.ui.journal
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * RIC-212 (brief Partie B) : [timelineDayTitleWithLineBreakHints] pose des espaces insécables pour
- * qu'une coupure de ligne à 360 points ne tombe jamais qu'entre la date et la distance, jamais à
- * l'intérieur de "12,4 km · 6h10". Fonction pure : ne fait que retoucher les séparateurs " · " du
- * texte déjà formaté, ne connaît ni la locale ni les valeurs elles-mêmes.
+ * RIC-212 (troisième passe) : [timelineDayFiguresLine] protège la seconde ligne du titre de jour
+ * ("15,7 km · 7h04") de toute coupure, en posant des espaces insécables (U+00A0) à la place des
+ * espaces ordinaires. Fonction pure : ne connaît ni la locale ni les valeurs, ne change aucun mot.
+ * Les espaces insécables sont écrits en échappement Unicode, jamais tapés tels quels.
  */
 class TimelineDayTitleLineBreakHintsTest {
 
     @Test
-    fun leSeparateurEntreDistanceEtDureeDevientInsecable() {
-        val formatted = "Jour 1 · mercredi 1 juillet · 12,4 km · 6h10"
-        val result = timelineDayTitleWithLineBreakHints(formatted)
-        assertTrue(result.contains("12,4 km\u00A0·\u00A06h10"))
+    fun laLigneFrancaiseNeContientAucunEspaceOrdinaire() {
+        val result = timelineDayFiguresLine("15,7 km · 7h04")
+        assertFalse(result.contains(' '))
+        assertEquals("15,7\u00A0km\u00A0·\u00A07h04", result)
     }
 
     @Test
-    fun leSeparateurEntreLaDateEtLaDistanceResteUnEspaceOrdinaireCoupable() {
-        // Seul point de coupure accepté par le brief : entre la date et la distance.
-        val formatted = "Jour 1 · mercredi 1 juillet · 12,4 km · 6h10"
-        val result = timelineDayTitleWithLineBreakHints(formatted)
-        assertTrue(result.contains("mercredi 1 juillet · 12,4 km"))
+    fun laLigneAnglaiseNeContientAucunEspaceOrdinaireMemeAvecUneDureeAEspace() {
+        val result = timelineDayFiguresLine("15.7 km · 7h 04m")
+        assertFalse(result.contains(' '))
+        assertEquals("15.7\u00A0km\u00A0·\u00A07h\u00A004m", result)
     }
 
     @Test
-    fun fonctionneAvecUneDureeAnglaisePorteuseDUnEspaceInterne() {
-        // "5h 32m" (anglais) : l'appelant l'a déjà rendue insécable en interne avant de la passer
-        // en paramètre (voir AnalysisTimelineSection) ; cette fonction n'a qu'à protéger le
-        // séparateur ENTRE distance et durée, pas l'intérieur de la durée elle-même.
-        val formatted = "Day 1 · Wednesday, July 1 · 12.4\u00A0km · 5h\u00A032m"
-        val result = timelineDayTitleWithLineBreakHints(formatted)
-        assertEquals("Day 1 · Wednesday, July 1 · 12.4\u00A0km\u00A0·\u00A05h\u00A032m", result)
+    fun leTexteVisibleResteInchangeAuxEspacesPres() {
+        val formatted = "15,7 km · 7h04"
+        val result = timelineDayFiguresLine(formatted)
+        assertEquals(formatted, result.replace('\u00A0', ' '))
     }
 
     @Test
-    fun replisIdentitaireSiLeTexteNaPasExactementQuatreSegments() {
-        val formatted = "texte inattendu sans le bon nombre de separateurs"
-        assertEquals(formatted, timelineDayTitleWithLineBreakHints(formatted))
+    fun uneLigneDejaInsecableResteIdentique() {
+        val formatted = "15.7\u00A0km · 7h\u00A004m"
+        val result = timelineDayFiguresLine(formatted)
+        assertEquals("15.7\u00A0km\u00A0·\u00A07h\u00A004m", result)
+        assertTrue(result.count { it == '\u00A0' } == 4)
     }
 }

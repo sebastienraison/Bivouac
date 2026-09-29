@@ -225,27 +225,16 @@ internal fun formatTimelineDayDate(instant: Instant): String {
 private const val NON_BREAKING_SPACE = '\u00A0'
 
 /**
- * RIC-212 (brief Partie B) : "Jour 1 · mercredi 1 juillet · 12,4 km · 6h10", jamais coupé ni
- * tronqué à 360 points ; s'il passe sur deux lignes, la coupure ne doit tomber qu'entre la date et
- * la distance. [formatted] est déjà le texte localisé complet (les quatre paramètres de
- * journal_analysis_timeline_day déjà substitués) : cette fonction ne fait QUE poser des espaces
- * insécables (U+00A0) pour empêcher les autres points de coupure, elle ne change aucun mot.
- *
- * Choix retenu, le plus simple : le séparateur « · » apparaît trois fois dans le texte formaté (il
- * ne peut apparaître dans aucun des quatre paramètres eux-mêmes : ni un numéro de jour, ni une
- * date, une distance ou une durée ne produit cette séquence espace-point médian-espace) ; découper
- * dessus donne donc toujours exactement les quatre segments dans l'ordre, sans avoir à connaître
- * leur contenu. Seul le dernier séparateur (entre distance et durée) devient insécable ici :
- * l'appelant a déjà rendu la distance et la durée elles-mêmes insécables en interne (nécessaire en
- * anglais, où la durée porte un espace : "5h 32m") avant de les passer en paramètres, donc le
- * bloc "12,4 km · 6h10" est protégé de bout en bout. Repli identitaire si la découpe ne donne pas
- * exactement quatre segments (ne devrait pas arriver) : ne jamais planter sur un format inattendu.
+ * RIC-212 (troisième passe) : seconde ligne du titre de jour, "15,7 km · 7h04" / "15.7 km · 7h 04m".
+ * Le titre tient toujours sur deux lignes (date, puis chiffres) : cette ligne ne doit jamais se
+ * couper à l'intérieur, ni dans la distance, ni dans la durée (l'anglais porte un espace, "7h 04m"),
+ * ni autour du séparateur. [formatted] est le texte localisé complet de
+ * journal_analysis_timeline_day_figures, distance et durée déjà substituées : la fonction ne fait
+ * que remplacer chaque espace ordinaire par une espace insécable (U+00A0), sans changer un mot.
+ * Remplacer tous les espaces plutôt que ceux d'un motif connu évite de deviner le contenu des deux
+ * valeurs, et une ligne qui ne coupe jamais est exactement ce que demande le brief.
  */
-internal fun timelineDayTitleWithLineBreakHints(formatted: String): String {
-    val parts = formatted.split(" · ")
-    if (parts.size != 4) return formatted
-    return "${parts[0]} · ${parts[1]} · ${parts[2]}${NON_BREAKING_SPACE}·${NON_BREAKING_SPACE}${parts[3]}"
-}
+internal fun timelineDayFiguresLine(formatted: String): String = formatted.replace(' ', NON_BREAKING_SPACE)
 
 // --- Nuit de bivouac entre deux jours -----------------------------------------------------------------
 
@@ -776,32 +765,30 @@ internal fun AnalysisTimelineSection(days: List<DayTimeline>, daySegments: List<
                 if (multiDay) {
                     val distanceText = stringResource(R.string.format_distance_km, formatKm1(day.distanceMeters / 1_000.0))
                     val durationText = formatPauseDuration(day.elapsedSeconds)
-                    // RIC-212 (brief Partie B) : espaces insécables du côté des paramètres pour
-                    // qu'aucune coupure de ligne ne tombe DANS la distance ni DANS la durée
-                    // (l'anglais porte un espace, "5h 32m") ; timelineDayTitleWithLineBreakHints
-                    // s'occupe ensuite du séparateur ENTRE elles.
-                    val titleText = timelineDayTitleWithLineBreakHints(
-                        stringResource(
-                            R.string.journal_analysis_timeline_day,
-                            (dayIndex + 1).toString(),
-                            formatTimelineDayDate(dayStartInstant),
-                            distanceText.replace(' ', NON_BREAKING_SPACE),
-                            durationText.replace(' ', NON_BREAKING_SPACE),
-                        ),
+                    val dateLine = stringResource(
+                        R.string.journal_analysis_timeline_day,
+                        (dayIndex + 1).toString(),
+                        formatTimelineDayDate(dayStartInstant),
                     )
-                    // RIC-212 seconde passe : le titre commence au bord du texte des phases, jamais
-                    // à celui de l'écran ; colonnes de l'heure et des ronds vides à sa hauteur, sauf
-                    // le trait de liaison (nightLink avant padding : marge basse comprise). Pas de
-                    // maxLines : le titre passe sur autant de lignes qu'il lui en faut.
-                    Text(
-                        text = titleText,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    val figuresLine = timelineDayFiguresLine(
+                        stringResource(R.string.journal_analysis_timeline_day_figures, distanceText, durationText),
+                    )
+                    // RIC-212 troisième passe : le titre est toujours sur deux lignes, deux Text
+                    // empilés dans le même style ; la seconde ne se coupe jamais (voir
+                    // timelineDayFiguresLine). Il commence au bord du texte des phases, jamais à
+                    // celui de l'écran ; colonnes de l'heure et des ronds vides à sa hauteur, sauf le
+                    // trait de liaison (nightLink avant padding : marge basse comprise). La date
+                    // n'a pas de maxLines : elle passe à la ligne si un jour de semaine très long
+                    // l'exige.
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .nightLink(if (previousDayIndex != null) NightLinkPortion.FULL else null)
                             .padding(start = TimeColumnWidth + DotColumnWidth + TextStartPadding, bottom = 8.dp),
-                    )
+                    ) {
+                        Text(text = dateLine, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(text = figuresLine, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
                 DayTimelineView(
                     day = day,
