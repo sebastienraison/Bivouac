@@ -594,7 +594,8 @@
     <string name="journal_analysis_terrain_flat">Flat</string>
     <string name="journal_analysis_terrain_descents">Descents</string>
     <string name="journal_analysis_section_timeline">Timeline</string>
-    <string name="journal_analysis_timeline_day">Day %1$s · %2$s · %3$s · %4$s</string>
+    <string name="journal_analysis_timeline_day">Day %1$s · %2$s</string>
+    <string name="journal_analysis_timeline_day_figures">%1$s · %2$s</string>
     <string name="journal_analysis_timeline_start">Start, %1$s</string>
     <string name="journal_analysis_timeline_finish">Finish, %1$s</string>
     <string name="journal_analysis_timeline_bivouac">%1$s at camp</string>
