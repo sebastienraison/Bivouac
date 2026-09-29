@@ -1,6 +1,8 @@
 package com.bivouac.app.ui.journal
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.bivouac.app.R
@@ -195,32 +198,45 @@ internal fun AnalysisColoringSelector(
  * N'existe pas sur une trace sans horodatage : l'appelant ne la monte alors pas du tout, voir
  * [AnalysisLegendAxisRow].
  */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * RIC-146 lot 8 (finition B4) : premier essai avec `SingleChoiceSegmentedButtonRow`
+ * (`LocalMinimumInteractiveComponentSize` à 0, hauteur 32 dp, texte labelSmall) mesuré encore trop
+ * large en vérification à 360 points : la ligne légende + axe passait sur deux lignes même en
+ * français (le composant Material3 garde un padding interne incompressible par ces leviers-là).
+ * Remplacé par une bascule maison, mêmes deux segments, sans les marges internes généreuses du
+ * composant Material3 : c'est ce qui manquait pour tenir sur une ligne.
+ */
+private val CompactAxisSelectorHeight = 28.dp
+
 @Composable
 internal fun AnalysisAxisSelector(
     axis: ElevationProfileAxis,
     onAxisChanged: (ElevationProfileAxis) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SingleChoiceSegmentedButtonRow(modifier = modifier) {
-        ElevationProfileAxis.entries.forEachIndexed { index, candidate ->
+    Row(
+        modifier = modifier
+            .height(CompactAxisSelectorHeight)
+            .clip(RoundedCornerShape(50))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50)),
+    ) {
+        ElevationProfileAxis.entries.forEach { candidate ->
             val labelRes = when (candidate) {
                 ElevationProfileAxis.DISTANCE -> R.string.journal_analysis_axis_distance_label
                 ElevationProfileAxis.DURATION -> R.string.journal_analysis_axis_duration_label
             }
-            SegmentedButton(
-                selected = axis == candidate,
-                onClick = { onAxisChanged(candidate) },
-                shape = SegmentedButtonDefaults.itemShape(index = index, count = ElevationProfileAxis.entries.size),
-                label = { Text(stringResource(labelRes), maxLines = 1) },
-                // RIC-146 lot 7, défaut visuel trouvé en vérification à 360 points : la coche par
-                // défaut de SegmentedButton, sur le segment sélectionné, ne laissait plus assez de
-                // place à "Duration" (le plus long des quatre libellés fr/en de cette bascule), qui
-                // se coupait sur deux lignes. L'état sélectionné reste lisible par le seul fond
-                // teinté (même logique que AnalysisColoringSelector et JournalViewModeSelector, qui
-                // n'ont jamais eu de coche).
-                icon = {},
-            )
+            val selected = axis == candidate
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(50))
+                    .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                    .clickable(onClick = { onAxisChanged(candidate) })
+                    .padding(horizontal = 8.dp),
+            ) {
+                Text(stringResource(labelRes), maxLines = 1, style = MaterialTheme.typography.labelSmall)
+            }
         }
     }
 }
@@ -253,9 +269,11 @@ internal fun AnalysisLegendAxisRow(
     onAxisChanged: (ElevationProfileAxis) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // RIC-146 lot 8 (finition B4) : espace entre légende et bascule resserré de 16 à 12 dp (avec la
+    // bascule elle-même resserrée, voir AnalysisAxisSelector) pour tenir sur une ligne à 360 points.
     FlowRow(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         CompactLegend(coloring = coloring, modifier = Modifier.align(Alignment.CenterVertically))
@@ -274,18 +292,29 @@ private fun CompactLegend(coloring: AnalysisColoring, modifier: Modifier = Modif
         AnalysisColoring.SLOPE -> Triple(R.string.journal_analysis_legend_slope_low, R.string.journal_analysis_legend_slope_high, AnalysisColors.slope)
         AnalysisColoring.SPEED -> Triple(R.string.journal_analysis_legend_speed_low, R.string.journal_analysis_legend_speed_high, AnalysisColors.speed)
     }
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    // RIC-146 lot 8 (finition B4) : pastilles et espacements resserrés (16->14 dp, 2->1.5 dp,
+    // 6->4 dp) pour laisser sa place à la bascule d'axe sur la même ligne à 360 points.
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(stringResource(leftRes), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            palette.forEach { color -> Box(modifier = Modifier.size(width = 16.dp, height = 6.dp).clip(RoundedCornerShape(2.dp)).background(color)) }
+        Row(horizontalArrangement = Arrangement.spacedBy(1.5.dp)) {
+            palette.forEach { color -> Box(modifier = Modifier.size(width = 14.dp, height = 6.dp).clip(RoundedCornerShape(2.dp)).background(color)) }
         }
         Text(stringResource(rightRes), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
+// RIC-146 lot 8 (finition B1) : titre en couleur primaire, grand espace au-dessus (l'arrangement
+// spacedBy(8.dp) du Column défilant de JournalScreen fournit déjà 8 dp, complétés ici à 32 dp au
+// total) et espace net en dessous (12 dp) ; internal pour être réutilisée par la frise "Déroulé"
+// (JournalAnalysisTimeline.kt), seule autre section du mode Analyse hors de ce fichier.
 @Composable
-private fun SectionTitle(text: String) {
-    Text(text = text, style = MaterialTheme.typography.titleSmall)
+internal fun SectionTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 24.dp, bottom = 12.dp),
+    )
 }
 
 // --- "Forme du jour" : tableau réel/estimé/écart puis résumé par nature de terrain (brief D.5) ------
@@ -293,8 +322,10 @@ private fun SectionTitle(text: String) {
 // RIC-146 lot 7 (brief Partie D.5) : sous l'heure ou la minute, "12 min" (journal_analysis_pause_minutes),
 // à partir d'une heure le format existant (StatsRows.formatDuration). Même règle que la carte, voir
 // HikeMapView.formatShortDuration (dupliquée là-bas, hors composition).
+// internal (pas private) : réutilisée telle quelle par la frise "Déroulé" (JournalAnalysisTimeline.kt,
+// lot 8), même règle de format qu'ici et que la carte (HikeMapView.formatShortDuration).
 @Composable
-private fun formatPauseDuration(seconds: Double): String {
+internal fun formatPauseDuration(seconds: Double): String {
     val totalMinutes = (seconds / 60.0).roundToInt()
     return if (totalMinutes < 60) {
         stringResource(R.string.journal_analysis_pause_minutes, totalMinutes.toString())
@@ -333,7 +364,8 @@ private fun FormTableRow(label: String, actual: String, estimated: String, gap: 
 
 @Composable
 private fun FormTable(totals: AnalysisTotals, estimate: com.bivouac.app.data.gpx.AnalysisEstimate) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    // RIC-146 lot 8 (finition B2) : interligne porté de 6 à 10 dp (fourchette demandée 10-12 dp).
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         FormTableRow(
             label = "",
             actual = stringResource(R.string.journal_analysis_form_actual),
@@ -393,12 +425,15 @@ internal fun paceBarGeometryFor(hikeSpeedKmh: Double?, referenceSpeedKmh: Double
 @Composable
 private fun PaceDeviationBar(geometry: PaceBarGeometry) {
     val barColor = geometry.paceClass?.let { AnalysisColors.pace[it] } ?: MaterialTheme.colorScheme.outlineVariant
+    // RIC-146 lot 8 (finition B3) : piste portée de 6 à 8 dp de haut, coins plus arrondis en
+    // conséquence ; surfaceContainerHighest reste le fond (déjà theme-aware, visible en clair et en
+    // sombre par construction du schéma Material).
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(6.dp)
+            .height(8.dp)
             .padding(top = 4.dp)
-            .clip(RoundedCornerShape(3.dp))
+            .clip(RoundedCornerShape(4.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHighest),
     ) {
         // Trait central : repère du "0 %" (référence égalée), toujours visible, même sans écart.
@@ -452,10 +487,10 @@ private fun TerrainSummaryRow(kind: TimelinePhaseKind, summary: TerrainSummary) 
 @Composable
 internal fun AnalysisFormSection(totals: AnalysisTotals, estimate: com.bivouac.app.data.gpx.AnalysisEstimate, terrainSummary: List<TerrainSummary>) {
     Column {
+        // RIC-146 lot 8 (finition B1) : plus de padding top ici, SectionTitle porte déjà l'espace
+        // net en dessous du titre (12 dp).
         SectionTitle(stringResource(R.string.journal_analysis_section_form))
-        Column(modifier = Modifier.padding(top = 8.dp)) {
-            FormTable(totals, estimate)
-        }
+        FormTable(totals, estimate)
         Column(modifier = Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             terrainSummary.filter { it.distanceMeters > 0 }.forEach { summary -> TerrainSummaryRow(summary.kind, summary) }
         }
@@ -504,7 +539,9 @@ private fun FigureRow(label: String, value: String) {
 internal fun AnalysisFiguresSection(totals: AnalysisTotals?, figures: TrackFigures, modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
         SectionTitle(stringResource(R.string.journal_analysis_section_figures))
-        Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // RIC-146 lot 8 (finition B2) : interligne porté de 8 à 10 dp ; plus de padding top, voir
+        // le commentaire de AnalysisFormSection.
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             figureRowsFor(hasTimestamps = totals != null).forEach { kind ->
                 when (kind) {
                     FigureRowKind.MOVING_SPEED -> FigureRow(
@@ -545,7 +582,7 @@ internal fun AnalysisFiguresSection(totals: AnalysisTotals?, figures: TrackFigur
 internal fun BestPassagesSection(best: com.bivouac.app.data.gpx.BestPassages) {
     Column {
         SectionTitle(stringResource(R.string.journal_analysis_section_best))
-        Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             best.climbMetersPerHour?.let {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(stringResource(R.string.journal_analysis_best_climb), style = MaterialTheme.typography.bodySmall)
@@ -566,7 +603,7 @@ internal fun BestPassagesSection(best: com.bivouac.app.data.gpx.BestPassages) {
 internal fun RecordsSection(records: List<com.bivouac.app.bilan.BilanRecord>) {
     Column {
         SectionTitle(stringResource(R.string.journal_analysis_section_records))
-        Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val context = androidx.compose.ui.platform.LocalContext.current
             records.forEach { record ->
                 val color = recordColor(record.kind)
