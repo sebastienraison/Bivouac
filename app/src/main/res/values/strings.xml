@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : strings-inventaire-v15.csv (inventaire de l'agent de pilotage,
+    Source : strings-inventaire-v16.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v15.csv
+        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v16.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -517,6 +517,8 @@
     <string name="fmt_stats_rows_loss">-%1$s m</string>
     <string name="fmt_stats_rows_duration">%1$dh %2$sm</string>
     <string name="fmt_stats_rows_duration_estimated">≈ %1$s</string>
+    <string name="fmt_walking_share">%1$s%% walking</string>
+    <string name="fmt_stats_rows_duration_share">%1$s · %2$s%% walking</string>
     <string name="gpximport_saved_today_format">today at %1$s</string>
     <string name="gpximport_saved_date_format">MMMM d</string>
     <string name="gpximport_saved_at_with_bivouac_count_format">%1$s · %2$d</string>
@@ -550,60 +552,73 @@
     <string name="gpximport_restore_failed_message">The previous session could not be restored.</string>
 
     <!-- Journal détail, mode Analyse -->
-    <string name="journal_analysis_mode_button">Analysis mode</string>
-    <string name="journal_analysis_badge">Analysis</string>
-    <string name="journal_analysis_coloring_pace">Pace</string>
     <string name="journal_analysis_coloring_slope">Slope</string>
     <string name="journal_analysis_coloring_speed">Speed</string>
-    <string name="journal_analysis_legend_pace_title">Compared to usual pace</string>
     <string name="journal_analysis_legend_pace_slower">slower</string>
-    <string name="journal_analysis_legend_pace_usual">usual</string>
     <string name="journal_analysis_legend_pace_faster">faster</string>
-    <string name="journal_analysis_legend_slope_title">Slope, uphill or downhill</string>
-    <string name="journal_analysis_legend_speed_title">Moving speed</string>
-    <string name="journal_analysis_legend_below">under %1$s</string>
-    <string name="journal_analysis_legend_above">over %1$s</string>
-    <string name="journal_analysis_headline_less">%1$s, %2$s less than estimated (%3$s)</string>
-    <string name="journal_analysis_headline_more">%1$s, %2$s more than estimated (%3$s)</string>
-    <string name="journal_analysis_headline_same">%1$s, as estimated</string>
-    <string name="journal_analysis_headline_detail">Walking %1$s vs %2$s · Breaks %3$s vs %4$s</string>
-    <string name="journal_analysis_stat_walking_time">walking</string>
-    <plurals name="journal_analysis_stat_breaks">
-        <item quantity="one">%1$s break</item>
-        <item quantity="other">%1$s breaks</item>
-    </plurals>
-    <string name="journal_analysis_stat_moving_speed">moving</string>
-    <string name="journal_analysis_stat_climbing">climbing</string>
-    <string name="journal_analysis_axis_distance">km</string>
-    <string name="journal_analysis_axis_time">h</string>
-    <string name="journal_analysis_axis_distance_description">Distance axis</string>
-    <string name="journal_analysis_axis_time_description">Time axis</string>
     <string name="journal_analysis_readout_hint">Drag along the profile to read a section.</string>
     <string name="journal_analysis_readout_section">km %1$s · %2$s · %3$s · slope %4$s · %5$s</string>
     <string name="journal_analysis_readout_slower">%1$s slower than usual</string>
     <string name="journal_analysis_readout_faster">%1$s faster than usual</string>
     <string name="journal_analysis_readout_usual">usual pace</string>
     <string name="journal_analysis_readout_stopped">stopped</string>
-    <string name="journal_analysis_section_pace_by_slope">Pace by slope</string>
     <string name="journal_analysis_pace_by_slope_hint">This hike, then usual. Bar to the left: slower.</string>
-    <string name="journal_analysis_band_downhill_over">Downhill &gt; %1$s%%</string>
-    <string name="journal_analysis_band_downhill_range">Downhill %1$s-%2$s%%</string>
-    <string name="journal_analysis_band_flat">Flat</string>
-    <string name="journal_analysis_band_uphill_range">Uphill %1$s-%2$s%%</string>
-    <string name="journal_analysis_band_uphill_over">Uphill &gt; %1$s%%</string>
-    <string name="journal_analysis_section_breaks">Breaks</string>
-    <string name="journal_analysis_break_position">km %1$s · %2$s</string>
     <string name="journal_analysis_pause_minutes">%1$s min</string>
-    <plurals name="journal_analysis_short_breaks">
-        <item quantity="one">And %1$s break under 5 minutes.</item>
-        <item quantity="other">And %1$s breaks under 5 minutes.</item>
-    </plurals>
     <string name="journal_analysis_section_best">Best stretches</string>
     <string name="journal_analysis_best_climb">Fastest sustained climb, over 20 min</string>
     <string name="journal_analysis_best_flat">Fastest flat stretch, over 10 min</string>
     <string name="journal_analysis_section_records">Records</string>
     <string name="journal_analysis_no_timestamps">This track has no timestamps: only slope can be analysed.</string>
-
-    <!-- Bilan -->
-    <string name="bilan_totals_label_walking">incl. %1$s walking</string>
+    <string name="journal_detail_view_logbook">Logbook</string>
+    <string name="journal_detail_view_analysis">Analysis</string>
+    <string name="journal_analysis_coloring_form">Form</string>
+    <string name="journal_analysis_legend_slope_low">gentle</string>
+    <string name="journal_analysis_legend_slope_high">steep</string>
+    <string name="journal_analysis_legend_speed_low">slow</string>
+    <string name="journal_analysis_legend_speed_high">fast</string>
+    <string name="journal_analysis_axis_distance_label">Distance</string>
+    <string name="journal_analysis_axis_duration_label">Duration</string>
+    <string name="journal_analysis_gap_less">%1$s less than estimated (%2$s)</string>
+    <string name="journal_analysis_gap_more">%1$s more than estimated (%2$s)</string>
+    <string name="journal_analysis_gap_same">As estimated (%1$s)</string>
+    <string name="journal_analysis_section_form">Form on the day</string>
+    <string name="journal_analysis_form_actual">actual</string>
+    <string name="journal_analysis_form_estimated">estimated</string>
+    <string name="journal_analysis_form_gap">gap</string>
+    <string name="journal_analysis_form_duration">Duration</string>
+    <string name="journal_analysis_form_walking">Walking</string>
+    <string name="journal_analysis_form_breaks">Breaks, %1$s</string>
+    <string name="journal_analysis_form_gap_minus">− %1$s</string>
+    <string name="journal_analysis_form_gap_plus">+ %1$s</string>
+    <string name="journal_analysis_terrain_climbs">Climbs</string>
+    <string name="journal_analysis_terrain_flat">Flat</string>
+    <string name="journal_analysis_terrain_descents">Descents</string>
+    <string name="journal_analysis_section_timeline">Timeline</string>
+    <string name="journal_analysis_timeline_day">Day %1$s · %2$s</string>
+    <string name="journal_analysis_timeline_start">Start, %1$s</string>
+    <string name="journal_analysis_timeline_finish">Finish, %1$s</string>
+    <string name="journal_analysis_phase_climb">Climb</string>
+    <string name="journal_analysis_phase_descent">Descent</string>
+    <string name="journal_analysis_phase_rolling">Rolling</string>
+    <string name="journal_analysis_phase_flat">Flat</string>
+    <string name="journal_analysis_phase_title">%1$s · %2$s · %3$s</string>
+    <string name="journal_analysis_phase_figures">%1$s · %2$s</string>
+    <string name="journal_analysis_phase_gain">+%1$s</string>
+    <string name="journal_analysis_phase_loss">−%1$s</string>
+    <string name="journal_analysis_phase_gain_loss">+%1$s / −%2$s</string>
+    <string name="journal_analysis_timeline_break">%1$s break, at %2$s</string>
+    <string name="journal_analysis_chip_slower">%1$s slower</string>
+    <string name="journal_analysis_chip_faster">%1$s faster</string>
+    <string name="journal_analysis_chip_no_reference">no reference</string>
+    <plurals name="journal_analysis_timeline_short_breaks">
+        <item quantity="one">%1$s break under 5 minutes is not shown here, %2$s in total.</item>
+        <item quantity="other">%1$s breaks under 5 minutes are not shown here, %2$s in total.</item>
+    </plurals>
+    <string name="journal_analysis_section_figures">Figures</string>
+    <string name="journal_analysis_figure_moving_speed">Average moving speed</string>
+    <string name="journal_analysis_figure_climbing_speed">Climbing speed uphill</string>
+    <string name="journal_analysis_figure_highest">Highest altitude</string>
+    <string name="journal_analysis_figure_lowest">Lowest altitude</string>
+    <string name="journal_analysis_figure_steepest_climb">Steepest climb</string>
+    <string name="journal_analysis_figure_steepest_descent">Steepest descent</string>
 </resources>
