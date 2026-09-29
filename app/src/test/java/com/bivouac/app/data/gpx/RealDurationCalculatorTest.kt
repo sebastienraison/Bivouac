@@ -29,6 +29,9 @@ class RealDurationCalculatorTest {
         val real = RealDurationCalculator.forDays(days)
         assertEquals(7 * 3_600L + 31 * 60L, real?.elapsedSeconds)
         assertEquals(7 * 3_600L + 31 * 60L - 2 * 3_600L, real?.walkingSeconds)
+        // RIC-209 (brief Partie C, lot 9) : part de marche = (élapsé - pauses) / élapsé, en %
+        // entier. (7h31 - 2h) / 7h31 = 73,4 % -> 73.
+        assertEquals(73, real?.walkingSharePercent)
     }
 
     @Test
@@ -40,6 +43,18 @@ class RealDurationCalculatorTest {
         val real = RealDurationCalculator.forDays(days)
         assertEquals(9 * 3_600L, real?.elapsedSeconds)
         assertEquals(9 * 3_600L - 3_600L - 3_000L, real?.walkingSeconds)
+        // La part de marche porte sur la SOMME des deux jours, pas la moyenne de leurs parts
+        // individuelles (25 800 / 32 400 = 79,6 % -> 80).
+        assertEquals(80, real?.walkingSharePercent)
+    }
+
+    @Test
+    fun laPartDeMarcheDUnJourEstArrondieAuPourCentEntier() {
+        // 200 / 300 = 66,666... % : vérifie l'arrondi au-dessus, distinct du cas 73/80 ci-dessus
+        // (arrondi en dessous).
+        val days = listOf(day(elapsedSeconds = 300L, pausedSeconds = 100.0))
+        val real = RealDurationCalculator.forDays(days)
+        assertEquals(67, real?.walkingSharePercent)
     }
 
     @Test
@@ -66,6 +81,17 @@ class RealDurationCalculatorTest {
         val real = RealDurationCalculator.forDays(days)
         assertEquals(3 * 3_600L, real?.elapsedSeconds)
         assertNull(real?.walkingSeconds)
+        // RIC-209 (lot 9) : pas de temps de marche connu, donc pas de pourcentage non plus.
+        assertNull(real?.walkingSharePercent)
+    }
+
+    @Test
+    fun uneRandoSansHorodatageNaAucunePartDeMarche() {
+        // forDays() renvoie null pour toute la rando (voir uneRandoSansHorodatageNADAucuneDureeReelle) :
+        // aucun RealDuration, donc aucune part de marche à calculer côté appelant (brief §Règles,
+        // "sans part de marche, comme aujourd'hui").
+        val days = listOf(day(elapsedSeconds = null, pausedSeconds = null))
+        assertNull(RealDurationCalculator.forDays(days))
     }
 
     // --- aggregate --------------------------------------------------------------------------------
@@ -80,6 +106,8 @@ class RealDurationCalculatorTest {
         assertEquals(10_800L, aggregated.totalSeconds)
         assertFalse(aggregated.isEstimated)
         assertEquals(9_000L, aggregated.walkingSeconds)
+        // RIC-209 (lot 9) : 9 000 / 10 800 = 83,33... % -> 83.
+        assertEquals(83, aggregated.walkingSharePercent)
     }
 
     @Test
@@ -96,6 +124,9 @@ class RealDurationCalculatorTest {
         val aggregated = RealDurationCalculator.aggregate(items)
         assertEquals(3_600L + 5_400L, aggregated.totalSeconds)
         assertTrue(aggregated.isEstimated)
+        // RIC-209 (lot 9, brief §Règles) : la part de marche ne compte QUE la rando horodatée
+        // (3 000 / 3 600 = 83,33... % -> 83), jamais l'estimation qui n'a pas de temps de marche.
+        assertEquals(83, aggregated.walkingSharePercent)
     }
 
     @Test
@@ -103,6 +134,8 @@ class RealDurationCalculatorTest {
         val items = listOf(null to 3_600L, null to 7_200L)
         val aggregated = RealDurationCalculator.aggregate(items)
         assertNull(aggregated.walkingSeconds)
+        // RIC-209 (lot 9) : le cartouche retombe alors sur "Durée totale" (brief §Règles).
+        assertNull(aggregated.walkingSharePercent)
     }
 
     @Test
@@ -118,6 +151,8 @@ class RealDurationCalculatorTest {
         // La durée totale, elle, reste connue et réelle : seule la marche est masquée.
         assertEquals(10_800L, aggregated.totalSeconds)
         assertFalse(aggregated.isEstimated)
+        // RIC-209 (lot 9) : le cartouche retombe alors sur "Durée totale" (brief §Règles).
+        assertNull(aggregated.walkingSharePercent)
     }
 
     @Test
@@ -126,5 +161,6 @@ class RealDurationCalculatorTest {
         assertEquals(0L, aggregated.totalSeconds)
         assertFalse(aggregated.isEstimated)
         assertNull(aggregated.walkingSeconds)
+        assertNull(aggregated.walkingSharePercent)
     }
 }

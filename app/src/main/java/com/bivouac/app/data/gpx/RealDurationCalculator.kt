@@ -1,6 +1,7 @@
 package com.bivouac.app.data.gpx
 
 import com.bivouac.app.data.db.LoggedTrackDayEntity
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 /**
@@ -21,7 +22,16 @@ object RealDurationCalculator {
      * (élapsé moins pauses), `null` si au moins un jour n'a pas encore `pausedSeconds` (brief
      * §Règles, rattrapage RIC-146 lot 1 pas encore passé sur cette trace).
      */
-    data class RealDuration(val elapsedSeconds: Long, val walkingSeconds: Long?)
+    data class RealDuration(val elapsedSeconds: Long, val walkingSeconds: Long?) {
+        /**
+         * RIC-209 (brief Partie C, lot 9) : part de marche en pour-cent entier, brief §Règles
+         * "(élapsé moins pauses) / élapsé, arrondie au pour cent entier". `null` dans les mêmes cas
+         * que [walkingSeconds] (pauses pas encore rattrapées sur ce jour).
+         */
+        val walkingSharePercent: Int?
+            get() = walkingSeconds?.takeIf { elapsedSeconds > 0 }
+                ?.let { (it.toDouble() / elapsedSeconds * 100).roundToInt() }
+    }
 
     /**
      * `null` si [days] est vide ou si au moins un jour n'a pas d'horodatage exploitable
@@ -51,7 +61,21 @@ object RealDurationCalculator {
      * `null` si aucune rando n'est horodatée, ou si au moins un jour horodaté n'a pas encore
      * `pausedSeconds` (brief §Règles, seconde ligne du cartouche).
      */
-    data class AggregatedDuration(val totalSeconds: Long, val isEstimated: Boolean, val walkingSeconds: Long?)
+    data class AggregatedDuration(
+        val totalSeconds: Long,
+        val isEstimated: Boolean,
+        val walkingSeconds: Long?,
+        // RIC-209 (brief Partie C, lot 9) : somme des elapsedSeconds des SEULES randos horodatées,
+        // dénominateur de walkingSharePercent. Distinct de totalSeconds, qui peut mélanger réel et
+        // estimé (brief §Règles, "un total qui contient au moins une rando sans horodatage") : la
+        // part de marche ne doit compter QUE sur les randos horodatées, jamais sur les estimations.
+        val timestampedElapsedSeconds: Long,
+    ) {
+        /** Même règle d'arrondi que [RealDuration.walkingSharePercent], sur l'agrégat. */
+        val walkingSharePercent: Int?
+            get() = walkingSeconds?.takeIf { timestampedElapsedSeconds > 0 }
+                ?.let { (it.toDouble() / timestampedElapsedSeconds * 100).roundToInt() }
+    }
 
     /**
      * [items] : une paire par rando, sa durée réelle ([forDays], `null` si non horodatée) et
@@ -63,10 +87,12 @@ object RealDurationCalculator {
         var anyTimestamped = false
         var walkingKnown = true
         var walkingTotal = 0L
+        var timestampedElapsedTotal = 0L
         items.forEach { (real, estimatedSeconds) ->
             if (real != null) {
                 totalSeconds += real.elapsedSeconds
                 anyTimestamped = true
+                timestampedElapsedTotal += real.elapsedSeconds
                 if (real.walkingSeconds != null) walkingTotal += real.walkingSeconds else walkingKnown = false
             } else {
                 totalSeconds += estimatedSeconds
@@ -77,6 +103,7 @@ object RealDurationCalculator {
             totalSeconds = totalSeconds,
             isEstimated = anyEstimated,
             walkingSeconds = if (anyTimestamped && walkingKnown) walkingTotal else null,
+            timestampedElapsedSeconds = timestampedElapsedTotal,
         )
     }
 }
