@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : strings-inventaire-v16.csv (inventaire de l'agent de pilotage,
+    Source : strings-inventaire-v17.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v16.csv
+        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v17.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -595,8 +595,10 @@
     <string name="journal_analysis_terrain_descents">Descents</string>
     <string name="journal_analysis_section_timeline">Timeline</string>
     <string name="journal_analysis_timeline_day">Day %1$s · %2$s</string>
+    <string name="journal_analysis_timeline_day_figures">%1$s · %2$s</string>
     <string name="journal_analysis_timeline_start">Start, %1$s</string>
     <string name="journal_analysis_timeline_finish">Finish, %1$s</string>
+    <string name="journal_analysis_timeline_bivouac">%1$s at camp</string>
     <string name="journal_analysis_phase_climb">Climb</string>
     <string name="journal_analysis_phase_descent">Descent</string>
     <string name="journal_analysis_phase_rolling">Rolling</string>
