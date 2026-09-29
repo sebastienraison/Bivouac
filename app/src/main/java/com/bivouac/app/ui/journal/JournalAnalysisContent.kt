@@ -2,9 +2,12 @@ package com.bivouac.app.ui.journal
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,7 +19,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -28,65 +30,95 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bivouac.app.R
 import com.bivouac.app.bilan.recordColor
 import com.bivouac.app.bilan.recordLabelRes
 import com.bivouac.app.bilan.recordValueText
-import com.bivouac.app.data.gpx.AnalysisBand
-import com.bivouac.app.data.gpx.AnalysisParameters
-import com.bivouac.app.data.gpx.AnalyzedPause
+import com.bivouac.app.data.gpx.AnalysisTotals
 import com.bivouac.app.data.gpx.ReferenceSource
+import com.bivouac.app.data.gpx.TerrainSummary
+import com.bivouac.app.data.gpx.TimelinePhaseKind
 import com.bivouac.app.data.gpx.TrackAnalysisMapMapping
+import com.bivouac.app.data.gpx.TrackFigures
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.journal.JournalAnalysisResult
-import com.bivouac.app.ui.components.DurationIconColor
 import com.bivouac.app.ui.components.ElevationProfileAxis
 import com.bivouac.app.ui.components.formatDuration
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.formatKm1
 import com.bivouac.app.ui.map.AnalysisColoring
 import com.bivouac.app.ui.map.AnalysisColors
-import java.time.Instant
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * RIC-146 lot 3 : contenu du mode Analyse (conception section 5 et 7.3), factorisé hors de
- * JournalScreen.kt (déjà volumineux) pour rester lisible. Consommé uniquement par
- * ThreeStopJournalDetail : tout est `internal`, rien de ce fichier n'est une API publique du
- * module.
+ * RIC-146 lot 7 : contenu du mode Analyse, nouvelle structure (conception 2 section 5, brief
+ * Partie C/D), factorisé hors de JournalScreen.kt (déjà volumineux) pour rester lisible. Consommé
+ * uniquement par ThreeStopJournalDetail : tout est `internal`, rien de ce fichier n'est une API
+ * publique du module.
+ *
+ * Remplace intégralement le contenu du lot 3 à 5 (chiffre de tête + quatre valeurs, tableau des
+ * onze bandes de pente, liste des pauses, légende flottante sur la carte, bouton rond, étiquette
+ * "Analyse") : la seconde conception (2026-09-29) refait la structure de l'écran, jugé trop dense
+ * et aux libellés coupés à 360 points de large par le propriétaire.
  */
 
-// --- Étiquette "Analyse" à côté du titre (brief lot 3 §1) -----------------------------------------
+// --- Choix Carnet | Analyse, sous le titre et la date (brief Partie A) -----------------------------
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun AnalysisBadge(modifier: Modifier = Modifier) {
-    Text(
-        text = stringResource(R.string.journal_analysis_badge),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onPrimaryContainer,
-        modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.primaryContainer)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-    )
+internal fun JournalViewModeSelector(
+    analysisActive: Boolean,
+    onModeChanged: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // Même composant segmenté que le choix Manuel/Auto/Sélection des Réglages (brief Partie A.1,
+    // cohérence de l'app), déjà repris par AnalysisColoringSelector plus bas.
+    SingleChoiceSegmentedButtonRow(modifier = modifier.fillMaxWidth()) {
+        SegmentedButton(
+            selected = !analysisActive,
+            onClick = { onModeChanged(false) },
+            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+            label = { Text(stringResource(R.string.journal_detail_view_logbook)) },
+        )
+        SegmentedButton(
+            selected = analysisActive,
+            onClick = { onModeChanged(true) },
+            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+            label = { Text(stringResource(R.string.journal_detail_view_analysis)) },
+        )
+    }
 }
 
-// --- Chiffre de tête et quatre valeurs, remplace StatsRows en mode Analyse (brief lot 3 §4) -------
+// --- Chiffre de tête (brief Partie D.1) -------------------------------------------------------------
 
+/** Quelle formule de la seconde ligne du chiffre de tête (brief §D.1) selon le signe de l'écart à
+ * l'estimation. Fonction pure, extraite de [AnalysisHeadlineHeader] pour être testée directement
+ * par HeadlineGapWordingTest, même patron que [readoutPaceWordingFor] plus bas. */
+internal enum class HeadlineGapWording { LESS, MORE, SAME }
+
+/** [deltaMinutes] : écart arrondi à la minute (réel moins estimé) ; `0` -> [HeadlineGapWording.SAME]
+ * ("l'écart arrondi vaut zéro minute", inventaire v16). */
+internal fun headlineGapWordingFor(deltaMinutes: Int): HeadlineGapWording = when {
+    deltaMinutes == 0 -> HeadlineGapWording.SAME
+    deltaMinutes > 0 -> HeadlineGapWording.MORE
+    else -> HeadlineGapWording.LESS
+}
+
+/**
+ * Durée réelle en grand, part de marche à côté, écart à l'estimation dessous. Remplace le chiffre
+ * de tête et les quatre valeurs du lot 3 (marche/pauses/vitesse/VAM, déplacées dans "Forme du jour"
+ * et "Chiffres", brief §4.5/§4.6).
+ */
 @Composable
 internal fun AnalysisHeadlineHeader(result: JournalAnalysisResult?, loading: Boolean, modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
         if (loading || result == null) {
-            // Brief lot 3 §2 : indicateur de progression discret pendant le calcul, hors fil
-            // principal (voir JournalViewModel.computeAnalysis) ; la carte reste utilisable.
+            // Indicateur de progression discret pendant le calcul, hors fil principal (voir
+            // JournalViewModel.computeAnalysis) ; la carte reste utilisable.
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
             }
@@ -95,7 +127,7 @@ internal fun AnalysisHeadlineHeader(result: JournalAnalysisResult?, loading: Boo
         val totals = result.analysis.totals
         val estimate = result.analysis.estimate
         if (totals == null || estimate == null) {
-            // Brief lot 3 §5 : trace sans horodatage, pas de chiffre de tête ni de quatre valeurs.
+            // Brief §5 : trace sans horodatage, ce message remplace tout le chiffre de tête.
             Text(
                 text = stringResource(R.string.journal_analysis_no_timestamps),
                 style = MaterialTheme.typography.bodyMedium,
@@ -104,76 +136,34 @@ internal fun AnalysisHeadlineHeader(result: JournalAnalysisResult?, loading: Boo
             return
         }
         val realMinutes = (totals.elapsedSeconds / 60.0).roundToInt()
-        val estimatedMinutes = (estimate.totalSeconds / 60.0).roundToInt()
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text = formatDuration(realMinutes), style = MaterialTheme.typography.headlineSmall)
+            result.timeline.walkingSharePercent?.let { percent ->
+                Text(
+                    text = stringResource(R.string.fmt_walking_share, percent.toString()),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 3.dp),
+                )
+            }
+        }
         val deltaMinutes = (estimate.deltaSeconds / 60.0).roundToInt()
-        val headline = when {
-            deltaMinutes == 0 -> stringResource(R.string.journal_analysis_headline_same, formatDuration(realMinutes))
-            deltaMinutes > 0 -> stringResource(
-                R.string.journal_analysis_headline_more,
-                formatDuration(realMinutes),
-                formatDuration(deltaMinutes),
-                formatDuration(estimatedMinutes),
-            )
-            else -> stringResource(
-                R.string.journal_analysis_headline_less,
-                formatDuration(realMinutes),
-                formatDuration(-deltaMinutes),
-                formatDuration(estimatedMinutes),
-            )
+        val estimatedText = formatDuration((estimate.totalSeconds / 60.0).roundToInt())
+        val gapText = when (headlineGapWordingFor(deltaMinutes)) {
+            HeadlineGapWording.SAME -> stringResource(R.string.journal_analysis_gap_same, estimatedText)
+            HeadlineGapWording.MORE -> stringResource(R.string.journal_analysis_gap_more, formatPauseDuration(estimate.deltaSeconds), estimatedText)
+            HeadlineGapWording.LESS -> stringResource(R.string.journal_analysis_gap_less, formatPauseDuration(-estimate.deltaSeconds), estimatedText)
         }
-        Text(text = headline, style = MaterialTheme.typography.titleMedium)
         Text(
-            text = stringResource(
-                R.string.journal_analysis_headline_detail,
-                formatDuration((totals.movingSeconds / 60.0).roundToInt()),
-                formatDuration((estimate.walkingSeconds / 60.0).roundToInt()),
-                formatDuration((totals.pausedSeconds / 60.0).roundToInt()),
-                formatDuration((estimate.pausedSeconds / 60.0).roundToInt()),
-            ),
-            style = MaterialTheme.typography.labelSmall,
+            text = gapText,
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp),
         )
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            AnalysisStatItem(
-                value = formatDuration((totals.movingSeconds / 60.0).roundToInt()),
-                label = stringResource(R.string.journal_analysis_stat_walking_time),
-                modifier = Modifier.weight(1f),
-            )
-            AnalysisStatItem(
-                value = formatDuration((totals.pausedSeconds / 60.0).roundToInt()),
-                label = pluralStringResource(R.plurals.journal_analysis_stat_breaks, totals.pauseCount, formatGroupedInt(totals.pauseCount)),
-                modifier = Modifier.weight(1f),
-            )
-            AnalysisStatItem(
-                value = stringResource(R.string.settings_speed_value_format, formatKm1(totals.movingSpeedKmh)),
-                label = stringResource(R.string.journal_analysis_stat_moving_speed),
-                modifier = Modifier.weight(1f),
-            )
-            AnalysisStatItem(
-                value = totals.averageClimbingSpeedMetersPerHour?.let {
-                    stringResource(R.string.fmt_bilan_record_value_vam, formatGroupedInt(it.roundToInt()))
-                } ?: "-",
-                label = stringResource(R.string.journal_analysis_stat_climbing),
-                modifier = Modifier.weight(1f),
-            )
-        }
     }
 }
 
-@Composable
-private fun AnalysisStatItem(value: String, label: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Text(text = value, style = MaterialTheme.typography.titleSmall)
-        Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-// --- Sélecteur de coloration et bascule d'axe, cran Profil (brief lot 3 §4, lot 4 §5) --------------
-//
-// RIC-146 lot 4 correction 2 : remplace les FilterChip du lot 3 par le composant segmenté déjà
-// utilisé pour le choix Manuel/Auto/Sélection des Réglages (SettingsScreen.SpeedCalibrationSection),
-// pour la cohérence de l'app (brief §Partie A.2). SegmentedButton reste @ExperimentalMaterial3Api,
-// comme dans les Réglages.
+// --- Sélecteur de coloration (brief Partie D.2) ------------------------------------------------------
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -183,15 +173,13 @@ internal fun AnalysisColoringSelector(
     hasTimestamps: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    // Brief lot 3 §5 : trace sans horodatage, seule la coloration Pente est proposée.
+    // Brief §5 : trace sans horodatage, seule la coloration Pente est proposée.
     val available = if (hasTimestamps) AnalysisColoring.entries else listOf(AnalysisColoring.SLOPE)
-    // RIC-146 lot 4 : chaque SegmentedButton se répartit la largeur qu'on offre à ce
-    // SingleChoiceSegmentedButtonRow (comportement du composant M3, voir le commentaire de
-    // AnalysisProfileControlsRow pour la contrainte que ça impose côté appelant).
-    SingleChoiceSegmentedButtonRow(modifier = modifier) {
+    SingleChoiceSegmentedButtonRow(modifier = modifier.fillMaxWidth()) {
         available.forEachIndexed { index, candidate ->
             val labelRes = when (candidate) {
-                AnalysisColoring.PACE -> R.string.journal_analysis_coloring_pace
+                // "Allure" renommée "Forme" (conception 2 section 2, trop proche de "Vitesse").
+                AnalysisColoring.PACE -> R.string.journal_analysis_coloring_form
                 AnalysisColoring.SLOPE -> R.string.journal_analysis_coloring_slope
                 AnalysisColoring.SPEED -> R.string.journal_analysis_coloring_speed
             }
@@ -206,358 +194,138 @@ internal fun AnalysisColoringSelector(
 }
 
 /**
- * RIC-146 lot 4 (brief §5) : bascule à deux choix km/h de l'axe du profil, sur la même ligne que
- * [AnalysisColoringSelector], à sa droite (voir [AnalysisProfileControlsRow]). N'existe pas sur une
- * trace sans horodatage (brief §5, "la bascule n'est pas affichée, l'axe reste en distance") :
- * l'appelant ne la monte alors pas du tout, voir [AnalysisProfileControlsRow].
+ * RIC-146 lot 7 (brief Partie D.3) : bascule à deux choix Distance/Durée de l'axe du profil.
+ * N'existe pas sur une trace sans horodatage : l'appelant ne la monte alors pas du tout, voir
+ * [AnalysisLegendAxisRow].
  */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * RIC-146 lot 8 (finition B4) : premier essai avec `SingleChoiceSegmentedButtonRow`
+ * (`LocalMinimumInteractiveComponentSize` à 0, hauteur 32 dp, texte labelSmall) mesuré encore trop
+ * large en vérification à 360 points : la ligne légende + axe passait sur deux lignes même en
+ * français (le composant Material3 garde un padding interne incompressible par ces leviers-là).
+ * Remplacé par une bascule maison, mêmes deux segments, sans les marges internes généreuses du
+ * composant Material3 : c'est ce qui manquait pour tenir sur une ligne.
+ */
+private val CompactAxisSelectorHeight = 28.dp
+
 @Composable
 internal fun AnalysisAxisSelector(
     axis: ElevationProfileAxis,
     onAxisChanged: (ElevationProfileAxis) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SingleChoiceSegmentedButtonRow(modifier = modifier) {
-        ElevationProfileAxis.entries.forEachIndexed { index, candidate ->
-            val (labelRes, descriptionRes) = when (candidate) {
-                ElevationProfileAxis.DISTANCE -> R.string.journal_analysis_axis_distance to R.string.journal_analysis_axis_distance_description
-                ElevationProfileAxis.DURATION -> R.string.journal_analysis_axis_time to R.string.journal_analysis_axis_time_description
+    Row(
+        modifier = modifier
+            .height(CompactAxisSelectorHeight)
+            .clip(RoundedCornerShape(50))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50)),
+    ) {
+        ElevationProfileAxis.entries.forEach { candidate ->
+            val labelRes = when (candidate) {
+                ElevationProfileAxis.DISTANCE -> R.string.journal_analysis_axis_distance_label
+                ElevationProfileAxis.DURATION -> R.string.journal_analysis_axis_duration_label
             }
-            // contentDescription posé sur le bouton entier : "km"/"h" seuls ne disent rien en
-            // lecture d'écran, la chaîne dédiée si (brief §5, chaînes "AJOUT DU PILOTAGE pour la
-            // lecture d'écran").
-            val description = stringResource(descriptionRes)
-            SegmentedButton(
-                selected = axis == candidate,
-                onClick = { onAxisChanged(candidate) },
-                shape = SegmentedButtonDefaults.itemShape(index = index, count = ElevationProfileAxis.entries.size),
-                label = { Text(stringResource(labelRes)) },
-                modifier = Modifier.semantics { contentDescription = description },
-            )
+            val selected = axis == candidate
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(50))
+                    .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                    .clickable(onClick = { onAxisChanged(candidate) })
+                    .padding(horizontal = 8.dp),
+            ) {
+                Text(stringResource(labelRes), maxLines = 1, style = MaterialTheme.typography.labelSmall)
+            }
         }
     }
 }
 
 /**
- * RIC-146 lot 4 (brief §5) : le sélecteur de coloration et, s'il y a lieu, la bascule d'axe, sur la
- * même ligne (maquette validée du 2026-09-28, planche section Profil). Remplace l'appel direct à
- * [AnalysisColoringSelector] du lot 3 dans ThreeStopJournalDetail.
+ * RIC-146 lot 7 (brief Partie D.3, maquette v5) : légende compacte à gauche (cinq pastilles entre
+ * deux mots, selon la coloration), choix de l'axe à droite. Remplace la légende flottante sur la
+ * carte (brief Partie E, "plus de légende sur la carte") et le sélecteur d'axe accolé à la
+ * coloration du lot 4 (désormais sur sa propre ligne, sous le sélecteur de coloration pleine
+ * largeur, brief §4.2/§4.3).
+ *
+ * RIC-146 lot 7, deux défauts visuels trouvés en vérification à 360 points, en anglais (le plus
+ * défavorable des deux langues sur cette ligne : "Duration" plus long que "Durée") :
+ *   1. une largeur fixe pour la bascule d'axe coupait "Duration" ("Distanc"/"Duratio").
+ *   2. donner sa largeur naturelle à la bascule d'axe (non tronquée) et le reste à la légende via
+ *      un `weight` compressait alors la légende à presque rien : "faster" se coupait lettre par
+ *      lettre ("f"/"a"/"s"/"t"/"e"/"r").
+ * Correction : `FlowRow` plutôt qu'un `Row` à somme fixe. Légende et bascule gardent CHACUNE sa
+ * largeur naturelle, jamais compressées ; si les deux ne tiennent pas sur une ligne à 360 points,
+ * la bascule (ajoutée en second) passe seule à la ligne suivante plutôt que de rogner l'une ou
+ * l'autre. Aucun libellé individuel ne se coupe ni ne passe sur deux lignes, seule cette ligne-ci
+ * peut en occuper deux (la maquette v5, plus large, tenait sur une seule).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun AnalysisProfileControlsRow(
+internal fun AnalysisLegendAxisRow(
     coloring: AnalysisColoring,
-    onColoringChanged: (AnalysisColoring) -> Unit,
     hasTimestamps: Boolean,
     axis: ElevationProfileAxis,
     onAxisChanged: (ElevationProfileAxis) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    // RIC-146 lot 8 (finition B4) : espace entre légende et bascule resserré de 16 à 12 dp (avec la
+    // bascule elle-même resserrée, voir AnalysisAxisSelector) pour tenir sur une ligne à 360 points.
+    FlowRow(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        // RIC-146 lot 4, défaut visuel trouvé en vérification (brief Partie D) : chaque
-        // SegmentedButton se partage la largeur que son SingleChoiceSegmentedButtonRow reçoit
-        // (comportement du composant M3, pas de notre fait) plutôt que de ne prendre que la
-        // largeur nécessaire à son contenu. Dans un Row sans poids, le premier enfant mesuré
-        // (AnalysisColoringSelector) recevait alors TOUTE la largeur de la ligne et la consommait
-        // en entier, ne laissant presque rien à la bascule d'axe mesurée ensuite : "km"/"h" se
-        // coupaient en deux lignes ("k"/"m"). Solution : mesurer la bascule d'axe EN PREMIER, avec
-        // une largeur fixe généreuse (garantit qu'elle ne se coupe jamais, quel que soit le reste),
-        // puis laisser le sélecteur de coloration prendre tout ce qu'il reste (weight(1f,
-        // fill = false) : il ne demande que ce qu'il lui faut, mais ne peut plus déborder sur la
-        // bascule puisqu'elle a déjà réservé sa place).
-        AnalysisColoringSelector(
-            coloring = coloring,
-            onColoringChanged = onColoringChanged,
-            hasTimestamps = hasTimestamps,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        // Brief §5 : trace sans horodatage, la bascule n'est pas affichée du tout (pas seulement
-        // désactivée), l'axe restant en distance.
+        CompactLegend(coloring = coloring, modifier = Modifier.align(Alignment.CenterVertically))
+        // Brief §5 : trace sans horodatage, la bascule n'est pas affichée du tout, l'axe restant
+        // en distance.
         if (hasTimestamps) {
-            AnalysisAxisSelector(axis = axis, onAxisChanged = onAxisChanged, modifier = Modifier.width(150.dp))
-        }
-    }
-}
-
-// --- Légende, en bas à gauche de la carte (brief lot 3 §3) -----------------------------------------
-
-@Composable
-internal fun AnalysisLegend(coloring: AnalysisColoring, modifier: Modifier = Modifier) {
-    val (titleRes, palette) = when (coloring) {
-        AnalysisColoring.PACE -> R.string.journal_analysis_legend_pace_title to AnalysisColors.pace
-        AnalysisColoring.SLOPE -> R.string.journal_analysis_legend_slope_title to AnalysisColors.slope
-        AnalysisColoring.SPEED -> R.string.journal_analysis_legend_speed_title to AnalysisColors.speed
-    }
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    ) {
-        // RIC-146 lot 5 (brief Partie A.2) : couleur explicite, assortie au fond `colorScheme.surface`
-        // juste au-dessus. Sans elle, ce Text retombe sur le LocalContentColor ambiant : cette
-        // légende flotte directement sur la carte, hors de tout Surface qui l'aurait fixé au thème
-        // (contrairement à LegendCaption plus bas, déjà explicite) ; l'ambiant valait alors le noir
-        // par défaut de Compose, illisible sur un fond sombre en thème sombre (mais invisible en
-        // thème clair, d'où le défaut signalé uniquement là).
-        Text(text = stringResource(titleRes), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface)
-        Row(modifier = Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            palette.forEach { color ->
-                Box(modifier = Modifier.size(width = 20.dp, height = 6.dp).background(color))
-            }
-        }
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            when (coloring) {
-                AnalysisColoring.PACE -> {
-                    LegendCaption(stringResource(R.string.journal_analysis_legend_pace_slower))
-                    LegendCaption(stringResource(R.string.journal_analysis_legend_pace_usual))
-                    LegendCaption(stringResource(R.string.journal_analysis_legend_pace_faster))
-                }
-                AnalysisColoring.SLOPE -> {
-                    // Brief §3 : "libellés des extrémités" ; bornes = classes de couleur (pas les
-                    // onze bandes de référence), mêmes seuils que AnalysisParameters.slopeClassOf.
-                    val bounds = AnalysisParameters.SLOPE_CLASS_BOUNDS_PERCENT
-                    LegendCaption(
-                        stringResource(
-                            R.string.journal_analysis_legend_below,
-                            stringResource(R.string.settings_pause_percent_value, bounds.first().toInt()),
-                        ),
-                    )
-                    LegendCaption(
-                        stringResource(
-                            R.string.journal_analysis_legend_above,
-                            stringResource(R.string.settings_pause_percent_value, bounds.last().toInt()),
-                        ),
-                    )
-                }
-                AnalysisColoring.SPEED -> {
-                    val bounds = AnalysisParameters.SPEED_CLASS_BOUNDS_KMH
-                    LegendCaption(
-                        stringResource(
-                            R.string.journal_analysis_legend_below,
-                            stringResource(R.string.settings_speed_value_format, formatKm1(bounds.first())),
-                        ),
-                    )
-                    LegendCaption(
-                        stringResource(
-                            R.string.journal_analysis_legend_above,
-                            stringResource(R.string.settings_speed_value_format, formatKm1(bounds.last())),
-                        ),
-                    )
-                }
-            }
+            AnalysisAxisSelector(axis = axis, onAxisChanged = onAxisChanged, modifier = Modifier.align(Alignment.CenterVertically))
         }
     }
 }
 
 @Composable
-private fun LegendCaption(text: String) {
-    Text(text = text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-}
-
-// --- Cran Détails : quatre sections (brief lot 3 §4) ------------------------------------------------
-
-/** Une pause de la conception, associée à l'heure réelle de son point de départ (best-effort : `null`
- * si l'index reconverti tombe hors de [points], ne devrait pas arriver). */
-private data class TimedPause(val pause: AnalyzedPause, val time: Instant?)
-
-@Composable
-internal fun AnalysisDetailsContent(
-    result: JournalAnalysisResult,
-    points: List<TrackPoint>,
-    dayPointCounts: List<Int>,
-    modifier: Modifier = Modifier,
-) {
-    val analysis = result.analysis
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        if (analysis.totals != null && analysis.bands.isNotEmpty()) {
-            PaceBySlopeSection(analysis.bands)
+private fun CompactLegend(coloring: AnalysisColoring, modifier: Modifier = Modifier) {
+    val (leftRes, rightRes, palette) = when (coloring) {
+        AnalysisColoring.PACE -> Triple(R.string.journal_analysis_legend_pace_slower, R.string.journal_analysis_legend_pace_faster, AnalysisColors.pace)
+        AnalysisColoring.SLOPE -> Triple(R.string.journal_analysis_legend_slope_low, R.string.journal_analysis_legend_slope_high, AnalysisColors.slope)
+        AnalysisColoring.SPEED -> Triple(R.string.journal_analysis_legend_speed_low, R.string.journal_analysis_legend_speed_high, AnalysisColors.speed)
+    }
+    // RIC-146 lot 8 (finition B4) : pastilles et espacements resserrés (16->14 dp, 2->1.5 dp,
+    // 6->4 dp) pour laisser sa place à la bascule d'axe sur la même ligne à 360 points.
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(stringResource(leftRes), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(1.5.dp)) {
+            palette.forEach { color -> Box(modifier = Modifier.size(width = 14.dp, height = 6.dp).clip(RoundedCornerShape(2.dp)).background(color)) }
         }
-        if (analysis.totals != null) {
-            // Reconversion vers l'heure réelle : mêmes jonctions de jours que la carte (conception
-            // section 5.2, brief lot 3 §3), une pause étant locale à son jour (AnalyzedPause.startIndex).
-            val dayOffsets = TrackAnalysisMapMapping.dayOffsets(dayPointCounts)
-            val timedPauses = analysis.days.flatMapIndexed { dayIndex, day ->
-                day.pauses.map { pause ->
-                    val screenIndex = TrackAnalysisMapMapping.toScreenIndex(dayOffsets, dayIndex, pause.startIndex)
-                    TimedPause(pause, points.getOrNull(screenIndex)?.time)
-                }
-            }
-            PausesSection(timedPauses)
-        }
-        analysis.bestPassages?.let { best ->
-            if (best.climbMetersPerHour != null || best.flatSpeedKmh != null) BestPassagesSection(best)
-        }
-        if (result.records.isNotEmpty()) RecordsSection(result.records)
+        Text(stringResource(rightRes), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
+// RIC-146 lot 8 (finition B1) : titre en couleur primaire, grand espace au-dessus (l'arrangement
+// spacedBy(8.dp) du Column défilant de JournalScreen fournit déjà 8 dp, complétés ici à 32 dp au
+// total) et espace net en dessous (12 dp) ; internal pour être réutilisée par la frise "Déroulé"
+// (JournalAnalysisTimeline.kt), seule autre section du mode Analyse hors de ce fichier.
 @Composable
-private fun SectionTitle(text: String) {
-    Text(text = text, style = MaterialTheme.typography.titleSmall)
-}
-
-@Composable
-private fun PaceBySlopeSection(bands: List<AnalysisBand>) {
-    Column {
-        SectionTitle(stringResource(R.string.journal_analysis_section_pace_by_slope))
-        Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            bands.filter { it.hikeDistanceMeters > 0 }.forEach { band -> PaceBandRow(band) }
-        }
-        Text(
-            text = stringResource(R.string.journal_analysis_pace_by_slope_hint),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 6.dp),
-        )
-    }
-}
-
-/**
- * RIC-146 lot 5 (brief Partie A.4) : géométrie de la barre d'écart centrée, en fonction pure (pas
- * de `@Composable`, pas de couleur résolue) pour rester testable en JVM, même raison que
- * [readoutPaceWordingFor] plus bas. [halfFraction] : 0..1, la part de CHAQUE MOITIÉ de piste que la
- * barre occupe (donc jusqu'à 50 % de la largeur totale, brief "plafonnée à 50 %"). [slower] :
- * `null` sans écart exploitable (pas de barre à dessiner, seul le trait central reste) ; sinon vrai
- * si cette rando est plus lente que la référence sur cette bande (barre vers la gauche, brief), faux
- * si plus rapide (vers la droite). [paceClass] : 0-4 (voir [AnalysisParameters.paceClassOf]),
- * `null` sans écart exploitable (le composant retombe alors sur une couleur neutre indépendante de
- * la palette).
- */
-internal data class PaceBarGeometry(val halfFraction: Float, val slower: Boolean?, val paceClass: Int?)
-
-internal fun paceBarGeometryFor(band: AnalysisBand): PaceBarGeometry {
-    val deviationPercent = if (
-        band.hikeSpeedKmh != null && band.referenceSpeedKmh != null &&
-        band.referenceSpeedKmh > 0 && band.referenceSource != ReferenceSource.NONE
-    ) {
-        (band.hikeSpeedKmh / band.referenceSpeedKmh - 1.0) * 100.0
-    } else {
-        null
-    }
-    val halfFraction = deviationPercent?.let { (abs(it) / 50.0).toFloat().coerceIn(0f, 1f) } ?: 0f
-    return PaceBarGeometry(
-        halfFraction = halfFraction,
-        slower = deviationPercent?.let { it < 0.0 },
-        paceClass = deviationPercent?.let { AnalysisParameters.DEFAULT.paceClassOf(it) },
+internal fun SectionTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 24.dp, bottom = 12.dp),
     )
 }
 
-@Composable
-private fun PaceBandRow(band: AnalysisBand) {
-    Column {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(text = analysisBandLabel(band.band), style = MaterialTheme.typography.bodySmall)
-            val hikeText = band.hikeSpeedKmh?.let { stringResource(R.string.settings_speed_value_format, formatKm1(it)) } ?: "-"
-            val referenceText = band.referenceSpeedKmh?.let { stringResource(R.string.settings_speed_value_format, formatKm1(it)) } ?: "-"
-            Text(text = "$hikeText / $referenceText", style = MaterialTheme.typography.bodySmall)
-        }
-        // RIC-146 lot 5 (brief Partie A.4, maquette validée) : barre centrée sur un trait vertical
-        // au milieu de la piste, plutôt que partant de la gauche (défaut cap05-final-details-top.png,
-        // qui contredisait le texte d'aide "Barre à gauche : plus lent"). Écart signé (même formule
-        // que TrackAnalysisCalculator.paceClass, "hikeSpeedKmh / referenceSpeedKmh - 1") : négatif
-        // (plus lent) étale la barre vers la gauche du trait, positif (plus rapide) vers la droite.
-        // Longueur proportionnelle à l'écart en %, plafonnée à 50 % de la largeur TOTALE de la piste
-        // (brief) : dans chaque moitié de piste (elle-même 50 % de la largeur), la barre occupe
-        // jusqu'à 100 % de cette moitié à 50 points d'écart ou plus. Géométrie calculée par
-        // paceBarGeometryFor (fonction pure, testée séparément) : ce composant ne fait plus que la
-        // dessiner.
-        val geometry = paceBarGeometryFor(band)
-        // Classe d'allure de l'écart : couleur neutre dans la classe du milieu (brief), déjà vraie
-        // par construction puisque AnalysisColors.pace[2] == AnalysisColors.neutral.
-        val barColor = geometry.paceClass?.let { AnalysisColors.pace[it] } ?: MaterialTheme.colorScheme.outlineVariant
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(6.dp)
-                .padding(top = 4.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-        ) {
-            // Trait central : repère du "0 %" (référence égalée), toujours visible, même sans écart.
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .width(1.5.dp)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.onSurfaceVariant),
-            )
-            if (geometry.halfFraction > 0f) {
-                val slower = geometry.slower == true
-                val halfBoxAlignment = if (slower) Alignment.CenterStart else Alignment.CenterEnd
-                val fillAlignment = if (slower) Alignment.CenterEnd else Alignment.CenterStart
-                Box(modifier = Modifier.fillMaxWidth(0.5f).fillMaxHeight().align(halfBoxAlignment)) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(geometry.halfFraction)
-                            .fillMaxHeight()
-                            .align(fillAlignment)
-                            .background(barColor),
-                    )
-                }
-            }
-        }
-    }
-}
+// --- "Forme du jour" : tableau réel/estimé/écart puis résumé par nature de terrain (brief D.5) ------
 
+// RIC-146 lot 7 (brief Partie D.5) : sous l'heure ou la minute, "12 min" (journal_analysis_pause_minutes),
+// à partir d'une heure le format existant (StatsRows.formatDuration). Même règle que la carte, voir
+// HikeMapView.formatShortDuration (dupliquée là-bas, hors composition).
+// internal (pas private) : réutilisée telle quelle par la frise "Déroulé" (JournalAnalysisTimeline.kt,
+// lot 8), même règle de format qu'ici et que la carte (HikeMapView.formatShortDuration).
 @Composable
-private fun analysisBandLabel(band: Int): String {
-    val bounds = AnalysisParameters.SLOPE_BAND_BOUNDS_PERCENT
-    return when (band) {
-        0 -> stringResource(R.string.journal_analysis_band_downhill_over, formatGroupedInt((-bounds[0]).toInt()))
-        in 1..4 -> stringResource(
-            R.string.journal_analysis_band_downhill_range,
-            formatGroupedInt((-bounds[band]).toInt()),
-            formatGroupedInt((-bounds[band - 1]).toInt()),
-        )
-        5 -> stringResource(R.string.journal_analysis_band_flat)
-        in 6..9 -> stringResource(
-            R.string.journal_analysis_band_uphill_range,
-            formatGroupedInt(bounds[band - 1].toInt()),
-            formatGroupedInt(bounds[band].toInt()),
-        )
-        else -> stringResource(R.string.journal_analysis_band_uphill_over, formatGroupedInt(bounds[9].toInt()))
-    }
-}
-
-@Composable
-private fun PausesSection(pauses: List<TimedPause>) {
-    val longPauses = pauses.filter { it.pause.seconds >= 300.0 }.sortedBy { it.time ?: Instant.EPOCH }
-    val shortCount = pauses.size - longPauses.size
-    Column {
-        SectionTitle(stringResource(R.string.journal_analysis_section_breaks))
-        if (longPauses.isEmpty()) {
-            Text(
-                text = "-",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-        }
-        Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            longPauses.forEach { timed -> PauseRow(timed) }
-        }
-        if (shortCount > 0) {
-            Text(
-                text = pluralStringResource(R.plurals.journal_analysis_short_breaks, shortCount, formatGroupedInt(shortCount)),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-        }
-    }
-}
-
-// RIC-146 lot 4 correction 3 (brief Partie A.3) : sous l'heure, "12 min" (journal_analysis_pause_minutes,
-// ajoutée à l'inventaire v14 pour cette correction) ; à partir d'une heure, le format existant
-// (StatsRows.formatDuration). Même règle sur la carte, voir HikeMapView.formatShortDuration
-// (dupliquée là-bas, hors composition : pas de fonction commune simple entre les deux).
-@Composable
-private fun formatPauseDuration(seconds: Double): String {
+internal fun formatPauseDuration(seconds: Double): String {
     val totalMinutes = (seconds / 60.0).roundToInt()
     return if (totalMinutes < 60) {
         stringResource(R.string.journal_analysis_pause_minutes, totalMinutes.toString())
@@ -566,35 +334,255 @@ private fun formatPauseDuration(seconds: Double): String {
     }
 }
 
+/** Signe de l'écart du tableau "Forme du jour" (brief §D.5) : fonction pure, testée directement par
+ * AnalysisFormGapSignTest. `PLUS` sur un écart nul (réel = estimé), choix arbitraire sans effet
+ * visible (magnitude alors "0 min"). */
+internal enum class FormGapSign { MINUS, PLUS }
+
+internal fun formGapSignFor(deltaSeconds: Double): FormGapSign = if (deltaSeconds < 0.0) FormGapSign.MINUS else FormGapSign.PLUS
+
 @Composable
-private fun PauseRow(timed: TimedPause) {
-    val pause = timed.pause
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            timed.time?.let { Text(text = formatTimeOfDay(it), style = MaterialTheme.typography.bodySmall) }
-            Text(
-                text = formatPauseDuration(pause.seconds),
-                style = MaterialTheme.typography.bodySmall,
-                color = DurationIconColor,
-            )
-        }
-        Text(
-            text = stringResource(
-                R.string.journal_analysis_break_position,
-                formatKm1(pause.distanceMeters / 1000.0),
-                stringResource(R.string.format_elevation_meters, formatGroupedInt(pause.elevationMeters.roundToInt())),
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+private fun formGapText(deltaSeconds: Double): String {
+    val magnitude = formatPauseDuration(abs(deltaSeconds))
+    return when (formGapSignFor(deltaSeconds)) {
+        FormGapSign.MINUS -> stringResource(R.string.journal_analysis_form_gap_minus, magnitude)
+        FormGapSign.PLUS -> stringResource(R.string.journal_analysis_form_gap_plus, magnitude)
     }
 }
 
 @Composable
-private fun BestPassagesSection(best: com.bivouac.app.data.gpx.BestPassages) {
+private fun FormTableRow(label: String, actual: String, estimated: String, gap: String, header: Boolean = false) {
+    val style = if (header) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodySmall
+    val color = if (header) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(text = label, style = style, color = color, modifier = Modifier.weight(1.6f))
+        Text(text = actual, style = style, color = color, modifier = Modifier.weight(1f))
+        Text(text = estimated, style = style, color = color, modifier = Modifier.weight(1f))
+        Text(text = gap, style = style, color = color, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun FormTable(totals: AnalysisTotals, estimate: com.bivouac.app.data.gpx.AnalysisEstimate) {
+    // RIC-146 lot 8 (finition B2) : interligne porté de 6 à 10 dp (fourchette demandée 10-12 dp).
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        FormTableRow(
+            label = "",
+            actual = stringResource(R.string.journal_analysis_form_actual),
+            estimated = stringResource(R.string.journal_analysis_form_estimated),
+            gap = stringResource(R.string.journal_analysis_form_gap),
+            header = true,
+        )
+        val durationDelta = totals.elapsedSeconds - estimate.totalSeconds
+        FormTableRow(
+            label = stringResource(R.string.journal_analysis_form_duration),
+            actual = formatDuration((totals.elapsedSeconds / 60.0).roundToInt()),
+            estimated = formatDuration((estimate.totalSeconds / 60.0).roundToInt()),
+            gap = formGapText(durationDelta),
+        )
+        val walkingDelta = totals.movingSeconds - estimate.walkingSeconds
+        FormTableRow(
+            label = stringResource(R.string.journal_analysis_form_walking),
+            actual = formatDuration((totals.movingSeconds / 60.0).roundToInt()),
+            estimated = formatDuration((estimate.walkingSeconds / 60.0).roundToInt()),
+            gap = formGapText(walkingDelta),
+        )
+        val pausesDelta = totals.pausedSeconds - estimate.pausedSeconds
+        FormTableRow(
+            label = stringResource(R.string.journal_analysis_form_breaks, formatGroupedInt(totals.pauseCount)),
+            actual = formatDuration((totals.pausedSeconds / 60.0).roundToInt()),
+            estimated = formatDuration((estimate.pausedSeconds / 60.0).roundToInt()),
+            gap = formGapText(pausesDelta),
+        )
+    }
+}
+
+/**
+ * RIC-146 lot 5 (brief Partie A.4), réutilisée lot 7 pour le résumé par nature de terrain : géométrie
+ * de la barre d'écart centrée, en fonction pure (pas de `@Composable`, pas de couleur résolue) pour
+ * rester testable en JVM. [halfFraction] : 0..1, la part de CHAQUE MOITIÉ de piste que la barre
+ * occupe (donc jusqu'à 50 % de la largeur totale). [slower] : `null` sans écart exploitable ; sinon
+ * vrai si plus lent que la référence (barre vers la gauche), faux si plus rapide (vers la droite).
+ * [paceClass] : 0-4 (voir [com.bivouac.app.data.gpx.AnalysisParameters.paceClassOf]), `null` sans
+ * écart exploitable.
+ */
+internal data class PaceBarGeometry(val halfFraction: Float, val slower: Boolean?, val paceClass: Int?)
+
+internal fun paceBarGeometryFor(hikeSpeedKmh: Double?, referenceSpeedKmh: Double?, referenceSource: ReferenceSource): PaceBarGeometry {
+    val deviationPercent = if (hikeSpeedKmh != null && referenceSpeedKmh != null && referenceSpeedKmh > 0 && referenceSource != ReferenceSource.NONE) {
+        (hikeSpeedKmh / referenceSpeedKmh - 1.0) * 100.0
+    } else {
+        null
+    }
+    val halfFraction = deviationPercent?.let { (abs(it) / 50.0).toFloat().coerceIn(0f, 1f) } ?: 0f
+    return PaceBarGeometry(
+        halfFraction = halfFraction,
+        slower = deviationPercent?.let { it < 0.0 },
+        paceClass = deviationPercent?.let { com.bivouac.app.data.gpx.AnalysisParameters.DEFAULT.paceClassOf(it) },
+    )
+}
+
+@Composable
+private fun PaceDeviationBar(geometry: PaceBarGeometry) {
+    val barColor = geometry.paceClass?.let { AnalysisColors.pace[it] } ?: MaterialTheme.colorScheme.outlineVariant
+    // RIC-146 lot 8 (finition B3) : piste portée de 6 à 8 dp de haut, coins plus arrondis en
+    // conséquence ; surfaceContainerHighest reste le fond (déjà theme-aware, visible en clair et en
+    // sombre par construction du schéma Material).
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(8.dp)
+            .padding(top = 4.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+    ) {
+        // Trait central : repère du "0 %" (référence égalée), toujours visible, même sans écart.
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .width(1.5.dp)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.onSurfaceVariant),
+        )
+        if (geometry.halfFraction > 0f) {
+            val slower = geometry.slower == true
+            val halfBoxAlignment = if (slower) Alignment.CenterStart else Alignment.CenterEnd
+            val fillAlignment = if (slower) Alignment.CenterEnd else Alignment.CenterStart
+            Box(modifier = Modifier.fillMaxWidth(0.5f).fillMaxHeight().align(halfBoxAlignment)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(geometry.halfFraction)
+                        .fillMaxHeight()
+                        .align(fillAlignment)
+                        .background(barColor),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TerrainSummaryRow(kind: TimelinePhaseKind, summary: TerrainSummary) {
+    val labelRes = when (kind) {
+        TimelinePhaseKind.CLIMB -> R.string.journal_analysis_terrain_climbs
+        TimelinePhaseKind.DESCENT -> R.string.journal_analysis_terrain_descents
+        else -> R.string.journal_analysis_terrain_flat
+    }
+    Column {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(text = stringResource(labelRes), style = MaterialTheme.typography.bodySmall)
+            val hikeText = summary.movingSpeedKmh?.let { stringResource(R.string.settings_speed_value_format, formatKm1(it)) } ?: "-"
+            val referenceText = summary.referenceSpeedKmh?.let { stringResource(R.string.settings_speed_value_format, formatKm1(it)) } ?: "-"
+            Text(text = "$hikeText / $referenceText", style = MaterialTheme.typography.bodySmall)
+        }
+        val geometry = paceBarGeometryFor(
+            hikeSpeedKmh = summary.movingSpeedKmh,
+            referenceSpeedKmh = summary.referenceSpeedKmh,
+            referenceSource = if (summary.referenceSpeedKmh != null) ReferenceSource.REFERENCE else ReferenceSource.NONE,
+        )
+        PaceDeviationBar(geometry)
+    }
+}
+
+@Composable
+internal fun AnalysisFormSection(totals: AnalysisTotals, estimate: com.bivouac.app.data.gpx.AnalysisEstimate, terrainSummary: List<TerrainSummary>) {
+    Column {
+        // RIC-146 lot 8 (finition B1) : plus de padding top ici, SectionTitle porte déjà l'espace
+        // net en dessous du titre (12 dp).
+        SectionTitle(stringResource(R.string.journal_analysis_section_form))
+        FormTable(totals, estimate)
+        Column(modifier = Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            terrainSummary.filter { it.distanceMeters > 0 }.forEach { summary -> TerrainSummaryRow(summary.kind, summary) }
+        }
+        Text(
+            text = stringResource(R.string.journal_analysis_pace_by_slope_hint),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+// --- "Chiffres" : six lignes, réduites à quatre sans horodatage (brief D.6) -------------------------
+
+/** Les six lignes possibles de la section "Chiffres" (brief §D.6), dans l'ordre de la maquette. */
+internal enum class FigureRowKind { MOVING_SPEED, CLIMBING_SPEED, HIGHEST, LOWEST, STEEPEST_CLIMB, STEEPEST_DESCENT }
+
+/**
+ * Quelles lignes affiche la section "Chiffres" (brief §D.6, §5) : fonction pure, extraite
+ * d'[AnalysisFiguresSection] pour être testée directement par FigureRowsTest. [hasTimestamps] faux
+ * (trace sans horodatage) : réduite aux altitudes et aux pentes, les deux vitesses supposant un
+ * temps de marche qui n'existe pas alors.
+ */
+internal fun figureRowsFor(hasTimestamps: Boolean): List<FigureRowKind> = if (hasTimestamps) {
+    listOf(
+        FigureRowKind.MOVING_SPEED,
+        FigureRowKind.CLIMBING_SPEED,
+        FigureRowKind.HIGHEST,
+        FigureRowKind.LOWEST,
+        FigureRowKind.STEEPEST_CLIMB,
+        FigureRowKind.STEEPEST_DESCENT,
+    )
+} else {
+    listOf(FigureRowKind.HIGHEST, FigureRowKind.LOWEST, FigureRowKind.STEEPEST_CLIMB, FigureRowKind.STEEPEST_DESCENT)
+}
+
+@Composable
+private fun FigureRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(text = label, style = MaterialTheme.typography.bodySmall)
+        Text(text = value, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+internal fun AnalysisFiguresSection(totals: AnalysisTotals?, figures: TrackFigures, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        SectionTitle(stringResource(R.string.journal_analysis_section_figures))
+        // RIC-146 lot 8 (finition B2) : interligne porté de 8 à 10 dp ; plus de padding top, voir
+        // le commentaire de AnalysisFormSection.
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            figureRowsFor(hasTimestamps = totals != null).forEach { kind ->
+                when (kind) {
+                    FigureRowKind.MOVING_SPEED -> FigureRow(
+                        stringResource(R.string.journal_analysis_figure_moving_speed),
+                        stringResource(R.string.settings_speed_value_format, formatKm1(totals!!.movingSpeedKmh)),
+                    )
+                    FigureRowKind.CLIMBING_SPEED -> FigureRow(
+                        stringResource(R.string.journal_analysis_figure_climbing_speed),
+                        totals!!.averageClimbingSpeedMetersPerHour?.let {
+                            stringResource(R.string.fmt_bilan_record_value_vam, formatGroupedInt(it.roundToInt()))
+                        } ?: "-",
+                    )
+                    FigureRowKind.HIGHEST -> FigureRow(
+                        stringResource(R.string.journal_analysis_figure_highest),
+                        figures.highestElevationMeters?.let { stringResource(R.string.format_elevation_meters, formatGroupedInt(it.roundToInt())) } ?: "-",
+                    )
+                    FigureRowKind.LOWEST -> FigureRow(
+                        stringResource(R.string.journal_analysis_figure_lowest),
+                        figures.lowestElevationMeters?.let { stringResource(R.string.format_elevation_meters, formatGroupedInt(it.roundToInt())) } ?: "-",
+                    )
+                    FigureRowKind.STEEPEST_CLIMB -> FigureRow(
+                        stringResource(R.string.journal_analysis_figure_steepest_climb),
+                        figures.steepestClimbPercent?.let { stringResource(R.string.settings_pause_percent_value, it.roundToInt()) } ?: "-",
+                    )
+                    FigureRowKind.STEEPEST_DESCENT -> FigureRow(
+                        stringResource(R.string.journal_analysis_figure_steepest_descent),
+                        figures.steepestDescentPercent?.let { stringResource(R.string.settings_pause_percent_value, it.roundToInt()) } ?: "-",
+                    )
+                }
+            }
+        }
+    }
+}
+
+// --- "Meilleurs passages" et "Records" (brief D.7/D.8, inchangés depuis le lot 3) -------------------
+
+@Composable
+internal fun BestPassagesSection(best: com.bivouac.app.data.gpx.BestPassages) {
     Column {
         SectionTitle(stringResource(R.string.journal_analysis_section_best))
-        Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             best.climbMetersPerHour?.let {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(stringResource(R.string.journal_analysis_best_climb), style = MaterialTheme.typography.bodySmall)
@@ -612,10 +600,10 @@ private fun BestPassagesSection(best: com.bivouac.app.data.gpx.BestPassages) {
 }
 
 @Composable
-private fun RecordsSection(records: List<com.bivouac.app.bilan.BilanRecord>) {
+internal fun RecordsSection(records: List<com.bivouac.app.bilan.BilanRecord>) {
     Column {
         SectionTitle(stringResource(R.string.journal_analysis_section_records))
-        Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val context = androidx.compose.ui.platform.LocalContext.current
             records.forEach { record ->
                 val color = recordColor(record.kind)
@@ -635,11 +623,10 @@ private fun RecordsSection(records: List<com.bivouac.app.bilan.BilanRecord>) {
     }
 }
 
-// --- Ligne de lecture, sous le profil, en mode Analyse (brief lot 4 §7) -----------------------------
+// --- Ligne de lecture, sous le profil, en mode Analyse (brief lot 4 §7, inchangée) ------------------
 
 // Pente signée : "+1%"/"-5%" (settings_pause_percent_value gère déjà le signe négatif via %d, seul
-// le "+" du cas positif ou nul manque). Pas d'espace avant le "%" : même formatage que la légende
-// (journal_analysis_legend_below/above, lot 3), pour rester cohérent dans l'écran.
+// le "+" du cas positif ou nul manque). Pas d'espace avant le "%" : même formatage que la légende.
 @Composable
 private fun formatSignedSlopePercent(percent: Double): String {
     val rounded = percent.roundToInt()
@@ -679,14 +666,13 @@ internal fun readoutPaceWordingFor(paceClass: Int?): ReadoutPaceWording = when {
  *
  * Distance et altitude reprises de la série commune concaténée ([TrackStatsCalculator.series],
  * mêmes [seriesBreaks] que [com.bivouac.app.ui.components.ElevationProfile]) et non de
- * [AnalyzedPause.distanceMeters] (local à son jour, brief non concerné ici) : c'est cette série qui
+ * [com.bivouac.app.data.gpx.AnalyzedPause.distanceMeters] (local à son jour) : c'est cette série qui
  * positionne la courbe sous le doigt, la ligne de lecture doit décrire exactement ce point-là,
  * y compris sur une sortie de plusieurs jours.
  *
- * Choix non tranché par la conception, pris ici par prudence : un tronçon sans vitesse exploitable
- * (movingSpeedKmh nul, brief §7 "tronçon sans vitesse exploitable") affiche "-" à la place de la
- * vitesse dans la première ligne plutôt que de supprimer la ligne, la conception ne prévoyant pas
- * de variante plus courte du format ; voir le rapport du lot.
+ * Un tronçon sans vitesse exploitable (movingSpeedKmh nul) affiche "-" à la place de la vitesse dans
+ * la première ligne plutôt que de supprimer la ligne, la conception ne prévoyant pas de variante
+ * plus courte du format.
  */
 @Composable
 internal fun AnalysisReadoutLine(

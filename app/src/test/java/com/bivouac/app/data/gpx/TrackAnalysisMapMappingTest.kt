@@ -108,11 +108,11 @@ class TrackAnalysisMapMappingTest {
         assertEquals(TrackAnalysisMapMapping.ColorGroup(10, 12, 1), groups.single())
     }
 
-    // --- pauseMarkerKind (conception section 7.2) --------------------------------------------------
+    // --- pauseMarkerKind (RIC-146 lot 7, conception 2 section 5.3) ----------------------------------
 
     @Test
-    fun aPauseUnderFiveMinutesIsADot() {
-        assertEquals(TrackAnalysisMapMapping.PauseMarkerKind.DOT, TrackAnalysisMapMapping.pauseMarkerKind(299.0))
+    fun aPauseUnderFiveMinutesHasNoMarker() {
+        assertEquals(TrackAnalysisMapMapping.PauseMarkerKind.NONE, TrackAnalysisMapMapping.pauseMarkerKind(299.0))
     }
 
     @Test

@@ -853,7 +853,11 @@ private fun renderTrack(
     }
 
     mapView.overlays.addAll(endpointMarkers(mapView, points))
-    mapView.overlays.addAll(directionArrowMarkers(mapView, points, geoPoints))
+    // RIC-146 lot 7 (brief Partie E) : flèches de sens en couleur neutre en mode Analyse, la teinte
+    // bleue par défaut se confondant avec les palettes de coloration du tracé.
+    mapView.overlays.addAll(
+        directionArrowMarkers(mapView, points, geoPoints, neutral = analysisData != null),
+    )
 
     if (cursorIndex != null && cursorIndex in points.indices) {
         // Assigné avant de construire cursorMarker ci-dessous : son drag peut ouvrir la bulle
@@ -881,7 +885,9 @@ private fun renderTrack(
         // renderTrack l'a déjà fermée tout en haut (cursorInfoWindow.close()) ; ne pas la rouvrir ici
         // suffit à la garder fermée, c'était le troisième symptôme de la recette S22 (un toucher à
         // côté du halo rouvrait la bulle du dernier curseur posé).
-        if (overlayRules.cursorBubbleReopens) {
+        // RIC-146 lot 7 (brief Partie E) : l'étiquette du curseur est masquée en mode Analyse, la
+        // ligne de lecture sous le profil la remplace (JournalAnalysisContent.AnalysisReadoutLine).
+        if (overlayRules.cursorBubbleReopens && analysisData == null) {
             val bubbleContent = cursorBubbleContent(
                 context, points, cursorIndex, distanceCache, mapVisiblePhotos, missingPhotoIds,
                 explicitPhotoIds = activeClusterState.photoIds,
@@ -915,7 +921,10 @@ private fun renderTrack(
                 val screenIndex = TrackAnalysisMapMapping.toScreenIndex(dayOffsets, dayIndex, pause.startIndex)
                 if (screenIndex !in geoPoints.indices) return@forEach
                 val position = geoPoints[screenIndex]
+                // RIC-146 lot 7 (brief Partie E) : plus aucun marqueur sous 5 min (conception 2
+                // section 5.3, remplace le point simple de la conception 1).
                 val kind = TrackAnalysisMapMapping.pauseMarkerKind(pause.seconds)
+                if (kind == TrackAnalysisMapMapping.PauseMarkerKind.NONE) return@forEach
                 mapView.overlays.add(analysisPauseMarker(mapView, position, kind))
                 if (kind == TrackAnalysisMapMapping.PauseMarkerKind.ICON_WITH_DURATION) {
                     durationLabels += position to formatShortDuration(context, pause.seconds)
@@ -949,30 +958,27 @@ internal fun formatShortDuration(context: Context, seconds: Double): String {
     )
 }
 
-// Rayon des marqueurs de pause, en dp (conception section 7.2 : "point simple sous 5 min,
-// pictogramme à partir de 5 min").
-private const val PAUSE_DOT_RADIUS_DP = 4f
+// Rayon des marqueurs de pause, en dp (conception 2 section 5.3 : "pictogramme à partir de 5 min").
 private const val PAUSE_ICON_RADIUS_DP = 11f
 
+// [kind] ne vaut jamais NONE ici : le seul appelant (renderTrack) filtre déjà ce cas avant de
+// construire le marqueur (brief Partie E, "aucun marqueur sous 5 min").
 private fun analysisPauseMarker(mapView: MapView, position: GeoPoint, kind: TrackAnalysisMapMapping.PauseMarkerKind): Marker {
     val density = mapView.context.resources.displayMetrics.density
     val marker = Marker(mapView)
     marker.position = position
     marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-    marker.icon = analysisPauseIcon(mapView.context, kind, density)
+    marker.icon = analysisPauseIcon(mapView.context, density)
     marker.setInfoWindow(null)
     marker.setOnMarkerClickListener { _, _ -> false }
     return marker
 }
 
-// Icône dessinée au Canvas plutôt qu'une ressource vectorielle dédiée : seules deux formes existent
-// (un point, un pictogramme pause), toutes deux simples, et ça évite un nouvel asset XML pour un
-// glyphe generique. Régénérée à chaque renderTrack (liste de pauses courte, coût négligeable).
-private fun analysisPauseIcon(context: Context, kind: TrackAnalysisMapMapping.PauseMarkerKind, density: Float): Drawable {
-    val radiusPx = when (kind) {
-        TrackAnalysisMapMapping.PauseMarkerKind.DOT -> PAUSE_DOT_RADIUS_DP
-        else -> PAUSE_ICON_RADIUS_DP
-    } * density
+// Icône dessinée au Canvas plutôt qu'une ressource vectorielle dédiée : une seule forme désormais
+// (le point sous 5 min a disparu, RIC-146 lot 7), et ça évite un nouvel asset XML pour un glyphe
+// générique. Régénérée à chaque renderTrack (liste de pauses courte, coût négligeable).
+private fun analysisPauseIcon(context: Context, density: Float): Drawable {
+    val radiusPx = PAUSE_ICON_RADIUS_DP * density
     val sizePx = (radiusPx * 2 + density).toInt().coerceAtLeast(1)
     val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
@@ -983,23 +989,15 @@ private fun analysisPauseIcon(context: Context, kind: TrackAnalysisMapMapping.Pa
         style = Paint.Style.STROKE
         strokeWidth = density
     }
-    when (kind) {
-        TrackAnalysisMapMapping.PauseMarkerKind.DOT -> {
-            canvas.drawCircle(center, center, radiusPx - density / 2, fillPaint)
-            canvas.drawCircle(center, center, radiusPx - density / 2, strokePaint)
-        }
-        TrackAnalysisMapMapping.PauseMarkerKind.ICON, TrackAnalysisMapMapping.PauseMarkerKind.ICON_WITH_DURATION -> {
-            canvas.drawCircle(center, center, radiusPx - density / 2, fillPaint)
-            canvas.drawCircle(center, center, radiusPx - density / 2, strokePaint)
-            // Pictogramme pause : deux barres verticales blanches, comme l'icône Material "Pause".
-            val barWidth = radiusPx * 0.28f
-            val barHeight = radiusPx * 1.1f
-            val gap = radiusPx * 0.26f
-            val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = AndroidColor.WHITE; style = Paint.Style.FILL }
-            canvas.drawRect(center - gap - barWidth, center - barHeight / 2, center - gap, center + barHeight / 2, barPaint)
-            canvas.drawRect(center + gap, center - barHeight / 2, center + gap + barWidth, center + barHeight / 2, barPaint)
-        }
-    }
+    canvas.drawCircle(center, center, radiusPx - density / 2, fillPaint)
+    canvas.drawCircle(center, center, radiusPx - density / 2, strokePaint)
+    // Pictogramme pause : deux barres verticales blanches, comme l'icône Material "Pause".
+    val barWidth = radiusPx * 0.28f
+    val barHeight = radiusPx * 1.1f
+    val gap = radiusPx * 0.26f
+    val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = AndroidColor.WHITE; style = Paint.Style.FILL }
+    canvas.drawRect(center - gap - barWidth, center - barHeight / 2, center - gap, center + barHeight / 2, barPaint)
+    canvas.drawRect(center + gap, center - barHeight / 2, center + gap + barWidth, center + barHeight / 2, barPaint)
     return BitmapDrawable(context.resources, bitmap)
 }
 
@@ -2144,6 +2142,11 @@ private fun directionArrowMarkers(
     points: List<TrackPoint>,
     geoPoints: List<GeoPoint>,
     tintColor: Int? = null,
+    // RIC-146 lot 7 (brief Partie E) : mode Analyse, flèche blanche à liseré sombre plutôt que la
+    // teinte bleue par défaut (voir ic_track_arrow_neutral), qui se confondait avec les palettes de
+    // coloration du tracé. Exclusif avec [tintColor] : aucun appelant ne passe les deux (le
+    // multi-traces, seul à teinter, ne connaît pas le mode Analyse).
+    neutral: Boolean = false,
 ): List<Marker> {
     if (!directionArrowsEligible(points)) return emptyList()
     // RIC-114 : distance brute volontairement, et non la série commune : elle ne sert qu'à
@@ -2183,7 +2186,8 @@ private fun directionArrowMarkers(
         Marker(mapView).apply {
             position = geoPoints[index]
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-            icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_track_arrow)?.mutate()?.also { drawable ->
+            val iconRes = if (neutral) R.drawable.ic_track_arrow_neutral else R.drawable.ic_track_arrow
+            icon = ContextCompat.getDrawable(mapView.context, iconRes)?.mutate()?.also { drawable ->
                 if (tintColor != null) DrawableCompat.setTint(drawable, tintColor)
             }
             // Projection pixels already include the current map orientation. A flat marker uses

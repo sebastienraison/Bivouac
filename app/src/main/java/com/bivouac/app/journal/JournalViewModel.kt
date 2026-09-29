@@ -95,10 +95,14 @@ sealed interface JournalUiState {
  * RIC-146 lot 3 : résultat complet du mode Analyse d'un détail du Journal (conception section 5,
  * "Records" du cran Détails), rendu par [JournalViewModel.computeAnalysis]. [records] vient de
  * [BilanStatsCalculator.recordsHeldBy] : les records du Bilan détenus par cette rando précise.
+ * [timeline] (RIC-146 lot 7) : part de marche, résumé par nature de terrain et chiffres de la
+ * conception 2 (section 4), calculés par [com.bivouac.app.data.gpx.TrackTimelineCalculator] sur ce
+ * même [analysis].
  */
 data class JournalAnalysisResult(
     val analysis: TrackAnalysis,
     val records: List<BilanRecord>,
+    val timeline: com.bivouac.app.data.gpx.TrackTimeline,
 )
 
 // RIC-65 écran 3 : le sélecteur a renvoyé plusieurs fichiers, et rien ne permet de deviner s'il
@@ -1928,7 +1932,13 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         val daysByTrackId = repository.allDaysByTrackId()
         val bilanStats = BilanStatsCalculator.compute(tracks, daysByTrackId, calibration)
         val records = BilanStatsCalculator.recordsHeldBy(bilanStats, detail.entry.id)
-        JournalAnalysisResult(analysis, records)
+        // RIC-146 lot 7 : part de marche, résumé par nature de terrain et chiffres (conception 2
+        // section 4), sur le même découpage que analysis (mêmes points, mêmes paramètres par défaut).
+        val timeline = com.bivouac.app.data.gpx.TrackTimelineCalculator.compute(
+            pointsByDay = detail.daySegments.map { it.points },
+            analysis = analysis,
+        )
+        JournalAnalysisResult(analysis, records, timeline)
     }
 
     private companion object {

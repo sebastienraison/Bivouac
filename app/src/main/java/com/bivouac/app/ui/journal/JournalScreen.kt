@@ -56,7 +56,6 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Save
@@ -182,6 +181,19 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 private val PEEK_HEIGHT_EMPTY = 150.dp
+
+/**
+ * RIC-146 lot 7 (conception 2 section 5.1, brief Partie B) : le choix Carnet/Analyse vaut ce que
+ * [current] valait, SAUF en entrant en édition ou en placement photo, qui le ramènent à Carnet
+ * ("les deux modes n'ont pas de sens ensemble"). Fonction pure, testée directement par
+ * AnalysisModeMemoryTest : c'est elle qui porte toute la logique des deux `LaunchedEffect` de
+ * JournalScreen (sur isEditingDetail et sur photoPlacementTarget), qui ne font que lui passer leurs
+ * arguments. La mémoire d'une rando à l'autre n'est PAS dans cette fonction : elle tient au fait que
+ * `analysisModeActive` (JournalScreen) n'est jamais recréé au changement de trace (`rememberSaveable`
+ * sans clé), donc rien n'appelle cette fonction ni aucune autre à ce moment-là.
+ */
+internal fun analysisModeAfter(current: Boolean, isEditing: Boolean, photoPlacementActive: Boolean): Boolean =
+    if (isEditing || photoPlacementActive) false else current
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -385,19 +397,26 @@ fun JournalScreen(
     // RIC-161/166 : le mode édition de ThreeStopJournalDetail, répercuté ici pour la visionneuse et
     // le mode placement, tous deux hissés au niveau de l'écran (voir ThreeStopJournalDetail.onEditingChanged).
     var isEditingDetail by remember(detail?.entry?.id) { mutableStateOf(false) }
-    // RIC-146 lot 3 : mode Analyse du détail Journal (brief §1). Propre à l'écran : repart à faux
-    // à chaque ouverture d'un détail (remember(detail?.entry?.id)), et se ferme tout seul en
-    // fermant le détail (l'état disparaît avec la recomposition qui l'a créé).
-    var analysisModeActive by remember(detail?.entry?.id) { mutableStateOf(false) }
+    // RIC-146 lot 7 (conception 2 section 5.1, brief Partie B) : le choix Carnet/Analyse est gardé
+    // d'une rando à l'autre tant que l'app reste ouverte (PAS de clé sur detail?.entry?.id, à la
+    // différence des autres états ci-dessous) ; Carnet au lancement (valeur initiale). rememberSaveable
+    // et non remember : le manifeste ne déclare PAS uiMode dans android:configChanges (seulement
+    // orientation/screenSize/screenLayout/smallestScreenSize, voir viewedPhotoIndex plus haut pour
+    // ce que ça couvre déjà), donc un changement de thème clair/sombre EN COURS DE SESSION recrée
+    // l'Activity (vérifié en vérification visuelle : un simple `remember` y perdait le choix,
+    // repassait à Carnet) ; rememberSaveable survit à cette recréation via le Bundle d'état en
+    // mémoire, sans jamais toucher au disque, donc sans contredire "rien n'est écrit sur disque".
+    var analysisModeActive by rememberSaveable { mutableStateOf(false) }
     var analysisColoring by remember(detail?.entry?.id) { mutableStateOf(com.bivouac.app.ui.map.AnalysisColoring.PACE) }
     // RIC-146 lot 4 (brief §5) : axe du profil en mode Analyse. Même mécanique que analysisColoring
     // ci-dessus : repart à DISTANCE à chaque ouverture d'un détail.
     var analysisAxis by remember(detail?.entry?.id) { mutableStateOf(com.bivouac.app.ui.components.ElevationProfileAxis.DISTANCE) }
     var analysisResult by remember(detail?.entry?.id) { mutableStateOf<com.bivouac.app.journal.JournalAnalysisResult?>(null) }
     var analysisLoading by remember(detail?.entry?.id) { mutableStateOf(false) }
-    var drawerStop by remember(detail?.entry?.id) { mutableStateOf(com.bivouac.app.ui.components.DrawerStop.PROFILE) }
-    // Entrer en édition quitte le mode Analyse (brief §1, "les deux modes sont exclusifs").
-    LaunchedEffect(isEditingDetail) { if (isEditingDetail) analysisModeActive = false }
+    // Entrer en édition ou en placement photo quitte le mode Analyse et masque le choix (brief
+    // Partie B, "les deux modes sont exclusifs").
+    LaunchedEffect(isEditingDetail) { analysisModeActive = analysisModeAfter(analysisModeActive, isEditingDetail, photoPlacementTarget != null) }
+    LaunchedEffect(photoPlacementTarget) { analysisModeActive = analysisModeAfter(analysisModeActive, isEditingDetail, photoPlacementTarget != null) }
     // Calcul lancé une seule fois par entrée dans le mode (brief §2, "résultat gardé tant que le
     // détail reste ouvert") : le remember(detail?.entry?.id) ci-dessus vide analysisResult à
     // l'ouverture d'un autre détail, mais pas à un simple aller-retour dans le mode.
@@ -505,43 +524,14 @@ fun JournalScreen(
                     onPhotoPlacementDone = handlePhotoPlacementDone,
                     onPhotoPlacementCancel = handlePhotoPlacementCancel,
                     nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
-                    // RIC-146 lot 3 : le bouton n'existe que dans le détail d'une rando du Journal
-                    // (brief §1) : ce call site, pas celui de la vue multi-traces plus bas.
-                    // Masqué en édition (isEditingDetail), et pendant le mode placement photo (les
-                    // deux modes n'ont pas de sens ensemble, même famille que le badge Analyse).
-                    analysisModeAvailable = !isEditingDetail && photoPlacementTarget == null,
                     analysisModeActive = analysisModeActive,
-                    onToggleAnalysisMode = { analysisModeActive = !analysisModeActive },
                     analysisData = analysisMapData,
                 )
-                if (analysisModeActive && drawerStop != com.bivouac.app.ui.components.DrawerStop.DETAIL) {
-                    // Brief §3 : légende en bas à gauche de la carte, au-dessus du tiroir, masquée
-                    // au cran Détails (le tiroir plein écran la recouvrirait de toute façon, mais
-                    // cache-la explicitement plutôt que de compter sur l'empilement des calques).
-                    // Un sous-Box de la hauteur visible de la carte (même valeur que la carte
-                    // elle-même reçoit pour son propre cadrage) fait flotter la légende juste
-                    // au-dessus du bord haut du tiroir, quelle que soit sa hauteur exacte à cet
-                    // instant (poignée en cours de glissement comprise).
-                    val density = LocalDensity.current
-                    val visibleHeightDp = if (visibleMapHeightPx != Int.MAX_VALUE) {
-                        with(density) { visibleMapHeightPx.toDp() }
-                    } else {
-                        // Repli avant la toute première mesure du tiroir (même ordre de grandeur
-                        // que fallbackSummaryHeightPx plus bas dans ThreeStopJournalDetail).
-                        400.dp
-                    }
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .fillMaxWidth()
-                            .height(visibleHeightDp),
-                    ) {
-                        AnalysisLegend(
-                            coloring = analysisColoring,
-                            modifier = Modifier.align(Alignment.BottomStart).statusBarsPadding().padding(start = 16.dp, bottom = 12.dp),
-                        )
-                    }
-                }
+                // RIC-146 lot 7 (brief Partie B/E) : le bouton rond de la carte et la légende
+                // flottante du lot 3 disparaissent tous les deux avec cette conception 2 : le choix
+                // Carnet/Analyse migre dans le tiroir (JournalViewModeSelector, sous le titre) et la
+                // légende migre dans la ligne coloration/axe du contenu Analyse (AnalysisLegendAxisRow) ;
+                // "plus de légende sur la carte" (brief Partie E).
                 ThreeStopJournalDetail(
                     entry = detail.entry,
                     track = detail.track,
@@ -585,13 +575,13 @@ fun JournalScreen(
                     onPhotoPlacementCancel = handlePhotoPlacementCancel,
                     // RIC-146 lot 3 : contenu des trois crans en mode Analyse (brief §4).
                     analysisModeActive = analysisModeActive,
+                    onAnalysisModeChanged = { analysisModeActive = it },
                     analysisLoading = analysisLoading,
                     analysisResult = analysisResult,
                     analysisColoring = analysisColoring,
                     onAnalysisColoringChanged = { analysisColoring = it },
                     analysisAxis = analysisAxis,
                     onAnalysisAxisChanged = { analysisAxis = it },
-                    onDrawerStopChanged = { drawerStop = it },
                 )
             }
         }
@@ -1241,11 +1231,11 @@ private fun JournalMap(
     highlightedTrackId: String? = null,
     onTraceTapped: (String) -> Unit = {},
     nonFreeFeaturesDisabled: Boolean = false,
-    // RIC-146 lot 3 : le bouton n'existe que dans le détail d'une rando du Journal (brief §1) ;
-    // false partout ailleurs (accueil, vue multi-traces), qui n'appellent pas ces trois paramètres.
-    analysisModeAvailable: Boolean = false,
+    // RIC-146 lot 3 : `false`/`null` partout ailleurs (accueil, vue multi-traces), qui n'appellent
+    // pas ces deux paramètres. Lot 7 (brief Partie B) : le bouton rond du mode a disparu, le choix
+    // vit désormais dans le tiroir (JournalViewModeSelector) ; ces deux paramètres ne servent plus
+    // qu'à faire suivre la coloration à la carte.
     analysisModeActive: Boolean = false,
-    onToggleAnalysisMode: () -> Unit = {},
     analysisData: com.bivouac.app.ui.map.AnalysisMapData? = null,
 ) {
     Box(
@@ -1291,9 +1281,6 @@ private fun JournalMap(
                 onRecenterClick = onRecenter,
                 nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
             )
-            if (analysisModeAvailable) {
-                AnalysisModeButton(active = analysisModeActive, onClick = onToggleAnalysisMode)
-            }
         }
         // RIC-43 : la bannière « Fais glisser le repère sur la carte » vivait ici. Elle est revenue
         // avec RIC-166, sous une autre forme (bandeau + bouton « Terminé », écran 4 de la maquette
@@ -1305,27 +1292,6 @@ private fun JournalMap(
                 modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(16.dp),
             )
         }
-    }
-}
-
-/**
- * RIC-146 lot 3 : bouton du mode Analyse, dans la colonne de droite de la carte, sous le bouton de
- * recentrage, même taille que ses voisins (brief §1). Actif : fond `primaryContainer`, icône
- * `onPrimaryContainer`, anneau `primary` (conception section 7.1, brief §1).
- */
-@Composable
-private fun AnalysisModeButton(active: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    FilledIconButton(
-        onClick = onClick,
-        modifier = modifier.let {
-            if (active) it.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape) else it
-        },
-        colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-            contentColor = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
-    ) {
-        Icon(Icons.Filled.Insights, contentDescription = stringResource(R.string.journal_analysis_mode_button))
     }
 }
 
@@ -1536,10 +1502,8 @@ private fun JournalBilanCard(
         bivouacCount = bivouacCount,
         modifier = modifier,
         onClick = onClick,
-        // RIC-209 (brief Partie B) : durée réelle agrégée et temps de marche (seconde ligne du
-        // cartouche).
+        // RIC-209 (brief Partie B) : durée réelle agrégée.
         duration = stats.duration.toDurationDisplay(),
-        walkingSeconds = stats.duration.walkingSeconds,
     )
 }
 
@@ -1770,8 +1734,12 @@ private fun JournalPopulatedList(
 // rando/ce jour, repli sur l'estimation (calibration active) avec le préfixe "≈" sinon (brief
 // §Règles, "rando sans horodatage"). Un seul endroit pour ce repli, réutilisé par la ligne de
 // liste, le total du détail et chaque jour du détail.
+//
+// RIC-209 (brief Partie C, lot 9) : walkingSharePercent suit le même repli -- `null` d'office pour
+// une rando estimée (pas de part de marche sans horodatage, brief §Règles), sinon celui de `real`
+// (déjà `null` si ce jour n'a pas encore `pausedSeconds`, voir RealDuration.walkingSharePercent).
 private fun resolvedDuration(real: RealDurationCalculator.RealDuration?, estimatedMinutes: Int): DurationDisplay =
-    real?.let { DurationDisplay.Resolved(it.elapsedSeconds, isEstimated = false) }
+    real?.let { DurationDisplay.Resolved(it.elapsedSeconds, isEstimated = false, walkingSharePercent = it.walkingSharePercent) }
         ?: DurationDisplay.Resolved(estimatedMinutes * 60L, isEstimated = true)
 
 // RIC-209 : stats (distance/D+/D-, inchangées) et durée agrégée (brief Partie B) d'un ensemble de
@@ -2222,6 +2190,10 @@ internal fun ThreeStopJournalDetail(
     // (analysisLoading) et une fois qu'il a fini si la trace a moins de deux points exploitables ;
     // voir AnalysisHeadlineHeader pour le repli "trace sans horodatage" (JournalAnalysisContent.kt).
     analysisModeActive: Boolean = false,
+    // RIC-146 lot 7 (brief Partie A) : le choix Carnet/Analyse est rendu ici (JournalViewModeSelector),
+    // mais l'état lui-même reste hissé dans JournalScreen (persistance d'une rando à l'autre) : ce
+    // callback est ce qui l'y ramène.
+    onAnalysisModeChanged: (Boolean) -> Unit = {},
     analysisLoading: Boolean = false,
     analysisResult: com.bivouac.app.journal.JournalAnalysisResult? = null,
     analysisColoring: com.bivouac.app.ui.map.AnalysisColoring = com.bivouac.app.ui.map.AnalysisColoring.PACE,
@@ -2229,9 +2201,6 @@ internal fun ThreeStopJournalDetail(
     // RIC-146 lot 4 (brief §5) : axe du profil (distance/durée), même mécanique que analysisColoring.
     analysisAxis: com.bivouac.app.ui.components.ElevationProfileAxis = com.bivouac.app.ui.components.ElevationProfileAxis.DISTANCE,
     onAnalysisAxisChanged: (com.bivouac.app.ui.components.ElevationProfileAxis) -> Unit = {},
-    // Brief §3 : la légende (hissée au niveau de l'écran, voir JournalScreen) doit se masquer au
-    // cran Détails ; ce callback est ce qui le lui fait savoir, le tiroir lui-même restant interne.
-    onDrawerStopChanged: (com.bivouac.app.ui.components.DrawerStop) -> Unit = {},
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = LocalDensity.current
@@ -2338,24 +2307,15 @@ internal fun ThreeStopJournalDetail(
         } else {
             fallbackSummaryHeightPx + navigationBarHeightPx
         }).coerceAtMost(fullHeightPx * 0.46f)
-        // RIC-146 lot 5 (brief Partie A.1) : en mode normal et en Planification, le cran Profil
-        // n'ajoute que l'ElevationProfile (86.dp + ses paddings verticaux, soit 102.dp) au-dessus
-        // de la Synthèse ; ce montant fixe reste inchangé ici (brief "les hauteurs ne changent
-        // pas"). En mode Analyse, ce même bloc ajoute aussi le sélecteur de coloration/axe et la
-        // ligne de lecture (AnalysisProfileControlsRow, AnalysisReadoutLine), plus haut et de
-        // hauteur variable (deux lignes de texte, coloration disponible ou non) : un montant fixe
-        // coupait le profil (défaut signalé, cap02/cap09). On mesure donc réellement ce bloc,
-        // comme measuredSummaryHeightPx mesure déjà la Synthèse, et on ne s'en sert qu'en mode
-        // Analyse.
-        var measuredAnalysisProfileExtraHeightPx by remember(entry.id) { mutableIntStateOf(0) }
+        // RIC-146 lot 7 (conception 2 section 5.1, brief Partie C) : trois hauteurs en mode Analyse
+        // - basse (titre, choix, chiffre de tête = summaryHeightPx ci-dessus, mesurée comme en
+        //   Carnet), moyenne (LA MOITIÉ DE L'ÉCRAN, fixe, remplace le calcul mesuré du lot 5 : tout
+        //   le contenu de la coloration au profil défile désormais dans le cran Détails, il n'y a
+        //   plus de bloc "profil" à taille variable au-dessus), haute (celle du cran Détails,
+        //   inchangée). En Carnet, le cran Profil garde sa formule d'origine (lot 5, brief "les
+        //   hauteurs ne changent pas en mode normal").
         val profileHeightPx = if (analysisModeActive) {
-            val fallbackExtraPx = with(density) { 220.dp.toPx() }
-            val extraPx = if (measuredAnalysisProfileExtraHeightPx > 0) {
-                measuredAnalysisProfileExtraHeightPx.toFloat()
-            } else {
-                fallbackExtraPx
-            }
-            (summaryHeightPx + extraPx).coerceIn(summaryHeightPx, fullHeightPx * 0.92f)
+            (fullHeightPx * 0.5f).coerceIn(summaryHeightPx, fullHeightPx * 0.92f)
         } else {
             maxOf(
                 summaryHeightPx + with(density) { 102.dp.toPx() },
@@ -2383,8 +2343,6 @@ internal fun ThreeStopJournalDetail(
         // au-dessus de l'écran (symptôme du lot 4 : "une seule ligne, sans titre" plutôt qu'un
         // écran vide, cohérent avec un scroll trop bas sur un contenu devenu plus court).
         LaunchedEffect(analysisModeActive) { drawer.detailScrollState.scrollTo(0) }
-        // RIC-146 lot 3 : la légende (hissée au niveau de l'écran) doit se masquer au cran Détails.
-        LaunchedEffect(drawer.stop) { onDrawerStopChanged(drawer.stop) }
         // RIC-184 : le tiroir descend sur PhotoPlacementDrawerStop à l'entrée du mode placement
         // (carte visible pour le glissement), et revient au cran qu'il avait avant une fois le
         // mode quitté par Terminé ou Annuler. remember (pas rememberSaveable) suffit : la rotation
@@ -2484,25 +2442,15 @@ internal fun ThreeStopJournalDetail(
                             verticalAlignment = Alignment.Top,
                         ) {
                             Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    // RIC-146 lot 4, defaut visuel du lot 3 corrige en verification
-                                    // visuelle (brief Partie D) : le titre est mesure avant le badge
-                                    // dans un Row sans poids, donc un titre long (ex. "Carlit depuis
-                                    // les Bouillouses") lui laissait a peine assez de place, et
-                                    // "Analyse" se coupait sur deux lignes ("Analys"/"e") au lieu de
-                                    // rester d'un bloc. weight(1f, fill = false) sur le titre inverse
-                                    // l'ordre de mesure (Row mesure d'abord les enfants sans poids) :
-                                    // le badge obtient toujours sa largeur naturelle en un mot, et
-                                    // c'est le titre qui s'adapte (repli sur plusieurs lignes s'il le
-                                    // faut, jamais le badge).
-                                    Text(
-                                        text = entry.name,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        modifier = Modifier.weight(1f, fill = false),
-                                    )
-                                    // Brief §1 : étiquette à côté du titre quand le mode est actif.
-                                    if (analysisModeActive) AnalysisBadge()
-                                }
+                                // RIC-146 lot 7 (brief Partie B) : l'étiquette "Analyse" à côté du
+                                // titre disparaît avec cette conception (le choix Carnet/Analyse,
+                                // juste en dessous, dit déjà le mode) : plus de défaut de largeur à
+                                // 360 points à gérer ici (l'ancien titre d'exemple mentionné dans le
+                                // commentaire retiré ne s'applique plus).
+                                Text(
+                                    text = entry.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
                                 // Même plage de dates que dans la liste : une sortie ouverte ne
                                 // doit pas en dire moins qu'une sortie survolée. Les dates
                                 // viennent ici des points déjà chargés, pas des colonnes
@@ -2528,12 +2476,23 @@ internal fun ThreeStopJournalDetail(
                             }
                         }
                     }
+                    // RIC-146 lot 7 (conception 2 section 5.1, brief Partie A/B) : choix Carnet |
+                    // Analyse, à la même place dans les deux modes, sous le titre et la date. Masqué
+                    // en édition et pendant le mode placement photo, comme le reste de cette rangée
+                    // (les deux modes n'ont pas de sens ensemble).
+                    AnimatedVisibility(visible = !noteTakesAllSpace && !isEditing && !photoPlacementActive) {
+                        JournalViewModeSelector(
+                            analysisActive = analysisModeActive,
+                            onModeChanged = onAnalysisModeChanged,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
                     if (analysisModeActive) {
-                        // RIC-146 lot 3 (brief §4) : le chiffre de tête et les quatre valeurs
-                        // remplacent StatsRows, quel que soit le cran (même mécanique que le
-                        // reste de cet en-tête : toujours dans l'arbre, seule la hauteur du
-                        // tiroir décide de ce qui reste visible).
-                        AnalysisHeadlineHeader(result = analysisResult, loading = analysisLoading)
+                        // RIC-146 lot 7 (brief Partie D.1) : durée réelle, part de marche et écart à
+                        // l'estimation, quel que soit le cran (même mécanique que le reste de cet
+                        // en-tête : toujours dans l'arbre, seule la hauteur du tiroir décide de ce
+                        // qui reste visible).
+                        AnalysisHeadlineHeader(result = analysisResult, loading = analysisLoading, modifier = Modifier.padding(top = 8.dp))
                     } else {
                         // Sur une sortie de plusieurs jours, la ligne agrégée devient un « Total »
                         // en retrait : c'est la ventilation par jour, au cran Détails, qui porte
@@ -2556,74 +2515,64 @@ internal fun ThreeStopJournalDetail(
                             duration = resolvedDuration(totalReal, totalStats.estimatedDurationMinutes),
                         )
                     }
-                    ThreeStopDrawerStopRow(drawer)
+                    // RIC-146 lot 7 (brief Partie C) : "pas de signets" en mode Analyse, un seul
+                    // contenu qui défile (voir plus bas) ; la rangée Synthèse/Profil/Détails reste
+                    // propre au Carnet et à la Planification.
+                    if (!analysisModeActive) ThreeStopDrawerStopRow(drawer)
                 }
 
-                AnimatedVisibility(visible = !noteTakesAllSpace) {
-                    Column(
-                        // RIC-146 lot 5 (brief Partie A.1) : hauteur réelle du bloc Profil en mode
-                        // Analyse, voir measuredAnalysisProfileExtraHeightPx plus haut. Mesurée
-                        // systématiquement (coût négligeable) mais seule l'ancre du cran Profil s'en
-                        // sert, et seulement en mode Analyse.
-                        modifier = Modifier.onGloballyPositioned { measuredAnalysisProfileExtraHeightPx = it.size.height },
-                    ) {
-                        // RIC-146 lot 4 (brief §4/§6) : coloration du profil et pauses, dérivées du
-                        // même résultat d'Analyse que la carte (com.bivouac.app.ui.map.HikeMapView,
-                        // classOf/colorGroups) mais résolues ici en Color plutôt qu'en argb osmdroid.
-                        // `remember` sur (analysisResult, analysisColoring) : inchangé tant que ni
-                        // l'un ni l'autre ne change, comme analysisMapData dans JournalScreen.
-                        val analysisProfileData = remember(analysisResult, analysisColoring) {
-                            analysisResult?.let { result ->
-                                val dayPointCounts = daySegments.map { it.points.size }
-                                val dayOffsets = com.bivouac.app.data.gpx.TrackAnalysisMapMapping.dayOffsets(dayPointCounts)
-                                val classOf: (com.bivouac.app.data.gpx.AnalyzedSegment) -> Int? = when (analysisColoring) {
-                                    com.bivouac.app.ui.map.AnalysisColoring.PACE -> { s -> s.paceClass }
-                                    com.bivouac.app.ui.map.AnalysisColoring.SLOPE -> { s -> s.slopeClass }
-                                    com.bivouac.app.ui.map.AnalysisColoring.SPEED -> { s -> s.speedClass }
+                // RIC-146 lot 7 (brief Partie C/D) : hoistés ici (au lieu de l'ancien bloc "Profil"
+                // fixe) car le profil coloré et la ligne de lecture font maintenant partie du
+                // contenu qui défile, au même titre que "Forme du jour" et "Chiffres" (voir la
+                // Column défilante plus bas). seriesBreaks reste utile aux deux modes (le Carnet
+                // garde son ElevationProfile non colorée juste en dessous).
+                val seriesBreaks = remember(bivouacPoints) {
+                    DayJunctions.journalSeriesBreaks(bivouacPoints.map { it.trackPointIndex })
+                }
+                // RIC-146 lot 4 (brief §4/§6) : coloration du profil et pauses, dérivées du même
+                // résultat d'Analyse que la carte (com.bivouac.app.ui.map.HikeMapView,
+                // classOf/colorGroups) mais résolues ici en Color plutôt qu'en argb osmdroid.
+                val analysisProfileData = remember(analysisResult, analysisColoring) {
+                    analysisResult?.let { result ->
+                        val dayPointCounts = daySegments.map { it.points.size }
+                        val dayOffsets = com.bivouac.app.data.gpx.TrackAnalysisMapMapping.dayOffsets(dayPointCounts)
+                        val classOf: (com.bivouac.app.data.gpx.AnalyzedSegment) -> Int? = when (analysisColoring) {
+                            com.bivouac.app.ui.map.AnalysisColoring.PACE -> { s -> s.paceClass }
+                            com.bivouac.app.ui.map.AnalysisColoring.SLOPE -> { s -> s.slopeClass }
+                            com.bivouac.app.ui.map.AnalysisColoring.SPEED -> { s -> s.speedClass }
+                        }
+                        val colorRanges = result.analysis.days.flatMapIndexed { dayIndex, day ->
+                            com.bivouac.app.data.gpx.TrackAnalysisMapMapping.colorGroups(day.segments, dayOffsets, dayIndex, classOf)
+                                .map { group ->
+                                    com.bivouac.app.ui.components.ProfileColorRange(
+                                        startIndex = group.startScreenIndex,
+                                        endIndex = group.endScreenIndex,
+                                        color = com.bivouac.app.ui.map.AnalysisColors.colorFor(analysisColoring, group.colorClass),
+                                    )
                                 }
-                                val colorRanges = result.analysis.days.flatMapIndexed { dayIndex, day ->
-                                    com.bivouac.app.data.gpx.TrackAnalysisMapMapping.colorGroups(day.segments, dayOffsets, dayIndex, classOf)
-                                        .map { group ->
-                                            com.bivouac.app.ui.components.ProfileColorRange(
-                                                startIndex = group.startScreenIndex,
-                                                endIndex = group.endScreenIndex,
-                                                color = com.bivouac.app.ui.map.AnalysisColors.colorFor(analysisColoring, group.colorClass),
-                                            )
-                                        }
-                                }
-                                val pauses = result.analysis.days.flatMapIndexed { dayIndex, day ->
-                                    day.pauses.map { pause ->
-                                        com.bivouac.app.ui.components.ProfilePause(
-                                            startIndex = com.bivouac.app.data.gpx.TrackAnalysisMapMapping.toScreenIndex(
-                                                dayOffsets, dayIndex, pause.startIndex,
-                                            ),
-                                            endIndex = com.bivouac.app.data.gpx.TrackAnalysisMapMapping.toScreenIndex(
-                                                dayOffsets, dayIndex, pause.endIndex,
-                                            ),
-                                            seconds = pause.seconds,
-                                        )
-                                    }
-                                }
-                                colorRanges to pauses
+                        }
+                        val pauses = result.analysis.days.flatMapIndexed { dayIndex, day ->
+                            day.pauses.map { pause ->
+                                com.bivouac.app.ui.components.ProfilePause(
+                                    startIndex = com.bivouac.app.data.gpx.TrackAnalysisMapMapping.toScreenIndex(
+                                        dayOffsets, dayIndex, pause.startIndex,
+                                    ),
+                                    endIndex = com.bivouac.app.data.gpx.TrackAnalysisMapMapping.toScreenIndex(
+                                        dayOffsets, dayIndex, pause.endIndex,
+                                    ),
+                                    seconds = pause.seconds,
+                                )
                             }
                         }
-                        if (analysisModeActive) {
-                            // Brief §4 "Profil"/§5 : sélecteur de coloration et bascule d'axe, sur
-                            // la même ligne (maquette validée), avant le profil altimétrique
-                            // lui-même. Trace sans horodatage : seule la coloration Pente est
-                            // proposée et la bascule d'axe n'est pas affichée (brief §5).
-                            AnalysisProfileControlsRow(
-                                coloring = analysisColoring,
-                                onColoringChanged = onAnalysisColoringChanged,
-                                hasTimestamps = analysisResult?.analysis?.totals != null,
-                                axis = analysisAxis,
-                                onAxisChanged = onAnalysisAxisChanged,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                            )
-                        }
-                        val seriesBreaks = remember(bivouacPoints) {
-                            DayJunctions.journalSeriesBreaks(bivouacPoints.map { it.trackPointIndex })
-                        }
+                        colorRanges to pauses
+                    }
+                }
+                // RIC-146 lot 7 : en Carnet (et en Planification, qui n'appelle jamais ce composable
+                // en mode Analyse), le profil reste un bloc fixe au-dessus du cran Détails, comme
+                // avant ce lot. En Analyse, il n'existe plus ici : il fait partie du contenu qui
+                // défile, voir plus bas.
+                if (!analysisModeActive) {
+                    AnimatedVisibility(visible = !noteTakesAllSpace) {
                         ElevationProfile(
                             points = track.points,
                             bivouacPoints = bivouacPoints,
@@ -2636,24 +2585,7 @@ internal fun ThreeStopJournalDetail(
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                             cursorIndex = cursorIndex,
                             onCursorDragged = onCursorDragged,
-                            // RIC-146 lot 4 (brief §4/§5/§6) : vides en mode normal (analysisModeActive
-                            // faux ou pas encore calculé) -> ElevationProfile retombe sur son
-                            // comportement d'origine, y compris en Planification (brief "périmètre").
-                            axis = if (analysisModeActive) analysisAxis else com.bivouac.app.ui.components.ElevationProfileAxis.DISTANCE,
-                            colorRanges = if (analysisModeActive) analysisProfileData?.first.orEmpty() else emptyList(),
-                            pauses = if (analysisModeActive) analysisProfileData?.second.orEmpty() else emptyList(),
                         )
-                        if (analysisModeActive) {
-                            // Brief §7 : ligne de lecture, sous le profil.
-                            AnalysisReadoutLine(
-                                cursorIndex = cursorIndex,
-                                result = analysisResult,
-                                points = track.points,
-                                dayPointCounts = daySegments.map { it.points.size },
-                                seriesBreaks = seriesBreaks,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                            )
-                        }
                     }
                 }
 
@@ -2679,18 +2611,77 @@ internal fun ThreeStopJournalDetail(
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    // RIC-146 lot 4 correction 1 (brief Partie A.1) : en mode Analyse, le cran
-                    // Détails ne montre QUE les quatre sections de l'Analyse ; le contenu normal
-                    // (jours, tags, notes, photos) est masqué, pas seulement repoussé sous lui
-                    // (défaut du lot 3, signalé alors et corrigé ici). Entrer en édition quitte de
-                    // toute façon le mode Analyse (voir plus haut), donc rien de ce bloc normal
-                    // n'est jamais éditable pendant que l'Analyse est visible.
+                    // RIC-146 lot 7 (conception 2 section 5.2, brief Partie C/D) : en mode Analyse,
+                    // ce même Column défilant porte DÉSORMAIS tout le contenu de haut en bas
+                    // (coloration, légende/axe, profil, ligne de lecture, "Forme du jour",
+                    // "Chiffres", "Meilleurs passages", "Records") : plus de séparation entre un bloc
+                    // "Profil" fixe et un cran "Détails" distinct (défaut du lot 3/4, signalé alors :
+                    // écran trop dense, corrigé ici en aérant tout dans un seul défilement, brief
+                    // "un seul contenu qui défile"). Le contenu normal (jours, tags, notes, photos)
+                    // est masqué, pas seulement repoussé sous lui : entrer en édition quitte de toute
+                    // façon le mode Analyse (voir plus haut), donc rien de ce bloc normal n'est
+                    // jamais éditable pendant que l'Analyse est visible.
                     if (analysisModeActive && analysisResult != null) {
-                        AnalysisDetailsContent(
+                        val hasTimestamps = analysisResult.analysis.totals != null
+                        // Brief §4.2 : choix de la coloration, sur toute la largeur.
+                        AnalysisColoringSelector(
+                            coloring = analysisColoring,
+                            onColoringChanged = onAnalysisColoringChanged,
+                            hasTimestamps = hasTimestamps,
+                        )
+                        // Brief §4.3 : légende compacte à gauche, choix de l'axe à droite.
+                        AnalysisLegendAxisRow(
+                            coloring = analysisColoring,
+                            hasTimestamps = hasTimestamps,
+                            axis = analysisAxis,
+                            onAxisChanged = onAnalysisAxisChanged,
+                        )
+                        // Brief §4.4 : le profil coloré, puis la ligne de lecture.
+                        ElevationProfile(
+                            points = track.points,
+                            bivouacPoints = bivouacPoints,
+                            dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
+                            seriesBreaks = seriesBreaks,
+                            cursorIndex = cursorIndex,
+                            onCursorDragged = onCursorDragged,
+                            axis = analysisAxis,
+                            colorRanges = analysisProfileData?.first.orEmpty(),
+                            pauses = analysisProfileData?.second.orEmpty(),
+                        )
+                        AnalysisReadoutLine(
+                            cursorIndex = cursorIndex,
                             result = analysisResult,
                             points = track.points,
                             dayPointCounts = daySegments.map { it.points.size },
+                            seriesBreaks = seriesBreaks,
                         )
+                        val totals = analysisResult.analysis.totals
+                        val estimate = analysisResult.analysis.estimate
+                        // Brief §4.5 : "Forme du jour" (tableau réel/estimé/écart puis résumé par
+                        // nature de terrain), absente sans horodatage (rien à comparer à une
+                        // estimation).
+                        if (totals != null && estimate != null) {
+                            AnalysisFormSection(totals, estimate, analysisResult.timeline.terrainSummary)
+                        }
+                        // RIC-146 lot 8 (brief Partie A) : "Déroulé", la frise chronologique, entre
+                        // "Forme du jour" et "Chiffres". `days` est `null` sur une trace sans
+                        // horodatage (brief, note finale de la partie A) : pas de section du tout
+                        // dans ce cas, comme "Forme du jour" ci-dessus.
+                        analysisResult.timeline.days?.let { days ->
+                            AnalysisTimelineSection(
+                                days = days,
+                                daySegments = daySegments,
+                                onElementSelected = onCursorDragged,
+                            )
+                        }
+                        // Brief §4.6 : "Chiffres", réduite aux altitudes et pentes sans horodatage
+                        // (AnalysisFiguresSection gère elle-même ce repli, totals pouvant être `null`).
+                        AnalysisFiguresSection(totals, analysisResult.timeline.figures)
+                        // Brief §4.7/§4.8 : seulement s'ils existent.
+                        analysisResult.analysis.bestPassages?.let { best ->
+                            if (best.climbMetersPerHour != null || best.flatSpeedKmh != null) BestPassagesSection(best)
+                        }
+                        if (analysisResult.records.isNotEmpty()) RecordsSection(analysisResult.records)
                     } else if (!analysisModeActive) {
                         // RIC-41 : uniquement pour un import de plusieurs jours : sur un seul jour, la
                         // ligne « Total » ci-dessus dit déjà tout, une ventilation à une entrée ne

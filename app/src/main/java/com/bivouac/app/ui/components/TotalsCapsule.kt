@@ -1,5 +1,6 @@
 package com.bivouac.app.ui.components
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
@@ -29,7 +31,6 @@ import com.bivouac.app.R
 import com.bivouac.app.data.gpx.TrackStats
 import java.text.NumberFormat
 import java.util.Locale
-import kotlin.math.roundToInt
 
 /**
  * RIC-19 §1 : capsule de totaux partagée entre le Journal (`JournalBilanCard`, en tête de liste) et
@@ -59,9 +60,6 @@ fun TotalsCapsule(
     // RIC-209 (brief Partie B) : défaut = comportement d'origine (voir DurationDisplay.PlainEstimate) :
     // la valeur affichée reste stats.estimatedDurationMinutes, sans préfixe.
     duration: DurationDisplay = DurationDisplay.PlainEstimate,
-    // RIC-209 : temps de marche des randos horodatées, seconde ligne sous « Durée totale » (brief
-    // §Règles). `null` (défaut) : pas de seconde ligne, comportement d'origine.
-    walkingSeconds: Long? = null,
 ) {
     Column(
         modifier = modifier
@@ -99,16 +97,19 @@ fun TotalsCapsule(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             TotalsStatItem(
+                // La VALEUR reste la durée seule (jamais suffixée par la part, contrairement à
+                // StatsRows) : conception 2 section 5.5, "3. Ton idée, la part de marche" -- c'est
+                // le LIBELLÉ de la case qui change, juste en dessous.
                 value = formatDurationDisplay(duration, stats.estimatedDurationMinutes),
-                label = stringResource(R.string.bilan_totals_label_duration),
+                // RIC-146 lot 9 (brief Partie C, conception 2 section 5.5) : part de marche comme
+                // libellé de la case quand elle est connue ("77 % de marche", fmt_walking_share) ;
+                // repli sur "Durée totale" sinon (aucune rando horodatée, ou au moins un jour
+                // horodaté sans pausedSeconds encore rattrapé -- brief §Règles). Voir
+                // totalsDurationLabelText pour la version testable sans Compose.
+                label = totalsDurationLabelText(LocalContext.current, (duration as? DurationDisplay.Resolved)?.walkingSharePercent),
                 icon = Icons.Filled.Schedule,
                 color = DurationIconColor,
                 modifier = Modifier.weight(1f),
-                // RIC-209 : seconde ligne "dont X de marche" (brief §Règles), seulement quand
-                // walkingSeconds est connu (voir RealDurationCalculator.AggregatedDuration).
-                extraLine = walkingSeconds?.let {
-                    stringResource(R.string.bilan_totals_label_walking, formatDuration((it / 60.0).roundToInt()))
-                },
             )
             TotalsStatItem(
                 value = "$bivouacCount",
@@ -121,6 +122,15 @@ fun TotalsCapsule(
     }
 }
 
+// RIC-209 (brief Partie C, lot 9) : libellé de la case durée, factorisé en fonction pure (Context
+// plutôt que stringResource) pour être testable en JVM/Robolectric sans règle de test Compose --
+// même principe que withWalkingShareText (StatsRows.kt) et JournalCountsLocaleTest.
+internal fun totalsDurationLabelText(context: Context, walkingSharePercent: Int?): String =
+    // .toString() : fmt_walking_share déclare %1$s (chaîne), pas %1$d -- lint (StringFormatMatches)
+    // rejette un Int cru en argument d'un %s, même motif que withWalkingShareText (StatsRows.kt).
+    walkingSharePercent?.let { context.getString(R.string.fmt_walking_share, it.toString()) }
+        ?: context.getString(R.string.bilan_totals_label_duration)
+
 @Composable
 private fun TotalsStatItem(
     value: String,
@@ -128,8 +138,6 @@ private fun TotalsStatItem(
     icon: ImageVector,
     color: Color,
     modifier: Modifier = Modifier,
-    // RIC-209 : troisième ligne optionnelle, seul l'item durée s'en sert (temps de marche).
-    extraLine: String? = null,
 ) {
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(
@@ -143,9 +151,6 @@ private fun TotalsStatItem(
         Column {
             Text(text = value, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
             Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (extraLine != null) {
-                Text(text = extraLine, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
         }
     }
 }
