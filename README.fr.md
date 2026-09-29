@@ -226,6 +226,10 @@ et si ça peut servir à quelqu'un d'autre, tant mieux. Indulgence et retours bi
 
 V2.5.1 fonctionnelle. Développement actif.
 
+## Confidentialité
+
+[Politique de confidentialité](https://bivouac.rseb.net/fr/privacy)
+
 ## Développement
 
 Code écrit avec l'assistance d'un modèle d'IA.

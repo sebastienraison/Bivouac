@@ -219,6 +219,10 @@ works, and if it's useful to someone else, all the better. Feedback and contribu
 
 V2.5.1, functional. Active development.
 
+## Privacy
+
+[Privacy policy](https://bivouac.rseb.net/privacy)
+
 ## Development
 
 Code written with the assistance of an AI model.

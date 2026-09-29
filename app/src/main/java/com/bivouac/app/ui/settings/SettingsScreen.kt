@@ -306,17 +306,33 @@ fun SettingsScreen(
             // du dernier commit source, nécessaire pour que F-Droid puisse reconstruire un APK
             // identique octet pour octet depuis les mêmes sources. Dans les deux cas, ce texte
             // reste la question à laquelle il répond : "quelle build, précisément, tourne ici ?"
-            Text(
-                text = stringResource(
-                    R.string.settings_version_build_info,
-                    BuildConfig.VERSION_NAME,
-                    BuildConfig.BUILD_DATE,
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            // RIC-210 : la mention de copyright est la ligne qui suit la version. Les deux lignes
+            // vivent dans leur propre Column, sans espacement : la Column de l'écran sépare ses
+            // enfants de 28 dp, ce qui détacherait le copyright de la version qu'il complète.
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(
+                        R.string.settings_version_build_info,
+                        BuildConfig.VERSION_NAME,
+                        BuildConfig.BUILD_DATE,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                // Absente (et non remplacée par une année de repli) si la date de build n'a pas la
+                // forme attendue : voir buildYearOrNull.
+                buildYearOrNull(BuildConfig.BUILD_DATE)?.let { year ->
+                    Text(
+                        text = stringResource(R.string.settings_copyright, year),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
         }
     }
 
@@ -1328,6 +1344,16 @@ private fun DataSection(
     }
 }
 
+// RIC-210 : année du copyright = année de la date de build (BuildConfig.BUILD_DATE), une seule
+// année, pas de plage. Fonction pure pour rester testable sans écran. BUILD_DATE vaut « yyyy-MM-dd »
+// dans les deux buildTypes (voir app/build.gradle.kts, RIC-201) ; toute autre forme rend null et la
+// ligne de copyright n'est alors pas affichée : mieux vaut aucune mention qu'une année fausse, ou
+// que l'année de l'horloge de l'appareil, qui n'a rien à voir avec celle de la build.
+private val BUILD_DATE_FORMAT = Regex("""(\d{4})-\d{2}-\d{2}""")
+
+internal fun buildYearOrNull(buildDate: String): String? =
+    BUILD_DATE_FORMAT.matchEntire(buildDate)?.groupValues?.get(1)
+
 // RIC-187 (lot 0 i18n) : motif en dur ("d MMMM 'à' HH:mm", Locale.FRANCE) remplacé par un style
 // localisé, comme JournalScreen.formatStartedAtWithTime (même choix : FormatStyle.LONG pour la
 // date, SHORT pour l'heure). Gagne l'année au passage ("14 avril 2026 19:00" au lieu de "14 avril
@@ -1370,31 +1396,43 @@ private fun CreditsSection(onOpenUrl: (String) -> Unit) {
         CreditRow(stringResource(R.string.settings_credits_maps_label), MAP_LAYER_CREDITS, onOpenUrl)
         CreditRow(stringResource(R.string.settings_credits_weather_label), WEATHER_CREDITS, onOpenUrl)
         CreditRow(stringResource(R.string.settings_credits_libraries_label), LIBRARY_CREDITS, onOpenUrl)
-        StaticCreditRow(
-            stringResource(R.string.settings_credits_dev_label),
-            stringResource(R.string.settings_credits_dev_value),
-        )
         CreditRow(stringResource(R.string.settings_credits_license_label), LICENSE_CREDITS, onOpenUrl)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onOpenUrl(BIVOUAC_GITHUB_URL) }
-                .padding(horizontal = 12.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                stringResource(R.string.settings_credits_github_link),
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Icon(
-                Icons.AutoMirrored.Filled.OpenInNew,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp),
-            )
-        }
+        // RIC-210 : les adresses du site et de la politique vivent dans les ressources de chaînes,
+        // pas ici : la ressource suit la langue affichée (adresse française en français, anglaise
+        // sinon), donc le code n'a aucun test de langue à porter. L'adresse GitHub, elle, ne dépend
+        // pas de la langue et reste une constante. Le chemin /privacy ne doit jamais changer une
+        // fois publié : la politique est aussi liée depuis les README, et une adresse déjà diffusée
+        // ne se corrige pas chez tous ceux qui l'ont reprise.
+        CreditLinkRow(stringResource(R.string.settings_credits_site_link), stringResource(R.string.settings_credits_site_url), onOpenUrl)
+        CreditLinkRow(stringResource(R.string.settings_credits_github_link), BIVOUAC_GITHUB_URL, onOpenUrl)
+        CreditLinkRow(stringResource(R.string.settings_credits_privacy_link), stringResource(R.string.settings_credits_privacy_url), onOpenUrl)
+    }
+}
+
+// RIC-210 : ligne de lien pleine largeur (libellé à gauche, icône « ouvre dans le navigateur » à
+// droite), extraite de la ligne « Code source sur GitHub » pour que les trois liens du bas de la
+// carte aient strictement le même aspect et le même comportement.
+@Composable
+private fun CreditLinkRow(label: String, url: String, onOpenUrl: (String) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpenUrl(url) }
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Icon(
+            Icons.AutoMirrored.Filled.OpenInNew,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 
@@ -1427,16 +1465,5 @@ private fun CreditRow(label: String, links: List<CreditLink>, onOpenUrl: (String
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun StaticCreditRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.End, modifier = Modifier.weight(1f, fill = false))
     }
 }
