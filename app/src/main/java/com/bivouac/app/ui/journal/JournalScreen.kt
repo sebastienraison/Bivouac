@@ -2659,6 +2659,17 @@ internal fun ThreeStopJournalDetail(
                         if (totals != null && estimate != null) {
                             AnalysisFormSection(totals, estimate, analysisResult.timeline.terrainSummary)
                         }
+                        // RIC-146 lot 8 (brief Partie A) : "Déroulé", la frise chronologique, entre
+                        // "Forme du jour" et "Chiffres". `days` est `null` sur une trace sans
+                        // horodatage (brief, note finale de la partie A) : pas de section du tout
+                        // dans ce cas, comme "Forme du jour" ci-dessus.
+                        analysisResult.timeline.days?.let { days ->
+                            AnalysisTimelineSection(
+                                days = days,
+                                daySegments = daySegments,
+                                onElementSelected = onCursorDragged,
+                            )
+                        }
                         // Brief §4.6 : "Chiffres", réduite aux altitudes et pentes sans horodatage
                         // (AnalysisFiguresSection gère elle-même ce repli, totals pouvant être `null`).
                         AnalysisFiguresSection(totals, analysisResult.timeline.figures)
