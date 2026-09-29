@@ -82,17 +82,22 @@ object TrackAnalysisMapMapping {
         return groups
     }
 
-    /** Taille d'un marqueur de pause sur la carte et le profil (conception section 7.2/7.4). */
-    enum class PauseMarkerKind { DOT, ICON, ICON_WITH_DURATION }
+    /**
+     * Taille d'un marqueur de pause sur la carte et le profil (conception 2 section 5.3, brief lot 7
+     * Partie E) : [NONE] (aucun marqueur, sous 5 min), [ICON] (pictogramme sans durée, 5 à 10 min),
+     * [ICON_WITH_DURATION] (pictogramme avec durée, 10 min et plus).
+     */
+    enum class PauseMarkerKind { NONE, ICON, ICON_WITH_DURATION }
 
-    // Bornes de la conception section 7.2 : "point simple sous 5 min, pictogramme à partir de
-    // 5 min, durée affichée à partir de 10 min".
+    // Bornes de la conception 2 section 5.3 : "seules les pauses de 5 minutes et plus ont un
+    // marqueur ; la durée s'affiche à partir de 10 minutes." (RIC-146 lot 7, remplace le point
+    // simple sous 5 min de la conception 1, retiré : il se confondait avec les autres marqueurs.)
     private const val ICON_THRESHOLD_SECONDS = 5 * 60.0
     private const val DURATION_THRESHOLD_SECONDS = 10 * 60.0
 
     /** [seconds] : durée de la pause. Bornes inclusives côté "à partir de", comme la conception. */
     fun pauseMarkerKind(seconds: Double): PauseMarkerKind = when {
-        seconds < ICON_THRESHOLD_SECONDS -> PauseMarkerKind.DOT
+        seconds < ICON_THRESHOLD_SECONDS -> PauseMarkerKind.NONE
         seconds < DURATION_THRESHOLD_SECONDS -> PauseMarkerKind.ICON
         else -> PauseMarkerKind.ICON_WITH_DURATION
     }

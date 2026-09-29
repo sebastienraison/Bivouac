@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- RIC-146 lot 7 (brief Partie E) : variante neutre de ic_track_arrow pour le mode Analyse, dont
+     les palettes de coloration du tracé (Forme/Pente/Vitesse) utilisent déjà le bleu par ailleurs.
+     Même géométrie, blanc à liseré sombre plutôt que bleu à liseré blanc. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="22dp"
+    android:height="22dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#33261A"
+        android:strokeWidth="1.2"
+        android:pathData="M12,3 L20,19 L12,15 L4,19 Z" />
+</vector>
