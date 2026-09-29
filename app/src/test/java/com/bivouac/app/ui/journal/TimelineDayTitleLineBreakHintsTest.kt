@@ -16,7 +16,7 @@ class TimelineDayTitleLineBreakHintsTest {
     fun leSeparateurEntreDistanceEtDureeDevientInsecable() {
         val formatted = "Jour 1 · mercredi 1 juillet · 12,4 km · 6h10"
         val result = timelineDayTitleWithLineBreakHints(formatted)
-        assertTrue(result.contains("12,4 km · 6h10"))
+        assertTrue(result.contains("12,4 km\u00A0·\u00A06h10"))
     }
 
     @Test
@@ -32,9 +32,9 @@ class TimelineDayTitleLineBreakHintsTest {
         // "5h 32m" (anglais) : l'appelant l'a déjà rendue insécable en interne avant de la passer
         // en paramètre (voir AnalysisTimelineSection) ; cette fonction n'a qu'à protéger le
         // séparateur ENTRE distance et durée, pas l'intérieur de la durée elle-même.
-        val formatted = "Day 1 · Wednesday, July 1 · 12.4 km · 5h 32m"
+        val formatted = "Day 1 · Wednesday, July 1 · 12.4\u00A0km · 5h\u00A032m"
         val result = timelineDayTitleWithLineBreakHints(formatted)
-        assertEquals("Day 1 · Wednesday, July 1 · 12.4 km · 5h 32m", result)
+        assertEquals("Day 1 · Wednesday, July 1 · 12.4\u00A0km\u00A0·\u00A05h\u00A032m", result)
     }
 
     @Test

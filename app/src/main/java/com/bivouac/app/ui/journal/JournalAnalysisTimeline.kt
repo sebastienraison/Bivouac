@@ -218,6 +218,11 @@ internal fun formatTimelineDayDate(instant: Instant): String {
     return DateTimeFormatter.ofPattern(pattern, locale).withZone(ZoneId.systemDefault()).format(instant)
 }
 
+// Écrite en échappement Unicode et non tapée telle quelle : un U+00A0 littéral est invisible, il
+// ressemble à un espace ordinaire et un éditeur ou un formateur peut le remplacer sans que
+// personne ne le voie, ce qui annulerait silencieusement la protection contre la coupure de ligne.
+private const val NON_BREAKING_SPACE = '\u00A0'
+
 /**
  * RIC-212 (brief Partie B) : "Jour 1 · mercredi 1 juillet · 12,4 km · 6h10", jamais coupé ni
  * tronqué à 360 points ; s'il passe sur deux lignes, la coupure ne doit tomber qu'entre la date et
@@ -238,7 +243,7 @@ internal fun formatTimelineDayDate(instant: Instant): String {
 internal fun timelineDayTitleWithLineBreakHints(formatted: String): String {
     val parts = formatted.split(" · ")
     if (parts.size != 4) return formatted
-    return "${parts[0]} · ${parts[1]} · ${parts[2]} · ${parts[3]}"
+    return "${parts[0]} · ${parts[1]} · ${parts[2]}${NON_BREAKING_SPACE}·${NON_BREAKING_SPACE}${parts[3]}"
 }
 
 // --- Nuit de bivouac entre deux jours -----------------------------------------------------------------
@@ -646,8 +651,8 @@ internal fun AnalysisTimelineSection(days: List<DayTimeline>, daySegments: List<
                                 R.string.journal_analysis_timeline_day,
                                 (dayIndex + 1).toString(),
                                 formatTimelineDayDate(dayStartInstant),
-                                distanceText.replace(' ', ' '),
-                                durationText.replace(' ', ' '),
+                                distanceText.replace(' ', NON_BREAKING_SPACE),
+                                durationText.replace(' ', NON_BREAKING_SPACE),
                             ),
                         )
                         Text(
