@@ -227,8 +227,7 @@
     <string name="settings_credits_maps_label">Fonds de carte</string>
     <string name="settings_credits_weather_label">Météo</string>
     <string name="settings_credits_libraries_label">Bibliothèques</string>
-    <string name="settings_credits_dev_label">Développement</string>
-    <string name="settings_credits_dev_value">Sébastien Raison</string>
+    <string name="settings_copyright">© %1$s Sébastien Raison</string>
     <string name="settings_credits_license_label">Licence</string>
     <string name="settings_credits_site_link">Site web</string>
     <string name="settings_credits_github_link">Code source sur GitHub</string>

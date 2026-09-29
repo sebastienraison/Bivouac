@@ -218,8 +218,7 @@
     <string name="settings_credits_maps_label">Map layers</string>
     <string name="settings_credits_weather_label">Weather</string>
     <string name="settings_credits_libraries_label">Libraries</string>
-    <string name="settings_credits_dev_label">Development</string>
-    <string name="settings_credits_dev_value">Sébastien Raison</string>
+    <string name="settings_copyright">© %1$s Sébastien Raison</string>
     <string name="settings_credits_license_label">License</string>
     <string name="settings_credits_site_link">Website</string>
     <string name="settings_credits_github_link">Source code on GitHub</string>
