@@ -2,6 +2,7 @@ package com.bivouac.app.ui.journal
 
 import android.text.format.DateFormat as AndroidDateFormat
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,6 +42,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -54,10 +57,12 @@ import com.bivouac.app.data.gpx.TimelinePhaseKind
 import com.bivouac.app.data.gpx.TimelinePause
 import com.bivouac.app.data.gpx.TrackAnalysisMapMapping
 import com.bivouac.app.data.model.Segment
+import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.formatKm1
 import com.bivouac.app.ui.map.AnalysisColoring
 import com.bivouac.app.ui.map.AnalysisColors
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -102,6 +107,15 @@ internal object TimelineLayout {
      * Choix de ce lot, pas du banc d'essai (qui ne dessinait pas encore les interruptions).
      */
     const val MIN_INTERRUPTION_HEIGHT_DP = 3f
+
+    /**
+     * RIC-212 (brief Partie A, "Hauteur : fixe, hors échelle de la frise") : hauteur du bloc
+     * bivouac, entre deux jours. Il ne suit PAS [MINUTE_HEIGHT_DP] comme une phase ou une pause :
+     * une nuit de 14h10 y ferait 1 326 dp (14h10 = 850 min × 1,56 dp/min), largement hors écran.
+     * Valeur choisie pour ce lot : assez haute pour le pictogramme de 24 dp (même taille que le
+     * badge du mode Carnet, JournalScreen.kt) centré verticalement avec un peu d'air, pas plus.
+     */
+    const val BIVOUAC_ROW_HEIGHT_DP = 40f
 }
 
 /** Hauteur d'une phase ou d'une pause à l'échelle de la frise, avec son plancher. */
@@ -203,6 +217,71 @@ internal fun formatTimelineDayDate(instant: Instant): String {
     val pattern = AndroidDateFormat.getBestDateTimePattern(locale, "EEEEMMMMd")
     return DateTimeFormatter.ofPattern(pattern, locale).withZone(ZoneId.systemDefault()).format(instant)
 }
+
+/**
+ * RIC-212 (brief Partie B) : "Jour 1 · mercredi 1 juillet · 12,4 km · 6h10", jamais coupé ni
+ * tronqué à 360 points ; s'il passe sur deux lignes, la coupure ne doit tomber qu'entre la date et
+ * la distance. [formatted] est déjà le texte localisé complet (les quatre paramètres de
+ * journal_analysis_timeline_day déjà substitués) : cette fonction ne fait QUE poser des espaces
+ * insécables (U+00A0) pour empêcher les autres points de coupure, elle ne change aucun mot.
+ *
+ * Choix retenu, le plus simple : le séparateur « · » apparaît trois fois dans le texte formaté (il
+ * ne peut apparaître dans aucun des quatre paramètres eux-mêmes : ni un numéro de jour, ni une
+ * date, une distance ou une durée ne produit cette séquence espace-point médian-espace) ; découper
+ * dessus donne donc toujours exactement les quatre segments dans l'ordre, sans avoir à connaître
+ * leur contenu. Seul le dernier séparateur (entre distance et durée) devient insécable ici :
+ * l'appelant a déjà rendu la distance et la durée elles-mêmes insécables en interne (nécessaire en
+ * anglais, où la durée porte un espace : "5h 32m") avant de les passer en paramètres, donc le
+ * bloc "12,4 km · 6h10" est protégé de bout en bout. Repli identitaire si la découpe ne donne pas
+ * exactement quatre segments (ne devrait pas arriver) : ne jamais planter sur un format inattendu.
+ */
+internal fun timelineDayTitleWithLineBreakHints(formatted: String): String {
+    val parts = formatted.split(" · ")
+    if (parts.size != 4) return formatted
+    return "${parts[0]} · ${parts[1]} · ${parts[2]} · ${parts[3]}"
+}
+
+// --- Nuit de bivouac entre deux jours -----------------------------------------------------------------
+
+/**
+ * RIC-212 (brief Partie A, "Durée affichée", règle des 24 h substituée le 2026-09-29 par le fil de
+ * pilotage à la "règle du lendemain" d'origine, note en tête de fonction) : durée de la nuit
+ * affichée au bloc bivouac entre les jours N et N+1, écart entre le dernier point horodaté du jour
+ * N ([arrival]) et le premier point horodaté du jour N+1 ([departure]). Fonction pure (aucune
+ * dépendance Compose, aucun fuseau : la comparaison ne porte que sur l'écart entre les deux
+ * instants, jamais sur une date locale), testée directement par TimelineBivouacTest.
+ *
+ * `null` dans tous les cas où le brief demande "le logo seul, sans texte" : un horodatage manquant
+ * d'un côté ou de l'autre, un écart nul ou négatif, ou un écart de 24 h ou plus (raison du
+ * changement de règle, pilotage du 2026-09-29 : une arrivée après minuit suivie d'un départ le
+ * matin même doit afficher sa durée, ce que l'ancienne comparaison de dates locales empêchait).
+ */
+internal fun bivouacNightDurationSeconds(arrival: Instant?, departure: Instant?): Double? {
+    if (arrival == null || departure == null) return null
+    val seconds = Duration.between(arrival, departure).seconds.toDouble()
+    return if (seconds > 0.0 && seconds < 24 * 3_600.0) seconds else null
+}
+
+/**
+ * RIC-212 (brief Partie A, "Toucher") : index LOCAL au jour (dans [points], convention
+ * [Segment.points]) du dernier point horodaté du jour, celui que place le repère (carte et profil)
+ * au toucher du bloc bivouac qui le suit dans la frise, le même point que celui déjà affiché par
+ * la ligne "Arrivée" au-dessus de ce bloc. `null` si aucun point du jour n'a d'horodatage :
+ * n'arrive pas pour un jour affiché par la frise (l'invariant de
+ * [com.bivouac.app.data.gpx.TrackTimelineCalculator.computeDayTimeline] exige déjà deux points
+ * horodatés pour produire des [TimelineElement]), conservé ici par prudence plutôt que pour un cas
+ * réel, même esprit que ce calculateur.
+ */
+internal fun bivouacMarkerLocalIndex(points: List<TrackPoint>): Int? =
+    points.indices.lastOrNull { points[it].time != null }
+
+/**
+ * RIC-212 (brief Partie A, "Rando d'un seul jour : aucun bloc") : nombre de blocs bivouac de la
+ * frise, un entre chaque paire de jours consécutifs AFFICHÉS (le filtre `elements.isNotEmpty()` de
+ * [AnalysisTimelineSection], jamais le nombre brut de [DayTimeline] du jeu de données). Fonction
+ * pure, testée directement par TimelineBivouacTest, même patron que [dayTitleVisible].
+ */
+internal fun bivouacBlockCount(displayedDayCount: Int): Int = maxOf(0, displayedDayCount - 1)
 
 // --- Mise en page ------------------------------------------------------------------------------------
 
@@ -449,6 +528,43 @@ private fun ShortPausesNote(shortPauses: List<ShortTimelinePause>) {
     )
 }
 
+/**
+ * RIC-212 (brief Partie A) : le bloc bivouac entre deux jours affichés. Rond de la colonne du
+ * milieu (pas de trait, pas de hachures : distinct d'une pause, brief "sobre, aéré") : le logo du
+ * mode Carnet (JournalScreen.kt, ReadOnlyBivouacRow), avec sa teinte habituelle (pas d'Icon avec
+ * tint : un Image, comme là-bas, le vectoriel porte déjà ses propres couleurs). Colonne de gauche
+ * vide (brief : "pas d'heure, la ligne Arrivée la donne déjà"). [nightDurationSeconds] : `null` ->
+ * logo seul (voir [bivouacNightDurationSeconds]), sinon le texte "%1$s au bivouac" à droite, au
+ * format de durée existant ([formatPauseDuration]).
+ */
+@Composable
+private fun TimelineBivouacRow(nightDurationSeconds: Double?, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(TimelineLayout.BIVOUAC_ROW_HEIGHT_DP.dp)
+            .clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Spacer(modifier = Modifier.width(TimeColumnWidth))
+        Box(modifier = Modifier.width(DotColumnWidth), contentAlignment = Alignment.Center) {
+            Image(
+                painter = painterResource(R.drawable.ic_bivouac_badge),
+                contentDescription = stringResource(R.string.journal_detail_bivouac_night_description),
+                modifier = Modifier.size(24.dp),
+            )
+        }
+        if (nightDurationSeconds != null) {
+            Text(
+                text = stringResource(R.string.journal_analysis_timeline_bivouac, formatPauseDuration(nightDurationSeconds)),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+        }
+    }
+}
+
 /** Un jour de la frise : départ, éléments (phases et pauses) dans l'ordre, arrivée. */
 @Composable
 private fun DayTimelineView(day: DayTimeline, dayStartInstant: Instant, dayIndex: Int, dayOffsets: List<Int>, onElementSelected: (Int) -> Unit) {
@@ -491,38 +607,78 @@ private fun DayTimelineView(day: DayTimeline, dayStartInstant: Instant, dayIndex
  * [onElementSelected] : index dans la trace concaténée de l'écran (même convention que le
  * `cursorIndex` de JournalScreen.kt), appelé au toucher d'une phase ou d'une pause, brief "place le
  * repère à son début, sur la carte et sur le profil" (même callback que le glissement sur le profil).
+ *
+ * RIC-212 (brief Partie A) : entre deux jours AFFICHÉS consécutifs (voir [displayedDayIndices]
+ * ci-dessous, jamais deux [dayIndex] simplement consécutifs : un jour sans le moindre point
+ * horodaté, cas de bord que l'invariant du calculateur ne produit pas en pratique, ne serait de
+ * toute façon pas rendu), un [TimelineBivouacRow] : sa durée vient de
+ * [bivouacNightDurationSeconds] entre le dernier point horodaté du jour qui s'achève et le premier
+ * du jour suivant, son toucher place le repère sur ce dernier point ([bivouacMarkerLocalIndex]).
  */
 @Composable
 internal fun AnalysisTimelineSection(days: List<DayTimeline>, daySegments: List<Segment>, onElementSelected: (Int) -> Unit, modifier: Modifier = Modifier) {
     val dayOffsets = remember(daySegments) { TrackAnalysisMapMapping.dayOffsets(daySegments.map { it.points.size }) }
     val multiDay = dayTitleVisible(days.size)
+    // RIC-212 : les seuls jours réellement rendus (voir day.elements.isNotEmpty() plus bas) ; sert
+    // à retrouver, pour un jour donné, le jour affiché SUIVANT (brief bivouacBlockCount : "chaque
+    // paire de jours consécutifs affichés").
+    val displayedDayIndices = remember(days) { days.indices.filter { days[it].elements.isNotEmpty() } }
     Column(modifier = modifier) {
         SectionTitle(stringResource(R.string.journal_analysis_section_timeline))
         Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            days.forEachIndexed { dayIndex, day ->
-                if (day.elements.isNotEmpty()) {
-                    // Non-null : day.elements non vide implique qu'au moins un point horodaté existe
-                    // pour ce jour (même invariant que TrackTimelineCalculator.computeDayTimeline,
-                    // qui rend un DayTimeline vide sinon), et daySegments[dayIndex].points est
-                    // exactement la liste passée en entrée de ce calcul (voir kdoc ci-dessus).
-                    val dayStartInstant = daySegments[dayIndex].points.first { it.time != null }.time!!
-                    Column {
-                        if (multiDay) {
-                            Text(
-                                text = stringResource(R.string.journal_analysis_timeline_day, (dayIndex + 1).toString(), formatTimelineDayDate(dayStartInstant)),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(bottom = 8.dp),
-                            )
-                        }
-                        DayTimelineView(
-                            day = day,
-                            dayStartInstant = dayStartInstant,
-                            dayIndex = dayIndex,
-                            dayOffsets = dayOffsets,
-                            onElementSelected = onElementSelected,
+            displayedDayIndices.forEachIndexed { position, dayIndex ->
+                val day = days[dayIndex]
+                // Non-null : day.elements non vide implique qu'au moins un point horodaté existe
+                // pour ce jour (même invariant que TrackTimelineCalculator.computeDayTimeline,
+                // qui rend un DayTimeline vide sinon), et daySegments[dayIndex].points est
+                // exactement la liste passée en entrée de ce calcul (voir kdoc ci-dessus).
+                val dayStartInstant = daySegments[dayIndex].points.first { it.time != null }.time!!
+                Column {
+                    if (multiDay) {
+                        val distanceText = stringResource(R.string.format_distance_km, formatKm1(day.distanceMeters / 1_000.0))
+                        val durationText = formatPauseDuration(day.elapsedSeconds)
+                        // RIC-212 (brief Partie B) : espaces insécables du côté des paramètres pour
+                        // qu'aucune coupure de ligne ne tombe DANS la distance ni DANS la durée
+                        // (l'anglais porte un espace, "5h 32m") ; timelineDayTitleWithLineBreakHints
+                        // s'occupe ensuite du séparateur ENTRE elles.
+                        val titleText = timelineDayTitleWithLineBreakHints(
+                            stringResource(
+                                R.string.journal_analysis_timeline_day,
+                                (dayIndex + 1).toString(),
+                                formatTimelineDayDate(dayStartInstant),
+                                distanceText.replace(' ', ' '),
+                                durationText.replace(' ', ' '),
+                            ),
+                        )
+                        Text(
+                            text = titleText,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp),
                         )
                     }
+                    DayTimelineView(
+                        day = day,
+                        dayStartInstant = dayStartInstant,
+                        dayIndex = dayIndex,
+                        dayOffsets = dayOffsets,
+                        onElementSelected = onElementSelected,
+                    )
+                }
+                val nextDayIndex = displayedDayIndices.getOrNull(position + 1)
+                if (nextDayIndex != null) {
+                    val arrival = daySegments[dayIndex].points.lastOrNull { it.time != null }?.time
+                    val departure = daySegments[nextDayIndex].points.firstOrNull { it.time != null }?.time
+                    val nightDurationSeconds = bivouacNightDurationSeconds(arrival, departure)
+                    val markerLocalIndex = bivouacMarkerLocalIndex(daySegments[dayIndex].points)
+                    TimelineBivouacRow(
+                        nightDurationSeconds = nightDurationSeconds,
+                        onClick = {
+                            markerLocalIndex?.let {
+                                onElementSelected(TrackAnalysisMapMapping.toScreenIndex(dayOffsets, dayIndex, it))
+                            }
+                        },
+                    )
                 }
             }
         }
