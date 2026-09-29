@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : strings-inventaire-v17.csv (inventaire de l'agent de pilotage,
+    Source : strings-inventaire-v18.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v17.csv
+        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v18.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -219,9 +219,13 @@
     <string name="settings_credits_weather_label">Weather</string>
     <string name="settings_credits_libraries_label">Libraries</string>
     <string name="settings_credits_dev_label">Development</string>
-    <string name="settings_credits_dev_value">Sébastien Raison, with Claude (Anthropic)</string>
+    <string name="settings_credits_dev_value">Sébastien Raison</string>
     <string name="settings_credits_license_label">License</string>
+    <string name="settings_credits_site_link">Website</string>
     <string name="settings_credits_github_link">Source code on GitHub</string>
+    <string name="settings_credits_privacy_link">Privacy policy</string>
+    <string name="settings_credits_site_url">https://bivouac.rseb.net/</string>
+    <string name="settings_credits_privacy_url">https://bivouac.rseb.net/privacy</string>
     <string name="settings_screen_title">Settings</string>
     <string name="settings_version_build_info">Version %1$s · built on %2$s</string>
     <string name="settings_speed_calibration_section_title">Custom speed</string>
