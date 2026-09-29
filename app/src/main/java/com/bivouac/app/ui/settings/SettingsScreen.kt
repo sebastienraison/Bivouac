@@ -1375,26 +1375,42 @@ private fun CreditsSection(onOpenUrl: (String) -> Unit) {
             stringResource(R.string.settings_credits_dev_value),
         )
         CreditRow(stringResource(R.string.settings_credits_license_label), LICENSE_CREDITS, onOpenUrl)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onOpenUrl(BIVOUAC_GITHUB_URL) }
-                .padding(horizontal = 12.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                stringResource(R.string.settings_credits_github_link),
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Icon(
-                Icons.AutoMirrored.Filled.OpenInNew,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp),
-            )
-        }
+        // RIC-210 : les adresses du site et de la politique vivent dans les ressources de chaînes,
+        // pas ici : la ressource suit la langue affichée (adresse française en français, anglaise
+        // sinon), donc le code n'a aucun test de langue à porter. L'adresse GitHub, elle, ne dépend
+        // pas de la langue et reste une constante. Le chemin /privacy ne doit jamais changer une
+        // fois publié : la politique est aussi liée depuis les README, et une adresse déjà diffusée
+        // ne se corrige pas chez tous ceux qui l'ont reprise.
+        CreditLinkRow(stringResource(R.string.settings_credits_site_link), stringResource(R.string.settings_credits_site_url), onOpenUrl)
+        CreditLinkRow(stringResource(R.string.settings_credits_github_link), BIVOUAC_GITHUB_URL, onOpenUrl)
+        CreditLinkRow(stringResource(R.string.settings_credits_privacy_link), stringResource(R.string.settings_credits_privacy_url), onOpenUrl)
+    }
+}
+
+// RIC-210 : ligne de lien pleine largeur (libellé à gauche, icône « ouvre dans le navigateur » à
+// droite), extraite de la ligne « Code source sur GitHub » pour que les trois liens du bas de la
+// carte aient strictement le même aspect et le même comportement.
+@Composable
+private fun CreditLinkRow(label: String, url: String, onOpenUrl: (String) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpenUrl(url) }
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Icon(
+            Icons.AutoMirrored.Filled.OpenInNew,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 
