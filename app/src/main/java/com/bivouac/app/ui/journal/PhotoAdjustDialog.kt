@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.RotateLeft
@@ -228,7 +228,11 @@ internal fun PhotoAdjustDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
+                    // RIC-215 : à 360 dp, deux colonnes de 112 dp + 40 dp d'écart ne laissaient que
+                    // 64 dp au bouton « Réinitialiser » (coupé en « Réinit / ialiser »). Les colonnes
+                    // prennent maintenant la largeur de leur libellé, l'écart se réduit, et le bouton
+                    // reçoit tout le reste.
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         RotationButton(
                             icon = Icons.Default.RotateLeft,
                             label = stringResource(R.string.photo_adjust_rotate_left_button),
@@ -244,11 +248,18 @@ internal fun PhotoAdjustDialog(
                     // valide ensuite cet état, Annuler restaure l'ajustement précédent : ce bouton ne
                     // touche à rien au-delà de `adjustments`, exactement comme les deux boutons de
                     // rotation à sa gauche.
-                    TextButton(onClick = { adjustments = PhotoAdjustments.NONE }, enabled = canReset) {
+                    TextButton(
+                        onClick = { adjustments = PhotoAdjustments.NONE },
+                        enabled = canReset,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                    ) {
                         Text(
                             stringResource(R.string.photo_adjust_reset_button),
                             color = if (canReset) Color.White else Color.White.copy(alpha = 0.38f),
                             style = MaterialTheme.typography.labelLarge,
+                            // Jamais de coupure au milieu du mot : une ligne, quitte à déborder.
+                            maxLines = 1,
+                            softWrap = false,
                         )
                     }
                 }
@@ -288,7 +299,6 @@ private fun RotationButton(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier.width(112.dp),
     ) {
         Surface(
             onClick = onClick,
@@ -307,6 +317,8 @@ private fun RotationButton(
             color = Color(0xFFE2E3D6),
             style = MaterialTheme.typography.labelSmall,
             textAlign = TextAlign.Center,
+            maxLines = 1,
+            softWrap = false,
         )
     }
 }
