@@ -16,20 +16,39 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.formatKm1
+import kotlin.math.ceil
 
 private val COLUMN_WIDTH = 20.dp
 private val BAR_WIDTH = 14.dp
 private val CHART_HEIGHT = 80.dp
 
-private val AXIS_WIDTH = 34.dp
+// RIC-215 : marge à droite des valeurs d'axe (celle qui existait déjà). La largeur de la colonne
+// n'est plus fixe : elle se calcule sur le plus large des libellés affichés, voir axisColumnWidth.
+private val AXIS_END_PADDING = 6.dp
+
+// Largeur minimale de la colonne d'axe : l'ancienne valeur fixe. Sans minimum, le bord gauche des
+// barres bougeait d'un onglet à l'autre selon la longueur des valeurs ; 34 dp suffit aux petites
+// valeurs, la colonne ne s'élargit qu'au-delà.
+internal const val AXIS_MIN_WIDTH_DP = 34f
+
+/**
+ * RIC-215 : largeur de la colonne d'axe = le plus large des libellés réellement affichés (mesurés)
+ * plus la marge, jamais sous [minWidth]. Une largeur fixe (34dp) coupait « 3 853 » en « 3 85 » dès
+ * que la valeur dépassait quatre chiffres ; le minimum garde un bord gauche stable entre onglets.
+ */
+internal fun axisColumnWidth(labelWidths: List<Float>, margin: Float, minWidth: Float = AXIS_MIN_WIDTH_DP): Float =
+    maxOf((labelWidths.maxOrNull() ?: 0f) + margin, minWidth)
 
 /**
  * RIC-19 §2 : barres pour les 4 métriques cumulatives, ligne pour Vitesse (moyenne, pas une somme,
@@ -43,8 +62,8 @@ private val AXIS_WIDTH = 34.dp
  * colonne : un millésime à 4 chiffres ne tient pas sur une largeur de colonne (20dp) pensée pour
  * une seule lettre de mois, il y retombait sur deux lignes.
  *
- * Graduation min/milieu/max à gauche (colonne [AXIS_WIDTH], fixe : elle ne défile pas avec les
- * barres) : sans elle, la hauteur des barres n'était comparable qu'entre elles, pas lisible en
+ * Graduation min/milieu/max à gauche (colonne dimensionnée par [axisColumnWidth] : elle ne
+ * défile pas avec les barres) : sans elle, la hauteur des barres n'était comparable qu'entre elles, pas lisible en
  * valeur absolue. min/max calculés une seule fois ici et transmis à BarChart/LineChart plutôt que
  * recalculés dans chacun, pour que le graphique et sa graduation restent toujours d'accord.
  */
@@ -126,27 +145,43 @@ internal fun ProgressionChart(series: ProgressionSeries, color: Color, modifier:
 
 @Composable
 private fun AxisLabels(metric: ProgressionMetric, minValue: Double, maxValue: Double) {
-    Box(modifier = Modifier.width(AXIS_WIDTH).height(CHART_HEIGHT)) {
+    val maxText = formatAxisValue(metric, maxValue)
+    val midText = formatAxisValue(metric, (minValue + maxValue) / 2)
+    val minText = formatAxisValue(metric, minValue)
+    val textMeasurer = rememberTextMeasurer()
+    val style = MaterialTheme.typography.labelSmall
+    val density = LocalDensity.current
+    // Mesure avec le style et l'échelle de police réellement appliqués aux Text ci-dessous. Arrondi
+    // au pixel supérieur : un demi-pixel de moins suffirait à recouper le dernier chiffre.
+    val columnWidth = remember(maxText, midText, minText, style, density) {
+        with(density) {
+            val widths = listOf(maxText, midText, minText).map {
+                ceil(textMeasurer.measure(it, style, maxLines = 1, softWrap = false).size.width.toFloat()).toDp().value
+            }
+            axisColumnWidth(widths, AXIS_END_PADDING.value).dp
+        }
+    }
+    Box(modifier = Modifier.width(columnWidth).height(CHART_HEIGHT)) {
         Text(
-            text = formatAxisValue(metric, maxValue),
+            text = maxText,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
-            modifier = Modifier.align(Alignment.TopEnd).padding(end = 6.dp),
+            modifier = Modifier.align(Alignment.TopEnd).padding(end = AXIS_END_PADDING),
         )
         Text(
-            text = formatAxisValue(metric, (minValue + maxValue) / 2),
+            text = midText,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
-            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 6.dp),
+            modifier = Modifier.align(Alignment.CenterEnd).padding(end = AXIS_END_PADDING),
         )
         Text(
-            text = formatAxisValue(metric, minValue),
+            text = minText,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 6.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = AXIS_END_PADDING),
         )
     }
 }
