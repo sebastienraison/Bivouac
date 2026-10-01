@@ -84,7 +84,9 @@ if (!releaseSigningAvailable) {
     }.joinToString(" et ")
     logger.warn(
         "RIC-201 : release NON SIGNÉE -- $manquants absent(s). " +
-            "assembleRelease produira app-release-unsigned.apk (pas de repli sur la clé debug). " +
+            "assembleRelease produira Bivouac-<version>-unsigned.apk (pas de repli sur la clé debug) " +
+            "et bundleRelease un app-release.aab NON SIGNÉ au nom inchangé (AGP ne permet pas de " +
+            "suffixer le nom du bundle : seule l'absence de signature le distingue). " +
             "Pour signer, voir le commentaire RIC-201 dans app/build.gradle.kts (buildTypes.release).",
     )
 }
@@ -489,6 +491,24 @@ androidComponents {
                 )
             }
         }
+
+        // Release 2.6.0 : le bundle (.aab) pour Google Play sort de `bundleRelease` dans
+        // app/build/outputs/bundle/release/app-release.aab. Il n'y a rien à configurer pour la
+        // signature : la tâche de finalisation du bundle lit le MÊME signingConfig que l'APK (la
+        // variante release, posé plus haut), donc la même clé et le même mot de passe unique
+        // (BIVOUAC_SIGNING_PASSWORD) signent les deux sorties d'un seul `./gradlew assembleRelease
+        // bundleRelease`. Décision de Seb : cette clé sert à la fois de clé de signature et de clé
+        // d'envoi sur Play. Sans signature disponible, le bundle sort non signé (jarsigner ne
+        // trouve aucun manifeste dans l'.aab) : inutilisable pour l'envoi sur Play, mais rien dans son
+        // nom ne le dit, d'où l'avertissement RIC-201 émis en tête de fichier.
+        //
+        // Le nom n'est volontairement PAS renommé en Bivouac-<versionName>[-unsigned].aab : l'API
+        // Variant n'expose un nom de sortie que pour l'APK (VariantOutput.outputFileName), le nom du
+        // bundle vient d'une valeur interne d'AGP (nom de base + variante) sans réglage public, et
+        // BUNDLE n'est qu'un artefact transformable, pas remplaçable. Y arriver demanderait une
+        // tâche de copie branchée à la main sur bundleRelease, donc un second fichier à côté de
+        // celui d'AGP : source de confusion au moment d'envoyer le bon sur Play, pour un nom que
+        // Play n'exige pas. Contrairement à l'APK, aucune recette F-Droid ne dépend de ce nom.
     }
 }
 
