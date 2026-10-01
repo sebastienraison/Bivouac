@@ -49,9 +49,9 @@ private val BOTTOM_AXIS_HEIGHT = 14.dp
 
 // Round "nice" values a gridline is snapped to, largest-first so the picked unit is the coarsest
 // one that still resolves the ideal, evenly-spaced position without moving it too far.
-private val ALTITUDE_ROUNDING_UNITS = listOf(50.0, 100.0, 250.0, 500.0, 1000.0)
-private const val ALTITUDE_MIN_SPACING = 250.0
-private const val MAX_INTERMEDIATE_GRIDLINES = 3
+internal val ALTITUDE_ROUNDING_UNITS = listOf(50.0, 100.0, 250.0, 500.0, 1000.0)
+internal const val ALTITUDE_MIN_SPACING = 250.0
+internal const val MAX_INTERMEDIATE_GRIDLINES = 3
 
 private val DISTANCE_ROUNDING_UNITS_KM = listOf(1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0)
 private const val DISTANCE_MIN_SPACING_KM = 5.0
@@ -59,6 +59,10 @@ private const val MAX_INTERMEDIATE_DISTANCE_TICKS = 4
 
 // Keeps a round gridline from landing right on top of a bivouac's own distance label.
 private val COLLISION_MARGIN = 20.dp
+
+// RIC-215 : distance minimale entre deux libellés de l'axe des altitudes (en plus de leur hauteur
+// mesurée).
+private val ALTITUDE_LABEL_GAP = 2.dp
 
 /**
  * RIC-146 lot 4 (brief §5) : l'axe horizontal du profil. [DISTANCE] est le comportement existant,
@@ -120,7 +124,7 @@ private fun formatClockTime(time: LocalTime): String =
  * needlessly conservative on the much wider distance axis (confirmed by eye: a track's edge gap
  * can safely run a bit tighter than the interior spacing there without looking cramped).
  */
-private fun evenlySpacedRoundMarks(
+internal fun evenlySpacedRoundMarks(
     min: Double,
     max: Double,
     minSpacing: Double,
@@ -314,9 +318,20 @@ fun ElevationProfile(
         }
 
         // Altitude ruler (horizontal gridlines): exact min/max always shown, round intermediates
-        // evenly spaced between them.
+        // evenly spaced between them. RIC-215 : un repère intermédiaire dont le libellé, à sa
+        // position réellement dessinée, en chevaucherait un autre (min, max ou repère voisin) est
+        // retiré avec sa ligne ; l'arrondi peut en effet rapprocher un repère du min ou du max, et
+        // la marge de evenlySpacedRoundMarks est en mètres, pas en fonction de la hauteur du graphe.
+        val altitudeLabelHeight = textMeasurer.measure("0", labelStyle).size.height.toFloat()
         val altitudeGridlines = listOf(maxElevation, minElevation) +
-            evenlySpacedRoundMarks(minElevation, maxElevation, ALTITUDE_MIN_SPACING, MAX_INTERMEDIATE_GRIDLINES, ALTITUDE_ROUNDING_UNITS)
+            resolveAltitudeMarks(
+                min = minElevation,
+                max = maxElevation,
+                candidates = evenlySpacedRoundMarks(minElevation, maxElevation, ALTITUDE_MIN_SPACING, MAX_INTERMEDIATE_GRIDLINES, ALTITUDE_ROUNDING_UNITS),
+                plotHeight = plotHeight,
+                labelHeight = altitudeLabelHeight,
+                minGap = ALTITUDE_LABEL_GAP.toPx(),
+            )
         altitudeGridlines.forEach { elevation ->
             val y = yFor(elevation)
             drawLine(
@@ -330,7 +345,7 @@ fun ElevationProfile(
             drawText(
                 textMeasurer = textMeasurer,
                 text = formatGroupedInt(elevation.roundToInt()),
-                topLeft = Offset(0f, (y - 6.dp.toPx()).coerceIn(0f, plotHeight - 10.dp.toPx())),
+                topLeft = Offset(0f, altitudeLabelTop(y, altitudeLabelHeight, plotHeight)),
                 style = labelStyle,
             )
         }
