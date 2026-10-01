@@ -37,13 +37,18 @@ private val CHART_HEIGHT = 80.dp
 // n'est plus fixe : elle se calcule sur le plus large des libellés affichés, voir axisColumnWidth.
 private val AXIS_END_PADDING = 6.dp
 
+// Largeur minimale de la colonne d'axe : l'ancienne valeur fixe. Sans minimum, le bord gauche des
+// barres bougeait d'un onglet à l'autre selon la longueur des valeurs ; 34 dp suffit aux petites
+// valeurs, la colonne ne s'élargit qu'au-delà.
+internal const val AXIS_MIN_WIDTH_DP = 34f
+
 /**
  * RIC-215 : largeur de la colonne d'axe = le plus large des libellés réellement affichés (mesurés)
- * plus la marge. Une largeur fixe (34dp) coupait « 3 853 » en « 3 85 » dès que la valeur dépassait
- * quatre chiffres.
+ * plus la marge, jamais sous [minWidth]. Une largeur fixe (34dp) coupait « 3 853 » en « 3 85 » dès
+ * que la valeur dépassait quatre chiffres ; le minimum garde un bord gauche stable entre onglets.
  */
-internal fun axisColumnWidth(labelWidths: List<Float>, margin: Float): Float =
-    (labelWidths.maxOrNull() ?: 0f) + margin
+internal fun axisColumnWidth(labelWidths: List<Float>, margin: Float, minWidth: Float = AXIS_MIN_WIDTH_DP): Float =
+    maxOf((labelWidths.maxOrNull() ?: 0f) + margin, minWidth)
 
 /**
  * RIC-19 §2 : barres pour les 4 métriques cumulatives, ligne pour Vitesse (moyenne, pas une somme,

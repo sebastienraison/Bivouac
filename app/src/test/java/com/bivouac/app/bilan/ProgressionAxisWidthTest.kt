@@ -5,18 +5,20 @@ import org.junit.Test
 
 class ProgressionAxisWidthTest {
     @Test
-    fun laColonneSuitLePlusLargeDesTroisLibelles() {
-        assertEquals(36f, axisColumnWidth(listOf(10f, 30f, 20f), 6f), 0f)
+    fun sousLeMinimumLaColonneGardeSes34dp() {
+        // Plus large libellé 20 dp + marge 6 dp = 26 dp, sous le minimum.
+        assertEquals(34f, axisColumnWidth(listOf(10f, 20f, 5f), 6f), 0f)
     }
 
     @Test
-    fun uneValeurAQuatreChiffresElargitLaColonneAuDelaDeLAncienne34dp() {
-        // « 3 853 » mesure environ 29 dp en labelSmall : l'ancienne largeur fixe (34 dp, 28 utiles) coupait.
+    fun auDessusDuMinimumLaColonneSuitLePlusLargeDesTroisLibelles() {
+        // « 3 853 » mesure environ 29 dp en labelSmall : 29 + 6 = 35 dp, au-dessus de 34.
         assertEquals(35f, axisColumnWidth(listOf(29f, 15f, 5f), 6f), 0f)
+        assertEquals(46f, axisColumnWidth(listOf(10f, 40f, 20f), 6f), 0f)
     }
 
     @Test
-    fun sansLibelleOnGardeLaMarge() {
-        assertEquals(6f, axisColumnWidth(emptyList(), 6f), 0f)
+    fun sansLibelleOnRendLeMinimum() {
+        assertEquals(34f, axisColumnWidth(emptyList(), 6f), 0f)
     }
 }
