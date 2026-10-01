@@ -50,3 +50,47 @@ internal fun resolveAltitudeMarks(
     }
     return candidates.filter { it in kept }
 }
+
+/** Priorité d'un libellé de l'axe horizontal, du plus fort au plus faible (décision du propriétaire,
+ * RIC-215) : l'ordre des constantes EST l'ordre de priorité. */
+internal enum class AxisLabelPriority { CURSOR, ENDPOINT, BIVOUAC, INTERMEDIATE }
+
+internal enum class AxisLabelAlign { START, END, CENTER }
+
+/** Position horizontale réellement dessinée d'un libellé : bord gauche et largeur mesurée, en px. */
+internal data class AxisLabelSlot(val left: Float, val width: Float, val priority: AxisLabelPriority)
+
+/**
+ * Bord gauche d'un libellé de largeur [width] : collé à gauche du graphe ([START]), au bord droit
+ * ([END]), ou centré sur [x] et rabattu dans [leftPad, rightEdge] ([CENTER]). Source unique pour la
+ * mesure des collisions et pour le dessin.
+ */
+internal fun axisLabelLeft(align: AxisLabelAlign, x: Float, width: Float, leftPad: Float, rightEdge: Float): Float =
+    when (align) {
+        AxisLabelAlign.START -> leftPad
+        AxisLabelAlign.END -> rightEdge - width
+        AxisLabelAlign.CENTER -> (x - width / 2f).coerceIn(leftPad, max(rightEdge - width, leftPad))
+    }
+
+/**
+ * Pour chaque libellé de [slots], vrai s'il doit être dessiné. Les libellés sont examinés par
+ * priorité décroissante (à priorité égale, dans l'ordre d'entrée) ; un libellé qui chevauche, marge
+ * [margin] comprise, un libellé déjà gardé n'est pas dessiné. Sa ligne verticale, elle, n'est pas du
+ * ressort de cette fonction : elle reste.
+ */
+internal fun resolveAxisLabels(slots: List<AxisLabelSlot>, margin: Float): List<Boolean> {
+    val visible = BooleanArray(slots.size)
+    val keptIndices = mutableListOf<Int>()
+    slots.indices.sortedBy { slots[it].priority.ordinal }.forEach { i ->
+        val s = slots[i]
+        val collides = keptIndices.any { j ->
+            val o = slots[j]
+            s.left < o.left + o.width + margin && o.left < s.left + s.width + margin
+        }
+        if (!collides) {
+            visible[i] = true
+            keptIndices += i
+        }
+    }
+    return visible.toList()
+}

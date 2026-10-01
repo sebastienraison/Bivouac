@@ -57,12 +57,20 @@ private val DISTANCE_ROUNDING_UNITS_KM = listOf(1.0, 5.0, 10.0, 25.0, 50.0, 100.
 private const val DISTANCE_MIN_SPACING_KM = 5.0
 private const val MAX_INTERMEDIATE_DISTANCE_TICKS = 4
 
-// Keeps a round gridline from landing right on top of a bivouac's own distance label.
-private val COLLISION_MARGIN = 20.dp
-
-// RIC-215 : distance minimale entre deux libellés de l'axe des altitudes (en plus de leur hauteur
-// mesurée).
+// RIC-215 : distance minimale entre deux libellés de l'axe horizontal (en plus de leur largeur
+// mesurée), et entre deux libellés de l'axe des altitudes (en plus de leur hauteur mesurée).
+private val AXIS_LABEL_MARGIN = 4.dp
 private val ALTITUDE_LABEL_GAP = 2.dp
+
+/** Un libellé de l'axe horizontal en attente : sa position réelle est calculée une fois sa largeur
+ * mesurée, puis [resolveAxisLabels] décide s'il est dessiné (RIC-215). */
+private class AxisLabelRequest(
+    val text: String,
+    val x: Float,
+    val align: AxisLabelAlign,
+    val color: Color,
+    val priority: AxisLabelPriority,
+)
 
 /**
  * RIC-146 lot 4 (brief §5) : l'axe horizontal du profil. [DISTANCE] est le comportement existant,
@@ -295,15 +303,10 @@ fun ElevationProfile(
         fun xForIndex(index: Int) = xForValue(axisValues[index])
         fun yFor(elevation: Double) = (plotHeight - (elevation - minElevation) / range * plotHeight).toFloat()
 
-        fun drawCenteredLabel(text: String, x: Float, y: Float, color: Color) {
-            val textWidth = textMeasurer.measure(text, labelStyle).size.width
-            drawText(
-                textMeasurer = textMeasurer,
-                text = text,
-                topLeft = Offset((x - textWidth / 2f).coerceIn(leftPad, size.width - textWidth), y),
-                style = labelStyle.copy(color = color),
-            )
-        }
+        // RIC-215 : les libellés de l'axe horizontal sont d'abord collectés, puis filtrés ensemble
+        // (resolveAxisLabels) et dessinés à la fin. Les lignes verticales, elles, se dessinent
+        // toujours.
+        val axisLabels = mutableListOf<AxisLabelRequest>()
 
         // RIC-146 lot 4 (brief §6) : bandes de pause de l'axe en durée, tout en bas de la pile
         // (avant la courbe et les grilles) pour qu'elles se lisent comme un fond, pas un calque
@@ -425,7 +428,7 @@ fun ElevationProfile(
         // "11:00"). En axe durée, la ligne de lecture (AnalysisReadoutLine, sous le profil) porte
         // déjà la distance en toutes lettres : l'étiquette sur le graphique n'est plus nécessaire,
         // seuls le trait et le point restent.
-        val bivouacXs = bivouacPoints.map { bivouac ->
+        bivouacPoints.forEach { bivouac ->
             val index = bivouac.trackPointIndex.coerceIn(0, elevations.lastIndex)
             val x = xForIndex(index)
             val y = yFor(elevations[index])
@@ -439,9 +442,10 @@ fun ElevationProfile(
             )
             drawCircle(color = bivouacColor, radius = 4.dp.toPx(), center = Offset(x, y))
             if (effectiveAxis == ElevationProfileAxis.DISTANCE) {
-                drawCenteredLabel(formatKm(cumulativeDistances[index] / 1000.0), x, plotHeight + 2.dp.toPx(), bivouacColor)
+                axisLabels += AxisLabelRequest(
+                    formatKm(cumulativeDistances[index] / 1000.0), x, AxisLabelAlign.CENTER, bivouacColor, AxisLabelPriority.BIVOUAC,
+                )
             }
-            x
         }
 
         // Cursor (BIV-52): a solid line (vs. bivouacs' dashed ones) so it reads as "live" rather
@@ -454,21 +458,22 @@ fun ElevationProfile(
             drawLine(color = cursorColor, start = Offset(x, y), end = Offset(x, plotHeight), strokeWidth = 1.5.dp.toPx())
             drawCircle(color = cursorColor, radius = 5.dp.toPx(), center = Offset(x, y))
             if (effectiveAxis == ElevationProfileAxis.DISTANCE) {
-                drawCenteredLabel(formatKm(cumulativeDistances[index] / 1000.0), x, plotHeight + 2.dp.toPx(), cursorColor)
+                axisLabels += AxisLabelRequest(
+                    formatKm(cumulativeDistances[index] / 1000.0), x, AxisLabelAlign.CENTER, cursorColor, AxisLabelPriority.CURSOR,
+                )
             }
         }
 
         if (effectiveAxis == ElevationProfileAxis.DISTANCE) {
             // Distance ruler (vertical gridlines): exact 0/total always shown, round intermediates
-            // evenly spaced between them, dropped if they'd collide with a bivouac's own label.
-            val collisionMarginPx = COLLISION_MARGIN.toPx()
+            // evenly spaced between them. RIC-215 : toutes les lignes se dessinent ; seuls les
+            // libellés sont filtrés contre les plus prioritaires (resolveAxisLabels, en fin de bloc).
             val intermediateKm = evenlySpacedRoundMarks(
                 0.0, totalKm, DISTANCE_MIN_SPACING_KM, MAX_INTERMEDIATE_DISTANCE_TICKS, DISTANCE_ROUNDING_UNITS_KM,
                 reserveEdgeMargin = false,
             )
-                .filter { km -> bivouacXs.none { abs(it - xForDistance(km * 1000.0)) < collisionMarginPx } }
 
-            fun drawDistanceGridline(km: Double, alignEnd: Boolean? /* null = center */) {
+            fun drawDistanceGridline(km: Double, align: AxisLabelAlign, priority: AxisLabelPriority) {
                 val x = xForDistance(km * 1000.0)
                 drawLine(
                     color = gridColor,
@@ -478,24 +483,19 @@ fun ElevationProfile(
                     alpha = 0.3f,
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx())),
                 )
-                val text = formatKm(km)
-                val textWidth = textMeasurer.measure(text, labelStyle).size.width
-                val textX = when (alignEnd) {
-                    false -> leftPad
-                    true -> size.width - textWidth
-                    null -> (x - textWidth / 2f).coerceIn(leftPad, size.width - textWidth)
-                }
-                drawText(textMeasurer = textMeasurer, text = text, topLeft = Offset(textX, plotHeight + 2.dp.toPx()), style = labelStyle)
+                axisLabels += AxisLabelRequest(formatKm(km), x, align, labelStyle.color, priority)
             }
 
-            drawDistanceGridline(0.0, alignEnd = false)
-            drawDistanceGridline(totalKm, alignEnd = true)
-            intermediateKm.forEach { km -> drawDistanceGridline(km, alignEnd = null) }
+            drawDistanceGridline(0.0, AxisLabelAlign.START, AxisLabelPriority.ENDPOINT)
+            drawDistanceGridline(totalKm, AxisLabelAlign.END, AxisLabelPriority.ENDPOINT)
+            intermediateKm.forEach { km -> drawDistanceGridline(km, AxisLabelAlign.CENTER, AxisLabelPriority.INTERMEDIATE) }
         } else {
             // RIC-146 lot 4 (brief §5) : ruban d'heures d'horloge. Départ et arrivée toujours
             // dessinés, jamais arrondis ; les heures rondes intermédiaires viennent de
-            // TrackAnalysisMapMapping.clockGridlines, déjà filtrées des extrémités trop proches.
-            fun drawClockGridline(elapsed: Double, text: String, alignEnd: Boolean?) {
+            // TrackAnalysisMapMapping.clockGridlines, déjà filtrées des extrémités trop proches
+            // (une heure : sur une rando de plusieurs jours, c'est moins que la largeur d'un
+            // libellé, d'où le même filtre de priorité que l'axe en distance, RIC-215).
+            fun drawClockGridline(elapsed: Double, text: String, align: AxisLabelAlign, priority: AxisLabelPriority) {
                 val x = xForValue(elapsed)
                 drawLine(
                     color = gridColor,
@@ -505,22 +505,39 @@ fun ElevationProfile(
                     alpha = 0.3f,
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx())),
                 )
-                val textWidth = textMeasurer.measure(text, labelStyle).size.width
-                val textX = when (alignEnd) {
-                    false -> leftPad
-                    true -> size.width - textWidth
-                    null -> (x - textWidth / 2f).coerceIn(leftPad, size.width - textWidth)
-                }
-                drawText(textMeasurer = textMeasurer, text = text, topLeft = Offset(textX, plotHeight + 2.dp.toPx()), style = labelStyle)
+                axisLabels += AxisLabelRequest(text, x, align, labelStyle.color, priority)
             }
 
             val startInstant = points.first().time
             val endInstant = points.last().time
-            if (startInstant != null) drawClockGridline(0.0, formatClockTime(startInstant, zone), alignEnd = false)
-            if (endInstant != null) drawClockGridline(totalAxisValue, formatClockTime(endInstant, zone), alignEnd = true)
-            clockGridlines?.forEach { gridline ->
-                drawClockGridline(gridline.elapsedSeconds, formatClockTime(gridline.time), alignEnd = null)
+            if (startInstant != null) {
+                drawClockGridline(0.0, formatClockTime(startInstant, zone), AxisLabelAlign.START, AxisLabelPriority.ENDPOINT)
             }
+            if (endInstant != null) {
+                drawClockGridline(totalAxisValue, formatClockTime(endInstant, zone), AxisLabelAlign.END, AxisLabelPriority.ENDPOINT)
+            }
+            clockGridlines?.forEach { gridline ->
+                drawClockGridline(
+                    gridline.elapsedSeconds, formatClockTime(gridline.time), AxisLabelAlign.CENTER, AxisLabelPriority.INTERMEDIATE,
+                )
+            }
+        }
+
+        // RIC-215 : un libellé qui chevaucherait (largeur mesurée + 4dp) un libellé plus prioritaire
+        // (curseur, puis 0 et total, puis bivouacs, puis repères) n'est pas dessiné.
+        val measuredWidths = axisLabels.map { textMeasurer.measure(it.text, labelStyle).size.width.toFloat() }
+        val slots = axisLabels.mapIndexed { i, label ->
+            AxisLabelSlot(axisLabelLeft(label.align, label.x, measuredWidths[i], leftPad, size.width), measuredWidths[i], label.priority)
+        }
+        val visible = resolveAxisLabels(slots, AXIS_LABEL_MARGIN.toPx())
+        axisLabels.forEachIndexed { i, label ->
+            if (!visible[i]) return@forEachIndexed
+            drawText(
+                textMeasurer = textMeasurer,
+                text = label.text,
+                topLeft = Offset(slots[i].left, plotHeight + 2.dp.toPx()),
+                style = labelStyle.copy(color = label.color),
+            )
         }
     }
 }

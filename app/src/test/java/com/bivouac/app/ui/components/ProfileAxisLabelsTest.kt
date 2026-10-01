@@ -95,4 +95,123 @@ class ProfileAxisLabelsTest {
         assertEquals(30f, altitudeLabelTop(36f, 12f, 72f), 0f)
         assertEquals(0f, altitudeLabelTop(10f, 12f, 8f), 0f)
     }
+
+    // --- axe horizontal ---
+
+    private fun slot(left: Float, width: Float, priority: AxisLabelPriority) = AxisLabelSlot(left, width, priority)
+
+    private val margin = 4f
+
+    @Test
+    fun curseurSurUnRepereLeFaitDisparaitre() {
+        // Cas réel : curseur à 14,3 (largeur 16) à côté du repère 15.
+        val slots = listOf(
+            slot(100f, 16f, AxisLabelPriority.INTERMEDIATE),
+            slot(90f, 16f, AxisLabelPriority.CURSOR),
+        )
+        assertEquals(listOf(false, true), resolveAxisLabels(slots, margin))
+    }
+
+    @Test
+    fun curseurSurZeroFaitDisparaitreZero() {
+        val slots = listOf(
+            slot(32f, 6f, AxisLabelPriority.ENDPOINT),
+            slot(34f, 16f, AxisLabelPriority.CURSOR),
+        )
+        assertEquals(listOf(false, true), resolveAxisLabels(slots, margin))
+    }
+
+    @Test
+    fun curseurSurLeTotalFaitDisparaitreLeTotal() {
+        val slots = listOf(
+            slot(300f, 16f, AxisLabelPriority.ENDPOINT),
+            slot(296f, 20f, AxisLabelPriority.CURSOR),
+        )
+        assertEquals(listOf(false, true), resolveAxisLabels(slots, margin))
+    }
+
+    @Test
+    fun curseurSurUnBivouacFaitDisparaitreLeBivouac() {
+        val slots = listOf(
+            slot(150f, 16f, AxisLabelPriority.BIVOUAC),
+            slot(150f, 16f, AxisLabelPriority.CURSOR),
+        )
+        assertEquals(listOf(false, true), resolveAxisLabels(slots, margin))
+    }
+
+    @Test
+    fun bivouacPresDeZeroDisparaitMaisZeroRestePlusPrioritaire() {
+        val slots = listOf(
+            slot(32f, 6f, AxisLabelPriority.ENDPOINT),
+            slot(36f, 16f, AxisLabelPriority.BIVOUAC),
+        )
+        assertEquals(listOf(true, false), resolveAxisLabels(slots, margin))
+    }
+
+    @Test
+    fun bivouacPrimeSurRepereIntermediaire() {
+        val slots = listOf(
+            slot(100f, 16f, AxisLabelPriority.INTERMEDIATE),
+            slot(110f, 16f, AxisLabelPriority.BIVOUAC),
+        )
+        assertEquals(listOf(false, true), resolveAxisLabels(slots, margin))
+    }
+
+    @Test
+    fun margeDeQuatreEstRespectee() {
+        // 100..116 puis 120 : exactement 4 de marge, pas de chevauchement ; 119 : chevauchement.
+        val ok = listOf(slot(100f, 16f, AxisLabelPriority.ENDPOINT), slot(120f, 16f, AxisLabelPriority.INTERMEDIATE))
+        assertEquals(listOf(true, true), resolveAxisLabels(ok, margin))
+        val ko = listOf(slot(100f, 16f, AxisLabelPriority.ENDPOINT), slot(119f, 16f, AxisLabelPriority.INTERMEDIATE))
+        assertEquals(listOf(true, false), resolveAxisLabels(ko, margin))
+    }
+
+    @Test
+    fun libellesDistantsSontTousGardes() {
+        val slots = listOf(
+            slot(32f, 6f, AxisLabelPriority.ENDPOINT),
+            slot(280f, 20f, AxisLabelPriority.ENDPOINT),
+            slot(100f, 16f, AxisLabelPriority.BIVOUAC),
+            slot(160f, 16f, AxisLabelPriority.CURSOR),
+            slot(220f, 16f, AxisLabelPriority.INTERMEDIATE),
+        )
+        assertTrue(resolveAxisLabels(slots, margin).all { it })
+    }
+
+    @Test
+    fun ordreDEntreeDepartageUneMemePriorite() {
+        val slots = listOf(
+            slot(100f, 16f, AxisLabelPriority.INTERMEDIATE),
+            slot(105f, 16f, AxisLabelPriority.INTERMEDIATE),
+        )
+        assertEquals(listOf(true, false), resolveAxisLabels(slots, margin))
+    }
+
+    @Test
+    fun listeVide() {
+        assertTrue(resolveAxisLabels(emptyList(), margin).isEmpty())
+    }
+
+    @Test
+    fun axisLabelLeftAligneEtRabat() {
+        assertEquals(32f, axisLabelLeft(AxisLabelAlign.START, 50f, 10f, 32f, 300f), 0f)
+        assertEquals(290f, axisLabelLeft(AxisLabelAlign.END, 50f, 10f, 32f, 300f), 0f)
+        assertEquals(95f, axisLabelLeft(AxisLabelAlign.CENTER, 100f, 10f, 32f, 300f), 0f)
+        assertEquals(32f, axisLabelLeft(AxisLabelAlign.CENTER, 33f, 10f, 32f, 300f), 0f)
+        assertEquals(290f, axisLabelLeft(AxisLabelAlign.CENTER, 299f, 10f, 32f, 300f), 0f)
+    }
+
+    @Test
+    fun axeEnDureeLesHeuresDepartEtArriveePrennentLeDessus() {
+        // Rando longue : un repère à 8 dp du départ recouvre « 8:11 » (24 dp de large).
+        val slots = listOf(
+            slot(32f, 24f, AxisLabelPriority.ENDPOINT),
+            slot(276f, 24f, AxisLabelPriority.ENDPOINT),
+            slot(36f, 24f, AxisLabelPriority.INTERMEDIATE),
+            slot(150f, 24f, AxisLabelPriority.INTERMEDIATE),
+        )
+        val visible = resolveAxisLabels(slots, margin)
+        assertEquals(listOf(true, true, false, true), visible)
+        assertFalse(visible[2])
+    }
 }
