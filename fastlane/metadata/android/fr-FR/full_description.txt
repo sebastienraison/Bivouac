@@ -22,4 +22,4 @@ Ce que Bivouac ne fait pas : ni guidage, ni enregistrement de trace, ni réseau 
 
 Interface en français et en anglais, selon la langue de l'appareil. Android 8 et plus récent.
 
-Site : https://bivouac.rseb.net
+Site : https://bivouac.rseb.net/fr/
