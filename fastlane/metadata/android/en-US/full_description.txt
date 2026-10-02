@@ -1,28 +1,25 @@
-Bivouac helps you plan multi-day hikes with wild-camping (bivouac) stops, and keep a log of the hikes you've already done.
+Bivouac splits a GPX track into stages around bivouac spots, then keeps every outing in a journal, with its photos and its figures. It is for before and after the outing: planning multi-day hikes, then reliving and analysing the ones already done.
 
-The app's interface is available in English and French, following your device's language.
+Plan: import a GPX track of one or several days, place the bivouacs on the route. Distance, elevation and estimated duration are recalculated for each stage. Altitude and a weather link for each bivouac, export of a stage as GPX, a bank of prepared tracks.
 
-Planning: import a multi-day GPX track, view it on an OpenStreetMap-based map, and place your bivouac points directly on the route. A daily segment table (distance, elevation gain/loss, estimated duration) updates automatically as you adjust your plan. Save several planned tracks to a bank you can reopen, rename or duplicate later.
+Remember: keep every completed hike with a note, tags, and photos placed on the track where they were taken. The selection screen offers the photos taken during the hike first, with access to the whole gallery. Each photo can be cropped, captioned or moved along the track, and opens full screen.
 
-Journal: import one or more already-hiked GPX tracks (several files selected together are recognized as the days of a single multi-day hike), browse a chronological list grouped by year, and view a read-only detail with map and elevation profile. Add a free-text note and tags to each hike, and filter the list by tag. Duplicate a logged hike into Planning to reuse its route.
+Analyse: see your form on the day, the slope or the speed along the track, read each section, compare with the usual pace and with the estimate, separate walking time from breaks. A timeline of the outing shows climbs, descents and breaks, nights at the bivouac included.
 
-Photos: attach photos from your device's gallery to a logged hike. They are placed automatically on the track using the GPS position embedded in the photo, and shown as markers on the map, with a swipeable carousel, a per-hike gallery and a full-screen viewer. Each photo can be rotated and cropped (non-destructively), captioned, repositioned by dragging it along the track, or hidden from the map. Two storage modes: keep the original quality, or a lightweight 2048 px copy about ten times smaller; in that mode the full-screen viewer still shows the original from your gallery when it is still there. A storage usage screen in Settings shows what the app takes. The app uses its own photo selector rather than the Android system picker, because the system picker strips the GPS position from the photos it hands over, which is exactly what the placement needs. The photo feature is entirely optional: it can be disabled in Settings, and the two media permissions it relies on (reading images, accessing their location metadata) are only requested the first time you actually use it. Photos never leave your device.
+Measure: totals, month-by-month progress and personal records, with actual duration and walking share. Each record leads back to the hike it comes from.
 
-Stats: an overview of your Journal: cumulative totals, a monthly progression chart (hikes, distance, elevation gain, speed, bivouacs) across your whole history, and personal records (km-effort, best climb rate, highest altitude reached, highest bivouac, longest trek...). Each record links straight back to the hike behind it.
+No account, no tracking, no collection:
+* Everything on the device: tracks, journal and photos are stored on the device, with nothing sent to a server run by the developer.
+* No account, no ads, no tracking: no usage statistics, no tracker, no crash reports.
+* No location tracking: the app never accesses the device's location.
+* Free software under the GPL-3.0 licence: the source code is public.
 
-Settings: a custom walking speed and elevation-gain penalty for duration estimates, either typed in manually, computed automatically from your Journal history, or from a selection of hikes you pick. Full backup and restore of your data, and a switch to disable the two optional non-free features below.
+The app's only network connection: downloading map tiles. The satellite layer (Esri) and the weather link (Meteoblue), which are non-free services, are turned off by a single switch in Settings.
 
-Features:
+Photos: to place a photo on the track, Bivouac reads the GPS position stored in the photo. This needs read access to images and the "media location" permission, both requested only on first use of photos. The feature can be turned off in Settings, and photos never leave the device.
 
-* Import a GPX track from the system file picker, or open one directly from another app
-* Switch between Standard, Hiking (OpenTopoMap) and Satellite map layers
-* Add, drag and remove bivouac points, snapped to the track
-* Altitude and a weather forecast link for each bivouac point
-* Elevation profile with altitude/distance markers and bivouac positions
-* Daily segment table: distance, estimated duration, elevation gain/loss
-* Export a single day's segment as its own GPX file
-* Your last track and last-used section (Journal or Planning) are remembered between launches
+What Bivouac does not do: no guidance, no track recording, no social network. Tracks come from the watch, the GPS or the app used during the outing, in GPX format.
 
-No account, no tracking, no ads. Two optional features connect to third-party network services when you use them: the Satellite map layer (Esri World Imagery) and the weather forecast link on bivouac points (Meteoblue). Everything else works without any such dependency.
+Interface in English and French, following the device's language. Android 8 and later.
 
-This started as a personal tool to stop losing track of my bivouac plans on a paper map, and grew from there. Don't expect flawless code, but it works and if it's useful to someone else too, all the better. Feedback and contributions welcome.
+Website: https://bivouac.rseb.net

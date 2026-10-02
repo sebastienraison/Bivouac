@@ -2,6 +2,54 @@
 
 *[English version](RELEASE_NOTES.md)*
 
+## V2.6.0
+
+**Analyse d'une rando (nouveau) :**
+
+- Le détail d'une rando du Journal propose deux vues : « Carnet » et « Analyse »
+- La trace se colore selon la forme, la pente ou la vitesse ; le profil altimétrique se lit en
+  distance ou en durée
+- « Forme du jour » compare la durée réelle à l'estimation, sépare le temps de marche des pauses,
+  et situe montées, plat et descentes par rapport au rythme habituel
+- « Déroulé » : une frise des montées, descentes, passages vallonnés ou plats et des pauses, à
+  l'échelle du temps, avec la nuit au bivouac entre deux jours
+- « Chiffres » : vitesses, altitudes et pentes les plus fortes
+- Un arrêt, c'est rester dans un rayon de 15 m pendant au moins 2 minutes. La même définition
+  sert à l'analyse, aux durées réelles et au calcul automatique de la vitesse
+
+**Journal et Bilan : durées réelles :**
+
+- Le Journal et le Bilan affichent désormais la durée réelle de chaque rando, avec la part de
+  marche (« 7h40 · 80 % de marche »). Pour une rando de plusieurs jours, les nuits ne comptent pas
+- Une trace sans horodatage garde une durée estimée, précédée de « ≈ »
+- La Planification garde ses durées estimées
+
+**Calculs plus fins, valeurs qui changent :**
+
+- Le dénivelé et la distance sont calculés plus finement : sur les sorties enregistrées, le D+
+  baisse d'environ 9 % et la distance d'environ 2 %, pour s'aligner sur les montres de randonnée
+- Les valeurs déjà enregistrées sont recalculées au premier lancement après la mise à jour, en
+  quelques secondes
+- Les vitesses calculées automatiquement (modes Auto et Sélection) sont recalculées dans la
+  foulée : les durées estimées peuvent légèrement changer, de même que la meilleure VAM, le record
+  de km-effort et la vitesse à plat par mois du Bilan
+
+**Réglages :**
+
+- Liens vers le site de Bivouac et vers la politique de confidentialité, mention de copyright
+  sous la version
+
+**Corrections :**
+
+- Les libellés des axes ne se chevauchent plus sur le profil altimétrique, et les valeurs du
+  graphique du Bilan ne sont plus tronquées
+- Les années restent lisibles en début et en fin de graphique dans le Bilan
+- Le bouton « Réinitialiser » de l'écran Ajuster ne passe plus à la ligne
+- Un trait sépare le cartouche des totaux de la liste du Journal
+- Le bouton de menu du Journal, du Bilan et des Réglages est aligné sur celui de la Planification
+- Si la session précédente de Planification ne peut pas être rouverte au lancement, un message
+  le dit, et la liste des traces enregistrées reste accessible
+
 ## V2.5.1
 
 **Corrections :**

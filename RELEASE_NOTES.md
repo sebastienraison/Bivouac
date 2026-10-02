@@ -2,6 +2,52 @@
 
 *[Version française](RELEASE_NOTES.fr.md)*
 
+## V2.6.0
+
+**Hike analysis (new):**
+
+- A Journal hike's detail now has two views: "Logbook" and "Analysis"
+- The track can be coloured by form, slope or speed; the elevation profile reads by distance or
+  by duration
+- "Form on the day" compares the actual duration with the estimate, separates walking time from
+  breaks, and places climbs, flat ground and descents against the usual pace
+- "Timeline": climbs, descents, rolling or flat stretches and breaks on a time scale, with the
+  night at the bivouac between two days
+- "Figures": speeds, altitudes and steepest gradients
+- A stop means staying within 15 m for at least 2 minutes. The same definition is used by the
+  analysis, by actual durations and by the automatic speed calculation
+
+**Journal and Stats: actual durations:**
+
+- The Journal and Stats now show each hike's actual duration, with its walking share
+  ("7h 40m · 80% walking"). For a multi-day hike, nights are not counted
+- A track without timestamps keeps an estimated duration, shown with "≈"
+- Planning keeps its estimated durations
+
+**More accurate calculations, values that change:**
+
+- Elevation gain and distance are computed more accurately: on recorded hikes, elevation gain
+  drops by about 9% and distance by about 2%, in line with hiking watches
+- Existing values are recalculated on first launch after the update, in a few seconds
+- Automatically calculated speeds (Auto and Selection modes) are recalculated at the same time:
+  estimated durations may change slightly, as may the best climb rate, the km-effort record and
+  the monthly flat-ground speed in Stats
+
+**Settings:**
+
+- Links to the Bivouac website and to the privacy policy, copyright notice under the version
+
+**Bugfixes:**
+
+- Axis labels no longer overlap on the elevation profile, and values on the Stats chart are no
+  longer cut off
+- Years stay readable at both ends of the Stats chart
+- The "Reset" button in the Crop screen no longer wraps
+- A line now separates the totals card from the Journal list
+- The menu button of Journal, Stats and Settings is aligned with the one in Planning
+- If the previous Planning session cannot be reopened at launch, a message says so and the list
+  of saved tracks stays available
+
 ## V2.5.1
 
 **Bugfixes:**
