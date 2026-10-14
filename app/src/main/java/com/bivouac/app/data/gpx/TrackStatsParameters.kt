@@ -66,3 +66,13 @@ data class TrackStatsParameters(
         const val ALGORITHM_VERSION = 4
     }
 }
+
+/**
+ * RIC-227 (lot 3 de la 2.7.0, conception RIC-222 §3.2) : version courante du crible des bivouacs
+ * détectés, écrite dans `logged_track.bivouacReviewVersion` quand une rando a été proposée à
+ * l'utilisateur (à l'import, au premier lancement ou par l'action de menu), qu'il ait découpé ou
+ * non, et même quand aucun bivouac n'a été trouvé. Une rando en dessous de cette version est
+ * repassée au crible au lancement suivant (voir ElevationBackfillGate). La monter reproposerait
+ * toutes les randos : à réserver à un changement de la règle de détection (BivouacDetector).
+ */
+const val BIVOUAC_REVIEW_VERSION = 1

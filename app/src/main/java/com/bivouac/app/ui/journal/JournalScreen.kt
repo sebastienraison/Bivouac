@@ -141,6 +141,7 @@ import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.data.model.TrekDatesFormatter
 import com.bivouac.app.data.photo.PhotoLibraryPermission
+import com.bivouac.app.journal.BivouacReview
 import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.journal.ImportProgress
 import com.bivouac.app.journal.JournalDayInfo
@@ -266,6 +267,7 @@ fun JournalScreen(
     val nonFreeFeaturesDisabled by viewModel.nonFreeFeaturesDisabled.collectAsStateWithLifecycle()
     val activeCalibration by viewModel.activeCalibration.collectAsStateWithLifecycle()
     val duplicateWarning by viewModel.duplicateWarning.collectAsStateWithLifecycle()
+    val bivouacQuestion by viewModel.bivouacQuestion.collectAsStateWithLifecycle()
     val multiFileImportChoice by viewModel.multiFileImportChoice.collectAsStateWithLifecycle()
     val separateImportReport by viewModel.separateImportReport.collectAsStateWithLifecycle()
     val importProgress by viewModel.importProgress.collectAsStateWithLifecycle()
@@ -786,6 +788,16 @@ fun JournalScreen(
                     Text(stringResource(R.string.common_cancel_button))
                 }
             },
+        )
+    }
+
+    // RIC-227 : une question par bivouac détecté, à l'import (après la décision sur le doublon,
+    // avant l'enregistrement) et par l'action de menu « Détecter les bivouacs ».
+    bivouacQuestion?.let { question ->
+        BivouacDetectedDialog(
+            question = question,
+            onSplit = { viewModel.answerBivouacQuestion(BivouacReview.Answer.SPLIT) },
+            onKeep = { viewModel.answerBivouacQuestion(BivouacReview.Answer.KEEP) },
         )
     }
 

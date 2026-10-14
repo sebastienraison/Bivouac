@@ -328,6 +328,18 @@ interface LoggedTrackDao {
         )
     }
 
+    // RIC-227 (lot 3 de la 2.7.0) : crible des bivouacs détectés, voir LoggedTrackEntity.
+    // bivouacReviewVersion et BIVOUAC_REVIEW_VERSION. Même patron que statsVersion : une version
+    // inférieure à la courante, jamais une colonne IS NULL.
+    @Query("SELECT * FROM logged_track WHERE bivouacReviewVersion < :version ORDER BY startedAt, id")
+    suspend fun getTracksNeedingBivouacReview(version: Int): List<LoggedTrackEntity>
+
+    @Query("SELECT COUNT(*) FROM logged_track WHERE bivouacReviewVersion < :version")
+    suspend fun countTracksNeedingBivouacReview(version: Int): Int
+
+    @Query("UPDATE logged_track SET bivouacReviewVersion = :version WHERE id = :id")
+    suspend fun markBivouacReviewVersion(id: String, version: Int)
+
     @Query("UPDATE logged_track SET note = :note WHERE id = :id")
     suspend fun updateNote(id: String, note: String)
 

@@ -22,6 +22,8 @@ import com.bivouac.app.data.db.PhotoDisplayOrder
 import com.bivouac.app.data.db.PhotoPositionUpdate
 import com.bivouac.app.data.db.PreparedImport
 import com.bivouac.app.data.db.SystemTag
+import com.bivouac.app.data.gpx.BIVOUAC_REVIEW_VERSION
+import com.bivouac.app.data.gpx.DetectedBivouac
 import com.bivouac.app.data.gpx.RealDurationCalculator
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
@@ -233,6 +235,18 @@ private data class PhotoOverlayState(
     val pendingAdjustments: Map<Long, PhotoAdjustments>,
     val placementEdits: PendingPhotoPlacementEdits,
 )
+
+/**
+ * RIC-227 : une série de questions « Bivouac détecté » en cours, avec les réponses déjà données
+ * (dans l'ordre de [questions]). [Import] : un import en attente d'enregistrement, rien n'est écrit
+ * avant la dernière réponse.
+ */
+private sealed class BivouacSession {
+    abstract val questions: List<BivouacReview.Question>
+    val answers: MutableList<BivouacReview.Answer> = mutableListOf()
+
+    class Import(val prepared: PreparedImport, override val questions: List<BivouacReview.Question>) : BivouacSession()
+}
 
 class JournalViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -587,6 +601,15 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _duplicateWarning = MutableStateFlow<DuplicateMatch?>(null)
     val duplicateWarning: StateFlow<DuplicateMatch?> = _duplicateWarning.asStateFlow()
     private var pendingImport: PreparedImport? = null
+
+    // RIC-227 (lot 3 de la 2.7.0, conception RIC-222 §3.1 et §3.2) : la question « Bivouac
+    // détecté » en cours, posée à l'import ou par l'action de menu « Détecter les bivouacs », une
+    // à la fois, dans l'ordre de [BivouacReview.questions]. Non nulle tant qu'une réponse est
+    // attendue ; les réponses sont mémorisées dans [bivouacSession] et appliquées ensemble une fois
+    // la dernière donnée.
+    private val _bivouacQuestion = MutableStateFlow<BivouacQuestion?>(null)
+    val bivouacQuestion: StateFlow<BivouacQuestion?> = _bivouacQuestion.asStateFlow()
+    private var bivouacSession: BivouacSession? = null
 
     // RIC-65 écran 3 : non nul tant que l'utilisateur n'a pas tranché entre trek multi-jours et
     // sorties séparées. Aucun fichier n'est lu avant ce choix : « Abandonner » ne peut donc pas
@@ -1745,7 +1768,14 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                             pendingImport = prepared
                             _duplicateWarning.value = duplicate
                         }
-                        null -> commit(prepared, openAfterCommit = true)
+                        // RIC-227 : s'il y a des bivouacs dans les fichiers, les questions d'abord ;
+                        // le verrou est relâché pendant l'attente (finally ci-dessous), comme pour
+                        // l'avertissement de doublon, et repris à la dernière réponse.
+                        null -> if (importBivouacQuestions(prepared).isEmpty()) {
+                            commit(prepared, openAfterCommit = true, reviewed = true)
+                        } else {
+                            startImportBivouacQuestions(prepared)
+                        }
                     }
                 }.onFailure {
                     Log.e("JournalViewModel", "Échec de l'import GPX (Journal)", it)
@@ -1790,13 +1820,16 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                     // détection : doublon certain écarté en silence, doublon probable importé
                     // puis signalé.
                     is DuplicateMatch.Probable, is DuplicateMatch.SharedDay -> {
-                        commit(prepared, openAfterCommit = false, refreshCalibration = false)
+                        commit(prepared, openAfterCommit = false, refreshCalibration = false, reviewed = importBivouacQuestions(prepared).isEmpty())
                         separateImported++
                         separateProbableNames += prepared.entity.name
                         processNextSeparateImport()
                     }
+                    // RIC-227 : ce mode ne pose jamais de question (voir plus haut). Un fichier sans
+                    // bivouac est marqué examiné ; un fichier qui en contient reste à la version 0
+                    // et sera proposé au crible du lancement suivant, avec le nom de la rando.
                     null -> {
-                        commit(prepared, openAfterCommit = false, refreshCalibration = false)
+                        commit(prepared, openAfterCommit = false, refreshCalibration = false, reviewed = importBivouacQuestions(prepared).isEmpty())
                         separateImported++
                         processNextSeparateImport()
                     }
@@ -1858,6 +1891,14 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      */
     fun confirmImportAnyway() {
         val prepared = pendingImport ?: return
+        // RIC-227 : la décision sur le doublon est prise, viennent ensuite les bivouacs, avant tout
+        // enregistrement ; le verrou sera pris à la dernière réponse.
+        if (importBivouacQuestions(prepared).isNotEmpty()) {
+            pendingImport = null
+            _duplicateWarning.value = null
+            startImportBivouacQuestions(prepared)
+            return
+        }
         if (!ExclusiveOperations.tryStart(ExclusiveOperation.JOURNAL_IMPORT)) {
             _importError.value = exclusiveOperationRefusalMessage()
             return
@@ -1866,7 +1907,78 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _duplicateWarning.value = null
         viewModelScope.launch {
             try {
-                commit(prepared, openAfterCommit = true)
+                commit(prepared, openAfterCommit = true, reviewed = true)
+            } finally {
+                _importProgress.value = null
+                ExclusiveOperations.finish(ExclusiveOperation.JOURNAL_IMPORT)
+            }
+        }
+    }
+
+    /** RIC-227 : les questions « Bivouac détecté » d'un import, tous fichiers du lot confondus. */
+    private fun importBivouacQuestions(prepared: PreparedImport): List<BivouacReview.Question> =
+        BivouacReview.questions(prepared.days.map { it.bivouacs })
+
+    private fun startImportBivouacQuestions(prepared: PreparedImport) {
+        val session = BivouacSession.Import(prepared, importBivouacQuestions(prepared))
+        bivouacSession = session
+        publishBivouacQuestion(session)
+    }
+
+    private fun publishBivouacQuestion(session: BivouacSession) {
+        val index = session.answers.size
+        _bivouacQuestion.value = BivouacQuestion(
+            trackName = null,
+            bivouac = session.questions[index].bivouac,
+            number = index + 1,
+            total = session.questions.size,
+        )
+    }
+
+    /**
+     * RIC-227 : réponse à la question « Bivouac détecté » affichée. [BivouacReview.Answer.KEEP]
+     * aussi quand l'utilisateur quitte le dialogue autrement (retour, appui hors du dialogue). Les
+     * réponses sont mémorisées ; la dernière déclenche l'écriture : l'enregistrement de l'import,
+     * ou le découpage de la rando ouverte pour l'action de menu.
+     */
+    fun answerBivouacQuestion(answer: BivouacReview.Answer) {
+        val session = bivouacSession ?: return
+        if (session.answers.size + 1 < session.questions.size) {
+            session.answers += answer
+            publishBivouacQuestion(session)
+            return
+        }
+        val answers = session.answers + answer
+        when (session) {
+            is BivouacSession.Import -> finishImportBivouacQuestions(session, answers)
+        }
+    }
+
+    /**
+     * RIC-227 : toutes les questions de l'import sont répondues : enregistrement, puis découpages,
+     * tout-ou-rien. Reprend le verrou relâché pendant l'attente, comme [confirmImportAnyway] ; en
+     * cas de refus, rien n'est consommé (la dernière question reste affichée, sa réponse n'est pas
+     * mémorisée) et l'utilisateur peut répondre de nouveau une fois l'autre opération terminée.
+     */
+    private fun finishImportBivouacQuestions(session: BivouacSession.Import, answers: List<BivouacReview.Answer>) {
+        if (!ExclusiveOperations.tryStart(ExclusiveOperation.JOURNAL_IMPORT)) {
+            _importError.value = exclusiveOperationRefusalMessage()
+            return
+        }
+        bivouacSession = null
+        _bivouacQuestion.value = null
+        val outcome = BivouacReview.outcome(session.questions, answers)
+        _importProgress.value = ImportProgress.Reading(done = 0, total = session.prepared.days.size)
+        viewModelScope.launch {
+            try {
+                try {
+                    commit(session.prepared, openAfterCommit = true, reviewed = true, splitsByDayPosition = outcome.splits)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e("JournalViewModel", "Échec de l'import GPX (Journal, découpage aux bivouacs)", e)
+                    _importError.value = string(R.string.journal_error_track_unreadable)
+                }
             } finally {
                 _importProgress.value = null
                 ExclusiveOperations.finish(ExclusiveOperation.JOURNAL_IMPORT)
@@ -1883,12 +1995,26 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _importError.value = null
     }
 
+    /**
+     * RIC-227 : [reviewed] vrai quand la rando a été proposée au crible des bivouacs (questions
+     * posées et répondues, ou aucune à poser) : elle est enregistrée avec [BIVOUAC_REVIEW_VERSION],
+     * découpée à [splitsByDayPosition] le cas échéant ([LoggedTrackRepository.commitImportReviewed],
+     * tout-ou-rien). Faux : enregistrée à la version 0, le crible du lancement suivant la proposera.
+     */
     private suspend fun commit(
         prepared: PreparedImport,
         openAfterCommit: Boolean,
         refreshCalibration: Boolean = true,
+        reviewed: Boolean,
+        splitsByDayPosition: Map<Int, List<DetectedBivouac>> = emptyMap(),
     ) {
-        withContext(Dispatchers.IO) { repository.commitImport(prepared) }
+        withContext(Dispatchers.IO) {
+            if (reviewed) {
+                repository.commitImportReviewed(prepared, splitsByDayPosition, BIVOUAC_REVIEW_VERSION)
+            } else {
+                repository.commitImport(prepared)
+            }
+        }
         if (refreshCalibration) {
             _importProgress.value = ImportProgress.Calibrating
             withContext(Dispatchers.IO) { refreshAutoCalibration() }
