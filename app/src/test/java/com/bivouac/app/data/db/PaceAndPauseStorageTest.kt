@@ -113,7 +113,9 @@ class PaceAndPauseStorageTest {
 
         LoggedTrackBackfill.runStats(context, dao)
 
-        assertEquals(3, TrackStatsParameters.ALGORITHM_VERSION)
+        // RIC-226 : montée à 4 (nuit au bivouac retirée des durées) ; ce rattrapage reste celui qui
+        // remplit pausedSeconds et les lignes de rythme, quelle que soit la version courante.
+        assertEquals(4, TrackStatsParameters.ALGORITHM_VERSION)
         assertEquals(TrackStatsParameters.ALGORITHM_VERSION, dao.get("track-v2")!!.statsVersion)
         val days = dao.getDays("track-v2")
         for ((day, gpx) in days.zip(listOf(day0, day1))) {

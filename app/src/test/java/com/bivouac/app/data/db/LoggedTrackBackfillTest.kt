@@ -306,6 +306,33 @@ class LoggedTrackBackfillTest {
         assertEquals(day.distanceMeters!!, track.distanceMeters, 0.0)
     }
 
+    // RIC-226 : une rando importée en 2.6.0 (statsVersion 3) est comptée par la porte de
+    // rattrapage du premier lancement (ElevationBackfillGate lit countTracksNeedingStatsBackfill),
+    // puis recalculée sans la nuit : ce qui corrige les chiffres du testeur F-Droid avant même que
+    // le découpage soit proposé.
+    @Test
+    fun aVersion3TrackIsCountedByTheStartupGateThenLosesItsNight() = runBlocking {
+        insertNightTrack("track-v3", listOf(null), statsVersion = 3)
+        dao.updateDayDenormalizedFields(
+            id = dao.getDays("track-v3").single().id, contentHash = "h", startedAtMillis = 0L,
+            elapsedSeconds = 2 * 14 * 27L + NIGHT_HOURS * 3_600, flatCount = 0, flatDistanceMeters = 0.0,
+            flatHours = 0.0, steepCount = 0, steepDistanceMeters = 0.0, steepGainMeters = 0.0, steepHours = 0.0,
+            stoppedHours = NIGHT_HOURS.toDouble(), distanceMeters = 981.0, elevationGainMeters = 29.0,
+            elevationLossMeters = 0.0, pausedSeconds = 0.0,
+        )
+        val repository = LoggedTrackRepository(context)
+        assertEquals(4, com.bivouac.app.data.gpx.TrackStatsParameters.ALGORITHM_VERSION)
+        assertEquals(1, repository.countTracksNeedingStatsBackfill())
+
+        repository.backfillStatsFields()
+
+        assertEquals(0, repository.countTracksNeedingStatsBackfill())
+        val day = dao.getDays("track-v3").single()
+        assertEquals(2 * 14 * 27L, day.elapsedSeconds)
+        assertTrue(day.stoppedHours!! < 0.1)
+        assertEquals(28 * 30.0, day.distanceMeters!!, 0.5)
+    }
+
     @Test
     fun runStatsOnTwoRangesOfOneFileSumsToTheTrackTotals() = runBlocking {
         insertNightTrack("track-split", listOf(0 to 14, 15 to 29), statsVersion = com.bivouac.app.data.gpx.TrackStatsParameters.ALGORITHM_VERSION - 1)
