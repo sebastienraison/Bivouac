@@ -17,6 +17,7 @@ import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.gpx.TrackStatsParameters
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
+import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.data.photo.MediaStorePhotoQuery
 import com.bivouac.app.data.photo.PhotoAdjustments
 import com.bivouac.app.data.photo.PhotoContentHash
@@ -40,6 +41,8 @@ import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
 // A parsed-and-ready-to-store import that hasn't been written to the DB yet: lets the caller
@@ -81,6 +84,10 @@ data class PreparedDay(
     // faire, même raisonnement que distanceMeters ci-dessus.
     val pausedSeconds: Double? = null,
     val paceBands: List<PaceBandSum> = emptyList(),
+    // RIC-227 : bivouacs détectés à l'intérieur de ce fichier (JournalDayStats.bivouacs, déjà
+    // calculés pour les durées), en index de ses points : ce sont les questions posées à l'import
+    // avant l'enregistrement, sans reparser le fichier. Vide par défaut pour les fixtures de test.
+    val bivouacs: List<DetectedBivouac> = emptyList(),
 )
 
 // Une trace du Journal ouverte pour affichage : [track] est l'ensemble des jours concaténés (la
@@ -339,6 +346,7 @@ class LoggedTrackRepository(context: Context) {
                 distanceMeters = stats.distanceMeters,
                 elevationGainMeters = stats.elevationGainMeters,
                 elevationLossMeters = stats.elevationLossMeters,
+                bivouacs = figures.bivouacs,
             )
         }
         return PreparedImport(entity, days)
@@ -572,6 +580,100 @@ class LoggedTrackRepository(context: Context) {
             estimatedDurationMinutes = allStats.sumOf { it.estimatedDurationMinutes },
             statsVersion = TrackStatsParameters.ALGORITHM_VERSION,
         )
+    }
+
+    /**
+     * RIC-227 (lot 3 de la 2.7.0) : applique le résultat du crible des bivouacs à la rando
+     * [trackId] : chaque jour de [splitsByDayId] est découpé à ses bivouacs ([splitDay], un appel
+     * par jour, avec tous les bivouacs à découper de ce jour, en index de ses points d'avant tout
+     * découpage), puis la rando reçoit [reviewVersion] (`logged_track.bivouacReviewVersion`),
+     * même sans découpage.
+     *
+     * Les identifiants de jours restent valables d'un découpage à l'autre : [splitDay] ne remplace
+     * que le jour découpé et ne fait que renuméroter les autres. Chaque découpage est sa propre
+     * transaction ; la version n'est posée qu'après le dernier, donc une interruption (exception,
+     * process tué) laisse la rando non examinée, et elle sera reproposée au lancement suivant avec
+     * ce qui reste à l'intérieur de ses jours. Les exceptions de [splitDay] remontent telles quelles.
+     */
+    suspend fun applyBivouacReview(trackId: String, splitsByDayId: Map<Long, List<DetectedBivouac>>, reviewVersion: Int) {
+        for ((dayId, bivouacs) in splitsByDayId) {
+            if (bivouacs.isNotEmpty()) splitDay(trackId, dayId, bivouacs)
+        }
+        dao.markBivouacReviewVersion(trackId, reviewVersion)
+    }
+
+    /**
+     * RIC-227 : enregistre un import ([commitImport]) puis lui applique le crible des bivouacs de
+     * l'import : [splitsByDayPosition], les bivouacs à découper par rang de jour (rang dans
+     * [PreparedImport.days], index des points du fichier), et [reviewVersion].
+     *
+     * Choix retenu : découper APRÈS l'enregistrement par [splitDay], plutôt qu'une variante de
+     * [prepareImport] qui produirait directement les jours par plage. Un seul calcul du découpage
+     * (le même que l'action de menu et le crible du premier lancement), aucune seconde écriture
+     * des plages à maintenir, et [commitImport] inchangé.
+     *
+     * Import tout-ou-rien malgré les deux temps : si un découpage échoue (ou si la coroutine est
+     * annulée entre les deux), la rando tout juste enregistrée est supprimée ([delete], lignes et
+     * fichiers) et l'exception remonte : jamais une rando à moitié découpée laissée derrière un
+     * import en échec. Sans découpage, la version est posée dans la même écriture que la rando.
+     */
+    suspend fun commitImportReviewed(
+        prepared: PreparedImport,
+        splitsByDayPosition: Map<Int, List<DetectedBivouac>>,
+        reviewVersion: Int,
+    ): String {
+        if (splitsByDayPosition.values.all { it.isEmpty() }) {
+            return commitImport(prepared.copy(entity = prepared.entity.copy(bivouacReviewVersion = reviewVersion)))
+        }
+        val id = commitImport(prepared)
+        try {
+            applyBivouacReviewByDayPosition(id, splitsByDayPosition, reviewVersion)
+        } catch (e: Throwable) {
+            withContext(NonCancellable) { delete(id) }
+            throw e
+        }
+        return id
+    }
+
+    /**
+     * RIC-227 : [applyBivouacReview] avec des jours désignés par leur rang (0 pour le premier) tel
+     * qu'il était à l'enregistrement de la rando : import d'une sortie seule et questions d'après le
+     * rapport d'un import en sorties séparées, dont les questions viennent de [PreparedImport.days].
+     * Lève [IllegalStateException] sans rien écrire si un rang n'existe pas.
+     */
+    suspend fun applyBivouacReviewByDayPosition(
+        trackId: String,
+        splitsByDayPosition: Map<Int, List<DetectedBivouac>>,
+        reviewVersion: Int,
+    ) {
+        val dayIds = dao.getDays(trackId).sortedBy { it.dayIndex }.map { it.id }
+        val splitsByDayId = splitsByDayPosition.mapKeys { (position, _) ->
+            dayIds.getOrNull(position) ?: throw IllegalStateException("Jour de rang $position absent de la rando $trackId")
+        }
+        applyBivouacReview(trackId, splitsByDayId, reviewVersion)
+    }
+
+    /** RIC-227 : nombre de randos pas encore passées au crible [version] (voir ElevationBackfillGate). */
+    suspend fun countTracksNeedingBivouacReview(version: Int): Int = dao.countTracksNeedingBivouacReview(version)
+
+    /** RIC-227 : les randos pas encore passées au crible [version], de la plus ancienne à la plus récente. */
+    suspend fun tracksNeedingBivouacReview(version: Int): List<LoggedTrackEntity> =
+        dao.getTracksNeedingBivouacReview(version)
+
+    /** RIC-227 : pose la version du crible sur une rando sans rien découper (aucun bivouac trouvé). */
+    suspend fun markBivouacReviewed(trackId: String, version: Int) = dao.markBivouacReviewVersion(trackId, version)
+
+    /** RIC-227 : une rando par son identifiant, `null` si elle n'existe plus. */
+    suspend fun get(id: String): LoggedTrackEntity? = dao.get(id)
+
+    /**
+     * RIC-227 : les jours de la rando [trackId], dans l'ordre, avec les points de chacun ([DayPoints],
+     * plage appliquée) : ce sur quoi le crible et l'action de menu détectent les bivouacs. Lève si un
+     * fichier manque ou n'est pas un GPX valide, comme [DayPoints.readAll].
+     */
+    suspend fun daysWithPoints(trackId: String): Pair<List<LoggedTrackDayEntity>, List<List<TrackPoint>>> {
+        val days = dao.getDays(trackId).sortedBy { it.dayIndex }
+        return days to DayPoints.readAll(appContext, days)
     }
 
     private fun LoggedTrackDayEntity.hasDayTotals(): Boolean =

@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.NightsStay
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Snooze
@@ -141,8 +142,10 @@ import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.data.model.TrekDatesFormatter
 import com.bivouac.app.data.photo.PhotoLibraryPermission
+import com.bivouac.app.journal.BivouacReview
 import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.journal.ImportProgress
+import com.bivouac.app.journal.JournalBivouacPoints
 import com.bivouac.app.journal.JournalDayInfo
 import com.bivouac.app.journal.JournalUiState
 import com.bivouac.app.journal.JournalViewModel
@@ -194,6 +197,16 @@ private val PEEK_HEIGHT_EMPTY = 150.dp
  */
 internal fun analysisModeAfter(current: Boolean, isEditing: Boolean, photoPlacementActive: Boolean): Boolean =
     if (isEditing || photoPlacementActive) false else current
+
+/**
+ * RIC-227 (décision de Seb du 15/10) : l'entrée « Détecter les bivouacs » du menu de la vue détail
+ * n'apparaît que hors de tout état où une sortie demanderait confirmation ou serait refusée :
+ * ni en édition (brouillon de tags, de note ou de photos), ni en placement d'une photo, ni pendant
+ * une opération photo. Un découpage recharge la vue détail comme une réouverture, ce qui
+ * abandonnerait ces brouillons. Fonction pure, testée par DetectBivouacsMenuEntryTest.
+ */
+internal fun detectBivouacsMenuEntryVisible(isEditing: Boolean, photoPlacementActive: Boolean, photoOperationInFlight: Boolean): Boolean =
+    !isEditing && !photoPlacementActive && !photoOperationInFlight
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -266,6 +279,8 @@ fun JournalScreen(
     val nonFreeFeaturesDisabled by viewModel.nonFreeFeaturesDisabled.collectAsStateWithLifecycle()
     val activeCalibration by viewModel.activeCalibration.collectAsStateWithLifecycle()
     val duplicateWarning by viewModel.duplicateWarning.collectAsStateWithLifecycle()
+    val bivouacQuestion by viewModel.bivouacQuestion.collectAsStateWithLifecycle()
+    val bivouacDetectMessage by viewModel.bivouacDetectMessage.collectAsStateWithLifecycle()
     val multiFileImportChoice by viewModel.multiFileImportChoice.collectAsStateWithLifecycle()
     val separateImportReport by viewModel.separateImportReport.collectAsStateWithLifecycle()
     val importProgress by viewModel.importProgress.collectAsStateWithLifecycle()
@@ -456,6 +471,14 @@ fun JournalScreen(
                         BivouacPoint(id = "jonction-$index", trackPointIndex = pointIndex)
                     }
             }
+            // RIC-227 : sur la carte seulement, un marqueur de bivouac aussi pour chaque nuit restée à
+            // l'intérieur d'un jour, comme pour une jonction. Le profil, le Carnet et les coupures du
+            // tracé gardent journalBivouacs (jonctions seules) : une nuit interne n'y est pas une
+            // borne de jour, et ses coupures suivent la règle des 50 m (bivouacStopIndices).
+            val journalMapBivouacs = remember(detail.daySegments, detail.bivouacStopIndices) {
+                JournalBivouacPoints.trackPointIndices(detail.daySegments.map { it.points.size }, detail.bivouacStopIndices)
+                    .mapIndexed { index, pointIndex -> BivouacPoint(id = "bivouac-$index", trackPointIndex = pointIndex) }
+            }
             // RIC-184 : Terminé et Annuler partagent ce geste, la seule différence étant l'appel
             // ViewModel derrière (exitPhotoPlacement / cancelPhotoPlacement, RIC-183). La cible est
             // capturée AVANT de sortir du mode : le ViewModel l'efface dans cet appel, il n'y a donc
@@ -487,7 +510,7 @@ fun JournalScreen(
             Box(modifier = modifier.fillMaxSize()) {
                 JournalMap(
                     track = detail.track,
-                    bivouacPoints = journalBivouacs,
+                    bivouacPoints = journalMapBivouacs,
                     // RIC-226 : les nuits détectées à l'intérieur d'un jour comptent comme des
                     // jonctions pour le tracé (pointillé au-delà de 50 m, DayJunctions.recordingGaps).
                     dayBoundaryIndices = journalBivouacs.map { it.trackPointIndex } + detail.bivouacStopIndices,
@@ -550,6 +573,7 @@ fun JournalScreen(
                     onCloseClick = viewModel::closeTrack,
                     onDeleteClick = viewModel::requestDelete,
                     onDuplicateClick = { viewModel.buildDuplicateForPlanification()?.let(onDuplicateToPlanification) },
+                    onDetectBivouacsClick = viewModel::detectBivouacsOnCurrentTrack,
                     onSheetTopMeasured = { sheetTopPx = it },
                     // RIC-166 : le profil suit la position en cours de glissement pendant le mode
                     // placement ; hors de ce mode, il retrouve le curseur normal.
@@ -784,6 +808,30 @@ fun JournalScreen(
             dismissButton = {
                 TextButton(onClick = viewModel::dismissDuplicateWarning) {
                     Text(stringResource(R.string.common_cancel_button))
+                }
+            },
+        )
+    }
+
+    // RIC-227 : une question par bivouac détecté, à l'import (après la décision sur le doublon,
+    // avant l'enregistrement) et par l'action de menu « Détecter les bivouacs ».
+    bivouacQuestion?.let { question ->
+        BivouacDetectedDialog(
+            question = question,
+            onSplit = { viewModel.answerBivouacQuestion(BivouacReview.Answer.SPLIT) },
+            onKeep = { viewModel.answerBivouacQuestion(BivouacReview.Answer.KEEP) },
+        )
+    }
+
+    // RIC-227 : l'action de menu n'a rien à demander (aucun bivouac, ou tous déjà des fins de
+    // journée) : un dialogue d'information à un bouton, « OK » comme les autres de l'écran.
+    bivouacDetectMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissBivouacDetectMessage,
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissBivouacDetectMessage) {
+                    Text(stringResource(R.string.common_ok_button))
                 }
             },
         )
@@ -2145,13 +2193,16 @@ internal fun ThreeStopJournalDetail(
     bivouacPoints: List<BivouacPoint> = emptyList(),
     // RIC-226 : arrêts des nuits détectées à l'intérieur d'un jour, en index de [track] (voir
     // LoggedTrackRepository.LoggedTrackDetail.bivouacStopIndices) : coupures de la série et bornes
-    // du tracé, comme les jonctions de jours. Pas de marqueur de bivouac pour elles (lot 3).
+    // du tracé, comme les jonctions de jours. Leur marqueur de bivouac est posé sur la carte par
+    // l'écran (RIC-227, journalMapBivouacs), pas ici.
     bivouacStopIndices: List<Int> = emptyList(),
     activeCalibration: SpeedCalibration = SpeedCalibration.DEFAULT,
     onCloseClick: () -> Unit,
     onRenameClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onDuplicateClick: () -> Unit = {},
+    // RIC-227 : action de menu « Détecter les bivouacs ».
+    onDetectBivouacsClick: () -> Unit = {},
     onSheetTopMeasured: (Int) -> Unit,
     cursorIndex: Int?,
     onCursorDragged: (Int) -> Unit,
@@ -2478,6 +2529,8 @@ internal fun ThreeStopJournalDetail(
                             JournalDetailMenu(
                                 onRenameClick = onRenameClick,
                                 onDuplicateClick = onDuplicateClick,
+                                onDetectBivouacsClick = onDetectBivouacsClick,
+                                showDetectBivouacs = detectBivouacsMenuEntryVisible(isEditing, photoPlacementActive, photoOperationInFlight),
                                 onDeleteClick = onDeleteClick,
                             )
                             IconButton(onClick = { requestExit(onCloseClick) }) {
@@ -3186,7 +3239,13 @@ private fun withBullets(text: String): String = text.lines().joinToString("\n") 
 }
 
 @Composable
-private fun JournalDetailMenu(onRenameClick: () -> Unit, onDuplicateClick: () -> Unit, onDeleteClick: () -> Unit) {
+private fun JournalDetailMenu(
+    onRenameClick: () -> Unit,
+    onDuplicateClick: () -> Unit,
+    onDetectBivouacsClick: () -> Unit,
+    showDetectBivouacs: Boolean,
+    onDeleteClick: () -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
@@ -3203,6 +3262,16 @@ private fun JournalDetailMenu(onRenameClick: () -> Unit, onDuplicateClick: () ->
                 leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
                 onClick = { expanded = false; onDuplicateClick() },
             )
+            // RIC-227 (conception RIC-222 §3.2) : revenir sur le crible des bivouacs, par exemple
+            // après avoir répondu « Ne pas découper » trop vite. Absente en édition, voir
+            // detectBivouacsMenuEntryVisible.
+            if (showDetectBivouacs) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.journal_detail_menu_detect_bivouacs)) },
+                    leadingIcon = { Icon(Icons.Default.NightsStay, contentDescription = null) },
+                    onClick = { expanded = false; onDetectBivouacsClick() },
+                )
+            }
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.common_delete_button)) },
                 leadingIcon = {

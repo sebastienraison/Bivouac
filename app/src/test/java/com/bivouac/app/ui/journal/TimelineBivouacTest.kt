@@ -129,4 +129,16 @@ class TimelineBivouacTest {
         assertEquals(4, bivouacBlockCount(5))
         assertTrue(bivouacBlockCount(5) < 5) // jamais un bloc de plus que de nuits réelles
     }
+
+    // RIC-227 : titre de jour d'un jour qui contient une nuit restée entière : durée sans la nuit.
+    @Test
+    fun laDureeDuTitreDeJourNeComptePasLaNuitInterne() {
+        val withNight = com.bivouac.app.data.gpx.DayTimeline(
+            elements = emptyList(), shortPauses = emptyList(), elapsedSeconds = 30 * 3_600.0,
+            distanceMeters = 20_000.0, startElevationMeters = 1_000.0, endElevationMeters = 1_200.0,
+            bivouacSeconds = 11 * 3_600.0,
+        )
+        assertEquals(19 * 3_600.0, timelineDayDurationSeconds(withNight), 0.001)
+        assertEquals(8 * 3_600.0, timelineDayDurationSeconds(withNight.copy(elapsedSeconds = 8 * 3_600.0, bivouacSeconds = 0.0)), 0.001)
+    }
 }

@@ -1,6 +1,7 @@
 package com.bivouac.app.ui.startup
 
 import android.app.Application
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,7 +26,14 @@ import com.bivouac.app.R
 import com.bivouac.app.data.db.BankedTrackRepository
 import com.bivouac.app.data.db.CalibrationRefresh
 import com.bivouac.app.data.db.LoggedTrackRepository
+import com.bivouac.app.data.gpx.BIVOUAC_REVIEW_VERSION
 import com.bivouac.app.data.prefs.SettingsPreferences
+import com.bivouac.app.journal.BivouacQuestion
+import com.bivouac.app.journal.BivouacReview
+import com.bivouac.app.journal.BivouacReviewBatch
+import com.bivouac.app.ui.journal.BivouacDetectedDialog
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,6 +59,13 @@ import kotlinx.coroutines.withContext
  * Une installation qui n'a rien à rattraper sur 1-3 ne montre donc jamais le popup, même si la
  * phase 4 (calibration) a du travail (cas d'une installation neuve).
  *
+ * RIC-227 (lot 3 de la 2.7.0, conception RIC-222 §3.2) : enfin, après les rattrapages et la
+ * calibration, le crible des bivouacs détectés ([reviewBivouacs]) pour chaque rando dont
+ * `bivouacReviewVersion` est inférieure à [BIVOUAC_REVIEW_VERSION] : détection rando par rando sur
+ * Dispatchers.IO sous l'état [State.Running] existant, puis une question par bivouac trouvé
+ * ([State.Reviewing]), la réponse de chaque rando étant appliquée dès sa dernière question.
+ * Bloquant comme le rattrapage : le reste de l'app n'est composé qu'à [State.Ready].
+ *
  * AndroidViewModel plutôt qu'un simple état local à BivouacApp : obtenu via `viewModel()`, il
  * survit à une rotation d'écran pendant que le rattrapage tourne (le ViewModelStore appartient à
  * l'Activity, pas au composable), sans quoi une rotation malheureuse le relancerait depuis zéro.
@@ -60,8 +75,14 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
     sealed interface State {
         data object Checking : State
         data class Running(val done: Int, val total: Int) : State
+
+        /** RIC-227 : une question « Bivouac détecté » attend sa réponse ([answerBivouacQuestion]). */
+        data class Reviewing(val question: BivouacQuestion) : State
         data object Ready : State
     }
+
+    /** RIC-227 : clé d'une rando du crible, son identifiant et ceux de ses jours à la détection. */
+    private data class ReviewKey(val trackId: String, val dayIds: List<Long>)
 
     private val repository = LoggedTrackRepository(application)
     private val bankedRepository = BankedTrackRepository(application)
@@ -69,16 +90,24 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
     private val _state = MutableStateFlow<State>(State.Checking)
     val state: StateFlow<State> = _state.asStateFlow()
 
+    // RIC-227 : la réponse attendue par la question affichée ; aucun délai, aucune valeur par défaut.
+    private var pendingAnswer: CompletableDeferred<BivouacReview.Answer>? = null
+
     init {
         viewModelScope.launch {
             val elevationRemaining = withContext(Dispatchers.IO) { repository.countDaysNeedingElevationBackfill() }
             val journalStatsRemaining = withContext(Dispatchers.IO) { repository.countTracksNeedingStatsBackfill() }
             val bankedStatsRemaining = withContext(Dispatchers.IO) { bankedRepository.countTracksNeedingStatsBackfill() }
             val total = elevationRemaining + journalStatsRemaining + bankedStatsRemaining
+            // RIC-227 : compté dès maintenant, pour ne composer le reste de l'app qu'après le
+            // crible quand il y a des randos à examiner.
+            val reviewRemaining = withContext(Dispatchers.IO) {
+                repository.countTracksNeedingBivouacReview(BIVOUAC_REVIEW_VERSION)
+            }
             if (total == 0) {
                 // Cas de très loin le plus fréquent (banque déjà à jour, ou toute nouvelle
                 // installation) : aucun popup ne doit même apparaître, pas même une frame.
-                _state.value = State.Ready
+                if (reviewRemaining == 0) _state.value = State.Ready
             } else {
                 var base = 0
                 if (elevationRemaining > 0) {
@@ -107,8 +136,85 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
                     staleJournalStatsBackfilled = journalStatsRemaining > 0,
                 )
             }
+            if (reviewRemaining > 0) reviewBivouacs()
             _state.value = State.Ready
         }
+    }
+
+    /** RIC-227 : réponse à la question affichée ; [BivouacReview.Answer.KEEP] aussi en quittant le dialogue. */
+    fun answerBivouacQuestion(answer: BivouacReview.Answer) {
+        pendingAnswer?.complete(answer)
+    }
+
+    /**
+     * RIC-227 : le crible du premier lancement.
+     *
+     * 1. Détection, rando par rando, sur Dispatchers.IO, sous [State.Running] (randos traitées sur
+     *    randos à examiner). Une rando sans bivouac, y compris une rando dont aucun jour n'est
+     *    horodaté, est marquée examinée aussitôt, sans question. Une rando dont un fichier est
+     *    illisible n'est pas marquée : elle sera retentée au lancement suivant (journalisé).
+     * 2. Questions, dans l'ordre des randos (de la plus ancienne à la plus récente) puis de
+     *    [BivouacReview.questions], le compteur portant sur le total des bivouacs à examiner.
+     * 3. Dès la dernière question d'une rando : découpages et version du crible
+     *    ([LoggedTrackRepository.applyBivouacReview]). Si l'app est tuée avant, cette rando reste
+     *    non examinée et sera reproposée en entier au lancement suivant ; celles déjà traitées ne le
+     *    sont plus. Un découpage en échec est journalisé et laisse la rando non examinée.
+     */
+    private suspend fun reviewBivouacs() {
+        val tracks = withContext(Dispatchers.IO) { repository.tracksNeedingBivouacReview(BIVOUAC_REVIEW_VERSION) }
+        val pending = mutableListOf<BivouacReviewBatch.Track<ReviewKey>>()
+        tracks.forEachIndexed { done, track ->
+            _state.value = State.Running(done, tracks.size)
+            val found = withContext(Dispatchers.IO) {
+                try {
+                    val (days, points) = repository.daysWithPoints(track.id)
+                    val questions = BivouacReview.startupQuestions(track.bivouacReviewVersion) { BivouacReview.detectDays(points) }
+                        .orEmpty()
+                    if (questions.isEmpty()) {
+                        repository.markBivouacReviewed(track.id, BIVOUAC_REVIEW_VERSION)
+                        null
+                    } else {
+                        BivouacReviewBatch.Track(ReviewKey(track.id, days.map { it.id }), track.name, questions)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Crible des bivouacs : rando ${track.id} illisible, reportée au lancement suivant", e)
+                    null
+                }
+            }
+            if (found != null) pending += found
+        }
+        // Ordre, compteur global et réponses par rando : BivouacReviewBatch, partagé avec les
+        // questions d'après le rapport d'un import en sorties séparées (JournalViewModel).
+        val batch = BivouacReviewBatch(pending)
+        val answers = mutableListOf<BivouacReview.Answer>()
+        for (index in 0 until batch.total) {
+            val answer = CompletableDeferred<BivouacReview.Answer>()
+            pendingAnswer = answer
+            _state.value = State.Reviewing(batch.questionAt(index))
+            answers += answer.await()
+            pendingAnswer = null
+            val completed = batch.completedBy(answers) ?: continue
+            val key = completed.track.key
+            withContext(Dispatchers.IO) {
+                try {
+                    repository.applyBivouacReview(
+                        trackId = key.trackId,
+                        splitsByDayId = completed.outcome.splits.mapKeys { (position, _) -> key.dayIds[position] },
+                        reviewVersion = completed.outcome.reviewVersion,
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Crible des bivouacs : découpage de la rando ${key.trackId} en échec", e)
+                }
+            }
+        }
+    }
+
+    private companion object {
+        const val TAG = "ElevationBackfillGate"
     }
 }
 
@@ -130,6 +236,15 @@ fun ElevationBackfillGate(
 ) {
     when (val current = viewModel.state.collectAsStateWithLifecycle().value) {
         ElevationBackfillViewModel.State.Ready -> content()
+        // RIC-227 : le crible des bivouacs, même fond neutre, la question par-dessus.
+        is ElevationBackfillViewModel.State.Reviewing -> {
+            Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+            BivouacDetectedDialog(
+                question = current.question,
+                onSplit = { viewModel.answerBivouacQuestion(BivouacReview.Answer.SPLIT) },
+                onKeep = { viewModel.answerBivouacQuestion(BivouacReview.Answer.KEEP) },
+            )
+        }
         ElevationBackfillViewModel.State.Checking -> {
             Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
         }
