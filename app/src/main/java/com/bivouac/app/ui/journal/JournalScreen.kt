@@ -198,6 +198,16 @@ private val PEEK_HEIGHT_EMPTY = 150.dp
 internal fun analysisModeAfter(current: Boolean, isEditing: Boolean, photoPlacementActive: Boolean): Boolean =
     if (isEditing || photoPlacementActive) false else current
 
+/**
+ * RIC-227 (décision de Seb du 15/10) : l'entrée « Détecter les bivouacs » du menu de la vue détail
+ * n'apparaît que hors de tout état où une sortie demanderait confirmation ou serait refusée :
+ * ni en édition (brouillon de tags, de note ou de photos), ni en placement d'une photo, ni pendant
+ * une opération photo. Un découpage recharge la vue détail comme une réouverture, ce qui
+ * abandonnerait ces brouillons. Fonction pure, testée par DetectBivouacsMenuEntryTest.
+ */
+internal fun detectBivouacsMenuEntryVisible(isEditing: Boolean, photoPlacementActive: Boolean, photoOperationInFlight: Boolean): Boolean =
+    !isEditing && !photoPlacementActive && !photoOperationInFlight
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun JournalScreen(
@@ -2520,6 +2530,7 @@ internal fun ThreeStopJournalDetail(
                                 onRenameClick = onRenameClick,
                                 onDuplicateClick = onDuplicateClick,
                                 onDetectBivouacsClick = onDetectBivouacsClick,
+                                showDetectBivouacs = detectBivouacsMenuEntryVisible(isEditing, photoPlacementActive, photoOperationInFlight),
                                 onDeleteClick = onDeleteClick,
                             )
                             IconButton(onClick = { requestExit(onCloseClick) }) {
@@ -3232,6 +3243,7 @@ private fun JournalDetailMenu(
     onRenameClick: () -> Unit,
     onDuplicateClick: () -> Unit,
     onDetectBivouacsClick: () -> Unit,
+    showDetectBivouacs: Boolean,
     onDeleteClick: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -3251,12 +3263,15 @@ private fun JournalDetailMenu(
                 onClick = { expanded = false; onDuplicateClick() },
             )
             // RIC-227 (conception RIC-222 §3.2) : revenir sur le crible des bivouacs, par exemple
-            // après avoir répondu « Ne pas découper » trop vite.
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.journal_detail_menu_detect_bivouacs)) },
-                leadingIcon = { Icon(Icons.Default.NightsStay, contentDescription = null) },
-                onClick = { expanded = false; onDetectBivouacsClick() },
-            )
+            // après avoir répondu « Ne pas découper » trop vite. Absente en édition, voir
+            // detectBivouacsMenuEntryVisible.
+            if (showDetectBivouacs) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.journal_detail_menu_detect_bivouacs)) },
+                    leadingIcon = { Icon(Icons.Default.NightsStay, contentDescription = null) },
+                    onClick = { expanded = false; onDetectBivouacsClick() },
+                )
+            }
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.common_delete_button)) },
                 leadingIcon = {
