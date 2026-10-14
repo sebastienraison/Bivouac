@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.NightsStay
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Snooze
@@ -268,6 +269,7 @@ fun JournalScreen(
     val activeCalibration by viewModel.activeCalibration.collectAsStateWithLifecycle()
     val duplicateWarning by viewModel.duplicateWarning.collectAsStateWithLifecycle()
     val bivouacQuestion by viewModel.bivouacQuestion.collectAsStateWithLifecycle()
+    val bivouacDetectMessage by viewModel.bivouacDetectMessage.collectAsStateWithLifecycle()
     val multiFileImportChoice by viewModel.multiFileImportChoice.collectAsStateWithLifecycle()
     val separateImportReport by viewModel.separateImportReport.collectAsStateWithLifecycle()
     val importProgress by viewModel.importProgress.collectAsStateWithLifecycle()
@@ -552,6 +554,7 @@ fun JournalScreen(
                     onCloseClick = viewModel::closeTrack,
                     onDeleteClick = viewModel::requestDelete,
                     onDuplicateClick = { viewModel.buildDuplicateForPlanification()?.let(onDuplicateToPlanification) },
+                    onDetectBivouacsClick = viewModel::detectBivouacsOnCurrentTrack,
                     onSheetTopMeasured = { sheetTopPx = it },
                     // RIC-166 : le profil suit la position en cours de glissement pendant le mode
                     // placement ; hors de ce mode, il retrouve le curseur normal.
@@ -798,6 +801,20 @@ fun JournalScreen(
             question = question,
             onSplit = { viewModel.answerBivouacQuestion(BivouacReview.Answer.SPLIT) },
             onKeep = { viewModel.answerBivouacQuestion(BivouacReview.Answer.KEEP) },
+        )
+    }
+
+    // RIC-227 : l'action de menu n'a rien à demander (aucun bivouac, ou tous déjà des fins de
+    // journée) : un dialogue d'information à un bouton, « OK » comme les autres de l'écran.
+    bivouacDetectMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissBivouacDetectMessage,
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissBivouacDetectMessage) {
+                    Text(stringResource(R.string.common_ok_button))
+                }
+            },
         )
     }
 
@@ -2164,6 +2181,8 @@ internal fun ThreeStopJournalDetail(
     onRenameClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onDuplicateClick: () -> Unit = {},
+    // RIC-227 : action de menu « Détecter les bivouacs ».
+    onDetectBivouacsClick: () -> Unit = {},
     onSheetTopMeasured: (Int) -> Unit,
     cursorIndex: Int?,
     onCursorDragged: (Int) -> Unit,
@@ -2490,6 +2509,7 @@ internal fun ThreeStopJournalDetail(
                             JournalDetailMenu(
                                 onRenameClick = onRenameClick,
                                 onDuplicateClick = onDuplicateClick,
+                                onDetectBivouacsClick = onDetectBivouacsClick,
                                 onDeleteClick = onDeleteClick,
                             )
                             IconButton(onClick = { requestExit(onCloseClick) }) {
@@ -3198,7 +3218,12 @@ private fun withBullets(text: String): String = text.lines().joinToString("\n") 
 }
 
 @Composable
-private fun JournalDetailMenu(onRenameClick: () -> Unit, onDuplicateClick: () -> Unit, onDeleteClick: () -> Unit) {
+private fun JournalDetailMenu(
+    onRenameClick: () -> Unit,
+    onDuplicateClick: () -> Unit,
+    onDetectBivouacsClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
@@ -3214,6 +3239,13 @@ private fun JournalDetailMenu(onRenameClick: () -> Unit, onDuplicateClick: () ->
                 text = { Text(stringResource(R.string.journal_detail_menu_duplicate)) },
                 leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
                 onClick = { expanded = false; onDuplicateClick() },
+            )
+            // RIC-227 (conception RIC-222 §3.2) : revenir sur le crible des bivouacs, par exemple
+            // après avoir répondu « Ne pas découper » trop vite.
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.journal_detail_menu_detect_bivouacs)) },
+                leadingIcon = { Icon(Icons.Default.NightsStay, contentDescription = null) },
+                onClick = { expanded = false; onDetectBivouacsClick() },
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.common_delete_button)) },

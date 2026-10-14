@@ -246,6 +246,16 @@ private sealed class BivouacSession {
     val answers: MutableList<BivouacReview.Answer> = mutableListOf()
 
     class Import(val prepared: PreparedImport, override val questions: List<BivouacReview.Question>) : BivouacSession()
+
+    /**
+     * Action de menu « Détecter les bivouacs » sur la rando [entry] ouverte, dont les jours avaient
+     * les identifiants [dayIds] (dans l'ordre) au moment de la détection.
+     */
+    class Menu(
+        val entry: LoggedTrackEntity,
+        val dayIds: List<Long>,
+        override val questions: List<BivouacReview.Question>,
+    ) : BivouacSession()
 }
 
 class JournalViewModel(application: Application) : AndroidViewModel(application) {
@@ -610,6 +620,12 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     private val _bivouacQuestion = MutableStateFlow<BivouacQuestion?>(null)
     val bivouacQuestion: StateFlow<BivouacQuestion?> = _bivouacQuestion.asStateFlow()
     private var bivouacSession: BivouacSession? = null
+
+    // RIC-227 : résultat de l'action de menu quand il n'y a rien à demander (bivouac_detect_none
+    // ou bivouac_detect_all_split), affiché dans un dialogue à un bouton.
+    private val _bivouacDetectMessage = MutableStateFlow<String?>(null)
+    val bivouacDetectMessage: StateFlow<String?> = _bivouacDetectMessage.asStateFlow()
+    private var bivouacDetectionRunning = false
 
     // RIC-65 écran 3 : non nul tant que l'utilisateur n'a pas tranché entre trek multi-jours et
     // sorties séparées. Aucun fichier n'est lu avant ce choix : « Abandonner » ne peut donc pas
@@ -1951,6 +1967,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         val answers = session.answers + answer
         when (session) {
             is BivouacSession.Import -> finishImportBivouacQuestions(session, answers)
+            is BivouacSession.Menu -> finishMenuBivouacQuestions(session, answers)
         }
     }
 
@@ -1982,6 +1999,78 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             } finally {
                 _importProgress.value = null
                 ExclusiveOperations.finish(ExclusiveOperation.JOURNAL_IMPORT)
+            }
+        }
+    }
+
+    /**
+     * RIC-227 (conception RIC-222 §3.2) : action de menu « Détecter les bivouacs » de la vue détail.
+     * Détection sur les jours de la rando ouverte, sur les points déjà chargés par la vue détail
+     * ([JournalUiState.Detail.daySegments], plages appliquées), hors du fil principal. Rien à
+     * demander : un message ([bivouacDetectMessage]) ; sinon les questions, comme à l'import.
+     * Proposé même quand la rando a déjà été passée au crible : c'est le moyen d'y revenir.
+     */
+    fun detectBivouacsOnCurrentTrack() {
+        val state = _uiState.value as? JournalUiState.Detail ?: return
+        if (bivouacSession != null || bivouacDetectionRunning) return
+        if (state.days.size != state.daySegments.size) {
+            Log.w("JournalViewModel", "Détection des bivouacs : ${state.days.size} jour(s) pour ${state.daySegments.size} segment(s)")
+            return
+        }
+        bivouacDetectionRunning = true
+        viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.Default) { BivouacReview.menuResult(state.daySegments.map { it.points }) }
+                when (result) {
+                    BivouacReview.MenuResult.NoneDetected -> _bivouacDetectMessage.value = string(R.string.bivouac_detect_none)
+                    BivouacReview.MenuResult.AllAlreadySplit -> _bivouacDetectMessage.value = string(R.string.bivouac_detect_all_split)
+                    is BivouacReview.MenuResult.Ask -> {
+                        val session = BivouacSession.Menu(state.entry, state.days.map { it.id }, result.questions)
+                        bivouacSession = session
+                        publishBivouacQuestion(session)
+                    }
+                }
+            } finally {
+                bivouacDetectionRunning = false
+            }
+        }
+    }
+
+    fun dismissBivouacDetectMessage() {
+        _bivouacDetectMessage.value = null
+    }
+
+    /**
+     * RIC-227 : toutes les questions de l'action de menu sont répondues. Sans découpage, la rando
+     * est seulement marquée examinée. Avec, elle est découpée puis la vue détail se recharge comme
+     * à une ouverture (les jours, la frise et l'Analyse changent) ; une édition photo non
+     * enregistrée est alors abandonnée, comme à l'ouverture d'une autre rando.
+     */
+    private fun finishMenuBivouacQuestions(session: BivouacSession.Menu, answers: List<BivouacReview.Answer>) {
+        bivouacSession = null
+        _bivouacQuestion.value = null
+        val outcome = BivouacReview.outcome(session.questions, answers)
+        val splitsByDayId = outcome.splits.mapKeys { (position, _) -> session.dayIds[position] }
+        if (splitsByDayId.isNotEmpty()) _uiState.value = JournalUiState.Loading
+        viewModelScope.launch {
+            try {
+                val updated = withContext(Dispatchers.IO) {
+                    repository.applyBivouacReview(session.entry.id, splitsByDayId, outcome.reviewVersion)
+                    repository.get(session.entry.id)
+                }
+                if (splitsByDayId.isNotEmpty()) {
+                    refresh()
+                    if (updated != null) {
+                        openTrackInternal(updated, dayIndex = null)
+                    } else {
+                        _uiState.value = JournalUiState.Error(string(R.string.journal_error_track_not_found))
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("JournalViewModel", "Échec du découpage aux bivouacs (action de menu)", e)
+                _uiState.value = JournalUiState.Error(string(R.string.journal_error_track_unreadable))
             }
         }
     }
