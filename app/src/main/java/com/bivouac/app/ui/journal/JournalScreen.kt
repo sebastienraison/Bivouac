@@ -145,6 +145,7 @@ import com.bivouac.app.data.photo.PhotoLibraryPermission
 import com.bivouac.app.journal.BivouacReview
 import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.journal.ImportProgress
+import com.bivouac.app.journal.JournalBivouacPoints
 import com.bivouac.app.journal.JournalDayInfo
 import com.bivouac.app.journal.JournalUiState
 import com.bivouac.app.journal.JournalViewModel
@@ -460,6 +461,14 @@ fun JournalScreen(
                         BivouacPoint(id = "jonction-$index", trackPointIndex = pointIndex)
                     }
             }
+            // RIC-227 : sur la carte seulement, un marqueur de bivouac aussi pour chaque nuit restée à
+            // l'intérieur d'un jour, comme pour une jonction. Le profil, le Carnet et les coupures du
+            // tracé gardent journalBivouacs (jonctions seules) : une nuit interne n'y est pas une
+            // borne de jour, et ses coupures suivent la règle des 50 m (bivouacStopIndices).
+            val journalMapBivouacs = remember(detail.daySegments, detail.bivouacStopIndices) {
+                JournalBivouacPoints.trackPointIndices(detail.daySegments.map { it.points.size }, detail.bivouacStopIndices)
+                    .mapIndexed { index, pointIndex -> BivouacPoint(id = "bivouac-$index", trackPointIndex = pointIndex) }
+            }
             // RIC-184 : Terminé et Annuler partagent ce geste, la seule différence étant l'appel
             // ViewModel derrière (exitPhotoPlacement / cancelPhotoPlacement, RIC-183). La cible est
             // capturée AVANT de sortir du mode : le ViewModel l'efface dans cet appel, il n'y a donc
@@ -491,7 +500,7 @@ fun JournalScreen(
             Box(modifier = modifier.fillMaxSize()) {
                 JournalMap(
                     track = detail.track,
-                    bivouacPoints = journalBivouacs,
+                    bivouacPoints = journalMapBivouacs,
                     // RIC-226 : les nuits détectées à l'intérieur d'un jour comptent comme des
                     // jonctions pour le tracé (pointillé au-delà de 50 m, DayJunctions.recordingGaps).
                     dayBoundaryIndices = journalBivouacs.map { it.trackPointIndex } + detail.bivouacStopIndices,
@@ -2174,7 +2183,8 @@ internal fun ThreeStopJournalDetail(
     bivouacPoints: List<BivouacPoint> = emptyList(),
     // RIC-226 : arrêts des nuits détectées à l'intérieur d'un jour, en index de [track] (voir
     // LoggedTrackRepository.LoggedTrackDetail.bivouacStopIndices) : coupures de la série et bornes
-    // du tracé, comme les jonctions de jours. Pas de marqueur de bivouac pour elles (lot 3).
+    // du tracé, comme les jonctions de jours. Leur marqueur de bivouac est posé sur la carte par
+    // l'écran (RIC-227, journalMapBivouacs), pas ici.
     bivouacStopIndices: List<Int> = emptyList(),
     activeCalibration: SpeedCalibration = SpeedCalibration.DEFAULT,
     onCloseClick: () -> Unit,

@@ -236,6 +236,14 @@ private const val NON_BREAKING_SPACE = '\u00A0'
  */
 internal fun timelineDayFiguresLine(formatted: String): String = formatted.replace(' ', NON_BREAKING_SPACE)
 
+/**
+ * RIC-227 (suite du lot 2) : durée affichée dans la seconde ligne du titre de jour. [DayTimeline.
+ * elapsedSeconds] est l'écart d'horloge du départ à l'arrivée (les heures de la frise en dérivent),
+ * nuit comprise quand le jour contient un bivouac resté entier ; la durée du jour, elle, est sans
+ * la nuit, comme partout ailleurs depuis le lot 2. Fonction pure, testée par TimelineBivouacTest.
+ */
+internal fun timelineDayDurationSeconds(day: DayTimeline): Double = day.elapsedSeconds - day.bivouacSeconds
+
 // --- Nuit de bivouac entre deux jours -----------------------------------------------------------------
 
 /**
@@ -678,11 +686,25 @@ private fun DayTimelineView(
                     clockTime = dayStartInstant.plusMillis((element.startSeconds * 1_000).toLong()),
                     onClick = { onElementSelected(TrackAnalysisMapMapping.toScreenIndex(dayOffsets, dayIndex, element.startIndex)) },
                 )
-                is TimelinePause -> TimelinePauseRow(
-                    pause = element,
-                    clockTime = dayStartInstant.plusMillis((element.startSeconds * 1_000).toLong()),
-                    onClick = { onElementSelected(TrackAnalysisMapMapping.toScreenIndex(dayOffsets, dayIndex, element.startIndex)) },
-                )
+                // RIC-227 : une nuit au bivouac restée à l'intérieur du jour (TimelinePause.isBivouac,
+                // lot 2) se rend comme la nuit entre deux jours (RIC-212) : même bloc, même texte
+                // « … au bivouac », même règle de durée ; son toucher place le repère sur le dernier
+                // point avant la nuit, comme pour une jonction.
+                is TimelinePause -> if (element.isBivouac) {
+                    TimelineBivouacRow(
+                        nightDurationSeconds = bivouacNightDurationSeconds(
+                            dayStartInstant.plusMillis((element.startSeconds * 1_000).toLong()),
+                            dayStartInstant.plusMillis((element.endSeconds * 1_000).toLong()),
+                        ),
+                        onClick = { onElementSelected(TrackAnalysisMapMapping.toScreenIndex(dayOffsets, dayIndex, element.startIndex)) },
+                    )
+                } else {
+                    TimelinePauseRow(
+                        pause = element,
+                        clockTime = dayStartInstant.plusMillis((element.startSeconds * 1_000).toLong()),
+                        onClick = { onElementSelected(TrackAnalysisMapMapping.toScreenIndex(dayOffsets, dayIndex, element.startIndex)) },
+                    )
+                }
             }
         }
         TimelineMarkerRow(
@@ -764,7 +786,7 @@ internal fun AnalysisTimelineSection(days: List<DayTimeline>, daySegments: List<
                 }
                 if (multiDay) {
                     val distanceText = stringResource(R.string.format_distance_km, formatKm1(day.distanceMeters / 1_000.0))
-                    val durationText = formatPauseDuration(day.elapsedSeconds)
+                    val durationText = formatPauseDuration(timelineDayDurationSeconds(day))
                     val dateLine = stringResource(
                         R.string.journal_analysis_timeline_day,
                         (dayIndex + 1).toString(),

@@ -814,10 +814,12 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      */
     fun buildDuplicateForPlanification(): DuplicatePlanRequest? {
         val state = _uiState.value as? JournalUiState.Detail ?: return null
-        val junctions = DayJunctions.bivouacTrackPointIndices(state.daySegments.map { it.points.size })
+        // RIC-227 : les nuits restées à l'intérieur d'un jour deviennent aussi des bivouacs, en plus
+        // des jonctions entre jours.
+        val bivouacIndices = JournalBivouacPoints.trackPointIndices(state.daySegments.map { it.points.size }, state.bivouacStopIndices)
         return DuplicatePlanRequest(
             track = state.track,
-            bivouacPoints = junctions.map { BivouacPoint(id = UUID.randomUUID().toString(), trackPointIndex = it) },
+            bivouacPoints = bivouacIndices.map { BivouacPoint(id = UUID.randomUUID().toString(), trackPointIndex = it) },
             suggestedName = string(R.string.journal_detail_duplicate_name_prefix, state.entry.name),
             sourceName = state.entry.name,
         )
