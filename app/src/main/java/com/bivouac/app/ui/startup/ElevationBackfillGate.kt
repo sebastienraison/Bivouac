@@ -25,12 +25,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bivouac.app.R
 import com.bivouac.app.data.db.BankedTrackRepository
 import com.bivouac.app.data.db.CalibrationRefresh
-import com.bivouac.app.data.db.LoggedTrackEntity
 import com.bivouac.app.data.db.LoggedTrackRepository
 import com.bivouac.app.data.gpx.BIVOUAC_REVIEW_VERSION
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.journal.BivouacQuestion
 import com.bivouac.app.journal.BivouacReview
+import com.bivouac.app.journal.BivouacReviewBatch
 import com.bivouac.app.ui.journal.BivouacDetectedDialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -81,8 +81,8 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
         data object Ready : State
     }
 
-    /** RIC-227 : une rando dont la détection a trouvé au moins un bivouac, en attente des réponses. */
-    private class PendingReview(val track: LoggedTrackEntity, val dayIds: List<Long>, val questions: List<BivouacReview.Question>)
+    /** RIC-227 : clé d'une rando du crible, son identifiant et ceux de ses jours à la détection. */
+    private data class ReviewKey(val trackId: String, val dayIds: List<Long>)
 
     private val repository = LoggedTrackRepository(application)
     private val bankedRepository = BankedTrackRepository(application)
@@ -162,7 +162,7 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
      */
     private suspend fun reviewBivouacs() {
         val tracks = withContext(Dispatchers.IO) { repository.tracksNeedingBivouacReview(BIVOUAC_REVIEW_VERSION) }
-        val pending = mutableListOf<PendingReview>()
+        val pending = mutableListOf<BivouacReviewBatch.Track<ReviewKey>>()
         tracks.forEachIndexed { done, track ->
             _state.value = State.Running(done, tracks.size)
             val found = withContext(Dispatchers.IO) {
@@ -174,7 +174,7 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
                         repository.markBivouacReviewed(track.id, BIVOUAC_REVIEW_VERSION)
                         null
                     } else {
-                        PendingReview(track, days.map { it.id }, questions)
+                        BivouacReviewBatch.Track(ReviewKey(track.id, days.map { it.id }), track.name, questions)
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -185,29 +185,29 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
             }
             if (found != null) pending += found
         }
-        val total = pending.sumOf { it.questions.size }
-        var number = 0
-        for (review in pending) {
-            val answers = review.questions.map { question ->
-                number++
-                val answer = CompletableDeferred<BivouacReview.Answer>()
-                pendingAnswer = answer
-                _state.value = State.Reviewing(BivouacQuestion(review.track.name, question.bivouac, number, total))
-                answer.await()
-            }
+        // Ordre, compteur global et réponses par rando : BivouacReviewBatch, partagé avec les
+        // questions d'après le rapport d'un import en sorties séparées (JournalViewModel).
+        val batch = BivouacReviewBatch(pending)
+        val answers = mutableListOf<BivouacReview.Answer>()
+        for (index in 0 until batch.total) {
+            val answer = CompletableDeferred<BivouacReview.Answer>()
+            pendingAnswer = answer
+            _state.value = State.Reviewing(batch.questionAt(index))
+            answers += answer.await()
             pendingAnswer = null
-            val outcome = BivouacReview.outcome(review.questions, answers)
+            val completed = batch.completedBy(answers) ?: continue
+            val key = completed.track.key
             withContext(Dispatchers.IO) {
                 try {
                     repository.applyBivouacReview(
-                        trackId = review.track.id,
-                        splitsByDayId = outcome.splits.mapKeys { (position, _) -> review.dayIds[position] },
-                        reviewVersion = outcome.reviewVersion,
+                        trackId = key.trackId,
+                        splitsByDayId = completed.outcome.splits.mapKeys { (position, _) -> key.dayIds[position] },
+                        reviewVersion = completed.outcome.reviewVersion,
                     )
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.w(TAG, "Crible des bivouacs : découpage de la rando ${review.track.id} en échec", e)
+                    Log.w(TAG, "Crible des bivouacs : découpage de la rando ${key.trackId} en échec", e)
                 }
             }
         }

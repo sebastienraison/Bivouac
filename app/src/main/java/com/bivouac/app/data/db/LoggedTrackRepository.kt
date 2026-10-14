@@ -627,16 +627,30 @@ class LoggedTrackRepository(context: Context) {
         }
         val id = commitImport(prepared)
         try {
-            val dayIds = dao.getDays(id).sortedBy { it.dayIndex }.map { it.id }
-            val splitsByDayId = splitsByDayPosition.mapKeys { (position, _) ->
-                dayIds.getOrNull(position) ?: throw IllegalStateException("Jour de rang $position absent de l'import $id")
-            }
-            applyBivouacReview(id, splitsByDayId, reviewVersion)
+            applyBivouacReviewByDayPosition(id, splitsByDayPosition, reviewVersion)
         } catch (e: Throwable) {
             withContext(NonCancellable) { delete(id) }
             throw e
         }
         return id
+    }
+
+    /**
+     * RIC-227 : [applyBivouacReview] avec des jours désignés par leur rang (0 pour le premier) tel
+     * qu'il était à l'enregistrement de la rando : import d'une sortie seule et questions d'après le
+     * rapport d'un import en sorties séparées, dont les questions viennent de [PreparedImport.days].
+     * Lève [IllegalStateException] sans rien écrire si un rang n'existe pas.
+     */
+    suspend fun applyBivouacReviewByDayPosition(
+        trackId: String,
+        splitsByDayPosition: Map<Int, List<DetectedBivouac>>,
+        reviewVersion: Int,
+    ) {
+        val dayIds = dao.getDays(trackId).sortedBy { it.dayIndex }.map { it.id }
+        val splitsByDayId = splitsByDayPosition.mapKeys { (position, _) ->
+            dayIds.getOrNull(position) ?: throw IllegalStateException("Jour de rang $position absent de la rando $trackId")
+        }
+        applyBivouacReview(trackId, splitsByDayId, reviewVersion)
     }
 
     /** RIC-227 : nombre de randos pas encore passées au crible [version] (voir ElevationBackfillGate). */

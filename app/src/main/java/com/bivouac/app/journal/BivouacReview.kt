@@ -120,9 +120,55 @@ object BivouacReview {
 }
 
 /**
+ * RIC-227 : les questions de plusieurs randos posées à la suite, avec le nom de chacune dans le
+ * titre : crible du premier lancement (ElevationBackfillGate) et questions d'après le rapport d'un
+ * import en sorties séparées (JournalViewModel). Les randos sans question sont écartées ; l'ordre
+ * est celui de [tracks] puis de leurs questions ; le compteur porte sur le total des bivouacs de
+ * toutes les randos ; les réponses d'une rando s'appliquent dès sa dernière question
+ * ([completedBy]), sans attendre les suivantes.
+ */
+class BivouacReviewBatch<T>(tracks: List<Track<T>>) {
+
+    /** Une rando : [key] l'identifie pour l'appelant (identifiant, liste des jours...), [name] va dans le titre. */
+    data class Track<T>(val key: T, val name: String, val questions: List<BivouacReview.Question>)
+
+    /** Une rando dont toutes les questions sont répondues, et ce qu'il faut écrire pour elle. */
+    data class Completed<T>(val track: Track<T>, val outcome: BivouacReview.Outcome)
+
+    val tracks: List<Track<T>> = tracks.filter { it.questions.isNotEmpty() }
+
+    private val flat: List<Pair<Int, BivouacReview.Question>> =
+        this.tracks.flatMapIndexed { position, track -> track.questions.map { position to it } }
+
+    /** Nombre total de questions, toutes randos confondues. */
+    val total: Int get() = flat.size
+
+    /** La question de rang [index] (à partir de 0), telle que l'écran l'affiche. */
+    fun questionAt(index: Int): BivouacQuestion {
+        val (position, question) = flat[index]
+        return BivouacQuestion(tracks[position].name, question.bivouac, index + 1, total)
+    }
+
+    /**
+     * Après la réponse à la question de rang `answers.size - 1` ([answers] : toutes les réponses
+     * données jusqu'ici, dans l'ordre) : la rando qu'elle complète et son [BivouacReview.Outcome],
+     * ou `null` si cette rando a encore des questions.
+     */
+    fun completedBy(answers: List<BivouacReview.Answer?>): Completed<T>? {
+        val index = answers.size - 1
+        val position = flat.getOrNull(index)?.first ?: return null
+        if (flat.getOrNull(index + 1)?.first == position) return null
+        val first = flat.indexOfFirst { it.first == position }
+        val track = tracks[position]
+        return Completed(track, BivouacReview.outcome(track.questions, answers.subList(first, index + 1)))
+    }
+}
+
+/**
  * RIC-227 : une question du crible telle que l'écran l'affiche (voir BivouacDetectedDialog).
- * [trackName] non nul au crible du premier lancement (titre « Bivouac détecté dans « %1$s » »),
- * nul à l'import et dans l'action de menu. [number] (à partir de 1) sur [total] : le compteur,
+ * [trackName] non nul au crible du premier lancement et après le rapport d'un import en sorties
+ * séparées (titre « Bivouac détecté dans « %1$s » »), nul à l'import d'une sortie seule et dans
+ * l'action de menu. [number] (à partir de 1) sur [total] : le compteur,
  * affiché seulement quand [total] dépasse 1.
  */
 data class BivouacQuestion(

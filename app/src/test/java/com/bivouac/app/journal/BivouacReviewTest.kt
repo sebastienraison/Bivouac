@@ -146,4 +146,53 @@ class BivouacReviewTest {
         val questions = BivouacReview.questions(BivouacReview.detectDays(listOf(twoNights), zoneFor))
         BivouacReview.outcome(questions, listOf(BivouacReview.Answer.SPLIT))
     }
+
+    // --- Plusieurs randos à la suite (crible du lancement, sorties séparées) ---------------------
+
+    private fun track(key: String, vararg days: List<TrackPoint>) =
+        BivouacReviewBatch.Track(key, "Rando $key", BivouacReview.questions(BivouacReview.detectDays(days.toList(), zoneFor)))
+
+    @Test
+    fun `plusieurs randos, ordre des randos puis des nuits, compteur global, randos sans question ecartees`() {
+        val batch = BivouacReviewBatch(listOf(track("a", twoNights), track("vide", noNight), track("b", noNight, twoNights)))
+        assertEquals(listOf("a", "b"), batch.tracks.map { it.key })
+        assertEquals(4, batch.total)
+        val shown = (0 until batch.total).map { batch.questionAt(it) }
+        assertEquals(listOf("Rando a", "Rando a", "Rando b", "Rando b"), shown.map { it.trackName })
+        assertEquals(listOf(1, 2, 3, 4), shown.map { it.number })
+        assertTrue(shown.all { it.total == 4 })
+        assertEquals(listOf(4, 9, 4, 9), shown.map { it.bivouac.stopIndex })
+    }
+
+    @Test
+    fun `plusieurs randos, chaque rando decoupee des sa derniere question avec ses seules reponses`() {
+        val batch = BivouacReviewBatch(listOf(track("a", twoNights), track("b", noNight, twoNights)))
+        val answers = mutableListOf<BivouacReview.Answer>()
+
+        answers += BivouacReview.Answer.KEEP
+        assertNull("la rando a a encore une question", batch.completedBy(answers))
+
+        answers += BivouacReview.Answer.SPLIT
+        val a = batch.completedBy(answers)!!
+        assertEquals("a", a.track.key)
+        assertEquals(mapOf(0 to listOf(9)), a.outcome.splits.mapValues { (_, b) -> b.map { it.stopIndex } })
+        assertEquals(BIVOUAC_REVIEW_VERSION, a.outcome.reviewVersion)
+
+        answers += BivouacReview.Answer.SPLIT
+        assertNull(batch.completedBy(answers))
+        answers += BivouacReview.Answer.KEEP
+        val b = batch.completedBy(answers)!!
+        assertEquals("b", b.track.key)
+        // Rang du jour dans la rando b (le fichier à deux nuits est son second jour).
+        assertEquals(mapOf(1 to listOf(4)), b.outcome.splits.mapValues { (_, bivouacs) -> bivouacs.map { it.stopIndex } })
+    }
+
+    @Test
+    fun `plusieurs randos, toutes gardees, versions posees sans decoupage`() {
+        val batch = BivouacReviewBatch(listOf(track("a", twoNights)))
+        val done = batch.completedBy(listOf(BivouacReview.Answer.KEEP, BivouacReview.Answer.KEEP))!!
+        assertTrue(done.outcome.splits.isEmpty())
+        assertEquals(BIVOUAC_REVIEW_VERSION, done.outcome.reviewVersion)
+        assertEquals(0, BivouacReviewBatch(listOf(track("vide", noNight))).total)
+    }
 }
