@@ -114,4 +114,15 @@ data class LoggedTrackDayEntity(
     // ci-dessus : null si et seulement si ce jour n'a pas encore été rattrapé (statsVersion de la
     // trace < 3) ; 0.0 pour un jour sans pause, ou sans horodatage exploitable.
     val pausedSeconds: Double? = null,
+    // RIC-226 (lot 2 de la 2.7.0) : plage de points du fichier qui forme ce jour, bornes incluses,
+    // en index de la liste rendue par GpxParser.parse sur rawGpxFilePath. Nulles toutes les deux :
+    // le jour est le fichier entier (toutes les lignes d'avant la migration 21 vers 22, et tout
+    // import d'un fichier qui n'a pas été découpé). Renseignées : le jour est une plage, et
+    // plusieurs lignes de la même rando partagent alors le même rawGpxFilePath et le même
+    // contentHash (voir LoggedTrackRepository.splitDay). Le fichier n'est jamais réécrit ni
+    // dupliqué : le parseur est déterministe, une plage d'index reste stable tant que le fichier ne
+    // change pas, et il ne change jamais. Toute lecture des points d'un jour passe par
+    // DayPoints, seul endroit qui applique cette plage.
+    val firstPointIndex: Int? = null,
+    val lastPointIndex: Int? = null,
 )

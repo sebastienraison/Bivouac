@@ -38,6 +38,13 @@ data class LoggedTrackEntity(
     // des lignes à 0.
     @ColumnInfo(defaultValue = "0")
     val statsVersion: Int = TrackStatsParameters.ALGORITHM_VERSION,
+    // RIC-226 (lot 2 de la 2.7.0) : version du crible des bivouacs détectés qui a interrogé
+    // l'utilisateur sur cette rando (découper ou garder en une journée, conception RIC-222 §3.2).
+    // 0 = jamais passée au crible, défaut côté colonne comme côté code : une rando importée ou
+    // migrée n'a encore été proposée à personne. Créée par la migration 21 vers 22, écrite par le
+    // lot 3 (RIC-227), lue par personne avant lui.
+    @ColumnInfo(defaultValue = "0")
+    val bivouacReviewVersion: Int = 0,
 ) {
     fun toTrackStats(): TrackStats = TrackStats(
         distanceMeters = distanceMeters,
