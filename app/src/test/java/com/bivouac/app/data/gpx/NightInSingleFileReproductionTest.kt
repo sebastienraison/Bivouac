@@ -9,16 +9,20 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import java.time.ZoneId
 import org.junit.Assert.assertTrue
-import org.junit.Ignore
 import org.junit.Test
 
 // RIC-222, 2026-10-13 : test de reproduction, échoue tant que le défaut n'est pas corrigé.
-// 2026-10-14 (RIC-225) : le test du détecteur est vert contre BivouacDetector ; les trois tests de durée
-// sont @Ignore jusqu'au lot 2 (RIC-226).
+// 2026-10-14 (RIC-225) : le test du détecteur est vert contre BivouacDetector.
+// 2026-10-14 (RIC-226) : les deux tests de temps de marche (Journal, Analyse) sont actifs et verts.
+// 2026-10-15 (RIC-226, décision du pilotage) : les tests qui décrivaient l'ancien comportement (part de
+// marche sur l'écoulé avec la nuit, nuit à 40 m comptée en pause) sont retirés, contraires à la
+// conception validée le 14/10 (§3.4, « la nuit est retirée de la durée écoulée et du temps de
+// marche »). Le comportement attendu est verrouillé par DayBivouacsTest (mêmes chiffres à 40 m et à
+// 141 m, et mêmes chiffres qu'en deux fichiers).
 // Un trek de deux jours importé en UN SEUL fichier GPX : la nuit (trou d'enregistrement de 17 h entre
 // deux points consécutifs distants de 141 m) ne doit pas être comptée comme du temps de marche.
-// Les tests "témoin" (reprise à 40 m, sous GAP_MAX_METERS) passent aujourd'hui : ils prouvent que
-// seul le seuil de distance de TrackPauseDetector sépare les deux cas.
+// Le témoin restant (reprise à 40 m, sous GAP_MAX_METERS) montre que le détecteur de pauses, lui,
+// voit toujours la nuit comme une pause à cette distance : seul son seuil sépare les deux cas.
 
 /**
  * Trace d'un seul jour (une seule liste de points) : [HALF_DAY_HOURS] h de marche à 4 km/h (un point
@@ -69,14 +73,16 @@ class NightInSingleFileReproductionTest {
     }
 
     private fun journalDuration(points: List<TrackPoint>): RealDurationCalculator.RealDuration {
-        val sums = DaySegmentSums.of(points)
-        val elapsed = Duration.between(points.first().time, points.last().time).seconds
+        // RIC-226 : les deux colonnes viennent désormais du calcul public que l'import, le
+        // rattrapage et le découpage partagent (JournalDayStats), plus d'une reproduction locale de
+        // l'ancienne fonction privée LoggedTrackRepository.elapsedSeconds.
+        val figures = JournalDayStats.of(points)
         val day = LoggedTrackDayEntity(
             trackId = "t",
             dayIndex = 0,
             rawGpxFilePath = "irrelevant",
-            elapsedSeconds = elapsed,
-            pausedSeconds = sums.pausedSeconds,
+            elapsedSeconds = figures.elapsedSeconds,
+            pausedSeconds = figures.sums.pausedSeconds,
         )
         val real = RealDurationCalculator.forDays(listOf(day))
         assertNotNull(real)
@@ -99,7 +105,6 @@ class NightInSingleFileReproductionTest {
 
     // --- Reproduction : la reprise est à 141 m, la nuit passe pour de la marche -------------------
 
-    @Ignore("RIC-226 : durées sans la nuit, lot 2")
     @Test
     fun `journal - le temps de marche ne contient pas la nuit quand le lendemain repart a 141 m`() {
         val points = trace(resumeGapMeters = 141.0)
@@ -112,7 +117,6 @@ class NightInSingleFileReproductionTest {
         )
     }
 
-    @Ignore("RIC-226 : durées sans la nuit, lot 2")
     @Test
     fun `analyse - le temps de marche des totaux ne contient pas la nuit quand le lendemain repart a 141 m`() {
         val points = trace(resumeGapMeters = 141.0)
@@ -121,15 +125,6 @@ class NightInSingleFileReproductionTest {
             "temps de marche ${movingHours} h, attendu moins de ${2 * HALF_DAY_HOURS + MARGIN_HOURS} h ; ${describe(points)}",
             movingHours < 2 * HALF_DAY_HOURS + MARGIN_HOURS,
         )
-    }
-
-    @Ignore("RIC-226 : durées sans la nuit, lot 2")
-    @Test
-    fun `analyse - la part de marche affichee ne depasse pas la part des deux demi-journees quand le lendemain repart a 141 m`() {
-        val points = trace(resumeGapMeters = 141.0)
-        val share = TrackTimelineCalculator.compute(listOf(points), analysis(points)).walkingSharePercent!!
-        // 14 h de marche sur 31 h écoulées : 45 %. Borne large : 60 %.
-        assertTrue("part de marche $share %, attendu au plus 60 % ; ${describe(points)}", share <= 60)
     }
 
     @Test
@@ -150,25 +145,6 @@ class NightInSingleFileReproductionTest {
     }
 
     // --- Témoins : reprise à 40 m, sous GAP_MAX_METERS (50 m) ; ces tests PASSENT aujourd'hui ------
-
-    @Test
-    fun `temoin journal - la reprise a 40 m voit la nuit comptee comme pause`() {
-        val points = trace(resumeGapMeters = 40.0)
-        val real = journalDuration(points)
-        val walkingHours = real.walkingSeconds!! / 3_600.0
-        assertTrue("temps de marche $walkingHours h ; ${describe(points)}", walkingHours < 2 * HALF_DAY_HOURS + MARGIN_HOURS)
-        assertTrue("part ${real.walkingSharePercent} %", real.walkingSharePercent!! <= 60)
-    }
-
-    @Test
-    fun `temoin analyse - la reprise a 40 m voit la nuit comptee comme pause`() {
-        val points = trace(resumeGapMeters = 40.0)
-        val a = analysis(points)
-        val totals = a.totals!!
-        assertTrue("pauses ${totals.pausedSeconds / 3_600.0} h ; ${describe(points)}", totals.pausedSeconds >= NIGHT_HOURS * 3_600.0)
-        assertTrue(totals.movingSeconds / 3_600.0 < 2 * HALF_DAY_HOURS + MARGIN_HOURS)
-        assertTrue(TrackTimelineCalculator.compute(listOf(points), a).walkingSharePercent!! <= 60)
-    }
 
     @Test
     fun `temoin detecteur - la reprise a 40 m produit une pause couvrant la nuit`() {

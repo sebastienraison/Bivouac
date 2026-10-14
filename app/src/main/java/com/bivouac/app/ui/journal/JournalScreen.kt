@@ -488,11 +488,18 @@ fun JournalScreen(
                 JournalMap(
                     track = detail.track,
                     bivouacPoints = journalBivouacs,
-                    dayBoundaryIndices = journalBivouacs.map { it.trackPointIndex },
+                    // RIC-226 : les nuits détectées à l'intérieur d'un jour comptent comme des
+                    // jonctions pour le tracé (pointillé au-delà de 50 m, DayJunctions.recordingGaps).
+                    dayBoundaryIndices = journalBivouacs.map { it.trackPointIndex } + detail.bivouacStopIndices,
                     // RIC-114 : mêmes coupures que le profil (toutes les jonctions de jours) : la
-                    // distance de la bulle est celle de l'axe, somme des jours stockés.
-                    seriesBreaks = remember(journalBivouacs) {
-                        DayJunctions.journalSeriesBreaks(journalBivouacs.map { it.trackPointIndex })
+                    // distance de la bulle est celle de l'axe, somme des jours stockés. RIC-226 : plus
+                    // les nuits à l'intérieur d'un jour, selon la règle des 50 m.
+                    seriesBreaks = remember(journalBivouacs, detail.bivouacStopIndices) {
+                        DayJunctions.journalSeriesBreaks(
+                            journalBivouacs.map { it.trackPointIndex },
+                            detail.track.points,
+                            detail.bivouacStopIndices,
+                        )
                     },
                     selectedLayer = selectedLayer,
                     recenterSignal = recenterSignal,
@@ -538,6 +545,7 @@ fun JournalScreen(
                     daySegments = detail.daySegments,
                     days = detail.days,
                     bivouacPoints = journalBivouacs,
+                    bivouacStopIndices = detail.bivouacStopIndices,
                     activeCalibration = activeCalibration,
                     onCloseClick = viewModel::closeTrack,
                     onDeleteClick = viewModel::requestDelete,
@@ -2135,6 +2143,10 @@ internal fun ThreeStopJournalDetail(
     // Constat E : un point par jonction entre deux jours, en lecture seule : le profil les trace
     // comme la Planification, mais rien ici ne se déplace ni ne se supprime.
     bivouacPoints: List<BivouacPoint> = emptyList(),
+    // RIC-226 : arrêts des nuits détectées à l'intérieur d'un jour, en index de [track] (voir
+    // LoggedTrackRepository.LoggedTrackDetail.bivouacStopIndices) : coupures de la série et bornes
+    // du tracé, comme les jonctions de jours. Pas de marqueur de bivouac pour elles (lot 3).
+    bivouacStopIndices: List<Int> = emptyList(),
     activeCalibration: SpeedCalibration = SpeedCalibration.DEFAULT,
     onCloseClick: () -> Unit,
     onRenameClick: () -> Unit,
@@ -2526,8 +2538,8 @@ internal fun ThreeStopJournalDetail(
                 // contenu qui défile, au même titre que "Forme du jour" et "Chiffres" (voir la
                 // Column défilante plus bas). seriesBreaks reste utile aux deux modes (le Carnet
                 // garde son ElevationProfile non colorée juste en dessous).
-                val seriesBreaks = remember(bivouacPoints) {
-                    DayJunctions.journalSeriesBreaks(bivouacPoints.map { it.trackPointIndex })
+                val seriesBreaks = remember(bivouacPoints, bivouacStopIndices) {
+                    DayJunctions.journalSeriesBreaks(bivouacPoints.map { it.trackPointIndex }, track.points, bivouacStopIndices)
                 }
                 // RIC-146 lot 4 (brief §4/§6) : coloration du profil et pauses, dérivées du même
                 // résultat d'Analyse que la carte (com.bivouac.app.ui.map.HikeMapView,
@@ -2576,7 +2588,7 @@ internal fun ThreeStopJournalDetail(
                         ElevationProfile(
                             points = track.points,
                             bivouacPoints = bivouacPoints,
-                            dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
+                            dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex } + bivouacStopIndices,
                             // RIC-114 : le lissage ne traverse plus les jonctions de jours, et le
                             // pas de jonction n'est plus compté : la série affichée est la
                             // concaténation des séries par jour, celles qui ont produit les
@@ -2640,7 +2652,7 @@ internal fun ThreeStopJournalDetail(
                         ElevationProfile(
                             points = track.points,
                             bivouacPoints = bivouacPoints,
-                            dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
+                            dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex } + bivouacStopIndices,
                             seriesBreaks = seriesBreaks,
                             cursorIndex = cursorIndex,
                             onCursorDragged = onCursorDragged,

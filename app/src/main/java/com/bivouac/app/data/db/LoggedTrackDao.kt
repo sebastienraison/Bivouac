@@ -283,6 +283,51 @@ interface LoggedTrackDao {
     @Query("DELETE FROM logged_track WHERE id = :id")
     suspend fun delete(id: String)
 
+    @Query("DELETE FROM logged_track_day WHERE id = :id")
+    suspend fun deleteDay(id: Long)
+
+    @Query("UPDATE logged_track_day SET dayIndex = :dayIndex WHERE id = :id")
+    suspend fun updateDayIndex(id: Long, dayIndex: Int)
+
+    /**
+     * RIC-226 : écriture d'un découpage de jour (voir LoggedTrackRepository.splitDay), en une seule
+     * transaction : le jour découpé disparaît avec ses lignes de rythme, [newDays] le remplacent avec
+     * les leurs ([newDayPaceBands], dans le même ordre), les autres jours prennent leur nouveau rang
+     * ([dayIndexById]), et la trace ses nouveaux totaux. Jamais une rando dont le total ne serait plus
+     * la somme de ses jours, ni deux jours au même rang, même une milliseconde.
+     */
+    @Transaction
+    suspend fun applyDaySplit(
+        trackId: String,
+        removedDayId: Long,
+        newDays: List<LoggedTrackDayEntity>,
+        newDayPaceBands: List<List<PaceBandSum>>,
+        dayIndexById: Map<Long, Int>,
+        distanceMeters: Double,
+        elevationGainMeters: Double,
+        elevationLossMeters: Double,
+        estimatedDurationMinutes: Int,
+        statsVersion: Int,
+    ) {
+        // Explicite plutôt que de compter sur la cascade : elle dépend de PRAGMA foreign_keys.
+        deleteDayPaces(removedDayId)
+        deleteDay(removedDayId)
+        dayIndexById.forEach { (id, dayIndex) -> updateDayIndex(id, dayIndex) }
+        val dayIds = insertDays(newDays)
+        dayIds.forEachIndexed { index, dayId ->
+            val paces = newDayPaceBands.getOrNull(index).orEmpty()
+            if (paces.isNotEmpty()) insertDayPaces(paces.map { it.toEntity(dayId) })
+        }
+        updateTrackStats(
+            id = trackId,
+            distanceMeters = distanceMeters,
+            elevationGainMeters = elevationGainMeters,
+            elevationLossMeters = elevationLossMeters,
+            estimatedDurationMinutes = estimatedDurationMinutes,
+            statsVersion = statsVersion,
+        )
+    }
+
     @Query("UPDATE logged_track SET note = :note WHERE id = :id")
     suspend fun updateNote(id: String, note: String)
 

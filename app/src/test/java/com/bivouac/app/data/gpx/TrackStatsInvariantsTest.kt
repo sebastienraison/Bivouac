@@ -146,6 +146,36 @@ class TrackStatsInvariantsTest {
         assertArrayEquals(concatenated, series.smoothedElevationMeters!!, 0.0)
     }
 
+    @Test
+    fun journalSeriesIsStillTheConcatenationOfTheDaySeriesWithANightInsideADay() {
+        // RIC-226 : le premier fichier contient une nuit (reprise à 500 m, le lendemain matin), le
+        // second est un jour ordinaire. Les statistiques stockées de chaque jour coupent leur série
+        // au bivouac lointain (JournalDayStats), l'écran ajoute ses arrêts aux jonctions
+        // (DayJunctions.journalSeriesBreaks) : la série affichée reste leur concaténation.
+        val paris: (TrackPoint) -> java.time.ZoneId = { java.time.ZoneId.of("Europe/Paris") }
+        val evening = day(seed = 18L)
+        val morning = day(seed = 19L, startDistanceMeters = 2744.0, startTime = Instant.parse("2026-07-02T07:00:00Z"))
+        val firstFile = evening + morning
+        val secondFile = day(seed = 20L, startDistanceMeters = 6000.0, startTime = Instant.parse("2026-07-03T07:00:00Z"))
+        val track = firstFile + secondFile
+
+        val firstStats = JournalDayStats.of(firstFile, zoneFor = paris)
+        val secondStats = JournalDayStats.of(secondFile, zoneFor = paris)
+        assertEquals(listOf(evening.lastIndex), firstStats.bivouacs.map { it.stopIndex })
+        val junctions = DayJunctions.bivouacTrackPointIndices(listOf(firstFile.size, secondFile.size))
+        val breaks = DayJunctions.journalSeriesBreaks(junctions, track, firstStats.bivouacs.map { it.stopIndex })
+        assertEquals(setOf(evening.lastIndex, firstFile.lastIndex), breaks)
+
+        val series = TrackStatsCalculator.series(track, breaks)
+        val total = series.statsBetween(0, track.lastIndex)
+        assertEquals(firstStats.stats.distanceMeters + secondStats.stats.distanceMeters, series.cumulativeDistanceMeters.last(), 1e-6)
+        assertEquals(firstStats.stats.elevationGainMeters + secondStats.stats.elevationGainMeters, total.elevationGainMeters, 1e-9)
+        assertEquals(firstStats.stats.elevationLossMeters + secondStats.stats.elevationLossMeters, total.elevationLossMeters, 1e-9)
+        val concatenated = TrackStatsCalculator.series(firstFile, DayBivouacs.seriesBreaks(firstFile, firstStats.bivouacs)).smoothedElevationMeters!! +
+            TrackStatsCalculator.series(secondFile).smoothedElevationMeters!!
+        assertArrayEquals(concatenated, series.smoothedElevationMeters!!, 0.0)
+    }
+
     // --- I3 : segmenteur, somme des D+ de tous les segments = D+ du jour ---
 
     @Test

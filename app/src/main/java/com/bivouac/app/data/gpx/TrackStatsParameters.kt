@@ -53,7 +53,16 @@ data class TrackStatsParameters(
          * calibration des jours sont recalculées sur le temps de marche, pausedSeconds et le
          * rythme par pente (logged_track_day_pace) sont remplis. Distance, D+ et D- ne changent pas ;
          * la Banque est recalculée à l'identique, le marqueur étant commun.
+         *
+         * v4 : nuit au bivouac à l'intérieur d'un jour (RIC-226, conception RIC-222 §3.4, voir
+         * DayBivouacs et JournalDayStats). Pour un jour du Journal qui contient un bivouac détecté
+         * (BivouacDetector), elapsedSeconds perd les trous de bivouac ; pauses, sommes de
+         * calibration et rythme par pente sont détectés de part et d'autre de la nuit (qui n'est
+         * plus ni une pause ni un segment à l'arrêt) ; la distance, le D+ et le D- du trou ne sont
+         * comptés que si la reprise est à moins de 50 m. Un jour sans bivouac ne change pas ; la
+         * Banque est recalculée à l'identique, le marqueur étant commun, et la calibration Auto et
+         * Sélection est recalculée derrière (CalibrationRefresh).
          */
-        const val ALGORITHM_VERSION = 3
+        const val ALGORITHM_VERSION = 4
     }
 }

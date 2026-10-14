@@ -3,16 +3,14 @@ package com.bivouac.app.data.db
 import android.content.Context
 import android.util.Log
 import com.bivouac.app.data.gpx.DaySegmentSums
-import com.bivouac.app.data.gpx.GpxParser
+import com.bivouac.app.data.gpx.JournalDayStats
 import com.bivouac.app.data.gpx.SpeedCalibration
-import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.gpx.TrackStatsParameters
 import com.bivouac.app.data.model.TrackPoint
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
-import java.time.Duration
 
 /**
  * Remplit après coup les colonnes dénormalisées de `logged_track_day` pour les traces importées
@@ -83,21 +81,15 @@ object LoggedTrackBackfill {
             return
         }
         val contentHash = sha256(rawGpx)
-        val points = runCatching {
-            rawGpx.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }.points
-        }.getOrElse {
+        val points = runCatching { DayPoints.parse(rawGpx, day) }.getOrElse {
             Log.w(TAG, "Jour ${day.id} non parsable, hash seul", it)
             dao.writeDenormalizedFields(day.id, contentHash, null, null, DaySegmentSums.EMPTY)
             return
         }
-        val first = points.firstOrNull()?.time
-        val last = points.lastOrNull()?.time
-        val elapsed = if (first != null && last != null) {
-            Duration.between(first, last).seconds.takeIf { it > 0 }
-        } else {
-            null
-        }
-        dao.writeDenormalizedFields(day.id, contentHash, first?.toEpochMilli(), elapsed, DaySegmentSums.of(points))
+        // RIC-226 : même calcul que l'import (JournalDayStats) : durée écoulée sans la nuit au
+        // bivouac, pauses et tronçons détectés de part et d'autre de la nuit.
+        val figures = JournalDayStats.of(points)
+        dao.writeDenormalizedFields(day.id, contentHash, figures.startedAtMillis, figures.elapsedSeconds, figures.sums)
     }
 
     // Regroupe les paramètres de segments en un seul appel lisible aux trois points d'appel
@@ -168,11 +160,7 @@ object LoggedTrackBackfill {
     }
 
     private suspend fun backfillElevationOne(context: Context, dao: LoggedTrackDao, day: LoggedTrackDayEntity) {
-        val file = LoggedTrackGpxStore.resolve(context, day.rawGpxFilePath)
-        val points = runCatching {
-            file.readText(StandardCharsets.UTF_8).byteInputStream(StandardCharsets.UTF_8)
-                .use { GpxParser.parse(it) }.points
-        }.getOrElse {
+        val points = runCatching { DayPoints.read(context, day) }.getOrElse {
             // Fichier absent ou illisible : rien à mesurer, mais la ligne doit sortir de la file
             // d'attente au même titre que dans [run] : un rattrapage silencieux mais sans fin
             // n'apporterait rien de plus qu'un blocage éternel de la porte d'accueil.
@@ -223,15 +211,12 @@ object LoggedTrackBackfill {
         Log.i(TAG, "Rattrapage RIC-114 (Journal) terminé : $processed trace(s)")
     }
 
-    // Un jour déjà lu et parsé, avec ce qu'il faut pour reconstruire DayStatsUpdate : même
-    // découpage que PreparedDay (LoggedTrackRepository.prepareImport), qui calcule exactement les
-    // mêmes colonnes au même instant du parsing.
+    // Un jour déjà lu et parsé, avec ce qu'il faut pour reconstruire DayStatsUpdate : RIC-226, le
+    // calcul lui-même est JournalDayStats, le même que l'import et le découpage.
     private data class ParsedDay(
         val day: LoggedTrackDayEntity,
         val contentHash: String,
         val points: List<TrackPoint>,
-        val startedAtMillis: Long?,
-        val elapsedSeconds: Long?,
     )
 
     private suspend fun backfillStatsOne(context: Context, dao: LoggedTrackDao, track: LoggedTrackEntity) {
@@ -247,21 +232,12 @@ object LoggedTrackBackfill {
                 dao.markStatsVersion(track.id, TrackStatsParameters.ALGORITHM_VERSION)
                 return
             }
-            val points = runCatching {
-                rawGpx.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }.points
-            }.getOrElse {
+            val points = runCatching { DayPoints.parse(rawGpx, day) }.getOrElse {
                 Log.w(TAG, "Trace ${track.id} (RIC-114) : jour ${day.id} non parsable, valeurs conservées", it)
                 dao.markStatsVersion(track.id, TrackStatsParameters.ALGORITHM_VERSION)
                 return
             }
-            val first = points.firstOrNull()?.time
-            val last = points.lastOrNull()?.time
-            val elapsed = if (first != null && last != null) {
-                Duration.between(first, last).seconds.takeIf { it > 0 }
-            } else {
-                null
-            }
-            parsed += ParsedDay(day, sha256(rawGpx), points, first?.toEpochMilli(), elapsed)
+            parsed += ParsedDay(day, sha256(rawGpx), points)
         }
         // Durée recalculée avec SpeedCalibration.DEFAULT (conception §5.3) : jamais affichée telle
         // quelle (tous les affichages repassent par recomputeDuration sous la calibration active),
@@ -271,26 +247,17 @@ object LoggedTrackBackfill {
         // (DayStatsUpdate.distanceMeters et consorts) : la somme de ces totaux par jour reste par
         // construction égale à la somme passée à applyStatsBackfill pour la trace ci-dessous, ce qui
         // est exactement l'invariant "somme des jours == total de la rando".
-        val dayStats = parsed.map { TrackStatsCalculator.compute(it.points, SpeedCalibration.DEFAULT) }
         //
         // RIC-146 (ALGORITHM_VERSION 3) : les sommes de calibration passent à la définition fine
         // des pauses, et chaque jour reçoit pausedSeconds et ses lignes de rythme par pente dans
         // la même transaction (DaySegmentSums).
-        val dayUpdates = parsed.zip(dayStats).map { (p, stats) ->
-            val sums = DaySegmentSums.of(p.points)
-            DayStatsUpdate(
-                id = p.day.id,
-                contentHash = p.contentHash,
-                startedAtMillis = p.startedAtMillis,
-                elapsedSeconds = p.elapsedSeconds,
-                aggregate = sums.aggregate,
-                distanceMeters = stats.distanceMeters,
-                elevationGainMeters = stats.elevationGainMeters,
-                elevationLossMeters = stats.elevationLossMeters,
-                pausedSeconds = sums.pausedSeconds,
-                paceBands = sums.paceBands,
-            )
-        }
+        //
+        // RIC-226 (ALGORITHM_VERSION 4) : JournalDayStats retire la nuit au bivouac de la durée
+        // écoulée d'un jour qui en contient une, détecte pauses et tronçons de part et d'autre, et
+        // ne compte la distance du trou qu'en deçà de 50 m. Un jour sans bivouac ne change pas.
+        val dayFigures = parsed.map { JournalDayStats.of(it.points, SpeedCalibration.DEFAULT) }
+        val dayStats = dayFigures.map { it.stats }
+        val dayUpdates = parsed.zip(dayFigures).map { (p, figures) -> figures.toDayStatsUpdate(p.day.id, p.contentHash) }
         dao.applyStatsBackfill(
             trackId = track.id,
             distanceMeters = dayStats.sumOf { it.distanceMeters },
@@ -304,3 +271,20 @@ object LoggedTrackBackfill {
 
     private const val TAG = "LoggedTrackBackfill"
 }
+
+/**
+ * RIC-226 : la mise à jour d'une ligne `logged_track_day` tirée de [JournalDayStats], partagée par le
+ * rattrapage (LoggedTrackBackfill.runStats) et le découpage (LoggedTrackRepository.splitDay).
+ */
+internal fun JournalDayStats.toDayStatsUpdate(dayId: Long, contentHash: String) = DayStatsUpdate(
+    id = dayId,
+    contentHash = contentHash,
+    startedAtMillis = startedAtMillis,
+    elapsedSeconds = elapsedSeconds,
+    aggregate = sums.aggregate,
+    distanceMeters = stats.distanceMeters,
+    elevationGainMeters = stats.elevationGainMeters,
+    elevationLossMeters = stats.elevationLossMeters,
+    pausedSeconds = sums.pausedSeconds,
+    paceBands = sums.paceBands,
+)

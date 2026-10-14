@@ -1,6 +1,7 @@
 package com.bivouac.app.data.gpx
 
 import com.bivouac.app.data.model.TrackPoint
+import java.time.ZoneId
 import kotlin.math.abs
 
 /**
@@ -54,10 +55,17 @@ data class AnalyzedPause(
     val elevationMeters: Double,
 )
 
-/** Tronçons et pauses d'un jour de la rando analysée. */
+/**
+ * Tronçons et pauses d'un jour de la rando analysée.
+ *
+ * RIC-226 : [bivouacs], les nuits détectées à l'intérieur du jour ([DayBivouacs.detect]), vides pour
+ * un jour sans nuit. Aucun tronçon ni aucune pause ne les traverse ; la frise
+ * ([TrackTimelineCalculator]) les lit ici pour les sortir des phases de marche.
+ */
 data class DayAnalysis(
     val segments: List<AnalyzedSegment>,
     val pauses: List<AnalyzedPause>,
+    val bivouacs: List<DetectedBivouac> = emptyList(),
 )
 
 /** Totaux de la rando (conception section 5.5, "chiffre de tête"). `null` sans horodatage. */
@@ -144,6 +152,7 @@ object TrackAnalysisCalculator {
         val series: TrackSeries,
         val pauses: List<TrackPause>,
         val segments: List<TrackSegment>,
+        val bivouacs: List<DetectedBivouac>,
     )
 
     /**
@@ -157,20 +166,28 @@ object TrackAnalysisCalculator {
      * chaque jour est redécoupé en tronçons de 200 m sur la seule distance (la série commune du
      * jour, sans toucher à [TrackSegmenter.segment]) pour la seule classe de pente : pas de pause,
      * pas de chiffre de tête, pas de bandes, pas de meilleurs passages.
+     *
+     * RIC-226 : un jour qui contient une nuit au bivouac ([DayBivouacs], [zoneFor] pour l'heure
+     * locale) se calcule comme le Journal le range : pauses et tronçons détectés de part et d'autre
+     * de la nuit, durée écoulée sans elle, distance du trou comptée en deçà de 50 m seulement.
+     * Temps de marche, part de marche et écart à l'estimation restent ainsi ceux du Journal.
      */
     fun compute(
         pointsByDay: List<List<TrackPoint>>,
         calibration: SpeedCalibration,
         referencePaceBands: List<PaceBandSum>,
         parameters: AnalysisParameters = AnalysisParameters.DEFAULT,
+        zoneFor: (TrackPoint) -> ZoneId = LocalZone::forPoint,
     ): TrackAnalysis {
         val daysRaw = pointsByDay.map { points ->
-            val pauses = TrackPauseDetector.detect(points, parameters)
+            val bivouacs = DayBivouacs.detect(points, zoneFor)
+            val found = DayBivouacs.pausesAndSegments(points, bivouacs, parameters)
             DayRaw(
                 points = points,
-                series = TrackStatsCalculator.series(points),
-                pauses = pauses,
-                segments = TrackSegmenter.segment(points, pauses = pauses),
+                series = TrackStatsCalculator.series(points, DayBivouacs.seriesBreaks(points, bivouacs)),
+                pauses = found.pauses,
+                segments = found.segments,
+                bivouacs = bivouacs,
             )
         }
 
@@ -192,6 +209,7 @@ object TrackAnalysisCalculator {
             DayAnalysis(
                 segments = day.segments.map { segment -> analyzeSegment(segment, bands, parameters) },
                 pauses = day.pauses.map { pause -> analyzePause(pause, day.series) },
+                bivouacs = day.bivouacs,
             )
         }
 
@@ -353,8 +371,13 @@ object TrackAnalysisCalculator {
             }
             // Écoulé du jour = premier au dernier point horodaté : une nuit entre deux jours n'est
             // jamais comptée, chaque jour porte son propre écoulé (voir aussi paused/pauseCount).
+            // RIC-226 : une nuit à l'intérieur du jour non plus, ses trous de bivouac sont retirés
+            // (même règle que logged_track_day.elapsedSeconds, voir DayBivouacs.elapsedSeconds).
             val timed = day.points.mapNotNull { it.time }
-            if (timed.size >= 2) elapsedSeconds += (timed.last().toEpochMilli() - timed.first().toEpochMilli()) / 1_000.0
+            if (timed.size >= 2) {
+                elapsedSeconds += (timed.last().toEpochMilli() - timed.first().toEpochMilli()) / 1_000.0 -
+                    DayBivouacs.gapSeconds(day.bivouacs)
+            }
             pausedSeconds += day.pauses.sumOf { it.seconds }
             pauseCount += day.pauses.size
         }

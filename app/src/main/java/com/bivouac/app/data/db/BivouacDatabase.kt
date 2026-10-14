@@ -31,7 +31,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open"): a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 21
+        const val SCHEMA_VERSION = 22
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -567,6 +567,26 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-226 (lot 2 de la 2.7.0, conception RIC-222 §4) : un jour du Journal peut être une
+        // plage de points de son fichier (firstPointIndex/lastPointIndex sur logged_track_day,
+        // nulles = fichier entier, voir LoggedTrackDayEntity), et logged_track gagne
+        // bivouacReviewVersion (0 = jamais passée au crible des bivouacs détectés, écrite par le
+        // lot 3). Même patron que MIGRATION_18_19 et MIGRATION_19_20 : trois ALTER TABLE ADD
+        // COLUMN, aucune recréation, aucune donnée réécrite. Les lignes existantes arrivent avec
+        // une plage nulle, donc restent le fichier entier : exactement ce qu'elles étaient. Une
+        // sauvegarde de schéma 21 ou antérieur restaurée passe par ici au même titre. Le recalcul
+        // des durées sans la nuit est fait après coup par LoggedTrackBackfill.runStats, déclenché
+        // par TrackStatsParameters.ALGORITHM_VERSION monté à 4. Cible : schemas/22.json.
+        val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `firstPointIndex` INTEGER")
+                db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `lastPointIndex` INTEGER")
+                db.execSQL(
+                    "ALTER TABLE `logged_track` ADD COLUMN `bivouacReviewVersion` INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
         // ~256K points de code par tranche : au pire quadruplé en UTF-8 ça reste sous la fenêtre de
         // 2 Mo, et un GPX réel (ASCII pour l'essentiel) en est très loin.
         private const val MIGRATION_CHUNK_CODE_POINTS = 256 * 1024
@@ -647,6 +667,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                         MIGRATION_18_19,
                         MIGRATION_19_20,
                         MIGRATION_20_21,
+                        MIGRATION_21_22,
                     )
                     .build()
                     .also { instance = it }

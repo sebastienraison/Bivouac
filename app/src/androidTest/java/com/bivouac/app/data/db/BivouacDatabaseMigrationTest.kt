@@ -234,6 +234,7 @@ class BivouacDatabaseMigrationTest {
             BivouacDatabase.MIGRATION_18_19,
             BivouacDatabase.MIGRATION_19_20,
             BivouacDatabase.MIGRATION_20_21,
+            BivouacDatabase.MIGRATION_21_22,
         )
 
         // RIC-97 : la ligne saved_track née en v1 avec gpxContent en colonne doit ressortir avec
@@ -1451,6 +1452,119 @@ class BivouacDatabaseMigrationTest {
         migrated.execSQL("PRAGMA foreign_keys = ON")
         migrated.execSQL("DELETE FROM logged_track WHERE id = 'track-1'")
         migrated.query("SELECT COUNT(*) FROM logged_track_day_pace").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+
+        migrated.close()
+    }
+
+    /**
+     * RIC-226 (lot 2 de la 2.7.0) : logged_track_day gagne firstPointIndex/lastPointIndex
+     * (nullables, plage de points du fichier, nulles = fichier entier) et logged_track gagne
+     * bivouacReviewVersion (NOT NULL DEFAULT 0, jamais passée au crible), sans rattrapage ici :
+     * c'est ALGORITHM_VERSION 4 qui redéclenche LoggedTrackBackfill.runStats.
+     *
+     * Ce que ce test doit prouver : les lignes existantes survivent intactes, chaque jour ressort
+     * avec une plage nulle (donc reste le fichier entier, exactement ce qu'il était), chaque trace
+     * avec bivouacReviewVersion à 0 ; deux lignes peuvent ensuite partager le même fichier avec
+     * deux plages contiguës, et une trace insérée sans énumérer bivouacReviewVersion retombe sur 0.
+     */
+    @Test
+    fun migrate21To22_addsNullPointRangesAndAZeroBivouacReviewVersion() {
+        helper.createDatabase(testDbName, 21).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note, statsVersion) VALUES " +
+                    "('track-1', 'Randonnee Belledonne', 1780300800000, 'hash-track-1', " +
+                    "8200.0, 650.0, 300.0, 3, 240, '', 3)",
+            )
+            execSQL(
+                "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxFilePath, " +
+                    "contentHash, startedAtMillis, elapsedSeconds, flatCount, flatDistanceMeters, " +
+                    "flatHours, steepCount, steepDistanceMeters, steepGainMeters, steepHours, " +
+                    "stoppedHours, elevationBackfilled, distanceMeters, elevationGainMeters, " +
+                    "elevationLossMeters, pausedSeconds) VALUES (1, 'track-1', 0, " +
+                    "'gpx/track-1-day0.gpx', 'day0-hash', 1780300800000, 111600, 10, 4000.0, 1.2, " +
+                    "5, 4200.0, 650.0, 1.5, 0.3, 1, 8200.0, 650.0, 300.0, 1234.5)",
+            )
+            execSQL(
+                "INSERT INTO logged_track_day_pace (dayId, band, segmentCount, distanceMeters, movingSeconds) " +
+                    "VALUES (1, 5, 12, 2430.0, 2280.0)",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            22,
+            true,
+            BivouacDatabase.MIGRATION_21_22,
+        )
+
+        migrated.query(
+            "SELECT rawGpxFilePath, contentHash, elapsedSeconds, pausedSeconds, distanceMeters, " +
+                "firstPointIndex, lastPointIndex FROM logged_track_day WHERE id = 1",
+        ).use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("gpx/track-1-day0.gpx", cursor.getString(0))
+            assertEquals("day0-hash", cursor.getString(1))
+            // Intouché : c'est le rattrapage (ALGORITHM_VERSION 4) qui retire la nuit, pas la migration.
+            assertEquals(111600L, cursor.getLong(2))
+            assertEquals(1234.5, cursor.getDouble(3), 1e-9)
+            assertEquals(8200.0, cursor.getDouble(4), 1e-9)
+            assertTrue("firstPointIndex doit arriver vide (fichier entier)", cursor.isNull(5))
+            assertTrue("lastPointIndex doit arriver vide (fichier entier)", cursor.isNull(6))
+        }
+        migrated.query("SELECT name, statsVersion, bivouacReviewVersion FROM logged_track WHERE id = 'track-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Randonnee Belledonne", cursor.getString(0))
+            assertEquals(3, cursor.getInt(1))
+            assertEquals(0, cursor.getInt(2))
+        }
+        migrated.query("SELECT COUNT(*) FROM logged_track_day_pace WHERE dayId = 1").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1, cursor.getInt(0))
+        }
+
+        // Deux jours issus du même fichier : deux plages contiguës, même chemin, même hash. C'est
+        // ce que LoggedTrackRepository.splitDay écrit.
+        migrated.execSQL(
+            "UPDATE logged_track_day SET firstPointIndex = 0, lastPointIndex = 1499 WHERE id = 1",
+        )
+        migrated.execSQL(
+            "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxFilePath, contentHash, " +
+                "elevationBackfilled, firstPointIndex, lastPointIndex) VALUES (2, 'track-1', 1, " +
+                "'gpx/track-1-day0.gpx', 'day0-hash', 1, 1500, 2999)",
+        )
+        migrated.query(
+            "SELECT dayIndex, rawGpxFilePath, contentHash, firstPointIndex, lastPointIndex " +
+                "FROM logged_track_day WHERE trackId = 'track-1' ORDER BY dayIndex",
+        ).use { cursor ->
+            assertEquals(2, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+            assertEquals(0, cursor.getInt(3))
+            assertEquals(1499, cursor.getInt(4))
+            assertTrue(cursor.moveToNext())
+            assertEquals(1, cursor.getInt(0))
+            assertEquals("gpx/track-1-day0.gpx", cursor.getString(1))
+            assertEquals("day0-hash", cursor.getString(2))
+            assertEquals(1500, cursor.getInt(3))
+            assertEquals(2999, cursor.getInt(4))
+        }
+
+        // Une trace insérée sans énumérer bivouacReviewVersion retombe sur le DEFAULT 0.
+        migrated.execSQL(
+            "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                "elevationGainMeters, elevationLossMeters, pointCount, " +
+                "estimatedDurationMinutes, note, statsVersion) VALUES " +
+                "('track-2', 'Traversee Vanoise', 1781078400000, 'hash-track-2', " +
+                "21500.0, 1400.0, 900.0, 5, 660, '', 3)",
+        )
+        migrated.query("SELECT bivouacReviewVersion FROM logged_track WHERE id = 'track-2'").use { cursor ->
             assertTrue(cursor.moveToFirst())
             assertEquals(0, cursor.getInt(0))
         }

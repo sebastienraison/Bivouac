@@ -84,6 +84,9 @@ sealed interface JournalUiState {
         // RIC-209 (brief Partie B) : mêmes lignes que daySegments (même ordre/taille), pour la
         // durée réelle (elapsedSeconds/pausedSeconds, lot 1) ; voir LoggedTrackRepository.LoggedTrackDetail.
         val days: List<LoggedTrackDayEntity> = emptyList(),
+        // RIC-226 : arrêts des nuits détectées à l'intérieur d'un jour, en index de [track] ; voir
+        // LoggedTrackRepository.LoggedTrackDetail.bivouacStopIndices.
+        val bivouacStopIndices: List<Int> = emptyList(),
     ) : JournalUiState
     // BIV-48: a contemplative overview of several traces at once, entries in the order they
     // should get their (rotating) legend color, each paired with its parsed track.
@@ -753,7 +756,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                         detail.daySegments.take(idx).sumOf { it.points.size }
                             .coerceIn(0, (detail.track.points.size - 1).coerceAtLeast(0))
                     }
-                    JournalUiState.Detail(entry, detail.track, detail.daySegments, cursor, detail.days)
+                    JournalUiState.Detail(entry, detail.track, detail.daySegments, cursor, detail.days, detail.bivouacStopIndices)
                 } else {
                     JournalUiState.Error(string(R.string.journal_error_track_not_found))
                 }
@@ -878,7 +881,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             _tracks.value = _tracks.value.map { if (it.id == entry.id) it.copy(name = trimmed) else it }
             val state = _uiState.value as? JournalUiState.Detail
             if (state != null && state.entry.id == entry.id) {
-                _uiState.value = JournalUiState.Detail(state.entry.copy(name = trimmed), state.track, state.daySegments, days = state.days)
+                _uiState.value = JournalUiState.Detail(state.entry.copy(name = trimmed), state.track, state.daySegments, days = state.days, bivouacStopIndices = state.bivouacStopIndices)
             }
         }
     }
@@ -1096,7 +1099,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _tracks.value = _tracks.value.map { if (it.id == id) it.copy(note = note) else it }
         val state = _uiState.value as? JournalUiState.Detail
         if (state != null && state.entry.id == id) {
-            _uiState.value = JournalUiState.Detail(state.entry.copy(note = note), state.track, state.daySegments, days = state.days)
+            _uiState.value = JournalUiState.Detail(state.entry.copy(note = note), state.track, state.daySegments, days = state.days, bivouacStopIndices = state.bivouacStopIndices)
         }
     }
 
