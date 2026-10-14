@@ -1790,7 +1790,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                         // le verrou est relâché pendant l'attente (finally ci-dessous), comme pour
                         // l'avertissement de doublon, et repris à la dernière réponse.
                         null -> if (importBivouacQuestions(prepared).isEmpty()) {
-                            commit(prepared, openAfterCommit = true, reviewed = true)
+                            commitReportingFailure(prepared, reviewed = true)
                         } else {
                             startImportBivouacQuestions(prepared)
                         }
@@ -1925,7 +1925,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _duplicateWarning.value = null
         viewModelScope.launch {
             try {
-                commit(prepared, openAfterCommit = true, reviewed = true)
+                commitReportingFailure(prepared, reviewed = true)
             } finally {
                 _importProgress.value = null
                 ExclusiveOperations.finish(ExclusiveOperation.JOURNAL_IMPORT)
@@ -1990,14 +1990,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _importProgress.value = ImportProgress.Reading(done = 0, total = session.prepared.days.size)
         viewModelScope.launch {
             try {
-                try {
-                    commit(session.prepared, openAfterCommit = true, reviewed = true, splitsByDayPosition = outcome.splits)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Log.e("JournalViewModel", "Échec de l'import GPX (Journal, découpage aux bivouacs)", e)
-                    _importError.value = string(R.string.journal_error_track_unreadable)
-                }
+                commitReportingFailure(session.prepared, reviewed = true, splitsByDayPosition = outcome.splits)
             } finally {
                 _importProgress.value = null
                 ExclusiveOperations.finish(ExclusiveOperation.JOURNAL_IMPORT)
@@ -2116,6 +2109,29 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         // de sorties séparées y échappe : en ouvrir une seule, arbitrairement, ne dirait rien du
         // reste du lot : c'est le bilan de fin qui tient ce rôle.
         if (openAfterCommit) openTrack(prepared.entity)
+    }
+
+    /**
+     * [commit] d'une sortie seule (import d'un fichier, d'un trek, reprise après doublon, fin des
+     * questions de bivouac), puis ouverture de la sortie. Un échec de l'écriture (disque plein,
+     * découpage refusé...) est rapporté comme les autres échecs d'import
+     * (journal_error_track_unreadable) au lieu de remonter non rattrapé dans viewModelScope : il
+     * faisait planter l'app, le dialogue de progression restant affiché (défaut relevé au lot 3 de
+     * RIC-227). L'annulation, elle, se propage.
+     */
+    private suspend fun commitReportingFailure(
+        prepared: PreparedImport,
+        reviewed: Boolean,
+        splitsByDayPosition: Map<Int, List<DetectedBivouac>> = emptyMap(),
+    ) {
+        try {
+            commit(prepared, openAfterCommit = true, reviewed = reviewed, splitsByDayPosition = splitsByDayPosition)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e("JournalViewModel", "Échec de l'enregistrement d'un import GPX (Journal)", e)
+            _importError.value = string(R.string.journal_error_track_unreadable)
+        }
     }
 
     // BIV-16 Auto mode: recomputed on every import regardless of which mode is currently active,
