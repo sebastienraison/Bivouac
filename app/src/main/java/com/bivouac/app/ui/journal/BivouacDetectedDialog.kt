@@ -7,6 +7,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.bivouac.app.R
@@ -58,7 +59,8 @@ internal fun BivouacDetectedDialog(question: BivouacQuestion, onSplit: () -> Uni
         stopAt = bivouac.stopAt,
         resumeAt = bivouac.resumeAt,
         zone = bivouac.zone,
-        locale = Locale.getDefault(),
+        // Locale observable de Compose (lint NonObservableLocale), même choix que SettingsScreen.
+        locale = LocalLocale.current.platformLocale,
         pattern = stringResource(R.string.bivouac_detected_datetime_pattern),
         patternWithYear = stringResource(R.string.bivouac_detected_datetime_pattern_with_year),
     )

@@ -110,6 +110,7 @@ object BivouacReview {
      * lancement.
      */
     fun outcome(questions: List<Question>, answers: List<Answer?>): Outcome {
+        // i18n-ok : message d'une exception de programmation, jamais affiché (RIC-227).
         require(answers.size == questions.size) { "${answers.size} réponse(s) pour ${questions.size} question(s)" }
         val splits = questions.zip(answers)
             .filter { (_, answer) -> answer == Answer.SPLIT }
