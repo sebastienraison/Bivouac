@@ -9,24 +9,20 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import java.time.ZoneId
 import org.junit.Assert.assertTrue
-import org.junit.Ignore
 import org.junit.Test
 
 // RIC-222, 2026-10-13 : test de reproduction, échoue tant que le défaut n'est pas corrigé.
-// 2026-10-14 (RIC-225) : le test du détecteur est vert contre BivouacDetector ; les trois tests de durée
-// sont @Ignore jusqu'au lot 2 (RIC-226).
+// 2026-10-14 (RIC-225) : le test du détecteur est vert contre BivouacDetector.
 // 2026-10-14 (RIC-226) : les deux tests de temps de marche (Journal, Analyse) sont actifs et verts.
-// Trois assertions restent @Ignore, contestées dans le rapport du lot 2 et laissées au pilotage :
-// elles mesurent la part de marche sur l'écoulé AVEC la nuit (14 h sur 31 h, « au plus 60 % ») ou
-// attendent la nuit dans le temps de pause (témoins à 40 m), alors que la conception validée le 14/10
-// (§3.4, « la nuit est retirée de la durée écoulée et du temps de marche ») et le cadrage du lot 2
-// (§3.3, elapsedSeconds moins les trous de bivouac, « un bivouac n'est pas une pause ») donnent 14 h
-// écoulées, 14 h de marche, 100 % sur cette trace sans pause. Le comportement retenu est verrouillé
-// par DayBivouacsTest (mêmes chiffres à 40 m et à 141 m, et mêmes chiffres qu'en deux fichiers).
+// 2026-10-15 (RIC-226, décision du pilotage) : les tests qui décrivaient l'ancien comportement (part de
+// marche sur l'écoulé avec la nuit, nuit à 40 m comptée en pause) sont retirés, contraires à la
+// conception validée le 14/10 (§3.4, « la nuit est retirée de la durée écoulée et du temps de
+// marche »). Le comportement attendu est verrouillé par DayBivouacsTest (mêmes chiffres à 40 m et à
+// 141 m, et mêmes chiffres qu'en deux fichiers).
 // Un trek de deux jours importé en UN SEUL fichier GPX : la nuit (trou d'enregistrement de 17 h entre
 // deux points consécutifs distants de 141 m) ne doit pas être comptée comme du temps de marche.
-// Les tests "témoin" (reprise à 40 m, sous GAP_MAX_METERS) passent aujourd'hui : ils prouvent que
-// seul le seuil de distance de TrackPauseDetector sépare les deux cas.
+// Le témoin restant (reprise à 40 m, sous GAP_MAX_METERS) montre que le détecteur de pauses, lui,
+// voit toujours la nuit comme une pause à cette distance : seul son seuil sépare les deux cas.
 
 /**
  * Trace d'un seul jour (une seule liste de points) : [HALF_DAY_HOURS] h de marche à 4 km/h (un point
@@ -131,15 +127,6 @@ class NightInSingleFileReproductionTest {
         )
     }
 
-    @Ignore("RIC-226 : contredit la conception validée le 14/10 (nuit exclue de l'écoulé, part de marche sur 14 h et non 31 h) ; à trancher par le pilotage")
-    @Test
-    fun `analyse - la part de marche affichee ne depasse pas la part des deux demi-journees quand le lendemain repart a 141 m`() {
-        val points = trace(resumeGapMeters = 141.0)
-        val share = TrackTimelineCalculator.compute(listOf(points), analysis(points)).walkingSharePercent!!
-        // 14 h de marche sur 31 h écoulées : 45 %. Borne large : 60 %.
-        assertTrue("part de marche $share %, attendu au plus 60 % ; ${describe(points)}", share <= 60)
-    }
-
     @Test
     fun `detecteur - une nuit de 17 h reprise a 141 m est detectee comme un bivouac`() {
         // RIC-225 : la règle du bivouac regarde le trou et la nuit, pas la distance. Fuseau imposé.
@@ -158,27 +145,6 @@ class NightInSingleFileReproductionTest {
     }
 
     // --- Témoins : reprise à 40 m, sous GAP_MAX_METERS (50 m) ; ces tests PASSENT aujourd'hui ------
-
-    @Ignore("RIC-226 : témoin de l'ancien comportement (nuit à 40 m comptée en pause, part sur 31 h), contredit par la conception validée le 14/10 ; à trancher par le pilotage")
-    @Test
-    fun `temoin journal - la reprise a 40 m voit la nuit comptee comme pause`() {
-        val points = trace(resumeGapMeters = 40.0)
-        val real = journalDuration(points)
-        val walkingHours = real.walkingSeconds!! / 3_600.0
-        assertTrue("temps de marche $walkingHours h ; ${describe(points)}", walkingHours < 2 * HALF_DAY_HOURS + MARGIN_HOURS)
-        assertTrue("part ${real.walkingSharePercent} %", real.walkingSharePercent!! <= 60)
-    }
-
-    @Ignore("RIC-226 : témoin de l'ancien comportement (nuit à 40 m comptée en pause, part sur 31 h), contredit par la conception validée le 14/10 ; à trancher par le pilotage")
-    @Test
-    fun `temoin analyse - la reprise a 40 m voit la nuit comptee comme pause`() {
-        val points = trace(resumeGapMeters = 40.0)
-        val a = analysis(points)
-        val totals = a.totals!!
-        assertTrue("pauses ${totals.pausedSeconds / 3_600.0} h ; ${describe(points)}", totals.pausedSeconds >= NIGHT_HOURS * 3_600.0)
-        assertTrue(totals.movingSeconds / 3_600.0 < 2 * HALF_DAY_HOURS + MARGIN_HOURS)
-        assertTrue(TrackTimelineCalculator.compute(listOf(points), a).walkingSharePercent!! <= 60)
-    }
 
     @Test
     fun `temoin detecteur - la reprise a 40 m produit une pause couvrant la nuit`() {
