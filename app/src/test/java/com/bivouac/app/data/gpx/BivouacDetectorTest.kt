@@ -248,15 +248,6 @@ class BivouacDetectorTest {
         assertEquals(listOf(points[1]), asked)
     }
 
-    // --- Le repli de LocalZone ----------------------------------------------------------------
-
-    @Test
-    fun `LocalZone rend un fuseau sans lever d'exception, y compris en plein ocean`() {
-        assertEquals(ZoneId.systemDefault(), LocalZone.forPoint(point(null)))
-        val ocean = TrackPoint(latitude = 0.0, longitude = -30.0, elevationMeters = null, time = null)
-        assertEquals(ZoneId.systemDefault(), LocalZone.forPoint(ocean))
-    }
-
     @Test
     fun `constantes de la regle`() {
         assertEquals(14_400L, BivouacDetector.MIN_GAP_SECONDS)

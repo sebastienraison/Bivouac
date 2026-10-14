@@ -58,6 +58,7 @@ tiles. Details: [privacy policy](https://bivouac.rseb.net/privacy).
 - Room and DataStore for local storage
 - [osmdroid](https://github.com/osmdroid/osmdroid) for OSM mapping
 - [JPX](https://github.com/jenetics/jpx) for reading GPX tracks
+- [LatLongToTimezone](https://github.com/drtimcooper/LatLongToTimezone) for the time zone of a track (MIT)
 
 ## Building from source
 
