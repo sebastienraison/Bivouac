@@ -41,7 +41,14 @@ class BivouacDetectedDialogFormatTest {
     fun `francais, meme annee`() {
         val result = format(Locale.FRENCH, "values-fr", "2026-08-12T20:30:00", "2026-08-13T07:15:00")
         assertEquals("mercredi 12 août à 20 h 30", result.stop.espacesNormalisees())
-        assertEquals("jeudi 13 août à 07 h 15", result.resume.espacesNormalisees())
+        assertEquals("jeudi 13 août à 7 h 15", result.resume.espacesNormalisees())
+    }
+
+    @Test
+    fun `francais, heure du matin sans zero, minutes sur deux chiffres`() {
+        val result = format(Locale.FRENCH, "values-fr", "2026-08-13T21:05:00", "2026-08-14T06:05:00")
+        assertEquals("jeudi 13 août à 21 h 05", result.stop.espacesNormalisees())
+        assertEquals("vendredi 14 août à 6 h 05", result.resume.espacesNormalisees())
     }
 
     @Test
@@ -55,7 +62,7 @@ class BivouacDetectedDialogFormatTest {
     fun `annee ajoutee aux deux instants quand elle change`() {
         val fr = format(Locale.FRENCH, "values-fr", "2025-12-31T20:00:00", "2026-01-01T09:00:00")
         assertEquals("mercredi 31 décembre 2025 à 20 h 00", fr.stop.espacesNormalisees())
-        assertEquals("jeudi 1 janvier 2026 à 09 h 00", fr.resume.espacesNormalisees())
+        assertEquals("jeudi 1 janvier 2026 à 9 h 00", fr.resume.espacesNormalisees())
         val en = format(Locale.ENGLISH, "values", "2025-12-31T20:00:00", "2026-01-01T09:00:00")
         assertEquals("Wednesday 31 December 2025 at 20:00", en.stop)
         assertEquals("Thursday 1 January 2026 at 09:00", en.resume)

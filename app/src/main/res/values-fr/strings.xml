@@ -678,6 +678,6 @@
     <string name="bivouac_detect_all_split">Tous les bivouacs détectés sont déjà des fins de journée.</string>
 
     <!-- Formats (dates, nombres, unités) -->
-    <string name="bivouac_detected_datetime_pattern">EEEE d MMMM \'à\' HH \'h\' mm</string>
-    <string name="bivouac_detected_datetime_pattern_with_year">EEEE d MMMM yyyy \'à\' HH \'h\' mm</string>
+    <string name="bivouac_detected_datetime_pattern">EEEE d MMMM \'à\' H \'h\' mm</string>
+    <string name="bivouac_detected_datetime_pattern_with_year">EEEE d MMMM yyyy \'à\' H \'h\' mm</string>
 </resources>
