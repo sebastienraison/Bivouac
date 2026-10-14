@@ -214,6 +214,112 @@ class LoggedTrackBackfillTest {
         assertTrue(input.fallbackSamples.isNotEmpty())
     }
 
+    // --- RIC-226 : nuit au bivouac à l'intérieur d'un fichier, jours par plage de points ----------
+
+    // Deux demi-journées de quinze points à 30 m d'écart et 27 s (4 km/h), séparées par une nuit de
+    // 15 h (de 17:06 à 08:06 heure de Paris), reprise à 141 m : un bivouac au sens de
+    // BivouacDetector, que le détecteur de pauses ne voit pas (plus de 50 m). Index 0 à 14 le soir,
+    // 15 à 29 le matin. Altitude croissante de 1 m par point, pour distinguer les plages.
+    private fun nightGpx(): String = buildString {
+        append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\"><trk><name>t</name><trkseg>\n")
+        val degPerMeter = Math.toDegrees(1.0 / 6_371_000.0)
+        val evening = java.time.Instant.parse("2026-06-01T15:00:00Z")
+        val morning = evening.plusSeconds(14 * 27L).plus(java.time.Duration.ofHours(NIGHT_HOURS))
+        repeat(30) { i ->
+            val north = i * 30.0 + if (i >= 15) 141.0 - 30.0 else 0.0
+            val time = if (i < 15) evening.plusSeconds(i * 27L) else morning.plusSeconds((i - 15) * 27L)
+            append("<trkpt lat=\"${45.0 + north * degPerMeter}\" lon=\"6.0\"><ele>${1000 + i}</ele><time>$time</time></trkpt>\n")
+        }
+        append("</trkseg></trk></gpx>")
+    }
+
+    private suspend fun insertNightTrack(
+        trackId: String,
+        ranges: List<Pair<Int, Int>?>,
+        statsVersion: Int = com.bivouac.app.data.gpx.TrackStatsParameters.ALGORITHM_VERSION,
+    ) {
+        dao.insertTrack(
+            LoggedTrackEntity(
+                id = trackId, name = "Trace $trackId", startedAt = 0L, contentHash = "hash-$trackId",
+                distanceMeters = 0.0, elevationGainMeters = 0.0, elevationLossMeters = 0.0,
+                pointCount = 30, estimatedDurationMinutes = 0, statsVersion = statsVersion,
+            ),
+        )
+        LoggedTrackGpxStore.dir(context).mkdirs()
+        val relativePath = LoggedTrackGpxStore.relativePath(trackId, 0)
+        LoggedTrackGpxStore.resolve(context, relativePath).writeText(nightGpx(), StandardCharsets.UTF_8)
+        dao.insertDays(
+            ranges.mapIndexed { index, range ->
+                LoggedTrackDayEntity(
+                    trackId = trackId, dayIndex = index, rawGpxFilePath = relativePath,
+                    firstPointIndex = range?.first, lastPointIndex = range?.second,
+                )
+            },
+        )
+    }
+
+    @Test
+    fun runExcludesTheNightFromTheElapsedTimeOfADayThatContainsABivouac() = runBlocking {
+        insertNightTrack("track-night", listOf(null))
+
+        LoggedTrackBackfill.run(context, dao)
+
+        val day = dao.getDays("track-night").single()
+        // Deux fois 14 pas de 27 s, la nuit de 15 h n'y est pas.
+        assertEquals(2 * 14 * 27L, day.elapsedSeconds)
+        assertEquals(0.0, day.pausedSeconds!!, 0.0)
+        assertTrue("la nuit n'est pas dans les heures à l'arrêt", day.stoppedHours!! < 0.1)
+    }
+
+    @Test
+    fun runAndRunElevationReadOnlyTheRangeOfEachDayOfASharedFile() = runBlocking {
+        insertNightTrack("track-ranges", listOf(0 to 14, 15 to 29))
+
+        LoggedTrackBackfill.run(context, dao)
+        LoggedTrackBackfill.runElevation(context, dao)
+
+        val (evening, morning) = dao.getDays("track-ranges")
+        val points = nightGpx().byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }.points
+        assertEquals(points[0].time!!.toEpochMilli(), evening.startedAtMillis)
+        assertEquals(points[15].time!!.toEpochMilli(), morning.startedAtMillis)
+        assertEquals(14 * 27L, evening.elapsedSeconds)
+        assertEquals(14 * 27L, morning.elapsedSeconds)
+        // Même fichier, même hash : celui du fichier entier.
+        assertEquals(evening.contentHash, morning.contentHash)
+        assertEquals(1014.0, evening.maxElevationMeters!!, 0.0)
+        assertEquals(1014.0, evening.lastPointElevationMeters!!, 0.0)
+        assertEquals(1029.0, morning.maxElevationMeters!!, 0.0)
+    }
+
+    @Test
+    fun runStatsRemovesTheNightAndItsFarJumpFromAnExistingTrack() = runBlocking {
+        insertNightTrack("track-old-night", listOf(null), statsVersion = com.bivouac.app.data.gpx.TrackStatsParameters.ALGORITHM_VERSION - 1)
+
+        LoggedTrackBackfill.runStats(context, dao)
+
+        val track = dao.get("track-old-night")!!
+        val day = dao.getDays("track-old-night").single()
+        assertEquals(com.bivouac.app.data.gpx.TrackStatsParameters.ALGORITHM_VERSION, track.statsVersion)
+        assertEquals(2 * 14 * 27L, day.elapsedSeconds)
+        // 28 pas de 30 m ; le saut de 141 m de la reprise n'est pas compté (plus de 50 m).
+        assertEquals(28 * 30.0, day.distanceMeters!!, 0.5)
+        assertEquals(day.distanceMeters!!, track.distanceMeters, 0.0)
+    }
+
+    @Test
+    fun runStatsOnTwoRangesOfOneFileSumsToTheTrackTotals() = runBlocking {
+        insertNightTrack("track-split", listOf(0 to 14, 15 to 29), statsVersion = com.bivouac.app.data.gpx.TrackStatsParameters.ALGORITHM_VERSION - 1)
+
+        LoggedTrackBackfill.runStats(context, dao)
+
+        val track = dao.get("track-split")!!
+        val days = dao.getDays("track-split")
+        assertEquals(listOf(14 * 27L, 14 * 27L), days.map { it.elapsedSeconds })
+        assertEquals(listOf(14 * 30.0, 14 * 30.0), days.map { it.distanceMeters!! }.map { Math.round(it * 10) / 10.0 })
+        assertEquals(days.sumOf { it.distanceMeters!! }, track.distanceMeters, 1e-6)
+        assertEquals(days.sumOf { it.elevationGainMeters!! }, track.elevationGainMeters, 1e-6)
+    }
+
     // GPX à deux points d'altitude croissante, sans rapport avec flatGpx() ci-dessus : le seul
     // point que ces tests RIC-19 vérifient est max/dernier point, pas la segmentation.
     private fun elevationGpx(maxEle: Double, lastEle: Double): String =
@@ -295,5 +401,9 @@ class LoggedTrackBackfillTest {
         val after = dao.getDays("track-ele-ric109").single()
         assertTrue(after.elevationBackfilled)
         assertEquals(2500.0, after.maxElevationMeters!!, 1e-9)
+    }
+
+    private companion object {
+        const val NIGHT_HOURS = 15L
     }
 }

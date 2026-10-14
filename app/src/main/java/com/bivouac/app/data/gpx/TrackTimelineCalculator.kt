@@ -40,6 +40,13 @@ data class TimelinePhase(
 /**
  * Une pause d'événement (conception section 3.1 règle 1, 3.3), éventuellement la réunion de
  * plusieurs pauses fines proches (règle 2, [mergedCount] > 1).
+ *
+ * RIC-226 : [isBivouac] vrai pour une nuit au bivouac détectée à l'intérieur d'un jour
+ * ([DayAnalysis.bivouacs]) : le trou d'enregistrement de son arrêt ([startIndex]) à sa reprise
+ * ([endIndex]), [pausedSeconds] étant la durée de la nuit. Ce n'est pas une pause au sens de
+ * [TrackPauseDetector] (elle n'est ni dans les pauses du jour ni dans le temps de pause) : elle
+ * occupe seulement sa place dans le déroulé, pour qu'aucune phase de marche ne contienne la nuit.
+ * Le rendu (un bloc « nuit au bivouac » comme entre deux jours, RIC-212) est l'affaire de l'écran.
  */
 data class TimelinePause(
     val startIndex: Int,
@@ -50,6 +57,7 @@ data class TimelinePause(
     val startElevationMeters: Double,
     /** Nombre de pauses fines réunies dans ce bloc (1 si aucune réunion). */
     val mergedCount: Int,
+    val isBivouac: Boolean = false,
 ) : TimelineElement
 
 /** Une pause trop courte pour couper le trait de la frise (conception section 3.3, 5.4). */
@@ -71,6 +79,13 @@ data class DayTimeline(
     val distanceMeters: Double,
     val startElevationMeters: Double,
     val endElevationMeters: Double,
+    /**
+     * RIC-226 : part de [elapsedSeconds] passée au bivouac à l'intérieur du jour (somme des
+     * [TimelinePause.isBivouac]), 0 sans nuit. [elapsedSeconds] reste l'écart d'horloge entre le
+     * départ et l'arrivée, puisque les heures affichées en dérivent ; la durée du jour sans la nuit
+     * est [elapsedSeconds] moins cette valeur.
+     */
+    val bivouacSeconds: Double = 0.0,
 )
 
 /** Résumé par nature de terrain (conception section 4, "Forme du jour") : montées, plat, descentes. */
@@ -217,7 +232,10 @@ object TrackTimelineCalculator {
         val startIndex = timedIndices.first()
         val endIndex = timedIndices.last()
 
-        val series = TrackStatsCalculator.series(points)
+        // RIC-226 : même série que l'Analyse (TrackAnalysisCalculator), coupée aux bivouacs dont
+        // la reprise est à plus de 50 m.
+        val bivouacs = day.bivouacs.sortedBy { it.stopIndex }
+        val series = TrackStatsCalculator.series(points, DayBivouacs.seriesBreaks(points, bivouacs))
         val cumulativeDistance = series.cumulativeDistanceMeters
         val smoothedElevation = series.smoothedElevationMeters!! // non-null : des points horodatés ont forcément une heure, pas forcément une altitude, mais TrackSegmenter n'aurait alors produit aucun segment (day.segments non vide écarte ce cas)
 
@@ -233,32 +251,62 @@ object TrackTimelineCalculator {
         // Règle 1 et 2 : pauses d'événement (>= pauseEventSeconds), réunies si moins de
         // minWalkBetweenPausesMeters de marche les sépare, puis rattachées au bord si le premier
         // ou dernier tronçon de marche du jour est lui-même trop court.
+        //
+        // RIC-226 : un jour qui contient des nuits au bivouac s'y traite en morceaux, comme s'il
+        // était découpé (DayBivouacs.pieces) : les règles 1 et 2 s'appliquent morceau par morceau,
+        // les bords d'un morceau valant bords de jour, et deux pauses ne se réunissent jamais par-
+        // dessus une nuit. Sans bivouac, un seul morceau : le jour entier, comme avant.
         val merged = mutableListOf<MergingPause>()
-        for (pause in day.pauses) {
-            if (pause.seconds < parameters.pauseEventSeconds) continue
-            val last = merged.lastOrNull()
-            if (last != null && cumulativeDistance[pause.startIndex] - cumulativeDistance[last.endIndex] < parameters.minWalkBetweenPausesMeters) {
-                last.endIndex = pause.endIndex
-                last.pausedSeconds += pause.seconds
-                last.mergedCount += 1
-            } else {
-                merged += MergingPause(pause.startIndex, pause.endIndex, pause.seconds, 1)
+        for (piece in DayBivouacs.pieces(points.size, bivouacs)) {
+            val pieceTimed = piece.filter { points[it].time != null }
+            if (pieceTimed.size < 2) continue
+            val pieceStart = pieceTimed.first()
+            val pieceEnd = pieceTimed.last()
+            val pieceMerged = mutableListOf<MergingPause>()
+            for (pause in day.pauses) {
+                if (pause.seconds < parameters.pauseEventSeconds) continue
+                if (pause.startIndex < pieceStart || pause.endIndex > pieceEnd) continue
+                val last = pieceMerged.lastOrNull()
+                if (last != null && cumulativeDistance[pause.startIndex] - cumulativeDistance[last.endIndex] < parameters.minWalkBetweenPausesMeters) {
+                    last.endIndex = pause.endIndex
+                    last.pausedSeconds += pause.seconds
+                    last.mergedCount += 1
+                } else {
+                    pieceMerged += MergingPause(pause.startIndex, pause.endIndex, pause.seconds, 1)
+                }
             }
-        }
-        if (merged.isNotEmpty() && cumulativeDistance[merged.first().startIndex] - cumulativeDistance[startIndex] < parameters.minWalkBetweenPausesMeters) {
-            merged.first().startIndex = startIndex
-        }
-        if (merged.isNotEmpty() && cumulativeDistance[endIndex] - cumulativeDistance[merged.last().endIndex] < parameters.minWalkBetweenPausesMeters) {
-            merged.last().endIndex = endIndex
+            if (pieceMerged.isNotEmpty() && cumulativeDistance[pieceMerged.first().startIndex] - cumulativeDistance[pieceStart] < parameters.minWalkBetweenPausesMeters) {
+                pieceMerged.first().startIndex = pieceStart
+            }
+            if (pieceMerged.isNotEmpty() && cumulativeDistance[pieceEnd] - cumulativeDistance[pieceMerged.last().endIndex] < parameters.minWalkBetweenPausesMeters) {
+                pieceMerged.last().endIndex = pieceEnd
+            }
+            merged += pieceMerged
         }
 
-        // Tronçons de marche entre les pauses d'événement (ce qui reste de [startIndex, endIndex]
-        // une fois les blocs de pause retirés).
+        // RIC-226 : la nuit elle-même, de l'arrêt à la reprise, comme un bloc du déroulé.
+        val bivouacBlocks = bivouacs.map { bivouac ->
+            TimelinePause(
+                startIndex = bivouac.stopIndex,
+                endIndex = bivouac.resumeIndex,
+                startSeconds = elapsedSinceStart[bivouac.stopIndex],
+                endSeconds = elapsedSinceStart[bivouac.resumeIndex],
+                pausedSeconds = DayBivouacs.gapSeconds(listOf(bivouac)),
+                startElevationMeters = smoothedElevation[bivouac.stopIndex],
+                mergedCount = 1,
+                isBivouac = true,
+            )
+        }
+
+        // Tronçons de marche entre les pauses d'événement et les nuits (ce qui reste de
+        // [startIndex, endIndex] une fois ces blocs retirés).
+        val blocks = (merged.map { it.startIndex to it.endIndex } + bivouacBlocks.map { it.startIndex to it.endIndex })
+            .sortedBy { it.first }
         val stretches = mutableListOf<Pair<Int, Int>>()
         var cursor = startIndex
-        for (pause in merged) {
-            if (pause.startIndex > cursor) stretches += cursor to pause.startIndex
-            cursor = pause.endIndex
+        for ((blockStart, blockEnd) in blocks) {
+            if (blockStart > cursor) stretches += cursor to blockStart
+            cursor = maxOf(cursor, blockEnd)
         }
         if (cursor < endIndex) stretches += cursor to endIndex
 
@@ -280,6 +328,7 @@ object TrackTimelineCalculator {
         val elements: List<TimelineElement> = buildList<TimelineElement> {
             addAll(phaseItems)
             addAll(pauseItems)
+            addAll(bivouacBlocks)
         }.sortedWith(compareBy({ it.startSeconds }, { it.endSeconds }))
 
         val shortPauses = day.pauses
@@ -294,6 +343,7 @@ object TrackTimelineCalculator {
             distanceMeters = cumulativeDistance[endIndex],
             startElevationMeters = smoothedElevation[startIndex],
             endElevationMeters = smoothedElevation[endIndex],
+            bivouacSeconds = bivouacBlocks.sumOf { it.pausedSeconds },
         )
     }
 

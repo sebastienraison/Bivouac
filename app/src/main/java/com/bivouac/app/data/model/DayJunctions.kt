@@ -66,7 +66,18 @@ object DayJunctions {
      * sont celles des statistiques stockées : l'axe du profil finit sur la distance totale, et la
      * courbe est celle qui a produit le D+.
      */
-    fun journalSeriesBreaks(dayBoundaryIndices: List<Int>): Set<Int> = dayBoundaryIndices.toSet()
+    //
+    // RIC-226 : [bivouacStopIndices], les arrêts des nuits détectées à l'intérieur d'un jour (voir
+    // com.bivouac.app.data.gpx.DayBivouacs), en index de [points], s'y ajoutent selon la règle des
+    // jonctions ([recordingGaps]) : coupure si la reprise est à plus de [GAP_THRESHOLD_METERS],
+    // aucune en deçà. Ce sont exactement les coupures avec lesquelles les statistiques stockées du
+    // jour ont été calculées (DayBivouacs.seriesBreaks), donc la série affichée reste la
+    // concaténation des séries par jour.
+    fun journalSeriesBreaks(
+        dayBoundaryIndices: List<Int>,
+        points: List<TrackPoint> = emptyList(),
+        bivouacStopIndices: List<Int> = emptyList(),
+    ): Set<Int> = dayBoundaryIndices.toSet() + recordingGaps(points, bivouacStopIndices)
 
     /**
      * RIC-114 : coupures de la série commune en Planification (statistiques, segments, profil,

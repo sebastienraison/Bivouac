@@ -5,9 +5,10 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import android.webkit.MimeTypeMap
+import com.bivouac.app.data.gpx.DayBivouacs
 import com.bivouac.app.data.gpx.DaySegmentAggregate
-import com.bivouac.app.data.gpx.DaySegmentSums
 import com.bivouac.app.data.gpx.GpxParser
+import com.bivouac.app.data.gpx.JournalDayStats
 import com.bivouac.app.data.gpx.PaceBandSum
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.SpeedCalibrationCalculator
@@ -35,7 +36,6 @@ import java.io.IOException
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
-import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.cancellation.CancellationException
@@ -94,7 +94,17 @@ data class PreparedDay(
 // pas besoin de rouvrir de fichier pour la durée réelle non plus. Un doublon d'information plutôt
 // qu'un couplage entre Segment et LoggedTrackDayEntity (Segment reste un type de
 // com.bivouac.app.data.model, partagé avec la Planification qui n'a pas de ligne de base pour ça).
-data class LoggedTrackDetail(val track: HikeTrack, val daySegments: List<Segment>, val days: List<LoggedTrackDayEntity>)
+//
+// RIC-226 : [bivouacStopIndices], les arrêts des bivouacs détectés à l'intérieur d'un jour (une nuit
+// dans un fichier gardé en une journée), en index de [track] : de quoi couper le profil et la carte
+// comme les statistiques stockées (DayJunctions.journalSeriesBreaks). Vide pour une rando sans nuit
+// à l'intérieur d'un jour, le cas de toutes les randos en un fichier par jour.
+data class LoggedTrackDetail(
+    val track: HikeTrack,
+    val daySegments: List<Segment>,
+    val days: List<LoggedTrackDayEntity>,
+    val bivouacStopIndices: List<Int> = emptyList(),
+)
 
 /**
  * RIC-43 : issue d'un lot d'ajout de photos, photo par photo : voir [LoggedTrackRepository.addPhotosFromPicker].
@@ -285,7 +295,11 @@ class LoggedTrackRepository(context: Context) {
         }
         val ordered = ImportDayOrdering.orderIndices(parsed.map { (_, track) -> track.points.firstOrNull()?.time })
             .map { parsed[it] }
-        val dayStats = ordered.map { (_, track) -> TrackStatsCalculator.compute(track.points, calibration) }
+        // RIC-226 : tout ce qu'un jour range est calculé par JournalDayStats, le même code que le
+        // rattrapage et le découpage. Un fichier qui contient une nuit (bivouac détecté) a sa durée
+        // écoulée sans la nuit, et la distance du trou n'est comptée qu'en deçà de 50 m.
+        val dayFigures = ordered.map { (_, track) -> JournalDayStats.of(track.points, calibration) }
+        val dayStats = dayFigures.map { it.stats }
         val startedAt = ordered.first().second.points.firstOrNull()?.time?.toEpochMilli()
             ?: System.currentTimeMillis()
 
@@ -305,19 +319,19 @@ class LoggedTrackRepository(context: Context) {
             pointCount = ordered.sumOf { (_, track) -> track.points.size },
             estimatedDurationMinutes = dayStats.sumOf { it.estimatedDurationMinutes },
         )
-        val days = ordered.mapIndexed { index, (rawGpx, track) ->
-            val stats = dayStats[index]
-            val sums = DaySegmentSums.of(track.points)
+        val days = ordered.mapIndexed { index, (rawGpx, _) ->
+            val figures = dayFigures[index]
+            val stats = figures.stats
             PreparedDay(
                 rawGpx = rawGpx,
                 contentHash = sha256(rawGpx),
-                startedAtMillis = track.points.firstOrNull()?.time?.toEpochMilli(),
-                elapsedSeconds = elapsedSeconds(track),
-                segmentAggregate = sums.aggregate,
-                pausedSeconds = sums.pausedSeconds,
-                paceBands = sums.paceBands,
-                maxElevationMeters = track.points.mapNotNull { it.elevationMeters }.maxOrNull(),
-                lastPointElevationMeters = track.points.lastOrNull()?.elevationMeters,
+                startedAtMillis = figures.startedAtMillis,
+                elapsedSeconds = figures.elapsedSeconds,
+                segmentAggregate = figures.sums.aggregate,
+                pausedSeconds = figures.sums.pausedSeconds,
+                paceBands = figures.sums.paceBands,
+                maxElevationMeters = figures.maxElevationMeters,
+                lastPointElevationMeters = figures.lastPointElevationMeters,
                 // RIC-207 : mêmes stats par jour que celles sommées juste au-dessus pour
                 // entity.distanceMeters/elevationGainMeters/elevationLossMeters : la somme des
                 // jours égale le total par construction, pas de calcul indépendant.
@@ -327,14 +341,6 @@ class LoggedTrackRepository(context: Context) {
             )
         }
         return PreparedImport(entity, days)
-    }
-
-    // null quand le jour n'a pas d'horodatage exploitable, ce qui est un cas réel : la calibration
-    // écarte alors la trace au lieu de lui prêter une durée inventée.
-    private fun elapsedSeconds(track: HikeTrack): Long? {
-        val first = track.points.firstOrNull()?.time ?: return null
-        val last = track.points.lastOrNull()?.time ?: return null
-        return Duration.between(first, last).seconds.takeIf { it > 0 }
     }
 
     /**
@@ -450,10 +456,18 @@ class LoggedTrackRepository(context: Context) {
         val days = dao.getDays(id).sortedBy { it.dayIndex }
         if (days.isEmpty()) return null
         val dayPoints = DayPoints.readAll(appContext, days)
+        // RIC-226 : bivouacs détectés à l'intérieur de chaque jour, pour que la ventilation « Jour N »
+        // coupe sa série comme les statistiques stockées (DayBivouacs.seriesBreaks), et que l'écran
+        // reçoive leurs arrêts en index de la trace concaténée (bivouacStopIndices).
+        val dayBivouacs = dayPoints.map { DayBivouacs.detect(it) }
+        val dayOffsets = dayPoints.runningFold(0) { total, points -> total + points.size }
         return LoggedTrackDetail(
             track = HikeTrack(name = entity.name, points = dayPoints.flatten()),
-            daySegments = dayPoints.map { Segment(it, TrackStatsCalculator.compute(it)) },
+            daySegments = dayPoints.zip(dayBivouacs) { points, bivouacs ->
+                Segment(points, TrackStatsCalculator.compute(points, breaks = DayBivouacs.seriesBreaks(points, bivouacs)))
+            },
             days = days,
+            bivouacStopIndices = dayBivouacs.flatMapIndexed { index, bivouacs -> bivouacs.map { dayOffsets[index] + it.stopIndex } },
         )
     }
 
@@ -1340,11 +1354,9 @@ class LoggedTrackRepository(context: Context) {
     // "silently skipped" qu'une trace sans horodatages exploitables.
     private suspend fun calibrationSample(entry: LoggedTrackEntity): SpeedCalibrationCalculator.Sample? {
         val elapsedHours = runCatching {
-            val days = dao.getDays(entry.id)
-            days.zip(DayPoints.readAll(appContext, days)).sumOf { (_, points) ->
-                val first = points.firstOrNull()?.time
-                val last = points.lastOrNull()?.time
-                if (first != null && last != null) Duration.between(first, last).toMillis() / 3_600_000.0 else 0.0
+            DayPoints.readAll(appContext, dao.getDays(entry.id)).sumOf { points ->
+                // RIC-226 : même durée écoulée que la colonne stockée, nuit au bivouac exclue.
+                (DayBivouacs.elapsedSeconds(points, DayBivouacs.detect(points)) ?: 0L) / 3_600.0
             }
         }.getOrElse {
             Log.w("LoggedTrackRepository", "Trace « ${entry.name} » illisible pour la calibration, ignorée", it)
