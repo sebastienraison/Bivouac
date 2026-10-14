@@ -1859,15 +1859,17 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                     // détection : doublon certain écarté en silence, doublon probable importé
                     // puis signalé.
                     is DuplicateMatch.Probable, is DuplicateMatch.SharedDay -> {
-                        commitSeparate(prepared)
-                        separateImported++
-                        separateProbableNames += prepared.entity.name
+                        if (commitSeparate(prepared)) {
+                            separateImported++
+                            separateProbableNames += prepared.entity.name
+                        } else {
+                            separateFailed++
+                        }
                         processNextSeparateImport()
                     }
                     // RIC-227 : aucune question pendant le lot (voir plus haut) ; voir commitSeparate.
                     null -> {
-                        commitSeparate(prepared)
-                        separateImported++
+                        if (commitSeparate(prepared)) separateImported++ else separateFailed++
                         processNextSeparateImport()
                     }
                 }
@@ -1884,13 +1886,25 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * marquée examinée ; avec, elle reste à la version 0 et ses questions sont gardées pour après
      * le rapport (dismissSeparateImportReport). Si l'app est tuée avant, le crible du lancement
      * suivant la proposera.
+     *
+     * Rend faux si l'enregistrement a échoué (disque plein...) : l'appelant compte alors le fichier
+     * en échec dans le rapport, comme un fichier illisible, et le lot continue avec le suivant, au
+     * lieu d'un échec qui remonterait non rattrapé dans viewModelScope. L'annulation se propage.
      */
-    private suspend fun commitSeparate(prepared: PreparedImport) {
+    private suspend fun commitSeparate(prepared: PreparedImport): Boolean {
         val questions = importBivouacQuestions(prepared)
-        commit(prepared, openAfterCommit = false, refreshCalibration = false, reviewed = questions.isEmpty())
+        try {
+            commit(prepared, openAfterCommit = false, refreshCalibration = false, reviewed = questions.isEmpty())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e("JournalViewModel", "Échec de l'enregistrement d'un import GPX (Journal, sorties séparées)", e)
+            return false
+        }
         if (questions.isNotEmpty()) {
             separateBivouacReviews += BivouacReviewBatch.Track(prepared.entity.id, prepared.entity.name, questions)
         }
+        return true
     }
 
     private fun finishSeparateImports() {

@@ -28,7 +28,8 @@ import org.robolectric.Shadows.shadowOf
 /**
  * RIC-227 (défaut relevé au lot 3) : un échec de [LoggedTrackRepository.commitImport] pendant un
  * import d'une sortie seule, ou pendant la reprise après un avertissement de doublon, est rapporté
- * comme les autres échecs d'import au lieu de remonter non rattrapé dans viewModelScope.
+ * comme les autres échecs d'import au lieu de remonter non rattrapé dans viewModelScope ; dans
+ * un lot « sorties séparées », il compte comme un fichier en échec et le lot continue.
  *
  * L'échec est provoqué sans rien simuler : un fichier ordinaire occupe la place du répertoire gpx/,
  * l'écriture du GPX importé échoue donc pour de bon. Même infrastructure Robolectric que
@@ -94,6 +95,21 @@ class JournalImportCommitFailureTest {
         assertEquals(1, runBlocking { repository.list() }.size)
         assertNull(viewModel.importProgress.value)
         waitUntil { ExclusiveOperations.current.value == null }
+    }
+
+    @Test
+    fun aFailedCommitInASeparateImportsBatchCountsAsFailedAndTheBatchGoesOn() {
+        blockGpxDirectory()
+
+        viewModel.importTracks(listOf(registerGpx("un", 45.01), registerGpx("deux", 45.02)))
+        viewModel.chooseSeparateImports()
+        waitUntil { viewModel.separateImportReport.value != null }
+
+        // Les deux fichiers ont été traités (le lot ne s'est pas arrêté au premier échec).
+        assertEquals(SeparateImportReport(imported = 0, duplicatesSkipped = 0, failed = 2), viewModel.separateImportReport.value)
+        assertEquals(0, runBlocking { repository.list() }.size)
+        assertNull(viewModel.importProgress.value)
+        assertNull("le verrou doit être relâché", ExclusiveOperations.current.value)
     }
 
     // --- Mise en place -------------------------------------------------------------------------
