@@ -3,7 +3,6 @@ package com.bivouac.app.data.db
 import android.content.Context
 import android.util.Log
 import com.bivouac.app.data.gpx.DaySegmentSums
-import com.bivouac.app.data.gpx.GpxParser
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.gpx.TrackStatsParameters
@@ -83,9 +82,7 @@ object LoggedTrackBackfill {
             return
         }
         val contentHash = sha256(rawGpx)
-        val points = runCatching {
-            rawGpx.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }.points
-        }.getOrElse {
+        val points = runCatching { DayPoints.parse(rawGpx, day) }.getOrElse {
             Log.w(TAG, "Jour ${day.id} non parsable, hash seul", it)
             dao.writeDenormalizedFields(day.id, contentHash, null, null, DaySegmentSums.EMPTY)
             return
@@ -168,11 +165,7 @@ object LoggedTrackBackfill {
     }
 
     private suspend fun backfillElevationOne(context: Context, dao: LoggedTrackDao, day: LoggedTrackDayEntity) {
-        val file = LoggedTrackGpxStore.resolve(context, day.rawGpxFilePath)
-        val points = runCatching {
-            file.readText(StandardCharsets.UTF_8).byteInputStream(StandardCharsets.UTF_8)
-                .use { GpxParser.parse(it) }.points
-        }.getOrElse {
+        val points = runCatching { DayPoints.read(context, day) }.getOrElse {
             // Fichier absent ou illisible : rien à mesurer, mais la ligne doit sortir de la file
             // d'attente au même titre que dans [run] : un rattrapage silencieux mais sans fin
             // n'apporterait rien de plus qu'un blocage éternel de la porte d'accueil.
@@ -247,9 +240,7 @@ object LoggedTrackBackfill {
                 dao.markStatsVersion(track.id, TrackStatsParameters.ALGORITHM_VERSION)
                 return
             }
-            val points = runCatching {
-                rawGpx.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }.points
-            }.getOrElse {
+            val points = runCatching { DayPoints.parse(rawGpx, day) }.getOrElse {
                 Log.w(TAG, "Trace ${track.id} (RIC-114) : jour ${day.id} non parsable, valeurs conservées", it)
                 dao.markStatsVersion(track.id, TrackStatsParameters.ALGORITHM_VERSION)
                 return

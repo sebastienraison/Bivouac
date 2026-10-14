@@ -370,11 +370,17 @@ class LoggedTrackRepository(context: Context) {
             .groupBy { it.trackId }
         // La sortie qui partage le plus de jours avec le lot entrant : sur un trek réimporté
         // journée par journée, c'est celle qui rend l'avertissement compréhensible.
-        val (trackId, days) = matchesByTrack.maxByOrNull { it.value.size } ?: return null
+        //
+        // RIC-226 : comptés en fichiers distincts (contentHash distincts), pas en lignes : depuis
+        // qu'un fichier peut être découpé en plusieurs jours (plages de points, voir
+        // LoggedTrackDayEntity), deux lignes d'une même sortie peuvent porter le même hash, et
+        // compter les lignes annoncerait deux jours partagés pour un seul fichier entrant.
+        val (trackId, days) = matchesByTrack.maxByOrNull { (_, matched) -> matched.distinctBy { it.contentHash }.size }
+            ?: return null
         val existing = all.find { it.id == trackId } ?: return null
         return DuplicateMatch.SharedDay(
             existing = existing,
-            sharedDays = days.size,
+            sharedDays = days.distinctBy { it.contentHash }.size,
             incomingDays = prepared.days.size,
         )
     }
@@ -426,10 +432,10 @@ class LoggedTrackRepository(context: Context) {
         val entity = dao.get(id) ?: return null
         val days = dao.getDays(id)
         if (days.isEmpty()) return null
-        val points = days.sortedBy { it.dayIndex }.flatMap { day ->
-            LoggedTrackGpxStore.resolve(appContext, day.rawGpxFilePath).inputStream()
-                .use { GpxParser.parse(it) }.points
-        }
+        // RIC-226 : par DayPoints, qui applique la plage de chaque jour : la concaténation des
+        // plages d'un même fichier, dans l'ordre, redonne exactement ses points, d'où des index de
+        // photos (positionPointIndex) inchangés par un découpage.
+        val points = DayPoints.readAll(appContext, days.sortedBy { it.dayIndex }).flatten()
         return HikeTrack(name = entity.name, points = points)
     }
 
@@ -443,12 +449,10 @@ class LoggedTrackRepository(context: Context) {
         val entity = dao.get(id) ?: return null
         val days = dao.getDays(id).sortedBy { it.dayIndex }
         if (days.isEmpty()) return null
-        val dayTracks = days.map { day ->
-            LoggedTrackGpxStore.resolve(appContext, day.rawGpxFilePath).inputStream().use { GpxParser.parse(it) }
-        }
+        val dayPoints = DayPoints.readAll(appContext, days)
         return LoggedTrackDetail(
-            track = HikeTrack(name = entity.name, points = dayTracks.flatMap { it.points }),
-            daySegments = dayTracks.map { Segment(it.points, TrackStatsCalculator.compute(it.points)) },
+            track = HikeTrack(name = entity.name, points = dayPoints.flatten()),
+            daySegments = dayPoints.map { Segment(it, TrackStatsCalculator.compute(it)) },
             days = days,
         )
     }
@@ -1336,9 +1340,8 @@ class LoggedTrackRepository(context: Context) {
     // "silently skipped" qu'une trace sans horodatages exploitables.
     private suspend fun calibrationSample(entry: LoggedTrackEntity): SpeedCalibrationCalculator.Sample? {
         val elapsedHours = runCatching {
-            dao.getDays(entry.id).sumOf { day ->
-                val points = LoggedTrackGpxStore.resolve(appContext, day.rawGpxFilePath).inputStream()
-                    .use { GpxParser.parse(it) }.points
+            val days = dao.getDays(entry.id)
+            days.zip(DayPoints.readAll(appContext, days)).sumOf { (_, points) ->
                 val first = points.firstOrNull()?.time
                 val last = points.lastOrNull()?.time
                 if (first != null && last != null) Duration.between(first, last).toMillis() / 3_600_000.0 else 0.0
