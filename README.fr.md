@@ -59,6 +59,7 @@ téléchargement des fonds de carte. Détails : [politique de confidentialité](
 - Room et DataStore pour le stockage local
 - [osmdroid](https://github.com/osmdroid/osmdroid) pour la cartographie OSM
 - [JPX](https://github.com/jenetics/jpx) pour la lecture des traces GPX
+- [LatLongToTimezone](https://github.com/drtimcooper/LatLongToTimezone) pour le fuseau horaire d'une trace (MIT)
 
 ## Compiler depuis les sources
 
