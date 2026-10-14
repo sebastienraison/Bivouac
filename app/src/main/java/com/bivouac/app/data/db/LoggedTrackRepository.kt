@@ -6,6 +6,7 @@ import android.net.Uri
 import android.util.Log
 import android.webkit.MimeTypeMap
 import com.bivouac.app.data.gpx.DayBivouacs
+import com.bivouac.app.data.gpx.DetectedBivouac
 import com.bivouac.app.data.gpx.DaySegmentAggregate
 import com.bivouac.app.data.gpx.GpxParser
 import com.bivouac.app.data.gpx.JournalDayStats
@@ -470,6 +471,111 @@ class LoggedTrackRepository(context: Context) {
             bivouacStopIndices = dayBivouacs.flatMapIndexed { index, bivouacs -> bivouacs.map { dayOffsets[index] + it.stopIndex } },
         )
     }
+
+    /**
+     * RIC-226 (lot 2 de la 2.7.0, conception RIC-222 §3.1 et §4) : découpe le jour [dayId] de la
+     * rando [trackId] à ses [bivouacs], en index des points DE CE JOUR (tels que
+     * [com.bivouac.app.data.gpx.BivouacDetector] les rend sur [DayPoints] de ce jour). Le jour est
+     * remplacé par N + 1 jours à plages contiguës du même fichier ([DaySplitPlan.fileRanges]) : même
+     * `rawGpxFilePath`, même `contentHash`, le fichier n'est ni réécrit ni dupliqué. Les `dayIndex`
+     * sont renumérotés sur toute la rando.
+     *
+     * Chaque nouveau jour reçoit toutes ses colonnes dénormalisées et ses lignes de rythme par le
+     * même calcul que l'import et le rattrapage ([JournalDayStats], [toDayStatsUpdate]). Les totaux
+     * de la rando redeviennent la somme de ses jours, comme à l'import ; `startedAt` et `pointCount`
+     * ne changent pas. Les photos ne sont pas touchées : leur position est un index de la trace
+     * concaténée, et la concaténation des plages, dans l'ordre, redonne exactement les mêmes points.
+     *
+     * Une seule transaction (voir [LoggedTrackDao.applyDaySplit]) : tout ou rien.
+     *
+     * @throws IllegalArgumentException sans rien écrire : rando ou jour introuvable, aucun bivouac,
+     * bivouac hors du jour, reprise qui ne suit pas l'arrêt, bivouacs qui se chevauchent.
+     * @throws IllegalStateException sans rien écrire : la rando n'est pas encore rattrapée à
+     * [TrackStatsParameters.ALGORITHM_VERSION] (un autre jour n'a pas ses totaux), cas que la porte
+     * de rattrapage du premier lancement exclut avant tout écran.
+     * @throws IOException sans rien écrire : fichier du jour absent ou GPX invalide.
+     */
+    suspend fun splitDay(trackId: String, dayId: Long, bivouacs: List<DetectedBivouac>) {
+        val track = dao.get(trackId) ?: throw IllegalArgumentException("Rando $trackId introuvable")
+        val days = dao.getDays(trackId).sortedBy { it.dayIndex }
+        val day = days.find { it.id == dayId } ?: throw IllegalArgumentException("Jour $dayId absent de la rando $trackId")
+        val others = days.filter { it.id != dayId }
+        check(track.statsVersion >= TrackStatsParameters.ALGORITHM_VERSION && others.all { it.hasDayTotals() }) {
+            "Rando $trackId pas encore rattrapée (statsVersion ${track.statsVersion}) : découpage refusé"
+        }
+
+        val rawGpx = LoggedTrackGpxStore.resolve(appContext, day.rawGpxFilePath).readText(StandardCharsets.UTF_8)
+        // GpxParser enveloppe toujours ses erreurs en IOException : rien à rattraper ici.
+        val dayPoints = DayPoints.parse(rawGpx, day)
+        val fileOffset = day.firstPointIndex ?: 0
+        val ranges = DaySplitPlan.fileRanges(dayPoints.size, fileOffset, bivouacs)
+        val contentHash = sha256(rawGpx)
+
+        val pieces = ranges.map { range ->
+            val points = dayPoints.subList(range.first - fileOffset, range.last - fileOffset + 1)
+            range to JournalDayStats.of(points, SpeedCalibration.DEFAULT)
+        }
+        // Rangs : renumérotation complète 0..n-1 dans l'ordre d'origine ; les nouveaux jours prennent
+        // la place du jour découpé, ceux d'après se décalent du nombre de jours ajoutés.
+        val position = days.indexOf(day)
+        val added = pieces.size - 1
+        val dayIndexById = days.withIndex()
+            .filter { (_, it) -> it.id != dayId }
+            .associate { (index, it) -> it.id to if (index < position) index else index + added }
+        val newDays = pieces.mapIndexed { k, (range, figures) ->
+            val update = figures.toDayStatsUpdate(dayId = 0L, contentHash = contentHash)
+            LoggedTrackDayEntity(
+                trackId = trackId,
+                dayIndex = position + k,
+                rawGpxFilePath = day.rawGpxFilePath,
+                contentHash = update.contentHash,
+                startedAtMillis = update.startedAtMillis,
+                elapsedSeconds = update.elapsedSeconds,
+                flatCount = update.aggregate.flatCount,
+                flatDistanceMeters = update.aggregate.flatDistanceMeters,
+                flatHours = update.aggregate.flatHours,
+                steepCount = update.aggregate.steepCount,
+                steepDistanceMeters = update.aggregate.steepDistanceMeters,
+                steepGainMeters = update.aggregate.steepGainMeters,
+                steepHours = update.aggregate.steepHours,
+                stoppedHours = update.aggregate.stoppedHours,
+                maxElevationMeters = figures.maxElevationMeters,
+                lastPointElevationMeters = figures.lastPointElevationMeters,
+                elevationBackfilled = true,
+                distanceMeters = update.distanceMeters,
+                elevationGainMeters = update.elevationGainMeters,
+                elevationLossMeters = update.elevationLossMeters,
+                pausedSeconds = update.pausedSeconds,
+                firstPointIndex = range.first,
+                lastPointIndex = range.last,
+            )
+        }
+
+        // Totaux de la rando : somme des jours, comme à l'import. Les autres jours ont leurs totaux
+        // à jour (vérifié plus haut) ; leur durée estimée, qui n'est pas stockée par jour, se
+        // recalcule par la même formule que TrackStatsCalculator.compute.
+        val keptStats = others.map {
+            TrackStatsCalculator.statsWithDuration(
+                it.distanceMeters!!, it.elevationGainMeters!!, it.elevationLossMeters!!, SpeedCalibration.DEFAULT,
+            )
+        }
+        val allStats = keptStats + pieces.map { (_, figures) -> figures.stats }
+        dao.applyDaySplit(
+            trackId = trackId,
+            removedDayId = dayId,
+            newDays = newDays,
+            newDayPaceBands = pieces.map { (_, figures) -> figures.sums.paceBands },
+            dayIndexById = dayIndexById,
+            distanceMeters = allStats.sumOf { it.distanceMeters },
+            elevationGainMeters = allStats.sumOf { it.elevationGainMeters },
+            elevationLossMeters = allStats.sumOf { it.elevationLossMeters },
+            estimatedDurationMinutes = allStats.sumOf { it.estimatedDurationMinutes },
+            statsVersion = TrackStatsParameters.ALGORITHM_VERSION,
+        )
+    }
+
+    private fun LoggedTrackDayEntity.hasDayTotals(): Boolean =
+        distanceMeters != null && elevationGainMeters != null && elevationLossMeters != null
 
     suspend fun delete(id: String) {
         // Chemins relevés avant le DELETE (le CASCADE emporte les lignes de jours et de photos,
