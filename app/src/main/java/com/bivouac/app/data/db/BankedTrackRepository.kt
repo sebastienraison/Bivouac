@@ -2,6 +2,7 @@ package com.bivouac.app.data.db
 
 import android.content.Context
 import android.util.Log
+import com.bivouac.app.data.gpx.ElevationAvailability
 import com.bivouac.app.data.gpx.GpxParser
 import com.bivouac.app.data.gpx.GpxWriter
 import com.bivouac.app.data.gpx.SpeedCalibration
@@ -49,6 +50,7 @@ class BankedTrackRepository(context: Context) {
             elevationLossMeters = stats.elevationLossMeters,
             estimatedDurationMinutes = stats.estimatedDurationMinutes,
             savedAt = System.currentTimeMillis(),
+            elevationAvailable = stats.elevationAvailable,
         )
         dao.save(entity)
         return entity.id
@@ -135,7 +137,44 @@ class BankedTrackRepository(context: Context) {
             elevationLossMeters = stats.elevationLossMeters,
             estimatedDurationMinutes = stats.estimatedDurationMinutes,
             statsVersion = TrackStatsParameters.ALGORITHM_VERSION,
+            elevationAvailable = stats.elevationAvailable,
         )
+    }
+
+    /**
+     * RIC-231 : rattrapage du booléen d'altitude (`banked_track.elevationAvailable`) des traces
+     * d'avant la migration 23 vers 24. Même patron par paquets de 10 que [backfillStatsFields] ; un
+     * fichier illisible laisse la valeur de repli (vrai) pour sortir de la file, comme le rattrapage
+     * d'altitude du Journal (LoggedTrackBackfill.runElevation). Appelé par la porte de rattrapage
+     * (ElevationBackfillGate), sous son compteur de progression.
+     */
+    suspend fun countTracksNeedingElevationAvailability(): Int = dao.countTracksNeedingElevationAvailability()
+
+    suspend fun backfillElevationAvailability(onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }) {
+        val total = dao.countTracksNeedingElevationAvailability()
+        if (total == 0) return
+        Log.i(TAG, "Rattrapage altitude RIC-231 (Banque) : $total trace(s) à traiter")
+        onProgress(0, total)
+        var processed = 0
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val batch = dao.getTracksNeedingElevationAvailability(BACKFILL_BATCH_SIZE)
+            if (batch.isEmpty()) break
+            for (entity in batch) {
+                currentCoroutineContext().ensureActive()
+                val available = runCatching {
+                    PlanificationGpxStore.resolve(appContext, entity.gpxFilePath).inputStream()
+                        .use { GpxParser.parse(it) }.points
+                }.map { ElevationAvailability.of(it) }.getOrElse {
+                    Log.w(TAG, "Trace banquée ${entity.id} illisible (RIC-231), altitude supposée disponible", it)
+                    true
+                }
+                dao.updateElevationAvailable(entity.id, available)
+                processed++
+                onProgress(processed, total)
+            }
+        }
+        Log.i(TAG, "Rattrapage altitude RIC-231 (Banque) terminé : $processed trace(s)")
     }
 
     private companion object {

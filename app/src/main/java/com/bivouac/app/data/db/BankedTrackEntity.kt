@@ -32,6 +32,10 @@ data class BankedTrackEntity(
     // dans BankedTrackRepository.backfillStatsFields.
     @ColumnInfo(defaultValue = "0")
     val statsVersion: Int = TrackStatsParameters.ALGORITHM_VERSION,
+    // RIC-231 (2.7.0) : la trace a-t-elle une altitude exploitable ? (ElevationAvailability). Même
+    // sens et même convention que LoggedTrackDayEntity.elevationAvailable : nulle tant que la ligne
+    // n'est pas rattrapée (BankedTrackRepository.backfillElevationAvailability), lue comme vraie.
+    val elevationAvailable: Boolean? = null,
 ) {
     // Reconstructs the same TrackStats the open-trace toolbar shows, from the denormalized
     // columns: lets the home screen list reuse the StatsRows composable as-is for full parity.
@@ -40,5 +44,6 @@ data class BankedTrackEntity(
         elevationGainMeters = elevationGainMeters,
         elevationLossMeters = elevationLossMeters,
         estimatedDurationMinutes = estimatedDurationMinutes,
+        elevationAvailable = elevationAvailable != false,
     )
 }

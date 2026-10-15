@@ -3,6 +3,7 @@ package com.bivouac.app.data.db
 import android.content.Context
 import android.util.Log
 import com.bivouac.app.data.gpx.DaySegmentSums
+import com.bivouac.app.data.gpx.ElevationAvailability
 import com.bivouac.app.data.gpx.JournalDayStats
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.TrackStatsParameters
@@ -165,13 +166,23 @@ object LoggedTrackBackfill {
             // Fichier absent ou illisible : rien à mesurer, mais la ligne doit sortir de la file
             // d'attente au même titre que dans [run] : un rattrapage silencieux mais sans fin
             // n'apporterait rien de plus qu'un blocage éternel de la porte d'accueil.
+            //
+            // RIC-231 : sans fichier, rien ne dit que l'altitude manque : vrai, la valeur de repli
+            // de l'affichage, plutôt qu'un « indisponible » qu'on ne peut pas établir.
             Log.w(TAG, "Jour ${day.id} illisible pour l'altitude, marqué traité sans donnée", it)
-            dao.updateDayElevationFields(day.id, maxElevationMeters = null, lastPointElevationMeters = null)
+            dao.updateDayElevationFields(
+                day.id,
+                maxElevationMeters = null,
+                lastPointElevationMeters = null,
+                elevationAvailable = true,
+            )
             return
         }
         val maxElevation = points.mapNotNull { it.elevationMeters }.maxOrNull()
         val lastPointElevation = points.lastOrNull()?.elevationMeters
-        dao.updateDayElevationFields(day.id, maxElevation, lastPointElevation)
+        // RIC-231 : le même critère que TrackStats.elevationAvailable (ElevationAvailability), sur
+        // les points du jour : un seul parsing pour les trois colonnes.
+        dao.updateDayElevationFields(day.id, maxElevation, lastPointElevation, ElevationAvailability.of(points))
     }
 
     /**
@@ -291,4 +302,5 @@ internal fun JournalDayStats.toDayStatsUpdate(dayId: Long, contentHash: String) 
     elevationLossMeters = stats.elevationLossMeters,
     pausedSeconds = sums.pausedSeconds,
     paceBands = sums.paceBands,
+    elevationAvailable = stats.elevationAvailable,
 )
