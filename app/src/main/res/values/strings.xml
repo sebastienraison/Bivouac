@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : strings-inventaire-v20.csv (inventaire de l'agent de pilotage,
+    Source : strings-inventaire-v21.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v20.csv
+        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v21.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -646,4 +646,17 @@
     <!-- Formats (dates, nombres, unités) -->
     <string name="bivouac_detected_datetime_pattern">EEEE d MMMM \'at\' HH:mm</string>
     <string name="bivouac_detected_datetime_pattern_with_year">EEEE d MMMM yyyy \'at\' HH:mm</string>
+
+    <!-- Messages et erreurs -->
+    <string name="elevation_missing_banner">No elevation data in this track: elevation gain unavailable, duration estimated without it.</string>
+
+    <!-- Formats (dates, nombres, unités) -->
+    <string name="fmt_stats_rows_gain_unavailable">Gain unavailable</string>
+    <string name="fmt_stats_rows_loss_unavailable">Loss unavailable</string>
+
+    <!-- Messages et erreurs -->
+    <string name="elevation_profile_unavailable">No elevation data in this track.</string>
+
+    <!-- Journal détail, mode Analyse -->
+    <string name="analysis_slope_unavailable">Gradient unavailable: no elevation data in this track.</string>
 </resources>
