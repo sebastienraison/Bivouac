@@ -249,17 +249,21 @@ internal fun ThreeStopPlanificationDetail(
                     ThreeStopDrawerStopRow(drawer)
                 }
 
+                val planificationBreaks = remember(track, bivouacPoints) {
+                    DayJunctions.planificationSeriesBreaks(track.points, bivouacPoints.map { it.trackPointIndex })
+                }
                 ElevationProfile(
                     points = track.points,
                     bivouacPoints = elevationMarkerPoints,
-                    // RIC-126 : même raisonnement que HikeMapView côté GpxImportScreen : sans ça,
-                    // le profil d'un trek dupliqué depuis le Journal annonce plus de kilomètres que
-                    // les statistiques affichées juste au-dessus.
-                    dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
+                    // RIC-126, RIC-223 : même raisonnement que HikeMapView côté GpxImportScreen : on
+                    // passe les coupures d'enregistrement (DayJunctions.planificationSeriesBreaks),
+                    // pas tous les bivouacs ; le profil y applique le seuil de 50 m pour son seul
+                    // dessin (interruption de la courbe). Sans ça, le profil d'un trek dupliqué
+                    // depuis le Journal annoncerait plus de kilomètres que les statistiques
+                    // affichées juste au-dessus.
+                    dayBoundaryIndices = remember(planificationBreaks) { planificationBreaks.sorted() },
                     // RIC-114 : mêmes coupures que le total et les segments affichés au-dessus.
-                    seriesBreaks = remember(track, bivouacPoints) {
-                        DayJunctions.planificationSeriesBreaks(track.points, bivouacPoints.map { it.trackPointIndex })
-                    },
+                    seriesBreaks = planificationBreaks,
                     modifier = Modifier
                         .padding(horizontal = 20.dp)
                         .padding(top = 10.dp, bottom = 2.dp),

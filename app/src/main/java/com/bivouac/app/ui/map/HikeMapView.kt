@@ -294,7 +294,9 @@ fun HikeMapView(
     // coupures entre fichiers. Affichés pour situer les nuits, jamais déplaçables.
     bivouacsReadOnly: Boolean = false,
     // Journal : dernier point de chaque jour qui s'achève, sur une sortie de plusieurs fichiers.
-    // Planification : les bivouacs. Ne sert qu'au dessin des coupures d'enregistrement.
+    // Planification : les coupures d'enregistrement (DayJunctions.planificationSeriesBreaks,
+    // RIC-223), pas tous les bivouacs. Ne sert qu'au dessin : recordingGaps n'en garde que celles
+    // de plus de 50 m.
     dayBoundaryIndices: List<Int> = emptyList(),
     // RIC-114 : coupures de la série commune (voir TrackSeries), calculées par l'appelant avec le
     // même helper que son profil et ses statistiques : la bulle du curseur et le rayon des photos
@@ -677,6 +679,9 @@ private fun renderTrack(
     // Une nuit où l'enregistrement a été coupé loin du camp laisse deux points distants que rien
     // ne relie réellement. Le tracé s'interrompt donc entre eux, et un pointillé prend le relais :
     // un trait plein s'y lirait comme un trajet parcouru, alors qu'il n'a jamais été enregistré.
+    // [dayBoundaryIndices] ne contient que des coupures (jonctions de jours du Journal ou, en
+    // Planification, bivouacs dont le trou est un bivouac, RIC-223) : le seuil de 50 m de
+    // recordingGaps ne sert ici qu'à épargner un pointillé aux jonctions plus courtes.
     val gaps = DayJunctions.recordingGaps(points, dayBoundaryIndices).sorted()
     val continuousRuns = buildList {
         var runStart = 0

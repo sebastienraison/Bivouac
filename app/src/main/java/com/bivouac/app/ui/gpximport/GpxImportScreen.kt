@@ -428,21 +428,24 @@ fun GpxImportScreen(
                 .fillMaxSize()
                 .onGloballyPositioned { mapBoxTopPx = it.positionInRoot().y },
         ) {
+            val planificationBreaks = remember(loaded.track, bivouacPoints) {
+                DayJunctions.planificationSeriesBreaks(loaded.track.points, bivouacPoints.map { it.trackPointIndex })
+            }
             HikeMapView(
                 track = loaded.track,
                 bivouacPoints = bivouacPoints,
-                // RIC-126 : une trace multi-jours dupliquée depuis le Journal (RIC-40) place un
-                // bivouac à chaque jonction de jour d'origine : sans ça, un jour dont
-                // l'enregistrement s'est arrêté loin du camp fait mentir le tracé (trait continu
-                // plutôt que pointillé) comme RIC-120 l'a déjà corrigé côté Journal. Le seuil de
-                // 50 m dans DayJunctions.recordingGaps filtre naturellement les bivouacs posés à la
-                // main au milieu d'un tracé continu.
-                dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex },
+                // RIC-126, RIC-223 : un trek multi-jours dupliqué depuis le Journal (RIC-40) place un
+                // bivouac à chaque jonction de jour d'origine ; l'enregistrement peut s'y être
+                // arrêté loin du camp, et le tracé continu mentirait (comme RIC-120 l'a corrigé
+                // côté Journal). On ne passe donc pas tous les bivouacs à la carte, mais seulement
+                // les coupures d'enregistrement (DayJunctions.planificationSeriesBreaks) : un
+                // bivouac posé à la main, sur un itinéraire sans heures ou sur un trou qui n'est
+                // pas une nuit, n'en est pas une. DayJunctions.recordingGaps y applique ensuite
+                // son seuil de 50 m, pour le dessin seul : pas de pointillé sous 50 m.
+                dayBoundaryIndices = remember(planificationBreaks) { planificationBreaks.sorted() },
                 // RIC-114 : mêmes coupures que le total, les segments et le profil (voir
                 // GpxImportViewModel.planificationBreaks) : la bulle affiche la distance de l'axe.
-                seriesBreaks = remember(loaded.track, bivouacPoints) {
-                    DayJunctions.planificationSeriesBreaks(loaded.track.points, bivouacPoints.map { it.trackPointIndex })
-                },
+                seriesBreaks = planificationBreaks,
                 selectedLayer = selectedLayer,
                 recenterSignal = recenterSignal,
                 visibleHeightPx = visibleMapHeightPx,
