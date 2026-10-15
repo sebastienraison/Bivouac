@@ -127,53 +127,28 @@ internal fun ThreeStopPlanificationDetail(
         // figée d'un bloc qui n'existe plus gardait sinon le cran Détails à sa vieille hauteur,
         // avec une grande zone vide à la place de la table (RIC-95 recette, 2e passe).
         var measuredSegmentsAdditionPx by remember(bivouacPoints.isEmpty()) { mutableIntStateOf(0) }
-        val fallbackSummaryHeightPx = with(density) { 150.dp.toPx() }
         val navigationBarHeightPx = WindowInsets.navigationBars.getBottom(density).toFloat()
         val statusBarHeightPx = WindowInsets.statusBars.getTop(density).toFloat()
-        // Every stop below is sized off what its own content actually measures, capped only by
-        // fullHeightPx as an absolute safety net, never by an arbitrary fraction, which is what
-        // was clipping the profile curve and the segments table on some real devices (BIV-57
-        // phone recette): a taller-than-expected header (larger system font, different insets)
-        // left less room than the fixed 55%/60% caps assumed, cutting off content below them.
-        val summaryHeightPx = (if (measuredSummaryHeightPx > 0) {
-            measuredSummaryHeightPx.toFloat() + navigationBarHeightPx + with(density) { 8.dp.toPx() }
-        } else {
-            fallbackSummaryHeightPx + navigationBarHeightPx
-        }).coerceAtMost(fullHeightPx)
-        // PROFILE_BLOCK_HEIGHT_DP, not a live onGloballyPositioned measurement: ElevationProfile's
-        // Canvas is a fixed dp height regardless of content, so measuring it dynamically only added
-        // a multi-frame convergence lag (summary → profile → detail, each depending on the previous
-        // frame's measurement): harmless most of the time, but a still-converging PROFILE anchor
-        // one frame short of the real value clipped the curve's X-axis labels right at the screen
-        // edge (BIV-57 phone recette: zero margin for error since PROFILE's anchor puts the block's
-        // bottom edge exactly at the screen's bottom). A known constant sidesteps the lag entirely.
-        // Le bord bas du bloc profil coïncidait exactement avec le bord bas de l'écran au cran
-        // Profil, et les libellés de l'axe X passaient sous la barre système (RIC-95 recette) :
-        // un séparateur + la hauteur de la barre de navigation sont réservés sous la courbe et
-        // comptés dans l'anchor Profil pour remonter la courbe d'autant. Inconditionnel, segments
-        // ou pas (2e passe de recette) : la version réservée au cas « aucun bivouac » faisait
-        // sauter le tiroir et retomber les libellés sous la barre système dès l'ajout du premier
-        // point. Avec des segments, cette réserve est remplie par le haut de la table (son
-        // padding), et elle couvre aussi le padding barre-de-navigation du bloc segments dans le
-        // calcul de detailHeightPx plus bas.
-        val profileBottomReservePx = navigationBarHeightPx + with(density) { 1.dp.toPx() }
-        val profileHeightPx = (summaryHeightPx + with(density) { PROFILE_BLOCK_HEIGHT_DP.toPx() } + profileBottomReservePx)
-            .coerceIn(summaryHeightPx, fullHeightPx)
-        // How much room is left for the segments list before DETAIL would have to exceed the
-        // screen: the segments Column below is capped to exactly this via heightIn(max), so it
-        // naturally scrolls instead of pushing DETAIL past what fits on long, multi-day traces.
-        // Stable from the first frame now that profileHeightPx no longer depends on a measurement
-        // of its own, so the segments Column's own measurement converges in a single pass too.
-        // The status bar's height is reserved out of the cap (RIC-95 recette): DETAIL therefore
-        // tops out just under the status bar instead of at true fullscreen, which keeps the
-        // status-bar protection spacer (statusBarOverlapPx) at zero on this screen and the whole
-        // measured content visible without internal scroll until it genuinely runs out of room.
-        val segmentsMaxHeightPx = (fullHeightPx - profileHeightPx - statusBarHeightPx).coerceAtLeast(0f)
-        // Pas de terme séparé pour le padding barre-de-navigation du bloc segments (que sa mesure
-        // interne n'inclut pas) : profileBottomReservePx, inconditionnel et déjà dans
-        // profileHeightPx, réserve exactement cette hauteur-là.
-        val detailHeightPx = (profileHeightPx + measuredSegmentsAdditionPx)
-            .coerceIn(profileHeightPx, fullHeightPx)
+        // Le calcul des crans vit dans computePlanificationDrawerHeights (RIC-224, testé en JVM),
+        // avec les commentaires de ses régressions passées (RIC-95, BIV-57). PROFILE_BLOCK_HEIGHT_DP
+        // reste une constante et non une mesure : BIV-57 a montré qu'une mesure en cascade
+        // (synthèse, profil, détails) laissait le cran Profil une frame trop court et rognait les
+        // libellés de l'axe X au ras de l'écran.
+        val heights = computePlanificationDrawerHeights(
+            fullHeightPx = fullHeightPx,
+            measuredSummaryHeightPx = measuredSummaryHeightPx,
+            measuredSegmentsAdditionPx = measuredSegmentsAdditionPx,
+            navigationBarHeightPx = navigationBarHeightPx,
+            statusBarHeightPx = statusBarHeightPx,
+            fallbackSummaryHeightPx = with(density) { 150.dp.toPx() },
+            summaryBottomMarginPx = with(density) { 8.dp.toPx() },
+            profileBlockHeightPx = with(density) { PROFILE_BLOCK_HEIGHT_DP.toPx() },
+            dividerHeightPx = with(density) { 1.dp.toPx() },
+        )
+        val summaryHeightPx = heights.summaryHeightPx
+        val profileHeightPx = heights.profileHeightPx
+        val segmentsMaxHeightPx = heights.segmentsMaxHeightPx
+        val detailHeightPx = heights.detailHeightPx
         val anchors = remember(fullHeightPx, summaryHeightPx, profileHeightPx, detailHeightPx) {
             mapOf(
                 DrawerStop.DETAIL to fullHeightPx - detailHeightPx,
@@ -269,14 +244,14 @@ internal fun ThreeStopPlanificationDetail(
                         .padding(top = 10.dp, bottom = 2.dp),
                 )
 
-                // Clôture permanente sous la courbe (pendant de profileBottomReservePx) : avec des
-                // segments, elle fait office de premier séparateur de la table (qui saute donc le
-                // sien) ; sans segments, l'espace barre-de-navigation en dessous garde les
-                // libellés de l'axe X au-dessus de la barre système.
+                // Clôture permanente sous la courbe, puis un espace de la hauteur de la barre de
+                // navigation (pendant de profileBottomReservePx), inconditionnel : il garde les
+                // libellés de l'axe X au-dessus de la barre système (RIC-95) et, avec des segments,
+                // il repousse la table sous le bord bas visible du cran Profil, au lieu de la
+                // laisser se dessiner sous une barre opaque à trois boutons (RIC-224). Le
+                // séparateur est le premier de la table (qui saute donc le sien).
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 20.dp))
-                if (bivouacPoints.isEmpty()) {
-                    Spacer(modifier = Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
-                }
+                Spacer(modifier = Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
 
                 if (bivouacPoints.isNotEmpty()) {
                     Column(
