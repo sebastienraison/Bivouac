@@ -303,6 +303,46 @@ class DaySplitTest {
         assertEquals(2, match.incomingDays)
     }
 
+    // --- RIC-229 : les refus (« Pause ») d'un jour découpé passent au bon morceau ----------------------
+
+    @Test
+    fun aSplitDayHandsItsRefusalsToThePieceThatHoldsThem() = runBlocking {
+        insertTrek()
+        val night = nightDay()
+        val (first, second) = detectedOn(night)
+        assertEquals(listOf(14, 29), listOf(first.stopIndex, second.stopIndex))
+        // La seconde nuit est refusée, puis le jour est découpé à la première.
+        dao.updateDayRefusedBivouacStops(night.id, RefusedBivouacStops.encode(setOf(second.stopIndex)))
+
+        repository.splitDay("trek", night.id, listOf(first))
+
+        val pieces = dao.getDays("trek").filter { it.rawGpxFilePath == night.rawGpxFilePath }.sortedBy { it.dayIndex }
+        assertEquals(listOf(0 to 14, 15 to 44), pieces.map { it.firstPointIndex to it.lastPointIndex })
+        // Le premier morceau n'a pas de refus ; le second porte la nuit 29 du jour d'origine, devenue
+        // la 14 du morceau (29 - 15).
+        assertEquals(listOf(emptySet(), setOf(14)), pieces.map { it.refusedStops() })
+        val secondPoints = DayPoints.read(context, pieces[1])
+        assertEquals(listOf(14), DayBivouacs.detect(secondPoints).map { it.stopIndex })
+        assertTrue(DayBivouacs.effective(secondPoints, pieces[1].refusedStops()).isEmpty())
+        // Ses chiffres stockés comptent la nuit refusée en pause : écoulé de 15 h et plus, pause d'au
+        // moins 15 h.
+        assertTrue(pieces[1].elapsedSeconds!! >= 15 * 3_600)
+        assertTrue(pieces[1].pausedSeconds!! >= 15 * 3_600.0)
+        assertTrue(pieces[0].pausedSeconds!! < 3_600.0)
+    }
+
+    @Test
+    fun aRefusalOnTheSplitStopDisappearsWithTheSplit() = runBlocking {
+        insertTrek()
+        val night = nightDay()
+        val (first, second) = detectedOn(night)
+        repository.splitDay("trek", night.id, listOf(first), refusedStops = setOf(first.stopIndex, second.stopIndex))
+
+        val pieces = dao.getDays("trek").filter { it.rawGpxFilePath == night.rawGpxFilePath }.sortedBy { it.dayIndex }
+        assertEquals(listOf(emptySet(), setOf(second.stopIndex - 15)), pieces.map { it.refusedStops() })
+        assertTrue(pieces.none { it.refusedBivouacStops == "" })
+    }
+
     private fun sha256(text: String): String =
         MessageDigest.getInstance("SHA-256").digest(text.toByteArray(StandardCharsets.UTF_8))
             .joinToString("") { "%02x".format(it) }

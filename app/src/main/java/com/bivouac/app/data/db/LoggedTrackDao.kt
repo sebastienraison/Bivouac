@@ -328,6 +328,58 @@ interface LoggedTrackDao {
         )
     }
 
+    @Query("UPDATE logged_track_day SET refusedBivouacStops = :refusedBivouacStops WHERE id = :id")
+    suspend fun updateDayRefusedBivouacStops(id: Long, refusedBivouacStops: String?)
+
+    /**
+     * RIC-229 : écriture des refus (« Pause ») d'un jour qui n'est pas découpé (voir
+     * LoggedTrackRepository.applyDayRefusals), en une seule transaction : la liste des arrêts
+     * refusés, les colonnes dénormalisées du jour recalculées avec eux et ses lignes de rythme
+     * ([day], même chemin que le rattrapage), et les totaux de la trace. Jamais un jour dont les
+     * chiffres ne correspondraient pas à ses refus, ni une trace dont le total ne serait plus la
+     * somme de ses jours.
+     */
+    @Transaction
+    suspend fun applyDayRefusals(
+        trackId: String,
+        day: DayStatsUpdate,
+        refusedBivouacStops: String?,
+        distanceMeters: Double,
+        elevationGainMeters: Double,
+        elevationLossMeters: Double,
+        estimatedDurationMinutes: Int,
+        statsVersion: Int,
+    ) {
+        updateDayDenormalizedFields(
+            id = day.id,
+            contentHash = day.contentHash,
+            startedAtMillis = day.startedAtMillis,
+            elapsedSeconds = day.elapsedSeconds,
+            flatCount = day.aggregate.flatCount,
+            flatDistanceMeters = day.aggregate.flatDistanceMeters,
+            flatHours = day.aggregate.flatHours,
+            steepCount = day.aggregate.steepCount,
+            steepDistanceMeters = day.aggregate.steepDistanceMeters,
+            steepGainMeters = day.aggregate.steepGainMeters,
+            steepHours = day.aggregate.steepHours,
+            stoppedHours = day.aggregate.stoppedHours,
+            distanceMeters = day.distanceMeters,
+            elevationGainMeters = day.elevationGainMeters,
+            elevationLossMeters = day.elevationLossMeters,
+            pausedSeconds = day.pausedSeconds,
+        )
+        replaceDayPaces(day.id, day.paceBands)
+        updateDayRefusedBivouacStops(day.id, refusedBivouacStops)
+        updateTrackStats(
+            id = trackId,
+            distanceMeters = distanceMeters,
+            elevationGainMeters = elevationGainMeters,
+            elevationLossMeters = elevationLossMeters,
+            estimatedDurationMinutes = estimatedDurationMinutes,
+            statsVersion = statsVersion,
+        )
+    }
+
     // RIC-227 (lot 3 de la 2.7.0) : crible des bivouacs détectés, voir LoggedTrackEntity.
     // bivouacReviewVersion et BIVOUAC_REVIEW_VERSION. Même patron que statsVersion : une version
     // inférieure à la courante, jamais une colonne IS NULL.

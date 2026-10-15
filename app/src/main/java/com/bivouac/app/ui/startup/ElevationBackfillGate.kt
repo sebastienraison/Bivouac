@@ -26,6 +26,7 @@ import com.bivouac.app.R
 import com.bivouac.app.data.db.BankedTrackRepository
 import com.bivouac.app.data.db.CalibrationRefresh
 import com.bivouac.app.data.db.LoggedTrackRepository
+import com.bivouac.app.data.db.refusedStops
 import com.bivouac.app.data.gpx.BIVOUAC_REVIEW_VERSION
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.journal.BivouacQuestion
@@ -159,6 +160,11 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
      *    ([LoggedTrackRepository.applyBivouacReview]). Si l'app est tuée avant, cette rando reste
      *    non examinée et sera reproposée en entier au lancement suivant ; celles déjà traitées ne le
      *    sont plus. Un découpage en échec est journalisé et laisse la rando non examinée.
+     *
+     * RIC-229 : la détection porte sur les bivouacs effectifs de chaque jour (une nuit déjà
+     * refusée n'est pas reposée), et les réponses « Pause » sont écrites avec les découpages. Si
+     * une rando au moins a changé, la calibration Auto est recalculée une fois, à la fin, comme
+     * après un import.
      */
     private suspend fun reviewBivouacs() {
         val tracks = withContext(Dispatchers.IO) { repository.tracksNeedingBivouacReview(BIVOUAC_REVIEW_VERSION) }
@@ -168,8 +174,9 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
             val found = withContext(Dispatchers.IO) {
                 try {
                     val (days, points) = repository.daysWithPoints(track.id)
-                    val questions = BivouacReview.startupQuestions(track.bivouacReviewVersion) { BivouacReview.detectDays(points) }
-                        .orEmpty()
+                    val questions = BivouacReview.startupQuestions(track.bivouacReviewVersion) {
+                        BivouacReview.effectiveDays(points, days.map { it.refusedStops() })
+                    }.orEmpty()
                     if (questions.isEmpty()) {
                         repository.markBivouacReviewed(track.id, BIVOUAC_REVIEW_VERSION)
                         null
@@ -189,6 +196,7 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
         // questions d'après le rapport d'un import en sorties séparées (JournalViewModel).
         val batch = BivouacReviewBatch(pending)
         val answers = mutableListOf<BivouacReview.Answer>()
+        var changed = false
         for (index in 0 until batch.total) {
             val answer = CompletableDeferred<BivouacReview.Answer>()
             pendingAnswer = answer
@@ -199,15 +207,27 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
             val key = completed.track.key
             withContext(Dispatchers.IO) {
                 try {
-                    repository.applyBivouacReview(
+                    changed = repository.applyBivouacReview(
                         trackId = key.trackId,
                         splitsByDayId = completed.outcome.splits.mapKeys { (position, _) -> key.dayIds[position] },
                         reviewVersion = completed.outcome.reviewVersion,
-                    )
+                        pausesByDayId = completed.outcome.pauses.mapKeys { (position, _) -> key.dayIds[position] },
+                    ) || changed
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     Log.w(TAG, "Crible des bivouacs : découpage de la rando ${key.trackId} en échec", e)
+                }
+            }
+        }
+        if (changed) {
+            withContext(Dispatchers.IO) {
+                try {
+                    CalibrationRefresh.refreshAuto(repository, settingsPreferences)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Crible des bivouacs : recalcul de la calibration Auto en échec", e)
                 }
             }
         }

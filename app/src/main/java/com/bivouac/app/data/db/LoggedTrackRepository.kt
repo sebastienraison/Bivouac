@@ -499,6 +499,12 @@ class LoggedTrackRepository(context: Context) {
      *
      * Une seule transaction (voir [LoggedTrackDao.applyDaySplit]) : tout ou rien.
      *
+     * RIC-229 : [refusedStops], les arrêts refusés (« Pause ») du jour à découper, en index de ses
+     * points comme [bivouacs] ; `null` : ceux qu'il porte déjà. Chacun passe au nouveau jour qui le
+     * contient, ramené à son origine ([DaySplitPlan.refusedStopsByPiece]), et ses chiffres sont
+     * calculés avec ; un refus posé sur un arrêt découpé ici disparaît (« Bivouac » répondu à une
+     * nuit refusée). Refus et découpage d'un jour sont ainsi écrits dans la même transaction.
+     *
      * @throws IllegalArgumentException sans rien écrire : rando ou jour introuvable, aucun bivouac,
      * bivouac hors du jour, reprise qui ne suit pas l'arrêt, bivouacs qui se chevauchent.
      * @throws IllegalStateException sans rien écrire : la rando n'est pas encore rattrapée à
@@ -506,7 +512,7 @@ class LoggedTrackRepository(context: Context) {
      * de rattrapage du premier lancement exclut avant tout écran.
      * @throws IOException sans rien écrire : fichier du jour absent ou GPX invalide.
      */
-    suspend fun splitDay(trackId: String, dayId: Long, bivouacs: List<DetectedBivouac>) {
+    suspend fun splitDay(trackId: String, dayId: Long, bivouacs: List<DetectedBivouac>, refusedStops: Set<Int>? = null) {
         val track = dao.get(trackId) ?: throw IllegalArgumentException("Rando $trackId introuvable")
         val days = dao.getDays(trackId).sortedBy { it.dayIndex }
         val day = days.find { it.id == dayId } ?: throw IllegalArgumentException("Jour $dayId absent de la rando $trackId")
@@ -520,11 +526,12 @@ class LoggedTrackRepository(context: Context) {
         val dayPoints = DayPoints.parse(rawGpx, day)
         val fileOffset = day.firstPointIndex ?: 0
         val ranges = DaySplitPlan.fileRanges(dayPoints.size, fileOffset, bivouacs)
+        val refusedByPiece = DaySplitPlan.refusedStopsByPiece(dayPoints.size, bivouacs, refusedStops ?: day.refusedStops())
         val contentHash = sha256(rawGpx)
 
-        val pieces = ranges.map { range ->
+        val pieces = ranges.mapIndexed { k, range ->
             val points = dayPoints.subList(range.first - fileOffset, range.last - fileOffset + 1)
-            range to JournalDayStats.of(points, SpeedCalibration.DEFAULT)
+            range to JournalDayStats.of(points, SpeedCalibration.DEFAULT, refusedStops = refusedByPiece[k])
         }
         // Rangs : renumérotation complète 0..n-1 dans l'ordre d'origine ; les nouveaux jours prennent
         // la place du jour découpé, ceux d'après se décalent du nombre de jours ajoutés.
@@ -559,6 +566,7 @@ class LoggedTrackRepository(context: Context) {
                 pausedSeconds = update.pausedSeconds,
                 firstPointIndex = range.first,
                 lastPointIndex = range.last,
+                refusedBivouacStops = RefusedBivouacStops.encode(refusedByPiece[k]),
             )
         }
 
@@ -586,6 +594,44 @@ class LoggedTrackRepository(context: Context) {
     }
 
     /**
+     * RIC-229 : écrit les arrêts refusés [refusedStops] (« Pause », index des points du jour) du
+     * jour [dayId], qui n'est pas découpé, et recalcule tout ce que ce jour range avec eux
+     * ([JournalDayStats], même calcul que l'import, le rattrapage et [splitDay]) ainsi que les
+     * totaux de la rando (somme des jours). Une seule transaction ([LoggedTrackDao.applyDayRefusals]).
+     *
+     * Mêmes garde-fous que [splitDay], et mêmes exceptions, sans rien écrire : rando ou jour
+     * introuvable ([IllegalArgumentException]), rando pas encore rattrapée
+     * ([IllegalStateException]), fichier absent ou GPX invalide ([IOException]).
+     */
+    private suspend fun applyDayRefusals(trackId: String, dayId: Long, refusedStops: Set<Int>) {
+        val track = dao.get(trackId) ?: throw IllegalArgumentException("Rando $trackId introuvable")
+        val days = dao.getDays(trackId).sortedBy { it.dayIndex }
+        val day = days.find { it.id == dayId } ?: throw IllegalArgumentException("Jour $dayId absent de la rando $trackId")
+        val others = days.filter { it.id != dayId }
+        check(track.statsVersion >= TrackStatsParameters.ALGORITHM_VERSION && others.all { it.hasDayTotals() }) {
+            "Rando $trackId pas encore rattrapée (statsVersion ${track.statsVersion}) : refus non écrit"
+        }
+        val rawGpx = LoggedTrackGpxStore.resolve(appContext, day.rawGpxFilePath).readText(StandardCharsets.UTF_8)
+        val points = DayPoints.parse(rawGpx, day)
+        val figures = JournalDayStats.of(points, SpeedCalibration.DEFAULT, refusedStops = refusedStops)
+        val allStats = others.map {
+            TrackStatsCalculator.statsWithDuration(
+                it.distanceMeters!!, it.elevationGainMeters!!, it.elevationLossMeters!!, SpeedCalibration.DEFAULT,
+            )
+        } + figures.stats
+        dao.applyDayRefusals(
+            trackId = trackId,
+            day = figures.toDayStatsUpdate(dayId = dayId, contentHash = sha256(rawGpx)),
+            refusedBivouacStops = RefusedBivouacStops.encode(refusedStops),
+            distanceMeters = allStats.sumOf { it.distanceMeters },
+            elevationGainMeters = allStats.sumOf { it.elevationGainMeters },
+            elevationLossMeters = allStats.sumOf { it.elevationLossMeters },
+            estimatedDurationMinutes = allStats.sumOf { it.estimatedDurationMinutes },
+            statsVersion = TrackStatsParameters.ALGORITHM_VERSION,
+        )
+    }
+
+    /**
      * RIC-227 (lot 3 de la 2.7.0) : applique le résultat du crible des bivouacs à la rando
      * [trackId] : chaque jour de [splitsByDayId] est découpé à ses bivouacs ([splitDay], un appel
      * par jour, avec tous les bivouacs à découper de ce jour, en index de ses points d'avant tout
@@ -597,12 +643,40 @@ class LoggedTrackRepository(context: Context) {
      * transaction ; la version n'est posée qu'après le dernier, donc une interruption (exception,
      * process tué) laisse la rando non examinée, et elle sera reproposée au lancement suivant avec
      * ce qui reste à l'intérieur de ses jours. Les exceptions de [splitDay] remontent telles quelles.
+     *
+     * RIC-229 : [pausesByDayId], les nuits auxquelles l'utilisateur a répondu « Pause », par jour,
+     * en index de ses points d'avant tout découpage. Pour chaque jour, ses nouveaux refus sont ses
+     * refus déjà mémorisés plus ces nuits ; découpage et refus du jour s'écrivent ensemble, dans une
+     * seule transaction : [splitDay] (qui répartit les refus entre les morceaux, et oublie celui
+     * d'une nuit découpée) si le jour a des bivouacs à découper, sinon [applyDayRefusals] si ses
+     * refus changent. Rend vrai si un jour au moins a été découpé ou a changé de refus : ses
+     * chiffres stockés ont alors changé, la calibration Auto est à recalculer (à l'appelant, comme
+     * après un import).
      */
-    suspend fun applyBivouacReview(trackId: String, splitsByDayId: Map<Long, List<DetectedBivouac>>, reviewVersion: Int) {
-        for ((dayId, bivouacs) in splitsByDayId) {
-            if (bivouacs.isNotEmpty()) splitDay(trackId, dayId, bivouacs)
+    suspend fun applyBivouacReview(
+        trackId: String,
+        splitsByDayId: Map<Long, List<DetectedBivouac>>,
+        reviewVersion: Int,
+        pausesByDayId: Map<Long, List<DetectedBivouac>> = emptyMap(),
+    ): Boolean {
+        var changed = false
+        val daysById = dao.getDays(trackId).associateBy { it.id }
+        for (dayId in (splitsByDayId.keys + pausesByDayId.keys)) {
+            val bivouacs = splitsByDayId[dayId].orEmpty()
+            val pauses = pausesByDayId[dayId].orEmpty()
+            if (bivouacs.isEmpty() && pauses.isEmpty()) continue
+            val current = daysById[dayId]?.refusedStops().orEmpty()
+            val refused = current + pauses.map { it.stopIndex }
+            if (bivouacs.isNotEmpty()) {
+                splitDay(trackId, dayId, bivouacs, refused)
+                changed = true
+            } else if (refused != current) {
+                applyDayRefusals(trackId, dayId, refused)
+                changed = true
+            }
         }
         dao.markBivouacReviewVersion(trackId, reviewVersion)
+        return changed
     }
 
     /**
@@ -619,18 +693,29 @@ class LoggedTrackRepository(context: Context) {
      * annulée entre les deux), la rando tout juste enregistrée est supprimée ([delete], lignes et
      * fichiers) et l'exception remonte : jamais une rando à moitié découpée laissée derrière un
      * import en échec. Sans découpage, la version est posée dans la même écriture que la rando.
+     *
+     * RIC-229 : [pausesByDayPosition], les nuits auxquelles l'utilisateur a répondu « Pause », par
+     * rang de jour. Choix retenu : les écrire, elles aussi, APRÈS l'enregistrement, par le même
+     * chemin que le découpage ([applyBivouacReview], qui recalcule les chiffres du jour et de la
+     * rando dans une transaction par jour), plutôt que de recalculer [PreparedDay] avant
+     * d'enregistrer : [prepareImport] et [commitImport] restent inchangés, un seul calcul des
+     * chiffres d'un jour refusé existe (celui du crible et de l'action de menu), et le tout-ou-rien
+     * ci-dessus couvre aussi un refus en échec. Rançon : entre les deux écritures, la rando existe
+     * un instant avec la nuit traitée en bivouac, à la version 0 ; si l'app est tuée là, le crible
+     * du lancement suivant reposera la question, comme pour un découpage.
      */
     suspend fun commitImportReviewed(
         prepared: PreparedImport,
         splitsByDayPosition: Map<Int, List<DetectedBivouac>>,
         reviewVersion: Int,
+        pausesByDayPosition: Map<Int, List<DetectedBivouac>> = emptyMap(),
     ): String {
-        if (splitsByDayPosition.values.all { it.isEmpty() }) {
+        if (splitsByDayPosition.values.all { it.isEmpty() } && pausesByDayPosition.values.all { it.isEmpty() }) {
             return commitImport(prepared.copy(entity = prepared.entity.copy(bivouacReviewVersion = reviewVersion)))
         }
         val id = commitImport(prepared)
         try {
-            applyBivouacReviewByDayPosition(id, splitsByDayPosition, reviewVersion)
+            applyBivouacReviewByDayPosition(id, splitsByDayPosition, reviewVersion, pausesByDayPosition)
         } catch (e: Throwable) {
             withContext(NonCancellable) { delete(id) }
             throw e
@@ -642,18 +727,20 @@ class LoggedTrackRepository(context: Context) {
      * RIC-227 : [applyBivouacReview] avec des jours désignés par leur rang (0 pour le premier) tel
      * qu'il était à l'enregistrement de la rando : import d'une sortie seule et questions d'après le
      * rapport d'un import en sorties séparées, dont les questions viennent de [PreparedImport.days].
-     * Lève [IllegalStateException] sans rien écrire si un rang n'existe pas.
+     * Lève [IllegalStateException] sans rien écrire si un rang n'existe pas. RIC-229 : de même pour
+     * [pausesByDayPosition] ; rend ce que rend [applyBivouacReview].
      */
     suspend fun applyBivouacReviewByDayPosition(
         trackId: String,
         splitsByDayPosition: Map<Int, List<DetectedBivouac>>,
         reviewVersion: Int,
-    ) {
+        pausesByDayPosition: Map<Int, List<DetectedBivouac>> = emptyMap(),
+    ): Boolean {
         val dayIds = dao.getDays(trackId).sortedBy { it.dayIndex }.map { it.id }
-        val splitsByDayId = splitsByDayPosition.mapKeys { (position, _) ->
+        fun <V> byDayId(byPosition: Map<Int, V>): Map<Long, V> = byPosition.mapKeys { (position, _) ->
             dayIds.getOrNull(position) ?: throw IllegalStateException("Jour de rang $position absent de la rando $trackId")
         }
-        applyBivouacReview(trackId, splitsByDayId, reviewVersion)
+        return applyBivouacReview(trackId, byDayId(splitsByDayPosition), reviewVersion, byDayId(pausesByDayPosition))
     }
 
     /** RIC-227 : nombre de randos pas encore passées au crible [version] (voir ElevationBackfillGate). */

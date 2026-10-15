@@ -195,4 +195,48 @@ class BivouacReviewTest {
         assertEquals(BIVOUAC_REVIEW_VERSION, done.outcome.reviewVersion)
         assertEquals(0, BivouacReviewBatch(listOf(track("vide", noNight))).total)
     }
+
+    // --- RIC-229 : « Pause » mémorisée, nuits refusées reproposées par le menu ---------------------
+
+    @Test
+    fun `outcome rend les refus par rang de jour, dialogue quitte compris`() {
+        val questions = BivouacReview.questions(BivouacReview.detectDays(listOf(noNight, twoNights), zoneFor))
+        assertEquals(listOf(1, 1), questions.map { it.dayPosition })
+        val outcome = BivouacReview.outcome(questions, listOf(BivouacReview.Answer.PAUSE, BivouacReview.Answer.SPLIT))
+        assertEquals(mapOf(1 to listOf(4)), outcome.pauses.mapValues { (_, b) -> b.map { it.stopIndex } })
+        assertEquals(mapOf(1 to listOf(9)), outcome.splits.mapValues { (_, b) -> b.map { it.stopIndex } })
+
+        val dismissed = BivouacReview.outcome(questions, listOf(null, BivouacReview.Answer.PAUSE))
+        assertEquals(listOf(4, 9), dismissed.pauses.getValue(1).map { it.stopIndex })
+        assertTrue(dismissed.splits.isEmpty())
+    }
+
+    @Test
+    fun `le crible ne repose pas une nuit deja refusee`() {
+        val effective = BivouacReview.effectiveDays(listOf(twoNights), listOf(setOf(4)), zoneFor)
+        assertEquals(listOf(listOf(9)), effective.map { day -> day.map { it.stopIndex } })
+        val questions = BivouacReview.startupQuestions(0) { effective }!!
+        assertEquals(listOf(9), questions.map { it.bivouac.stopIndex })
+        assertTrue(questions.none { it.wasRefused })
+    }
+
+    @Test
+    fun `le menu repropose une nuit refusee et dit qu'elle l'etait`() {
+        val result = BivouacReview.menuResult(listOf(twoNights), zoneFor, refusedStopsByDay = listOf(setOf(4, 9)))
+        val questions = (result as BivouacReview.MenuResult.Ask).questions
+        assertEquals(listOf(4, 9), questions.map { it.bivouac.stopIndex })
+        assertEquals(listOf(true, true), questions.map { it.wasRefused })
+
+        val partly = BivouacReview.menuResult(listOf(twoNights), zoneFor, refusedStopsByDay = listOf(setOf(9))) as BivouacReview.MenuResult.Ask
+        assertEquals(listOf(false, true), partly.questions.map { it.wasRefused })
+        // « Pause » à une nuit qui ne l'était pas : de nouveaux refus ; confirmer un refus, non.
+        assertTrue(BivouacReview.addsRefusals(partly.questions, listOf(BivouacReview.Answer.PAUSE, BivouacReview.Answer.PAUSE)))
+        assertTrue(!BivouacReview.addsRefusals(partly.questions, listOf(BivouacReview.Answer.SPLIT, BivouacReview.Answer.PAUSE)))
+        assertTrue(!BivouacReview.addsRefusals(partly.questions, listOf(BivouacReview.Answer.SPLIT, BivouacReview.Answer.SPLIT)))
+    }
+
+    @Test
+    fun `aucune nuit interne, message inchange`() {
+        assertEquals(BivouacReview.MenuResult.NoneDetected, BivouacReview.menuResult(listOf(noNight), zoneFor, listOf(setOf(1))))
+    }
 }
