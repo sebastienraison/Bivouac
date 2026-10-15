@@ -47,6 +47,10 @@ data class TimelinePhase(
  * [TrackPauseDetector] (elle n'est ni dans les pauses du jour ni dans le temps de pause) : elle
  * occupe seulement sa place dans le déroulé, pour qu'aucune phase de marche ne contienne la nuit.
  * Le rendu (un bloc « nuit au bivouac » comme entre deux jours, RIC-212) est l'affaire de l'écran.
+ *
+ * RIC-229 : une nuit refusée (« Pause ») n'est pas un bivouac effectif : elle arrive dans
+ * [DayAnalysis.pauses] comme pause forcée et devient ici un bloc de pause ordinaire, [isBivouac]
+ * faux, réuni ou non à ses voisines par les règles 1 et 2 comme n'importe quelle pause.
  */
 data class TimelinePause(
     val startIndex: Int,
@@ -83,7 +87,8 @@ data class DayTimeline(
      * RIC-226 : part de [elapsedSeconds] passée au bivouac à l'intérieur du jour (somme des
      * [TimelinePause.isBivouac]), 0 sans nuit. [elapsedSeconds] reste l'écart d'horloge entre le
      * départ et l'arrivée, puisque les heures affichées en dérivent ; la durée du jour sans la nuit
-     * est [elapsedSeconds] moins cette valeur.
+     * est [elapsedSeconds] moins cette valeur. RIC-229 : une nuit refusée n'y est pas, elle reste
+     * dans la durée du jour comme toute pause.
      */
     val bivouacSeconds: Double = 0.0,
 )

@@ -147,6 +147,34 @@ class TrackPauseDetectorTest {
         assertEquals(10, p.slopeBandOf(25.0))
     }
 
+    // --- RIC-229 : pauses forcées (nuits refusées) ----------------------------------------------
+
+    @Test
+    fun aForcedPauseCountsWhateverTheDistanceAndMergesWithDetectedPauses() {
+        // Marche, trou de 2 h repris à 141 m (au-delà de GAP_MAX_METERS : aucune pause détectée),
+        // marche.
+        val before = listOf(point(0.0, 0)) + walk(0.0, 0, 5) // index 0 à 5, 150 m, 135 s
+        val after = listOf(point(291.0, 135L + 7_200L)) + walk(291.0, 135L + 7_200L, 5) // index 6 à 11
+        val track = before + after
+        assertEquals(emptyList<TrackPause>(), TrackPauseDetector.detect(track))
+
+        val forced = TrackPauseDetector.detect(track, forced = listOf(5 to 6))
+        assertEquals(listOf(TrackPause(5, 6, 7_200.0)), forced)
+
+        // Un intervalle invalide (hors de la trace, inversé, vide) est ignoré.
+        assertEquals(emptyList<TrackPause>(), TrackPauseDetector.detect(track, forced = listOf(11 to 12, 6 to 5, 3 to 3)))
+    }
+
+    @Test
+    fun aForcedPauseOnAGapUnder50MetersGivesTheSameResultAsTheDetectedPause() {
+        val before = listOf(point(0.0, 0)) + walk(0.0, 0, 5)
+        val after = listOf(point(180.0, 135L + 7_200L)) + walk(180.0, 135L + 7_200L, 5)
+        val track = before + after
+        val detected = TrackPauseDetector.detect(track)
+        assertEquals(listOf(TrackPause(5, 6, 7_200.0)), detected)
+        assertEquals(detected, TrackPauseDetector.detect(track, forced = listOf(5 to 6)))
+    }
+
     private companion object {
         val BASE_TIME: Instant = Instant.parse("2026-06-01T08:00:00Z")
     }

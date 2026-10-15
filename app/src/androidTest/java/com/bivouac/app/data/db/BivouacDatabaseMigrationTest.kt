@@ -235,6 +235,7 @@ class BivouacDatabaseMigrationTest {
             BivouacDatabase.MIGRATION_19_20,
             BivouacDatabase.MIGRATION_20_21,
             BivouacDatabase.MIGRATION_21_22,
+            BivouacDatabase.MIGRATION_22_23,
         )
 
         // RIC-97 : la ligne saved_track née en v1 avec gpxContent en colonne doit ressortir avec
@@ -1567,6 +1568,78 @@ class BivouacDatabaseMigrationTest {
         migrated.query("SELECT bivouacReviewVersion FROM logged_track WHERE id = 'track-2'").use { cursor ->
             assertTrue(cursor.moveToFirst())
             assertEquals(0, cursor.getInt(0))
+        }
+
+        migrated.close()
+    }
+
+    // RIC-229 (lot 7 de la 2.7.0) : refusedBivouacStops arrive nulle (aucun refus) sur les jours
+    // existants, sans toucher à leurs colonnes ni à leurs plages, et accepte ensuite le format
+    // écrit par RefusedBivouacStops.
+    @Test
+    fun migrate22To23_addsNullRefusedBivouacStopsWithoutTouchingExistingRows() {
+        helper.createDatabase(testDbName, 22).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note, statsVersion, bivouacReviewVersion) VALUES " +
+                    "('track-1', 'Randonnee Belledonne', 1780300800000, 'hash-track-1', " +
+                    "8200.0, 650.0, 300.0, 3, 240, '', 4, 1)",
+            )
+            execSQL(
+                "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxFilePath, " +
+                    "contentHash, startedAtMillis, elapsedSeconds, flatCount, flatDistanceMeters, " +
+                    "flatHours, steepCount, steepDistanceMeters, steepGainMeters, steepHours, " +
+                    "stoppedHours, elevationBackfilled, distanceMeters, elevationGainMeters, " +
+                    "elevationLossMeters, pausedSeconds, firstPointIndex, lastPointIndex) VALUES (1, 'track-1', 0, " +
+                    "'gpx/track-1-day0.gpx', 'day0-hash', 1780300800000, 50400, 10, 4000.0, 1.2, " +
+                    "5, 4200.0, 650.0, 1.5, 0.3, 1, 8200.0, 650.0, 300.0, 1234.5, 0, 1499)",
+            )
+            execSQL(
+                "INSERT INTO logged_track_day_pace (dayId, band, segmentCount, distanceMeters, movingSeconds) " +
+                    "VALUES (1, 5, 12, 2430.0, 2280.0)",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            23,
+            true,
+            BivouacDatabase.MIGRATION_22_23,
+        )
+
+        migrated.query(
+            "SELECT rawGpxFilePath, contentHash, elapsedSeconds, pausedSeconds, distanceMeters, " +
+                "firstPointIndex, lastPointIndex, refusedBivouacStops FROM logged_track_day WHERE id = 1",
+        ).use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("gpx/track-1-day0.gpx", cursor.getString(0))
+            assertEquals("day0-hash", cursor.getString(1))
+            assertEquals(50400L, cursor.getLong(2))
+            assertEquals(1234.5, cursor.getDouble(3), 1e-9)
+            assertEquals(8200.0, cursor.getDouble(4), 1e-9)
+            assertEquals(0, cursor.getInt(5))
+            assertEquals(1499, cursor.getInt(6))
+            assertTrue("refusedBivouacStops doit arriver vide (aucun refus)", cursor.isNull(7))
+        }
+        migrated.query("SELECT statsVersion, bivouacReviewVersion FROM logged_track WHERE id = 'track-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(4, cursor.getInt(0))
+            assertEquals(1, cursor.getInt(1))
+        }
+        migrated.query("SELECT COUNT(*) FROM logged_track_day_pace WHERE dayId = 1").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1, cursor.getInt(0))
+        }
+
+        // Ce que LoggedTrackRepository écrit après une réponse « Pause » : la liste des arrêts.
+        migrated.execSQL("UPDATE logged_track_day SET refusedBivouacStops = '14,29' WHERE id = 1")
+        migrated.query("SELECT refusedBivouacStops FROM logged_track_day WHERE id = 1").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("14,29", cursor.getString(0))
+            assertEquals(setOf(14, 29), RefusedBivouacStops.decode(cursor.getString(0)))
         }
 
         migrated.close()

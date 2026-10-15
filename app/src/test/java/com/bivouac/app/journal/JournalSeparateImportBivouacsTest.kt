@@ -89,7 +89,7 @@ class JournalSeparateImportBivouacsTest {
         assertEquals(2, runBlocking { repository.daysWithPoints(nuitA) }.first.size)
         assertEquals(0, runBlocking { repository.get(byName.getValue("Trace nuit-b").id) }!!.bivouacReviewVersion)
 
-        viewModel.answerBivouacQuestion(BivouacReview.Answer.KEEP)
+        viewModel.answerBivouacQuestion(BivouacReview.Answer.PAUSE)
         assertEquals(3, viewModel.bivouacQuestion.value!!.number)
         viewModel.answerBivouacQuestion(BivouacReview.Answer.SPLIT)
         assertNull(viewModel.bivouacQuestion.value)

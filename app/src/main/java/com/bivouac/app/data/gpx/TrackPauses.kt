@@ -23,13 +23,32 @@ data class TrackPause(val startIndex: Int, val endIndex: Int, val seconds: Doubl
  * Le rayon est mesuré depuis le PREMIER point de la suite, pas de proche en proche : une marche très
  * lente finit toujours par sortir du rayon, alors qu'un seuil entre points consécutifs la prendrait
  * pour un arrêt.
+ *
+ * RIC-229 : une troisième source, les pauses FORCÉES ([detect], paramètre `forced`) : des intervalles
+ * de points que l'appelant sait être des pauses, quelle que soit la distance entre leurs bornes. Ce
+ * sont les nuits détectées auxquelles l'utilisateur a répondu « Pause » (DayBivouacs.nights) : la
+ * règle des 50 m ne s'y applique pas, la reprise peut être à 141 m comme à 2 km. Elles sont
+ * fusionnées avec les deux autres sources, exactement comme celles-ci entre elles.
  */
 object TrackPauseDetector {
 
-    /** Intervalles triés et fusionnés : deux pauses qui se chevauchent ou se touchent n'en font qu'une. */
-    fun detect(points: List<TrackPoint>, parameters: AnalysisParameters = AnalysisParameters.DEFAULT): List<TrackPause> {
+    /**
+     * Intervalles triés et fusionnés : deux pauses qui se chevauchent ou se touchent n'en font qu'une.
+     *
+     * [forced] (RIC-229) : intervalles (premier point, dernier point) comptés comme pauses quelle
+     * que soit la distance. Un intervalle hors de [points], vide, inversé ou dont une borne n'a pas
+     * d'heure est ignoré : une pause se mesure entre deux instants connus.
+     */
+    fun detect(
+        points: List<TrackPoint>,
+        parameters: AnalysisParameters = AnalysisParameters.DEFAULT,
+        forced: List<Pair<Int, Int>> = emptyList(),
+    ): List<TrackPause> {
         val n = points.size
         val runs = mutableListOf<Pair<Int, Int>>()
+        for ((a, b) in forced) {
+            if (a >= 0 && b < n && a < b && points[a].time != null && points[b].time != null) runs += a to b
+        }
 
         var i = 0
         while (i < n) {

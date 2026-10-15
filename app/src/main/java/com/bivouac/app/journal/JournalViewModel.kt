@@ -22,6 +22,7 @@ import com.bivouac.app.data.db.PhotoDisplayOrder
 import com.bivouac.app.data.db.PhotoPositionUpdate
 import com.bivouac.app.data.db.PreparedImport
 import com.bivouac.app.data.db.SystemTag
+import com.bivouac.app.data.db.refusedStops
 import com.bivouac.app.data.gpx.BIVOUAC_REVIEW_VERSION
 import com.bivouac.app.data.gpx.DetectedBivouac
 import com.bivouac.app.data.gpx.RealDurationCalculator
@@ -237,7 +238,7 @@ private data class PhotoOverlayState(
 )
 
 /**
- * RIC-227 : une série de questions « Bivouac détecté » en cours, avec les réponses déjà données
+ * RIC-227 : une série de questions « Arrêt prolongé détecté » en cours, avec les réponses déjà données
  * (dans l'ordre de [questions]). [Import] : un import en attente d'enregistrement, rien n'est écrit
  * avant la dernière réponse.
  */
@@ -1959,16 +1960,25 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * ([LoggedTrackRepository.applyBivouacReviewByDayPosition]), même patron que le crible du
      * premier lancement : un échec est journalisé et laisse la rando à la version 0 (le crible du
      * lancement suivant la reproposera), sans bloquer les questions des randos suivantes.
+     *
+     * RIC-229 : les réponses « Pause » sont écrites aussi (chiffres de la rando recalculés), puis la
+     * calibration Auto est recalculée, comme après un import : elle a été calculée avant le rapport,
+     * donc avant ces réponses.
      */
     private fun answerSeparateImportsQuestion(session: BivouacSession.SeparateImports, answer: BivouacReview.Answer) {
         session.answers += answer
         session.batch.completedBy(session.answers)?.let { completed ->
             viewModelScope.launch {
                 try {
-                    withContext(Dispatchers.IO) {
-                        repository.applyBivouacReviewByDayPosition(completed.track.key, completed.outcome.splits, completed.outcome.reviewVersion)
+                    val changed = withContext(Dispatchers.IO) {
+                        repository.applyBivouacReviewByDayPosition(
+                            completed.track.key,
+                            completed.outcome.splits,
+                            completed.outcome.reviewVersion,
+                            completed.outcome.pauses,
+                        ).also { changed -> if (changed) refreshAutoCalibration() }
                     }
-                    if (completed.outcome.splits.isNotEmpty()) refresh()
+                    if (changed) refresh()
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -2021,7 +2031,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** RIC-227 : les questions « Bivouac détecté » d'un import, tous fichiers du lot confondus. */
+    /** RIC-227 : les questions « Arrêt prolongé détecté » d'un import, tous fichiers du lot confondus. */
     private fun importBivouacQuestions(prepared: PreparedImport): List<BivouacReview.Question> =
         BivouacReview.questions(prepared.days.map { it.bivouacs })
 
@@ -2036,7 +2046,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * RIC-227 : réponse à la question « Bivouac détecté » affichée. [BivouacReview.Answer.KEEP]
+     * RIC-227, RIC-229 : réponse à la question « Arrêt prolongé détecté » affichée. [BivouacReview.Answer.PAUSE]
      * aussi quand l'utilisateur quitte le dialogue autrement (retour, appui hors du dialogue). Les
      * réponses sont mémorisées ; la dernière déclenche l'écriture : l'enregistrement de l'import,
      * ou le découpage de la rando ouverte pour l'action de menu.
@@ -2078,7 +2088,12 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         _importProgress.value = ImportProgress.Reading(done = 0, total = session.prepared.days.size)
         viewModelScope.launch {
             try {
-                commitReportingFailure(session.prepared, reviewed = true, splitsByDayPosition = outcome.splits)
+                commitReportingFailure(
+                    session.prepared,
+                    reviewed = true,
+                    splitsByDayPosition = outcome.splits,
+                    pausesByDayPosition = outcome.pauses,
+                )
             } finally {
                 _importProgress.value = null
                 ExclusiveOperations.finish(ExclusiveOperation.JOURNAL_IMPORT)
@@ -2103,7 +2118,13 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         bivouacDetectionRunning = true
         viewModelScope.launch {
             try {
-                val result = withContext(Dispatchers.Default) { BivouacReview.menuResult(state.daySegments.map { it.points }) }
+                // RIC-229 : toutes les nuits, refusées comprises, marquées comme telles.
+                val result = withContext(Dispatchers.Default) {
+                    BivouacReview.menuResult(
+                        state.daySegments.map { it.points },
+                        refusedStopsByDay = state.days.map { it.refusedStops() },
+                    )
+                }
                 when (result) {
                     BivouacReview.MenuResult.NoneDetected -> _bivouacDetectMessage.value = string(R.string.bivouac_detect_none)
                     BivouacReview.MenuResult.AllAlreadySplit -> _bivouacDetectMessage.value = string(R.string.bivouac_detect_all_split)
@@ -2128,20 +2149,28 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
      * est seulement marquée examinée. Avec, elle est découpée puis la vue détail se recharge comme
      * à une ouverture (les jours, la frise et l'Analyse changent) ; une édition photo non
      * enregistrée est alors abandonnée, comme à l'ouverture d'une autre rando.
+     *
+     * RIC-229 : les réponses « Pause » sont écrites aussi. Une nuit qui n'était pas refusée et le
+     * devient change les chiffres de la rando : rechargement comme pour un découpage, et la
+     * calibration Auto est recalculée, comme après un import. Une nuit refusée qui reçoit
+     * « Bivouac » est découpée (son refus disparaît avec elle).
      */
     private fun finishMenuBivouacQuestions(session: BivouacSession.Menu, answers: List<BivouacReview.Answer>) {
         bivouacSession = null
         _bivouacQuestion.value = null
         val outcome = BivouacReview.outcome(session.questions, answers)
         val splitsByDayId = outcome.splits.mapKeys { (position, _) -> session.dayIds[position] }
-        if (splitsByDayId.isNotEmpty()) _uiState.value = JournalUiState.Loading
+        val pausesByDayId = outcome.pauses.mapKeys { (position, _) -> session.dayIds[position] }
+        val reload = splitsByDayId.isNotEmpty() || BivouacReview.addsRefusals(session.questions, answers)
+        if (reload) _uiState.value = JournalUiState.Loading
         viewModelScope.launch {
             try {
                 val updated = withContext(Dispatchers.IO) {
-                    repository.applyBivouacReview(session.entry.id, splitsByDayId, outcome.reviewVersion)
+                    val changed = repository.applyBivouacReview(session.entry.id, splitsByDayId, outcome.reviewVersion, pausesByDayId)
+                    if (changed) refreshAutoCalibration()
                     repository.get(session.entry.id)
                 }
-                if (splitsByDayId.isNotEmpty()) {
+                if (reload) {
                     refresh()
                     if (updated != null) {
                         openTrackInternal(updated, dayIndex = null)
@@ -2179,10 +2208,13 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         refreshCalibration: Boolean = true,
         reviewed: Boolean,
         splitsByDayPosition: Map<Int, List<DetectedBivouac>> = emptyMap(),
+        pausesByDayPosition: Map<Int, List<DetectedBivouac>> = emptyMap(),
     ) {
         withContext(Dispatchers.IO) {
             if (reviewed) {
-                repository.commitImportReviewed(prepared, splitsByDayPosition, BIVOUAC_REVIEW_VERSION)
+                // RIC-229 : les nuits refusées (« Pause ») aussi ; la calibration Auto est
+                // recalculée juste après, sur les chiffres déjà corrigés.
+                repository.commitImportReviewed(prepared, splitsByDayPosition, BIVOUAC_REVIEW_VERSION, pausesByDayPosition)
             } else {
                 repository.commitImport(prepared)
             }
@@ -2211,9 +2243,16 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         prepared: PreparedImport,
         reviewed: Boolean,
         splitsByDayPosition: Map<Int, List<DetectedBivouac>> = emptyMap(),
+        pausesByDayPosition: Map<Int, List<DetectedBivouac>> = emptyMap(),
     ) {
         try {
-            commit(prepared, openAfterCommit = true, reviewed = reviewed, splitsByDayPosition = splitsByDayPosition)
+            commit(
+                prepared,
+                openAfterCommit = true,
+                reviewed = reviewed,
+                splitsByDayPosition = splitsByDayPosition,
+                pausesByDayPosition = pausesByDayPosition,
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -2251,6 +2290,9 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             pointsByDay = detail.daySegments.map { it.points },
             calibration = calibration,
             referencePaceBands = referenceBands,
+            // RIC-229 : les nuits refusées (« Pause ») de chaque jour, pauses forcées comme dans le
+            // Journal. detail.days et detail.daySegments ont le même ordre et la même taille.
+            refusedStopsByDay = detail.days.map { it.refusedStops() },
         )
         val tracks = repository.list()
         val daysByTrackId = repository.allDaysByTrackId()

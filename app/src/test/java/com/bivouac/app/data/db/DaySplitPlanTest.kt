@@ -7,7 +7,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.fail
 import org.junit.Test
 
-/** RIC-226 : [DaySplitPlan.fileRanges], les plages des jours issus d'un découpage (calcul pur). */
+/**
+ * RIC-226 : [DaySplitPlan.fileRanges], les plages des jours issus d'un découpage (calcul pur).
+ * RIC-229 : [DaySplitPlan.refusedStopsByPiece], les refus transmis à chaque morceau.
+ */
 class DaySplitPlanTest {
 
     private fun bivouac(stop: Int, resume: Int = stop + 1) =
@@ -53,5 +56,28 @@ class DaySplitPlanTest {
                 // attendu
             }
         }
+    }
+
+    @Test
+    fun refusalsGoToThePieceThatHoldsThemRebasedToItsOrigin() {
+        // Jour de 45 points découpé à 14 : morceaux 0..14 et 15..44. Refus à 5 (premier morceau) et
+        // à 29 (second morceau, 14e point de celui-ci).
+        assertEquals(
+            listOf(setOf(5), setOf(14)),
+            DaySplitPlan.refusedStopsByPiece(45, listOf(bivouac(14)), setOf(5, 29)),
+        )
+    }
+
+    @Test
+    fun aRefusalOnTheSplitStopOrOutsideTheDayDisappears() {
+        assertEquals(
+            listOf(emptySet<Int>(), emptySet()),
+            DaySplitPlan.refusedStopsByPiece(30, listOf(bivouac(14)), setOf(14, 29, 40)),
+        )
+        // Sans refus, des ensembles vides, un par morceau.
+        assertEquals(
+            listOf(emptySet<Int>(), emptySet(), emptySet()),
+            DaySplitPlan.refusedStopsByPiece(45, listOf(bivouac(29), bivouac(14)), emptySet()),
+        )
     }
 }

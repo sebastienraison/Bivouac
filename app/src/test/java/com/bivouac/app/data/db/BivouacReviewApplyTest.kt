@@ -134,4 +134,88 @@ class BivouacReviewApplyTest {
         assertEquals(1, dao.getDays(other).size)
         assertEquals(BIVOUAC_REVIEW_VERSION, dao.get(other)!!.bivouacReviewVersion)
     }
+
+    // --- RIC-229 : réponse « Pause » mémorisée, chiffres recalculés -------------------------------------
+
+    @Test
+    fun aPauseAnswerAtImportIsStoredAndTheDayFiguresIncludeTheNight() = runBlocking {
+        val prepared = prepare()
+        val (first, second) = prepared.days.single().bivouacs
+        val asBivouacs = prepared.days.single()
+        val id = repository.commitImportReviewed(prepared, emptyMap(), BIVOUAC_REVIEW_VERSION, mapOf(0 to listOf(first)))
+
+        val day = dao.getDays(id).single()
+        assertEquals("14", day.refusedBivouacStops)
+        assertEquals(BIVOUAC_REVIEW_VERSION, dao.get(id)!!.bivouacReviewVersion)
+        // La première nuit (15 h) passe dans l'écoulé et dans la pause ; la seconde reste un bivouac.
+        assertEquals(asBivouacs.elapsedSeconds!! + 15 * 3_600, day.elapsedSeconds)
+        assertTrue(day.pausedSeconds!! >= 15 * 3_600.0)
+        assertTrue(asBivouacs.pausedSeconds!! < 3_600.0)
+        // Distance du trou comptée (141 m), plus de coupure de série à cet arrêt.
+        assertEquals(asBivouacs.distanceMeters!! + 141.0, day.distanceMeters!!, 0.5)
+        assertEquals(day.distanceMeters!!, dao.get(id)!!.distanceMeters, 1e-6)
+        // L'écran ne voit plus que le second arrêt comme bivouac (carte, duplication).
+        assertEquals(listOf(second.stopIndex), repository.openDetail(id)!!.bivouacStopIndices)
+    }
+
+    @Test
+    fun aPauseIsKeptWhenAnotherStopOfTheSameDayIsSplit() = runBlocking {
+        val id = repository.commitImport(prepare())
+        val day = dao.getDays(id).single()
+        val (first, second) = repository.daysWithPoints(id).second.let { com.bivouac.app.journal.BivouacReview.detectDays(it).single() }
+        // Crible : « Pause » à la seconde nuit, puis, plus tard, « Bivouac » à la première.
+        assertTrue(repository.applyBivouacReview(id, emptyMap(), BIVOUAC_REVIEW_VERSION, mapOf(day.id to listOf(second))))
+        assertEquals(setOf(29), dao.getDays(id).single().refusedStops())
+
+        assertTrue(repository.applyBivouacReview(id, mapOf(day.id to listOf(first)), BIVOUAC_REVIEW_VERSION))
+        val days = dao.getDays(id).sortedBy { it.dayIndex }
+        assertEquals(listOf(0 to 14, 15 to 44), days.map { it.firstPointIndex to it.lastPointIndex })
+        assertEquals(listOf(emptySet(), setOf(14)), days.map { it.refusedStops() })
+        assertTrue(days[1].pausedSeconds!! >= 15 * 3_600.0)
+    }
+
+    @Test
+    fun answeringBivouacFromTheMenuToARefusedNightRemovesTheRefusalAndSplits() = runBlocking {
+        val id = repository.commitImport(prepare())
+        val day = dao.getDays(id).single()
+        val both = com.bivouac.app.journal.BivouacReview.detectDays(repository.daysWithPoints(id).second).single()
+        repository.applyBivouacReview(id, emptyMap(), BIVOUAC_REVIEW_VERSION, mapOf(day.id to both))
+        assertEquals(setOf(14, 29), dao.getDays(id).single().refusedStops())
+
+        // Action de menu : les deux nuits reproposées, marquées refusées ; « Bivouac » à la première,
+        // « Pause » à la seconde.
+        val (days, points) = repository.daysWithPoints(id)
+        val result = com.bivouac.app.journal.BivouacReview.menuResult(points, refusedStopsByDay = days.map { it.refusedStops() })
+        val questions = (result as com.bivouac.app.journal.BivouacReview.MenuResult.Ask).questions
+        assertEquals(listOf(true, true), questions.map { it.wasRefused })
+        val outcome = com.bivouac.app.journal.BivouacReview.outcome(
+            questions,
+            listOf(com.bivouac.app.journal.BivouacReview.Answer.SPLIT, com.bivouac.app.journal.BivouacReview.Answer.PAUSE),
+        )
+        val ids = days.map { it.id }
+        repository.applyBivouacReview(
+            id,
+            outcome.splits.mapKeys { (position, _) -> ids[position] },
+            outcome.reviewVersion,
+            outcome.pauses.mapKeys { (position, _) -> ids[position] },
+        )
+
+        val after = dao.getDays(id).sortedBy { it.dayIndex }
+        assertEquals(2, after.size)
+        assertEquals(listOf(emptySet(), setOf(14)), after.map { it.refusedStops() })
+        // Le premier jour, découpé, n'a plus la nuit : ni écoulée ni en pause.
+        assertTrue(after[0].elapsedSeconds!! < 3_600)
+    }
+
+    @Test
+    fun noChangeWritesNothingButTheVersion() = runBlocking {
+        val id = repository.commitImport(prepare())
+        val before = dao.getDays(id).single()
+        val second = com.bivouac.app.journal.BivouacReview.detectDays(repository.daysWithPoints(id).second).single()[1]
+        repository.applyBivouacReview(id, emptyMap(), BIVOUAC_REVIEW_VERSION, mapOf(before.id to listOf(second)))
+        val refused = dao.getDays(id).single()
+        // Même réponse une seconde fois : rien ne change, rien n'est réécrit.
+        assertTrue(!repository.applyBivouacReview(id, emptyMap(), BIVOUAC_REVIEW_VERSION, mapOf(before.id to listOf(second))))
+        assertEquals(refused, dao.getDays(id).single())
+    }
 }

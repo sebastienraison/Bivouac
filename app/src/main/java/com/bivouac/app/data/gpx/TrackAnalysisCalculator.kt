@@ -61,6 +61,9 @@ data class AnalyzedPause(
  * RIC-226 : [bivouacs], les nuits détectées à l'intérieur du jour ([DayBivouacs.detect]), vides pour
  * un jour sans nuit. Aucun tronçon ni aucune pause ne les traverse ; la frise
  * ([TrackTimelineCalculator]) les lit ici pour les sortir des phases de marche.
+ *
+ * RIC-229 : ce sont les bivouacs EFFECTIFS ([DayBivouacs.effective]). Une nuit refusée (« Pause »)
+ * n'y est pas : elle est dans [pauses], comme pause forcée, et la frise en fait un bloc de pause.
  */
 data class DayAnalysis(
     val segments: List<AnalyzedSegment>,
@@ -171,6 +174,13 @@ object TrackAnalysisCalculator {
      * locale) se calcule comme le Journal le range : pauses et tronçons détectés de part et d'autre
      * de la nuit, durée écoulée sans elle, distance du trou comptée en deçà de 50 m seulement.
      * Temps de marche, part de marche et écart à l'estimation restent ainsi ceux du Journal.
+     *
+     * RIC-229 : [refusedStopsByDay], les arrêts refusés de chaque jour (`logged_track_day.
+     * refusedBivouacStops`, index du jour), dans l'ordre de [pointsByDay] ; vide ou plus court :
+     * aucun refus. Une nuit refusée est une pause forcée, exactement comme dans le Journal
+     * ([JournalDayStats]) : dans l'écoulé et le temps de pause, hors du temps de marche, sans
+     * coupure de série. La part de marche et l'écart à l'estimation en tiennent compte comme de
+     * toute pause.
      */
     fun compute(
         pointsByDay: List<List<TrackPoint>>,
@@ -178,10 +188,12 @@ object TrackAnalysisCalculator {
         referencePaceBands: List<PaceBandSum>,
         parameters: AnalysisParameters = AnalysisParameters.DEFAULT,
         zoneFor: (TrackPoint) -> ZoneId = LocalZone::forPoint,
+        refusedStopsByDay: List<Set<Int>> = emptyList(),
     ): TrackAnalysis {
-        val daysRaw = pointsByDay.map { points ->
-            val bivouacs = DayBivouacs.detect(points, zoneFor)
-            val found = DayBivouacs.pausesAndSegments(points, bivouacs, parameters)
+        val daysRaw = pointsByDay.mapIndexed { index, points ->
+            val nights = DayBivouacs.nights(points, refusedStopsByDay.getOrNull(index).orEmpty(), zoneFor)
+            val bivouacs = nights.bivouacs
+            val found = DayBivouacs.pausesAndSegments(points, bivouacs, parameters, DayBivouacs.forcedPauses(nights.refused))
             DayRaw(
                 points = points,
                 series = TrackStatsCalculator.series(points, DayBivouacs.seriesBreaks(points, bivouacs)),

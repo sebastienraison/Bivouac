@@ -234,6 +234,135 @@ class DayBivouacsTest {
         assertEquals(setOf(3), DayJunctions.journalSeriesBreaks(listOf(3)))
     }
 
+    // --- RIC-229 : une nuit refusée (« Pause ») est une pause, pas un bivouac -----------------------
+
+    @Test
+    fun effectiveBivouacsLeaveOutTheRefusedStopsAndIgnoreUnknownOnes() {
+        val built = build(141.0, halfDays = 3)
+        val (s1, s2) = built.stopIndices
+        assertEquals(built.stopIndices, DayBivouacs.effective(built.points, emptySet(), paris).map { it.stopIndex })
+        assertEquals(listOf(s2), DayBivouacs.effective(built.points, setOf(s1), paris).map { it.stopIndex })
+        assertTrue(DayBivouacs.effective(built.points, setOf(s1, s2), paris).isEmpty())
+        // Un refus qui ne tombe sur aucune nuit détectée est ignoré.
+        assertEquals(built.stopIndices, DayBivouacs.effective(built.points, setOf(3, built.points.size + 5), paris).map { it.stopIndex })
+
+        val nights = DayBivouacs.nights(built.points, setOf(s1, 3), paris)
+        assertEquals(listOf(s1), nights.refused.map { it.stopIndex })
+        assertEquals(listOf(s2), nights.bivouacs.map { it.stopIndex })
+        assertEquals(listOf(s1 to s1 + 1), DayBivouacs.forcedPauses(nights.refused))
+    }
+
+    @Test
+    fun theTesterCaseRefusedIs31HoursElapsed14HoursWalkingAndTheNightInPause() {
+        // Cas du testeur F-Droid : 7 h de marche, nuit de 17 h reprise à 141 m, 7 h de marche.
+        val built = build(141.0)
+        val stop = built.stopIndices.single()
+        val refused = JournalDayStats.of(built.points, zoneFor = paris, refusedStops = setOf(stop))
+        val split = JournalDayStats.of(built.points, zoneFor = paris)
+
+        assertTrue(refused.bivouacs.isEmpty())
+        assertEquals(listOf(stop), refused.refusedNights.map { it.stopIndex })
+        // Écoulé : du premier au dernier point, nuit comprise (31 h).
+        assertEquals(2 * HALF_DAY_SECONDS + NIGHT_HOURS * 3_600, refused.elapsedSeconds)
+        // Pause : la nuit seule (la marche est continue de part et d'autre).
+        assertEquals(NIGHT_HOURS * 3_600.0, refused.sums.pausedSeconds, 0.0)
+        // Heures à l'arrêt de la calibration : sans la nuit, comme le jour découpé (Seb, 15/10).
+        assertEquals(split.sums.aggregate.stoppedHours, refused.sums.aggregate.stoppedHours, 0.0)
+        val real = RealDurationCalculator.forDays(listOf(dayRow(refused)))!!
+        assertEquals(2 * HALF_DAY_SECONDS, real.walkingSeconds)
+        assertEquals(45, real.walkingSharePercent)
+        // Aucune coupure de série : la distance du trou (141 m) est comptée.
+        assertTrue(DayBivouacs.seriesBreaks(built.points, refused.bivouacs).isEmpty())
+        assertEquals(TrackStatsCalculator.compute(built.points).distanceMeters, refused.stats.distanceMeters, 0.0)
+        assertEquals(141.0, refused.stats.distanceMeters - split.stats.distanceMeters, 0.5)
+
+        // Le même accepté (bivouac, réponse « Bivouac » ou pas encore de réponse) : lot 2 inchangé.
+        assertEquals(listOf(stop), split.bivouacs.map { it.stopIndex })
+        assertTrue(split.refusedNights.isEmpty())
+        assertEquals(2 * HALF_DAY_SECONDS, split.elapsedSeconds)
+        assertEquals(0.0, split.sums.pausedSeconds, 0.0)
+    }
+
+    @Test
+    fun aRefusedNightResumedAt30MetersPausesLikeADetectedPauseButStaysOutOfTheCalibration() {
+        val built = build(30.0)
+        val stop = built.stopIndices.single()
+        val refused = JournalDayStats.of(built.points, zoneFor = paris, refusedStops = setOf(stop))
+        // Référence : le jour calculé sans aucune notion de bivouac, où la règle des 50 m voit déjà
+        // la nuit comme une pause. Mêmes pauses, même distance, même écoulé...
+        val asPause = DaySegmentSums.of(built.points)
+        assertEquals(asPause.pausedSeconds, refused.sums.pausedSeconds, 1e-9)
+        assertEquals(TrackStatsCalculator.compute(built.points).distanceMeters, refused.stats.distanceMeters, 0.0)
+        assertEquals(2 * HALF_DAY_SECONDS + NIGHT_HOURS * 3_600, refused.elapsedSeconds)
+        // ... mais pas les sommes de calibration (décision de Seb du 15/10) : la pause détectée met
+        // ses 17 h dans les heures à l'arrêt, la nuit refusée non. Celles-ci sont, comme le rythme
+        // par pente, exactement celles du jour avec la nuit en bivouac.
+        assertTrue(asPause.aggregate.stoppedHours >= NIGHT_HOURS)
+        val asBivouac = JournalDayStats.of(built.points, zoneFor = paris)
+        assertEquals(asBivouac.sums.aggregate, refused.sums.aggregate)
+        assertEquals(asBivouac.sums.paceBands, refused.sums.paceBands)
+    }
+
+    @Test
+    fun theRefusedNightStaysOutOfEverySegmentAndOutOfTheStoppedHours() {
+        val built = build(141.0)
+        val stop = built.stopIndices.single()
+        val refused = JournalDayStats.of(built.points, zoneFor = paris, refusedStops = setOf(stop))
+        val split = JournalDayStats.of(built.points, zoneFor = paris)
+        val found = DayBivouacs.pausesAndSegments(built.points, emptyList(), forcedPauses = listOf(stop to stop + 1))
+
+        // La nuit est une pause rendue (temps de pause, frise, Analyse)...
+        assertTrue(found.pauses.any { it.startIndex <= stop && it.endIndex >= stop + 1 && it.seconds >= NIGHT_HOURS * 3_600.0 })
+        // ... mais aucun tronçon de 200 m ne la traverse.
+        assertTrue(found.segments.none { it.startIndex <= stop && it.endIndex >= stop + 1 })
+        // Sommes de calibration et rythme par pente : ceux du jour avec la nuit en bivouac, heures à
+        // l'arrêt comprises (la nuit n'y est pas : provision de pause de la calibration Auto intacte).
+        assertEquals(split.sums.aggregate, refused.sums.aggregate)
+        assertEquals(split.sums.paceBands, refused.sums.paceBands)
+        assertTrue(refused.sums.aggregate.stoppedHours < 1.0)
+        // Seul le temps de pause du jour garde la nuit : c'est la durée de pause affichée.
+        assertEquals(split.sums.pausedSeconds + NIGHT_HOURS * 3_600.0, refused.sums.pausedSeconds, 1e-9)
+    }
+
+    @Test
+    fun analysisAndTimelineAgreeWithTheJournalForARefusedNight() {
+        val built = build(141.0)
+        val stop = built.stopIndices.single()
+        val figures = JournalDayStats.of(built.points, zoneFor = paris, refusedStops = setOf(stop))
+        val real = RealDurationCalculator.forDays(listOf(dayRow(figures)))!!
+        val analysis = TrackAnalysisCalculator.compute(
+            listOf(built.points), SpeedCalibration.DEFAULT, emptyList(), zoneFor = paris, refusedStopsByDay = listOf(setOf(stop)),
+        )
+        val totals = analysis.totals!!
+        assertTrue(analysis.days.single().bivouacs.isEmpty())
+        assertEquals(real.elapsedSeconds.toDouble(), totals.elapsedSeconds, 1.0)
+        assertEquals(figures.sums.pausedSeconds, totals.pausedSeconds, 1e-9)
+        assertEquals(real.walkingSeconds!!.toDouble(), totals.movingSeconds, 1.0)
+        assertEquals(figures.stats.distanceMeters, totals.distanceMeters, 1e-6)
+        // Forme du jour : l'écart à l'estimation se mesure sur l'écoulé nuit comprise.
+        assertEquals(totals.elapsedSeconds - analysis.estimate!!.totalSeconds, analysis.estimate!!.deltaSeconds, 1e-9)
+
+        val timeline = TrackTimelineCalculator.compute(listOf(built.points), analysis)
+        assertEquals(real.walkingSharePercent, timeline.walkingSharePercent)
+        val day = timeline.days!!.single()
+        // Un bloc pause ordinaire couvre la nuit ; aucun bloc « au bivouac ».
+        val pauses = day.elements.filterIsInstance<TimelinePause>()
+        assertTrue(pauses.none { it.isBivouac })
+        val night = pauses.single { it.startIndex <= stop && it.endIndex >= stop + 1 }
+        assertEquals(NIGHT_HOURS * 3_600.0, night.pausedSeconds, 0.0)
+        assertEquals(0.0, day.bivouacSeconds, 0.0)
+        // Durée du jour (titre de la frise) : l'écart d'horloge, nuit comprise.
+        assertEquals((2 * HALF_DAY_SECONDS + NIGHT_HOURS * 3_600).toDouble(), day.elapsedSeconds, 0.0)
+        assertEquals(day.elapsedSeconds, com.bivouac.app.ui.journal.timelineDayDurationSeconds(day), 0.0)
+        // Le déroulé reste continu.
+        var cursor = 0.0
+        for (element in day.elements) {
+            assertEquals(cursor, element.startSeconds, 1e-6)
+            cursor = element.endSeconds
+        }
+        assertEquals(day.elapsedSeconds, cursor, 1e-6)
+    }
+
     private fun dayRow(figures: JournalDayStats) = LoggedTrackDayEntity(
         trackId = "t",
         dayIndex = 0,
