@@ -1579,6 +1579,10 @@ class LoggedTrackRepository(context: Context) {
 
         val fallbackSamples = entries.mapNotNull { entry ->
             val days = daysByTrack[entry.id].orEmpty()
+            // RIC-231 : un jour sans altitude exploitable a un D+ de 0 qui n'est pas une mesure : en
+            // faire un échantillon « à plat » fausserait la vitesse. Les sommes de segments l'écartent
+            // déjà (aucun tronçon sans altitude), le repli doit en faire autant.
+            if (days.any { it.elevationAvailable == false }) return@mapNotNull null
             // Une trace dont un seul jour n'est pas encore rattrapé repasse entièrement par
             // l'ancien chemin : mélanger une somme partielle avec des jours ignorés donnerait une
             // durée écoulée trop courte, donc une vitesse trop rapide, silencieusement.

@@ -157,6 +157,33 @@ class ElevationAvailabilityBackfillTest {
         assertEquals(false, loggedDao.getDays("no-ele").single().elevationAvailable)
     }
 
+    // La calibration de repli (une ligne par rando) n'apprend rien d'une rando sans altitude : son D+
+    // de 0 n'est pas une mesure.
+    @Test
+    fun theCalibrationFallbackIgnoresATrackWithoutElevation() = runBlocking {
+        for ((id, available) in listOf("no-ele" to false, "relief" to true)) {
+            loggedDao.insertTrack(
+                LoggedTrackEntity(
+                    id = id, name = id, startedAt = 0L, contentHash = "hash-$id",
+                    distanceMeters = 5_000.0, elevationGainMeters = 0.0, elevationLossMeters = 0.0,
+                    pointCount = 0, estimatedDurationMinutes = 0,
+                ),
+            )
+            loggedDao.insertDays(
+                listOf(
+                    LoggedTrackDayEntity(
+                        trackId = id, dayIndex = 0, rawGpxFilePath = "gpx/$id.gpx", contentHash = "day-$id",
+                        elapsedSeconds = 3_600L, elevationAvailable = available,
+                    ),
+                ),
+            )
+        }
+
+        val input = LoggedTrackRepository(context).calibrationSamples()
+
+        assertEquals(1, input.fallbackSamples.size)
+    }
+
     // --- Banque ---
 
     private suspend fun insertBanked(id: String, points: List<TrackPoint>, available: Boolean? = null) {

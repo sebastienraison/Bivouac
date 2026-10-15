@@ -69,7 +69,11 @@ class TrackStatsBackfillTest {
             repeat(15) { i ->
                 val lat = 45.0 + latOffsetDeg + i * 30.0 * degPerMeter
                 val seconds = (i * 30.0 / 1000.0 / 4.0 * 3600.0).toLong()
-                append("<trkpt lat=\"$lat\" lon=\"6.0\"><ele>1000.0</ele><time>${baseTime.plusSeconds(seconds)}</time></trkpt>\n")
+                // RIC-231 : un millimètre par point, pas 1000.0 partout : des altitudes toutes identiques
+                // font de la trace une trace « sans altitude » (ElevationAvailability), que la calibration
+                // de repli ignore. Trop peu pour changer une pente ou un D+.
+                val ele = 1000.0 + i * 0.001
+                append("<trkpt lat=\"$lat\" lon=\"6.0\"><ele>$ele</ele><time>${baseTime.plusSeconds(seconds)}</time></trkpt>\n")
             }
             append("</trkseg></trk></gpx>")
         }
