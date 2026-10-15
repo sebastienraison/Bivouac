@@ -31,7 +31,7 @@ abstract class BivouacDatabase : RoomDatabase() {
         // Single source of truth for both the @Database version above and the BIV-66
         // restore-time check ("this backup is newer than the app can open"): a real filename,
         // not a comment reference, so the two can never silently drift apart.
-        const val SCHEMA_VERSION = 22
+        const val SCHEMA_VERSION = 23
         const val DATABASE_NAME = "bivouac.db"
 
         @Volatile private var instance: BivouacDatabase? = null
@@ -587,6 +587,19 @@ abstract class BivouacDatabase : RoomDatabase() {
             }
         }
 
+        // RIC-229 (lot 7 de la 2.7.0, conception RIC-222 §10) : logged_track_day gagne
+        // refusedBivouacStops, les arrêts prolongés du jour auxquels l'utilisateur a répondu
+        // « Pause » (voir LoggedTrackDayEntity et RefusedBivouacStops). Un ALTER TABLE ADD COLUMN,
+        // aucune donnée réécrite : les lignes existantes arrivent nulles, c'est-à-dire sans refus,
+        // ce qu'elles sont (la réponse « Ne pas découper » d'avant ce ticket n'était mémorisée nulle
+        // part). Rien à rattraper : ni ALGORITHM_VERSION ni BIVOUAC_REVIEW_VERSION ne bougent.
+        // Cible : schemas/23.json.
+        val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `logged_track_day` ADD COLUMN `refusedBivouacStops` TEXT")
+            }
+        }
+
         // ~256K points de code par tranche : au pire quadruplé en UTF-8 ça reste sous la fenêtre de
         // 2 Mo, et un GPX réel (ASCII pour l'essentiel) en est très loin.
         private const val MIGRATION_CHUNK_CODE_POINTS = 256 * 1024
@@ -668,6 +681,7 @@ abstract class BivouacDatabase : RoomDatabase() {
                         MIGRATION_19_20,
                         MIGRATION_20_21,
                         MIGRATION_21_22,
+                        MIGRATION_22_23,
                     )
                     .build()
                     .also { instance = it }

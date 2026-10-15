@@ -62,6 +62,11 @@ data class TrackStatsParameters(
          * comptés que si la reprise est à moins de 50 m. Un jour sans bivouac ne change pas ; la
          * Banque est recalculée à l'identique, le marqueur étant commun, et la calibration Auto et
          * Sélection est recalculée derrière (CalibrationRefresh).
+         *
+         * RIC-229 : pas de v5. Une nuit refusée (« Pause ») se calcule autrement qu'un bivouac,
+         * mais aucune rando existante n'a de refus mémorisé (colonne refusedBivouacStops nulle
+         * partout après la migration 22 vers 23) : il n'y a rien à recalculer. Les chiffres d'un
+         * jour sont recalculés au moment où un refus est écrit (LoggedTrackRepository).
          */
         const val ALGORITHM_VERSION = 4
     }
@@ -74,5 +79,9 @@ data class TrackStatsParameters(
  * non, et même quand aucun bivouac n'a été trouvé. Une rando en dessous de cette version est
  * repassée au crible au lancement suivant (voir ElevationBackfillGate). La monter reproposerait
  * toutes les randos : à réserver à un changement de la règle de détection (BivouacDetector).
+ *
+ * RIC-229 : reste à 1. La réponse « Pause » est désormais mémorisée par jour
+ * (logged_track_day.refusedBivouacStops), mais les randos déjà examinées n'en ont aucune à
+ * retrouver : les reproposer toutes n'apporterait rien, l'action de menu suffit pour y revenir.
  */
 const val BIVOUAC_REVIEW_VERSION = 1

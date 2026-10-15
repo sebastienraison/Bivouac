@@ -125,4 +125,12 @@ data class LoggedTrackDayEntity(
     // DayPoints, seul endroit qui applique cette plage.
     val firstPointIndex: Int? = null,
     val lastPointIndex: Int? = null,
+    // RIC-229 (lot 7 de la 2.7.0, conception RIC-222 §10) : les arrêts prolongés de ce jour auxquels
+    // l'utilisateur a répondu « Pause » (une nuit détectée qui n'est pas un bivouac), en index des
+    // points DU JOUR (DayPoints, plage appliquée), même convention que DetectedBivouac.stopIndex.
+    // Entiers croissants séparés par des virgules (« 14,29 »), comme bivouacTrackPointIndices des
+    // traces de la Planification : lisible tel quel dans la base, sans dépendance JSON. Nulle (ou
+    // vide) : aucun refus, l'état de toutes les lignes d'avant la migration 22 vers 23 et de tout
+    // jour pas encore examiné. Lue et écrite par RefusedBivouacStops, seul endroit qui la décode.
+    val refusedBivouacStops: String? = null,
 )

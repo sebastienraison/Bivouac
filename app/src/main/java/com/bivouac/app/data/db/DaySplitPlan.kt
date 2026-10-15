@@ -37,6 +37,24 @@ internal object DaySplitPlan {
                 "Bivouacs qui se chevauchent : [${previous.stopIndex}, ${previous.resumeIndex}] et [${next.stopIndex}, ${next.resumeIndex}]"
             }
         }
+        return localRanges(dayPointCount, sorted).map { (it.first + fileOffset)..(it.last + fileOffset) }
+    }
+
+    /**
+     * RIC-229 : les arrêts refusés (« Pause ») de chacun des jours issus du découpage, dans l'ordre
+     * de [fileRanges], en index des points DU MORCEAU. [refusedStops] en index du jour d'origine,
+     * comme [bivouacs], supposés déjà validés par [fileRanges].
+     *
+     * Un refus va au morceau qui contient son arrêt ET sa reprise, ramené à l'origine de ce
+     * morceau. Un refus sur un arrêt découpé ici disparaît (la nuit devient une fin de journée,
+     * c'est le cas « Bivouac » répondu à une nuit refusée), comme un refus hors du jour.
+     */
+    fun refusedStopsByPiece(dayPointCount: Int, bivouacs: List<DetectedBivouac>, refusedStops: Set<Int>): List<Set<Int>> =
+        localRanges(dayPointCount, bivouacs.sortedBy { it.stopIndex }).map { piece ->
+            refusedStops.filter { it >= piece.first && it + 1 <= piece.last }.map { it - piece.first }.toSortedSet()
+        }
+
+    private fun localRanges(dayPointCount: Int, sorted: List<DetectedBivouac>): List<IntRange> {
         val local = mutableListOf<IntRange>()
         var start = 0
         for (bivouac in sorted) {
@@ -44,6 +62,6 @@ internal object DaySplitPlan {
             start = bivouac.resumeIndex
         }
         local += start until dayPointCount
-        return local.map { (it.first + fileOffset)..(it.last + fileOffset) }
+        return local
     }
 }
