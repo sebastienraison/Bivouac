@@ -263,6 +263,15 @@ android {
             // RIC-201 : BUILD_DATE n'est pas fixé ici (buildConfigField classique), mais plus bas
             // via androidComponents.onVariants -- voir le commentaire RIC-133/RIC-201 en tête de
             // fichier pour la raison : il faut que la lecture de `git log` reste paresseuse.
+            // RIC-217 : AGP range sinon META-INF/version-control-info.textproto dans l'APK et le
+            // bundle : `revision: "<sha>"` depuis un clone, `generate_error_reason:
+            // NO_VALID_GIT_FOUND` depuis un worktree. Le contenu dépendait donc de l'endroit où
+            // le build est lancé, ce qui rendait un APK construit dans un worktree non
+            // reproductible par F-Droid. Propriété par buildType (pas au niveau android {}) :
+            // https://developer.android.com/reference/tools/gradle-api/9.3/com/android/build/api/dsl/VcsInfo
+            vcsInfo {
+                include = false
+            }
         }
     }
     // RIC-201 : le bloc de métadonnées de dépendances qu'AGP place par défaut dans l'APK Signing
