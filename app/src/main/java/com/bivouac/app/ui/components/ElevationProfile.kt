@@ -187,7 +187,8 @@ fun ElevationProfile(
     cursorIndex: Int? = null,
     onCursorDragged: (Int) -> Unit = {},
     // Journal : dernier point de chaque jour qui s'achève, sur une sortie de plusieurs fichiers.
-    // Planification : les bivouacs. Ne sert qu'au dessin des coupures d'enregistrement.
+    // Planification : les coupures d'enregistrement (DayJunctions.planificationSeriesBreaks, RIC-223),
+    // pas tous les bivouacs. Ne sert qu'au dessin : recordingGaps n'en garde que celles de plus de 50 m.
     dayBoundaryIndices: List<Int> = emptyList(),
     // RIC-114 : coupures de la série commune, calculées par l'appelant avec le même helper que
     // ses statistiques (DayJunctions.journalSeriesBreaks / planificationSeriesBreaks).

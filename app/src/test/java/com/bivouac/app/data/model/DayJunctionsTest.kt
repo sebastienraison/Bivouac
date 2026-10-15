@@ -1,6 +1,7 @@
 package com.bivouac.app.data.model
 
-import com.bivouac.app.data.model.TrackPoint
+import java.time.Instant
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -80,4 +81,122 @@ class DayJunctionsTest {
         val points = listOf(pointAt(45.1000, 5.7000), pointAt(45.5000, 5.7000))
         assertEquals(emptySet<Int>(), DayJunctions.recordingGaps(points, emptyList()))
     }
+
+    // --- RIC-223 : coupures de la Planification par la règle du bivouac ---
+    //
+    // Traces sur un méridien (la distance entre deux points vaut l'écart de leur abscisse), fuseau
+    // imposé à Europe/Paris (UTC+2 en juillet) pour que "20 h 30 locale" ne dépende pas de la machine.
+
+    private val paris: (TrackPoint) -> ZoneId = { ZoneId.of("Europe/Paris") }
+    private val degPerMeter = Math.toDegrees(1.0 / 6_371_000.0)
+
+    private fun meridianPoint(northMeters: Double, time: Instant?) = TrackPoint(
+        latitude = 45.0 + northMeters * degPerMeter,
+        longitude = 6.0,
+        elevationMeters = 1500.0,
+        time = time,
+    )
+
+    /**
+     * 11 points (index 0 à 10) espacés de [stepMeters]. Si [times] est fourni, il donne l'heure de
+     * chacun ; [gapAfter] (index) ajoute [gapMeters] (négatif pour rapprocher) entre ce point et le
+     * suivant et décale les abscisses des suivants d'autant.
+     */
+    private fun trace(
+        stepMeters: Double,
+        times: List<Instant>? = null,
+        gapAfter: Int? = null,
+        gapMeters: Double = 0.0,
+    ): List<TrackPoint> {
+        var north = 0.0
+        return (0..10).map { i ->
+            if (i > 0) north += stepMeters + if (gapAfter == i - 1) gapMeters else 0.0
+            meridianPoint(north, times?.get(i))
+        }
+    }
+
+    @Test
+    fun `planification - un itineraire sans heures n'a jamais de coupure meme a points espaces de 141 m`() {
+        val points = trace(stepMeters = 141.0)
+        assertEquals(emptySet<Int>(), DayJunctions.planificationSeriesBreaks(points, listOf(5), paris))
+        assertEquals(emptySet<Int>(), DayJunctions.planificationSeriesBreaks(points, listOf(1, 5, 9), paris))
+    }
+
+    @Test
+    fun `planification - une trace horodatee continue a points espaces n'a pas de coupure`() {
+        // 2 min entre points, reprise à 141 m : le trou ne dure pas 4 h.
+        val start = Instant.parse("2026-07-01T08:00:00Z")
+        val times = (0..10).map { start.plusSeconds(120L * it) }
+        val points = trace(stepMeters = 141.0, times = times)
+        assertEquals(emptySet<Int>(), DayJunctions.planificationSeriesBreaks(points, listOf(5), paris))
+    }
+
+    @Test
+    fun `planification - une nuit de 20 h 30 a 7 h avec reprise a 2 km est une coupure`() {
+        // 20 h 30 locale = 18:30Z ; reprise à 7 h locale = 05:00Z le lendemain : 10 h 30.
+        val points = trace(
+            stepMeters = 141.0,
+            times = nightTimes(stopAt = Instant.parse("2026-07-01T18:30:00Z"), resumeAt = Instant.parse("2026-07-02T05:00:00Z")),
+            gapAfter = 5,
+            gapMeters = 2_000.0,
+        )
+        assertEquals(setOf(5), DayJunctions.planificationSeriesBreaks(points, listOf(5), paris))
+        // Un bivouac posé ailleurs sur la même trace n'est pas une coupure.
+        assertEquals(setOf(5), DayJunctions.planificationSeriesBreaks(points, listOf(2, 5, 8), paris))
+    }
+
+    @Test
+    fun `planification - la meme nuit avec reprise a 30 m est aussi une coupure car la distance ne decide plus`() {
+        val points = trace(
+            stepMeters = 141.0,
+            times = nightTimes(stopAt = Instant.parse("2026-07-01T18:30:00Z"), resumeAt = Instant.parse("2026-07-02T05:00:00Z")),
+            gapAfter = 5,
+            gapMeters = -111.0,
+        )
+        assertEquals(setOf(5), DayJunctions.planificationSeriesBreaks(points, listOf(5), paris))
+    }
+
+    @Test
+    fun `planification - une sieste de 11 h a 16 h n'est pas une coupure`() {
+        // 11 h locale = 09:00Z, 16 h locale = 14:00Z : 5 h, mais hors de la fenêtre 19 h-5 h.
+        val points = trace(
+            stepMeters = 141.0,
+            times = nightTimes(stopAt = Instant.parse("2026-07-01T09:00:00Z"), resumeAt = Instant.parse("2026-07-01T14:00:00Z")),
+            gapAfter = 5,
+            gapMeters = 2_000.0,
+        )
+        assertEquals(emptySet<Int>(), DayJunctions.planificationSeriesBreaks(points, listOf(5), paris))
+    }
+
+    @Test
+    fun `planification - un bivouac sur le dernier point ou hors de la trace ne produit ni coupure ni exception`() {
+        val points = trace(
+            stepMeters = 141.0,
+            times = nightTimes(stopAt = Instant.parse("2026-07-01T18:30:00Z"), resumeAt = Instant.parse("2026-07-02T05:00:00Z")),
+            gapAfter = 5,
+            gapMeters = 2_000.0,
+        )
+        assertEquals(emptySet<Int>(), DayJunctions.planificationSeriesBreaks(points, listOf(points.lastIndex), paris))
+        assertEquals(emptySet<Int>(), DayJunctions.planificationSeriesBreaks(points, listOf(points.size + 3, -1), paris))
+        assertEquals(emptySet<Int>(), DayJunctions.planificationSeriesBreaks(points, emptyList(), paris))
+        assertEquals(emptySet<Int>(), DayJunctions.planificationSeriesBreaks(emptyList(), listOf(0), paris))
+    }
+
+    @Test
+    fun `planification - sans fuseau fourni, le fuseau des coordonnees est utilise`() {
+        // 45 N, 6 E : Europe/Paris. Même nuit qu'au-dessus, sans passer par zoneFor.
+        val points = trace(
+            stepMeters = 141.0,
+            times = nightTimes(stopAt = Instant.parse("2026-07-01T18:30:00Z"), resumeAt = Instant.parse("2026-07-02T05:00:00Z")),
+            gapAfter = 5,
+            gapMeters = 2_000.0,
+        )
+        assertEquals(setOf(5), DayJunctions.planificationSeriesBreaks(points, listOf(5)))
+    }
+
+    /** Un point toutes les 2 min, arrêt à [stopAt] sur l'index 5, reprise à [resumeAt] sur le 6. */
+    private fun nightTimes(stopAt: Instant, resumeAt: Instant): List<Instant> =
+        (0..10).map { i ->
+            if (i <= 5) stopAt.minusSeconds(120L * (5 - i)) else resumeAt.plusSeconds(120L * (i - 6))
+        }
 }

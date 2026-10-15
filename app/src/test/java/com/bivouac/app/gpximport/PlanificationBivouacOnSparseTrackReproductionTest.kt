@@ -6,10 +6,9 @@ import com.bivouac.app.data.model.TrackPoint
 import kotlin.math.abs
 import kotlin.math.sin
 import org.junit.Assert.assertTrue
-import org.junit.Ignore
 import org.junit.Test
 
-// RIC-223, 2026-10-13 : test de reproduction, échoue tant que le défaut n'est pas corrigé.
+// RIC-223, 2026-10-13 : reproduction du défaut, devenue test de non-régression (lot 4, 2026-10-15).
 // En Planification, poser un bivouac sur un point intermédiaire d'une trace continue et clairsemée
 // (points espacés de 141 m, donc au-delà de DayJunctions.GAP_THRESHOLD_METERS = 50 m) ne doit rien
 // retirer des totaux. Le test "témoin" (même géométrie rééchantillonnée à 30 m) passe aujourd'hui :
@@ -20,7 +19,6 @@ import org.junit.Test
  * (`computeTotalStats`) utilise pour la statistique affichée en Planification. Trace continue, sans
  * horodatage, sur un méridien : la distance entre deux points vaut exactement leur écart d'abscisse.
  */
-@Ignore("RIC-223 : coupure par la règle du bivouac, lot 4")
 class PlanificationBivouacOnSparseTrackReproductionTest {
 
     private val degPerMeter = Math.toDegrees(1.0 / 6_371_000.0)

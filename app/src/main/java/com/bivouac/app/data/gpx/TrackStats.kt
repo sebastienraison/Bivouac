@@ -89,7 +89,9 @@ object TrackStatsCalculator {
      * Statistiques de toute la trace, lues sur sa série commune (voir [series]) : distance filtrée,
      * D+ et D- sur l'altitude lissée en distance. [breaks] : coupures de la série, vides pour un
      * jour du Journal calculé seul ; en Planification,
-     * [com.bivouac.app.data.model.DayJunctions.planificationSeriesBreaks].
+     * [com.bivouac.app.data.model.DayJunctions.planificationSeriesBreaks] (les bivouacs dont le
+     * trou est un bivouac au sens de la règle de la 2.7.0, RIC-223, pas ceux dont le point suivant
+     * est simplement éloigné).
      */
     fun compute(
         points: List<TrackPoint>,
