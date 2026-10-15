@@ -15,10 +15,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -63,11 +65,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -100,6 +104,17 @@ import java.util.Locale
 import kotlinx.coroutines.flow.first
 
 private val PEEK_HEIGHT_EMPTY = 150.dp
+
+/**
+ * RIC-224 : hauteur du cran bas du tiroir de la banque. Le tiroir est posé dans la fenêtre entière
+ * (edge-to-edge) : sa hauteur de repli compte donc aussi la zone de la barre de navigation. Sans
+ * elle, une barre opaque (navigation à trois boutons, 48 dp) mangeait d'autant la hauteur utile et
+ * cachait la ligne des chiffres de la première trace. La hauteur utile au-dessus de la barre reste
+ * [PEEK_HEIGHT_EMPTY] ; en gestes, la barre est fine (environ 16 dp) et la différence s'y limite.
+ * Le plafond de [halfWindowHeight] s'applique au total, pour qu'une fenêtre courte garde sa carte.
+ */
+internal fun bankPeekHeight(navigationBarHeight: Dp, maxPeekHeight: Dp): Dp =
+    (PEEK_HEIGHT_EMPTY + navigationBarHeight).coerceAtMost(maxPeekHeight)
 
 /**
  * RIC-164 : les quatre visages de l'écran Planification, dont deux seulement portent une carte.
@@ -277,6 +292,10 @@ fun GpxImportScreen(
     // the map in landscape, where total height is much smaller than the measured content needs.
     // RIC-116 : voir halfWindowHeight pour le choix de la fenêtre plutôt que de Configuration.
     val maxPeekHeight = halfWindowHeight()
+    // RIC-224 : le cran bas du tiroir de la banque se mesure depuis le bord de la fenêtre, barre
+    // de navigation comprise ; à trois boutons (opaque, 48 dp) elle cachait la fin de la première
+    // trace. Voir bankPeekHeight.
+    val navigationBarHeight = with(LocalDensity.current) { WindowInsets.navigationBars.getBottom(this).toDp() }
 
     // Hissés ici (et non plus créés dans TrackSheetContent) : le FAB flottant qui recouvre
     // maintenant le tiroir a besoin de lire ces deux états pour savoir s'il doit être étendu ou
@@ -343,7 +362,7 @@ fun GpxImportScreen(
             BottomSheetScaffold(
                 modifier = Modifier.fillMaxSize(),
                 scaffoldState = bottomSheetScaffoldState,
-                sheetPeekHeight = PEEK_HEIGHT_EMPTY.coerceAtMost(maxPeekHeight),
+                sheetPeekHeight = bankPeekHeight(navigationBarHeight, maxPeekHeight),
                 sheetContent = {
                     TrackSheetContent(
                         uiState = uiState,
