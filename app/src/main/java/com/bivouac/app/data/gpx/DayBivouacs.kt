@@ -27,8 +27,11 @@ import java.time.ZoneId
  * les arrêts refusés (`logged_track_day.refusedBivouacStops`). Une nuit refusée devient une pause
  * forcée ([pausesAndSegments], paramètre `forcedPauses`) : elle reste dans la durée écoulée, compte
  * dans le temps de pause, jamais dans le temps de marche, et ne coupe ni les morceaux ni la série
- * (la distance de l'arrêt à la reprise est comptée, comme pour toute pause). Tant qu'aucune réponse
- * n'a été donnée, il n'y a aucun refus : la nuit reste un bivouac, comme au lot 2.
+ * (la distance de l'arrêt à la reprise est comptée, comme pour toute pause). Seule exception, la
+ * calibration (Seb, 15/10) : aucun tronçon de 200 m ne la contient, si bien qu'elle n'entre ni dans
+ * les heures à l'arrêt (provision de pause de la calibration Auto) ni dans le rythme par pente.
+ * Tant qu'aucune réponse n'a été donnée, il n'y a aucun refus : la nuit reste un bivouac, comme au
+ * lot 2.
  */
 object DayBivouacs {
 
@@ -129,9 +132,14 @@ object DayBivouacs {
      * pause ni aucun tronçon ne contient la nuit. La définition de la pause ne change pas.
      *
      * RIC-229 : [forcedPauses], les nuits refusées ([forcedPauses] de [DayNights.refused]), en index
-     * du jour : des pauses quelle que soit la distance, fusionnées avec les pauses détectées. Les
-     * tronçons de 200 m qui les traversent les comptent en pause, comme toute pause : la nuit sort
-     * de leur temps de marche. Sans pause forcée, rien ne change.
+     * du jour : des pauses quelle que soit la distance, fusionnées avec les pauses détectées. Elles
+     * sont dans les PAUSES rendues (temps de pause, frise, Analyse), mais dans aucun TRONÇON : les
+     * tronçons de 200 m sont découpés de part et d'autre de chaque nuit refusée, comme pour un
+     * bivouac (décision de Seb du 15/10 : une pause de 17 h ne doit pas entrer dans les heures à
+     * l'arrêt, `DaySegmentAggregate.stoppedHours`, qui font la provision de pause de la calibration
+     * Auto). Les sommes de calibration et le rythme par pente d'un jour à nuit refusée sont donc
+     * ceux du même jour avec la nuit en bivouac ; seul le temps de pause diffère. Sans pause forcée,
+     * rien ne change.
      */
     fun pausesAndSegments(
         points: List<TrackPoint>,
@@ -141,7 +149,7 @@ object DayBivouacs {
     ): PausesAndSegments {
         if (bivouacs.isEmpty()) {
             val pauses = TrackPauseDetector.detect(points, parameters, forcedPauses)
-            return PausesAndSegments(pauses, TrackSegmenter.segment(points, pauses = pauses))
+            return PausesAndSegments(pauses, segmentsAroundForcedPauses(points, pauses, forcedPauses))
         }
         val pauses = mutableListOf<TrackPause>()
         val segments = mutableListOf<TrackSegment>()
@@ -156,10 +164,49 @@ object DayBivouacs {
                 .map { (a, b) -> (a - offset) to (b - offset) }
             val subPauses = TrackPauseDetector.detect(sub, parameters, subForced)
             pauses += subPauses.map { it.copy(startIndex = it.startIndex + offset, endIndex = it.endIndex + offset) }
-            segments += TrackSegmenter.segment(sub, pauses = subPauses)
+            segments += segmentsAroundForcedPauses(sub, subPauses, subForced)
                 .map { it.copy(startIndex = it.startIndex + offset, endIndex = it.endIndex + offset) }
         }
         return PausesAndSegments(pauses, segments)
+    }
+
+    /**
+     * RIC-229 : tronçons de 200 m de [points] découpés de part et d'autre de chaque pause forcée
+     * ([forced], trous d'enregistrement entre deux points horodatés) : aucun tronçon ne contient une
+     * nuit refusée. [pauses] (celles de [points], pauses forcées comprises) sont rognées à chaque
+     * tranche : la part d'une pause détectée qui précède ou suit la nuit reste comptée dans son
+     * tronçon, la nuit elle-même dans aucun. Sans pause forcée, [TrackSegmenter.segment] tel quel.
+     */
+    private fun segmentsAroundForcedPauses(
+        points: List<TrackPoint>,
+        pauses: List<TrackPause>,
+        forced: List<Pair<Int, Int>>,
+    ): List<TrackSegment> {
+        val cuts = forced
+            .filter { (a, b) -> a >= 0 && b <= points.lastIndex && a < b && points[a].time != null && points[b].time != null }
+            .sortedBy { it.first }
+        if (cuts.isEmpty()) return TrackSegmenter.segment(points, pauses = pauses)
+        val slices = mutableListOf<IntRange>()
+        var start = 0
+        for ((a, b) in cuts) {
+            if (a >= start) slices += start..a
+            start = maxOf(start, b)
+        }
+        slices += start..points.lastIndex
+        return slices.flatMap { slice ->
+            val sub = points.subList(slice.first, slice.last + 1)
+            val clipped = pauses.mapNotNull { pause ->
+                val lo = maxOf(pause.startIndex, slice.first)
+                val hi = minOf(pause.endIndex, slice.last)
+                if (hi <= lo || points[lo].time == null || points[hi].time == null) {
+                    null
+                } else {
+                    TrackPause(lo - slice.first, hi - slice.first, (points[hi].time!!.toEpochMilli() - points[lo].time!!.toEpochMilli()) / 1_000.0)
+                }
+            }
+            TrackSegmenter.segment(sub, pauses = clipped)
+                .map { it.copy(startIndex = it.startIndex + slice.first, endIndex = it.endIndex + slice.first) }
+        }
     }
 
     /**

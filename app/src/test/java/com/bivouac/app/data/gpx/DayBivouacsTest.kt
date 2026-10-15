@@ -266,6 +266,8 @@ class DayBivouacsTest {
         assertEquals(2 * HALF_DAY_SECONDS + NIGHT_HOURS * 3_600, refused.elapsedSeconds)
         // Pause : la nuit seule (la marche est continue de part et d'autre).
         assertEquals(NIGHT_HOURS * 3_600.0, refused.sums.pausedSeconds, 0.0)
+        // Heures à l'arrêt de la calibration : sans la nuit, comme le jour découpé (Seb, 15/10).
+        assertEquals(split.sums.aggregate.stoppedHours, refused.sums.aggregate.stoppedHours, 0.0)
         val real = RealDurationCalculator.forDays(listOf(dayRow(refused)))!!
         assertEquals(2 * HALF_DAY_SECONDS, real.walkingSeconds)
         assertEquals(45, real.walkingSharePercent)
@@ -282,48 +284,44 @@ class DayBivouacsTest {
     }
 
     @Test
-    fun aRefusedNightResumedAt30MetersGivesTheSameFiguresAsADetectedPause() {
+    fun aRefusedNightResumedAt30MetersPausesLikeADetectedPauseButStaysOutOfTheCalibration() {
         val built = build(30.0)
         val stop = built.stopIndices.single()
         val refused = JournalDayStats.of(built.points, zoneFor = paris, refusedStops = setOf(stop))
         // Référence : le jour calculé sans aucune notion de bivouac, où la règle des 50 m voit déjà
-        // la nuit comme une pause.
+        // la nuit comme une pause. Mêmes pauses, même distance, même écoulé...
         val asPause = DaySegmentSums.of(built.points)
-        assertEquals(asPause, refused.sums)
+        assertEquals(asPause.pausedSeconds, refused.sums.pausedSeconds, 1e-9)
         assertEquals(TrackStatsCalculator.compute(built.points).distanceMeters, refused.stats.distanceMeters, 0.0)
         assertEquals(2 * HALF_DAY_SECONDS + NIGHT_HOURS * 3_600, refused.elapsedSeconds)
+        // ... mais pas les sommes de calibration (décision de Seb du 15/10) : la pause détectée met
+        // ses 17 h dans les heures à l'arrêt, la nuit refusée non. Celles-ci sont, comme le rythme
+        // par pente, exactement celles du jour avec la nuit en bivouac.
+        assertTrue(asPause.aggregate.stoppedHours >= NIGHT_HOURS)
+        val asBivouac = JournalDayStats.of(built.points, zoneFor = paris)
+        assertEquals(asBivouac.sums.aggregate, refused.sums.aggregate)
+        assertEquals(asBivouac.sums.paceBands, refused.sums.paceBands)
     }
 
     @Test
-    fun theRefusedNightStaysOutOfWalkingSegmentsAndPaceBands() {
+    fun theRefusedNightStaysOutOfEverySegmentAndOutOfTheStoppedHours() {
         val built = build(141.0)
         val stop = built.stopIndices.single()
         val refused = JournalDayStats.of(built.points, zoneFor = paris, refusedStops = setOf(stop))
         val split = JournalDayStats.of(built.points, zoneFor = paris)
         val found = DayBivouacs.pausesAndSegments(built.points, emptyList(), forcedPauses = listOf(stop to stop + 1))
 
-        // Le tronçon qui traverse la nuit la compte en pause : son temps de marche est de quelques
-        // minutes, jamais 17 h.
-        val crossing = found.segments.single { it.startIndex <= stop && it.endIndex >= stop + 1 }
-        assertEquals(NIGHT_HOURS.toDouble(), crossing.pausedHours, 1e-9)
-        assertTrue(crossing.movingHours < 0.1)
-        // Temps de marche de la calibration : celui des deux demi-journées, comme découpées (à un
-        // tronçon de jonction près).
-        val aggregate = refused.sums.aggregate
-        assertTrue(aggregate.flatHours + aggregate.steepHours <= 2 * HALF_DAY_SECONDS / 3_600.0 + 1e-9)
-        assertEquals(
-            split.sums.aggregate.flatHours + split.sums.aggregate.steepHours,
-            aggregate.flatHours + aggregate.steepHours,
-            0.1,
-        )
-        // Rythme par pente : aucune bande ne voit la nuit (temps de marche de même ordre qu'en découpant).
-        assertEquals(
-            split.sums.paceBands.sumOf { it.movingSeconds },
-            refused.sums.paceBands.sumOf { it.movingSeconds },
-            360.0,
-        )
-        // Les heures à l'arrêt, elles, comptent la nuit, comme toute pause (voir le rapport RIC-229).
-        assertTrue(aggregate.stoppedHours >= NIGHT_HOURS)
+        // La nuit est une pause rendue (temps de pause, frise, Analyse)...
+        assertTrue(found.pauses.any { it.startIndex <= stop && it.endIndex >= stop + 1 && it.seconds >= NIGHT_HOURS * 3_600.0 })
+        // ... mais aucun tronçon de 200 m ne la traverse.
+        assertTrue(found.segments.none { it.startIndex <= stop && it.endIndex >= stop + 1 })
+        // Sommes de calibration et rythme par pente : ceux du jour avec la nuit en bivouac, heures à
+        // l'arrêt comprises (la nuit n'y est pas : provision de pause de la calibration Auto intacte).
+        assertEquals(split.sums.aggregate, refused.sums.aggregate)
+        assertEquals(split.sums.paceBands, refused.sums.paceBands)
+        assertTrue(refused.sums.aggregate.stoppedHours < 1.0)
+        // Seul le temps de pause du jour garde la nuit : c'est la durée de pause affichée.
+        assertEquals(split.sums.pausedSeconds + NIGHT_HOURS * 3_600.0, refused.sums.pausedSeconds, 1e-9)
     }
 
     @Test
