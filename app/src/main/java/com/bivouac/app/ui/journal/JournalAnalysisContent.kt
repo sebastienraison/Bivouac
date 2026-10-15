@@ -1,5 +1,6 @@
 package com.bivouac.app.ui.journal
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -109,12 +110,31 @@ internal fun headlineGapWordingFor(deltaMinutes: Int): HeadlineGapWording = when
 }
 
 /**
+ * RIC-231 : le texte de l'en-tête quand l'Analyse n'a pas de chiffre de tête ([TrackAnalysis.totals]
+ * nul). Les tronçons se découpent sur l'altitude lissée : une trace horodatée mais sans altitude
+ * exploitable n'en a aucun, et dire « pas d'horodatage » serait faux. Fonction pure, extraite de
+ * [AnalysisHeadlineHeader] pour être testée directement (HeadlineUnavailableTextTest).
+ *
+ * [hasTimedPoint] : au moins un point de la trace porte une heure.
+ */
+@StringRes
+internal fun headlineUnavailableTextRes(elevationAvailable: Boolean, hasTimedPoint: Boolean): Int =
+    if (!elevationAvailable && hasTimedPoint) R.string.journal_analysis_no_elevation else R.string.journal_analysis_no_timestamps
+
+/**
  * Durée réelle en grand, part de marche à côté, écart à l'estimation dessous. Remplace le chiffre
  * de tête et les quatre valeurs du lot 3 (marche/pauses/vitesse/VAM, déplacées dans "Forme du jour"
  * et "Chiffres", brief §4.5/§4.6).
  */
 @Composable
-internal fun AnalysisHeadlineHeader(result: JournalAnalysisResult?, loading: Boolean, modifier: Modifier = Modifier) {
+internal fun AnalysisHeadlineHeader(
+    result: JournalAnalysisResult?,
+    loading: Boolean,
+    modifier: Modifier = Modifier,
+    // RIC-231 : de quoi choisir entre « pas d'horodatage » et « pas d'altitude » (headlineUnavailableTextRes).
+    elevationAvailable: Boolean = true,
+    hasTimedPoint: Boolean = false,
+) {
     Column(modifier = modifier) {
         if (loading || result == null) {
             // Indicateur de progression discret pendant le calcul, hors fil principal (voir
@@ -128,8 +148,9 @@ internal fun AnalysisHeadlineHeader(result: JournalAnalysisResult?, loading: Boo
         val estimate = result.analysis.estimate
         if (totals == null || estimate == null) {
             // Brief §5 : trace sans horodatage, ce message remplace tout le chiffre de tête.
+            // RIC-231 : ou sans altitude, si elle est horodatée.
             Text(
-                text = stringResource(R.string.journal_analysis_no_timestamps),
+                text = stringResource(headlineUnavailableTextRes(elevationAvailable, hasTimedPoint)),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

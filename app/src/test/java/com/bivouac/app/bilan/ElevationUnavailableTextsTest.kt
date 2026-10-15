@@ -27,6 +27,7 @@ class ElevationUnavailableTextsTest {
         assertEquals("Pas d'altitude dans cette trace.", context.getString(R.string.elevation_profile_unavailable))
         assertTrue(context.getString(R.string.elevation_missing_banner).startsWith("Cette trace n'a pas d'altitude"))
         assertTrue(context.getString(R.string.analysis_slope_unavailable).startsWith("Pente indisponible"))
+        assertEquals("Analyse indisponible : cette trace n'a pas d'altitude.", context.getString(R.string.journal_analysis_no_elevation))
     }
 
     @Test
@@ -37,6 +38,7 @@ class ElevationUnavailableTextsTest {
         assertEquals("No elevation data in this track.", context.getString(R.string.elevation_profile_unavailable))
         assertTrue(context.getString(R.string.elevation_missing_banner).startsWith("No elevation data in this track"))
         assertTrue(context.getString(R.string.analysis_slope_unavailable).startsWith("Gradient unavailable"))
+        assertEquals("Analysis unavailable: no elevation data in this track.", context.getString(R.string.journal_analysis_no_elevation))
     }
 
     @Test

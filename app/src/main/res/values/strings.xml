@@ -659,4 +659,5 @@
 
     <!-- Journal détail, mode Analyse -->
     <string name="analysis_slope_unavailable">Gradient unavailable: no elevation data in this track.</string>
+    <string name="journal_analysis_no_elevation">Analysis unavailable: no elevation data in this track.</string>
 </resources>

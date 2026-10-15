@@ -2576,7 +2576,13 @@ internal fun ThreeStopJournalDetail(
                         // l'estimation, quel que soit le cran (même mécanique que le reste de cet
                         // en-tête : toujours dans l'arbre, seule la hauteur du tiroir décide de ce
                         // qui reste visible).
-                        AnalysisHeadlineHeader(result = analysisResult, loading = analysisLoading, modifier = Modifier.padding(top = 8.dp))
+                        AnalysisHeadlineHeader(
+                            result = analysisResult,
+                            loading = analysisLoading,
+                            modifier = Modifier.padding(top = 8.dp),
+                            elevationAvailable = trackElevationAvailable,
+                            hasTimedPoint = remember(track) { track.points.any { it.time != null } },
+                        )
                     } else {
                         // Sur une sortie de plusieurs jours, la ligne agrégée devient un « Total »
                         // en retrait : c'est la ventilation par jour, au cran Détails, qui porte

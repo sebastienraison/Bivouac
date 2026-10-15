@@ -693,4 +693,5 @@
 
     <!-- Journal détail, mode Analyse -->
     <string name="analysis_slope_unavailable">Pente indisponible : cette trace n\'a pas d\'altitude.</string>
+    <string name="journal_analysis_no_elevation">Analyse indisponible : cette trace n\'a pas d\'altitude.</string>
 </resources>
