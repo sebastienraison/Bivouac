@@ -105,12 +105,17 @@ object BilanStatsCalculator {
         zone: ZoneId = ZoneId.systemDefault(),
         now: YearMonth = YearMonth.now(zone),
     ): BilanStats {
+        // RIC-231 : un jour sans altitude exploitable compte pour sa distance, sa durée et son nombre
+        // de randos, pas pour le dénivelé : countedGainMeters/countedLossMeters. « Indisponible »
+        // seulement quand aucune des randos comptées n'a le moindre jour avec altitude : un D+
+        // cumulé de 0 m serait alors un faux, pas un total.
         val totals = TrackStatsCalculator.recomputeDuration(
             TrackStats(
                 distanceMeters = tracks.sumOf { it.distanceMeters },
-                elevationGainMeters = tracks.sumOf { it.elevationGainMeters },
-                elevationLossMeters = tracks.sumOf { it.elevationLossMeters },
+                elevationGainMeters = tracks.sumOf { countedGainMeters(it, daysByTrackId[it.id].orEmpty()) },
+                elevationLossMeters = tracks.sumOf { countedLossMeters(it, daysByTrackId[it.id].orEmpty()) },
                 estimatedDurationMinutes = 0,
+                elevationAvailable = tracks.isEmpty() || tracks.any { hasAnyElevation(daysByTrackId[it.id].orEmpty()) },
             ),
             calibration,
         )
@@ -160,6 +165,23 @@ object BilanStatsCalculator {
             stats.biggestTrekRecord,
         ).filter { it.trackId == trackId }
 
+    // RIC-231 : la rando a-t-elle au moins un jour avec une altitude exploitable ? Sans jour connu
+    // (rando sans ligne de jour, fixture), on suppose que oui : rien ne dit le contraire. Une
+    // colonne encore nulle (jour pas rattrapé) se lit comme « disponible » aussi.
+    private fun hasAnyElevation(days: List<LoggedTrackDayEntity>): Boolean =
+        days.isEmpty() || days.any { it.elevationAvailable != false }
+
+    // RIC-231 : D+ et D- de la rando, hors jours sans altitude. Par construction un tel jour a déjà
+    // 0.0 dans ses colonnes et dans le total de la rando (TrackStatsCalculator.compute n'a rien à
+    // cumuler sans série lissée) : la soustraction ne retire rien sur des données saines, elle rend
+    // simplement la règle « un jour sans altitude ne compte pas dans le dénivelé » vraie par
+    // elle-même plutôt que par la cohérence des colonnes.
+    private fun countedGainMeters(entry: LoggedTrackEntity, days: List<LoggedTrackDayEntity>): Double =
+        entry.elevationGainMeters - days.filter { it.elevationAvailable == false }.sumOf { it.elevationGainMeters ?: 0.0 }
+
+    private fun countedLossMeters(entry: LoggedTrackEntity, days: List<LoggedTrackDayEntity>): Double =
+        entry.elevationLossMeters - days.filter { it.elevationAvailable == false }.sumOf { it.elevationLossMeters ?: 0.0 }
+
     // dayCount - 1 : même convention que JournalDayInfo.bivouacCount côté Journal (une nuit dehors
     // est une coupure entre deux jours, pas un décompte de dates connues).
     private fun bivouacCount(days: List<LoggedTrackDayEntity>): Int = (days.size - 1).coerceAtLeast(0)
@@ -185,7 +207,7 @@ object BilanStatsCalculator {
                 tracksByMonth[month]?.sumOf { it.distanceMeters / 1000.0 } ?: 0.0
             },
             ProgressionMetric.DPLUS to months.map { month ->
-                tracksByMonth[month]?.sumOf { it.elevationGainMeters } ?: 0.0
+                tracksByMonth[month]?.sumOf { countedGainMeters(it, daysByTrackId[it.id].orEmpty()) } ?: 0.0
             },
             ProgressionMetric.BIVOUACS to months.map { month ->
                 tracksByMonth[month]?.sumOf { bivouacCount(daysByTrackId[it.id].orEmpty()) }?.toDouble() ?: 0.0
@@ -247,6 +269,8 @@ object BilanStatsCalculator {
         for ((trackId, days) in daysByTrackId) {
             val entry = byTrack[trackId] ?: continue
             for (day in days) {
+                // RIC-231 : l'effort équivalent compte le D+ ; un jour sans altitude n'en a pas.
+                if (day.elevationAvailable == false) continue
                 val flat = day.flatDistanceMeters ?: continue
                 val steep = day.steepDistanceMeters ?: continue
                 val gain = day.steepGainMeters ?: continue
@@ -278,6 +302,7 @@ object BilanStatsCalculator {
         for ((trackId, days) in daysByTrackId) {
             val entry = byTrack[trackId] ?: continue
             for (day in days) {
+                if (day.elevationAvailable == false) continue // RIC-231
                 val steepCount = day.steepCount ?: continue
                 val steepGain = day.steepGainMeters ?: continue
                 val steepHours = day.steepHours ?: continue
@@ -317,6 +342,7 @@ object BilanStatsCalculator {
             if (days.size < 2) continue
             val entry = byTrack[trackId] ?: continue
             for (day in days.dropLast(1)) {
+                if (day.elevationAvailable == false) continue // RIC-231 : pas d'altitude, pas de bivouac « le plus haut »
                 val elevation = day.lastPointElevationMeters ?: continue
                 if (best == null || elevation > best.value) {
                     best = BilanRecord(
@@ -368,7 +394,7 @@ object BilanStatsCalculator {
                 compareBy(
                     { daysByTrackId.getValue(it.id).size },
                     { it.distanceMeters },
-                    { it.elevationGainMeters },
+                    { countedGainMeters(it, daysByTrackId.getValue(it.id)) },
                 ),
             )
             ?.let { entry ->
@@ -382,7 +408,10 @@ object BilanStatsCalculator {
                     // (RIC-19 §6 demande explicitement un positionnement day-level ici).
                     dayIndex = 0,
                     extraDistanceKm = entry.distanceMeters / 1000.0,
-                    extraGainMeters = entry.elevationGainMeters,
+                    // RIC-231 : nul si aucun jour du trek n'a d'altitude (la ligne méta n'affiche alors
+                    // que la distance, voir recordMetaLines).
+                    extraGainMeters = countedGainMeters(entry, daysByTrackId.getValue(entry.id))
+                        .takeIf { hasAnyElevation(daysByTrackId.getValue(entry.id)) },
                 )
             }
 
@@ -399,6 +428,9 @@ object BilanStatsCalculator {
         for ((trackId, days) in daysByTrackId) {
             val entry = byTrack[trackId] ?: continue
             for (day in days) {
+                // RIC-231 : ni altitude max, ni D+ du jour, ni distance record n'ont de sens ici
+                // pour un jour sans altitude, sauf la distance, qui reste une mesure.
+                if (day.elevationAvailable == false && kind != BilanRecordKind.MAX_DISTANCE_DAY) continue
                 val value = selector(day) ?: continue
                 if (best == null || value > best.value) {
                     best = BilanRecord(
