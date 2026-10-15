@@ -106,7 +106,8 @@ data class PreparedDay(
 // RIC-226 : [bivouacStopIndices], les arrêts des bivouacs détectés à l'intérieur d'un jour (une nuit
 // dans un fichier gardé en une journée), en index de [track] : de quoi couper le profil et la carte
 // comme les statistiques stockées (DayJunctions.journalSeriesBreaks). Vide pour une rando sans nuit
-// à l'intérieur d'un jour, le cas de toutes les randos en un fichier par jour.
+// à l'intérieur d'un jour, le cas de toutes les randos en un fichier par jour. RIC-229 : bivouacs
+// effectifs seulement (DayBivouacs.effective) : une nuit refusée (« Pause ») n'y est jamais.
 data class LoggedTrackDetail(
     val track: HikeTrack,
     val daySegments: List<Segment>,
@@ -468,7 +469,9 @@ class LoggedTrackRepository(context: Context) {
         // RIC-226 : bivouacs détectés à l'intérieur de chaque jour, pour que la ventilation « Jour N »
         // coupe sa série comme les statistiques stockées (DayBivouacs.seriesBreaks), et que l'écran
         // reçoive leurs arrêts en index de la trace concaténée (bivouacStopIndices).
-        val dayBivouacs = dayPoints.map { DayBivouacs.detect(it) }
+        // RIC-229 : bivouacs EFFECTIFS, nuits refusées (« Pause ») retirées : ni coupure de série,
+        // ni pointillé, ni marqueur sur la carte, ni bivouac à la duplication vers la Planification.
+        val dayBivouacs = dayPoints.zip(days) { points, day -> DayBivouacs.effective(points, day.refusedStops()) }
         val dayOffsets = dayPoints.runningFold(0) { total, points -> total + points.size }
         return LoggedTrackDetail(
             track = HikeTrack(name = entity.name, points = dayPoints.flatten()),
@@ -1562,9 +1565,11 @@ class LoggedTrackRepository(context: Context) {
     // "silently skipped" qu'une trace sans horodatages exploitables.
     private suspend fun calibrationSample(entry: LoggedTrackEntity): SpeedCalibrationCalculator.Sample? {
         val elapsedHours = runCatching {
-            DayPoints.readAll(appContext, dao.getDays(entry.id)).sumOf { points ->
+            val days = dao.getDays(entry.id)
+            DayPoints.readAll(appContext, days).zip(days).sumOf { (points, day) ->
                 // RIC-226 : même durée écoulée que la colonne stockée, nuit au bivouac exclue.
-                (DayBivouacs.elapsedSeconds(points, DayBivouacs.detect(points)) ?: 0L) / 3_600.0
+                // RIC-229 : une nuit refusée (« Pause ») reste dans la durée, comme dans la colonne.
+                (DayBivouacs.elapsedSeconds(points, DayBivouacs.effective(points, day.refusedStops())) ?: 0L) / 3_600.0
             }
         }.getOrElse {
             Log.w("LoggedTrackRepository", "Trace « ${entry.name} » illisible pour la calibration, ignorée", it)

@@ -22,6 +22,7 @@ import com.bivouac.app.data.db.PhotoDisplayOrder
 import com.bivouac.app.data.db.PhotoPositionUpdate
 import com.bivouac.app.data.db.PreparedImport
 import com.bivouac.app.data.db.SystemTag
+import com.bivouac.app.data.db.refusedStops
 import com.bivouac.app.data.gpx.BIVOUAC_REVIEW_VERSION
 import com.bivouac.app.data.gpx.DetectedBivouac
 import com.bivouac.app.data.gpx.RealDurationCalculator
@@ -2251,6 +2252,9 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
             pointsByDay = detail.daySegments.map { it.points },
             calibration = calibration,
             referencePaceBands = referenceBands,
+            // RIC-229 : les nuits refusées (« Pause ») de chaque jour, pauses forcées comme dans le
+            // Journal. detail.days et detail.daySegments ont le même ordre et la même taille.
+            refusedStopsByDay = detail.days.map { it.refusedStops() },
         )
         val tracks = repository.list()
         val daysByTrackId = repository.allDaysByTrackId()

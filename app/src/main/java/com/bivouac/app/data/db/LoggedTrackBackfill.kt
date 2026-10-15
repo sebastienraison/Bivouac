@@ -87,8 +87,9 @@ object LoggedTrackBackfill {
             return
         }
         // RIC-226 : même calcul que l'import (JournalDayStats) : durée écoulée sans la nuit au
-        // bivouac, pauses et tronçons détectés de part et d'autre de la nuit.
-        val figures = JournalDayStats.of(points)
+        // bivouac, pauses et tronçons détectés de part et d'autre de la nuit. RIC-229 : avec les
+        // nuits refusées du jour, pauses forcées.
+        val figures = JournalDayStats.of(points, refusedStops = day.refusedStops())
         dao.writeDenormalizedFields(day.id, contentHash, figures.startedAtMillis, figures.elapsedSeconds, figures.sums)
     }
 
@@ -255,7 +256,10 @@ object LoggedTrackBackfill {
         // RIC-226 (ALGORITHM_VERSION 4) : JournalDayStats retire la nuit au bivouac de la durée
         // écoulée d'un jour qui en contient une, détecte pauses et tronçons de part et d'autre, et
         // ne compte la distance du trou qu'en deçà de 50 m. Un jour sans bivouac ne change pas.
-        val dayFigures = parsed.map { JournalDayStats.of(it.points, SpeedCalibration.DEFAULT) }
+        //
+        // RIC-229 : avec les nuits refusées (« Pause ») de chaque jour, sans quoi un rattrapage
+        // futur les retraiterait en bivouacs.
+        val dayFigures = parsed.map { JournalDayStats.of(it.points, SpeedCalibration.DEFAULT, refusedStops = it.day.refusedStops()) }
         val dayStats = dayFigures.map { it.stats }
         val dayUpdates = parsed.zip(dayFigures).map { (p, figures) -> figures.toDayStatsUpdate(p.day.id, p.contentHash) }
         dao.applyStatsBackfill(

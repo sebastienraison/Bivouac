@@ -241,6 +241,8 @@ internal fun timelineDayFiguresLine(formatted: String): String = formatted.repla
  * elapsedSeconds] est l'écart d'horloge du départ à l'arrivée (les heures de la frise en dérivent),
  * nuit comprise quand le jour contient un bivouac resté entier ; la durée du jour, elle, est sans
  * la nuit, comme partout ailleurs depuis le lot 2. Fonction pure, testée par TimelineBivouacTest.
+ * RIC-229 : une nuit refusée (« Pause ») n'est pas dans [DayTimeline.bivouacSeconds] : elle compte
+ * dans la durée du jour, comme toute pause.
  */
 internal fun timelineDayDurationSeconds(day: DayTimeline): Double = day.elapsedSeconds - day.bivouacSeconds
 
