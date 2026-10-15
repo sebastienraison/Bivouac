@@ -31,7 +31,7 @@ import java.time.ZoneId
  */
 object BivouacReview {
 
-    enum class Answer { SPLIT, KEEP }
+    enum class Answer { SPLIT, PAUSE }
 
     /**
      * Une question : le [bivouac] détecté dans le jour de rang [dayPosition] (rang dans la liste
@@ -105,7 +105,7 @@ object BivouacReview {
 
     /**
      * Les réponses [answers] (une par question de [questions], dans le même ordre ; `null` vaut
-     * [Answer.KEEP]) ramenées à ce qu'il faut écrire. Sans question, aucun découpage, mais la
+     * [Answer.PAUSE]) ramenées à ce qu'il faut écrire. Sans question, aucun découpage, mais la
      * version du crible est posée quand même : sans elle, la détection serait refaite à chaque
      * lancement.
      */

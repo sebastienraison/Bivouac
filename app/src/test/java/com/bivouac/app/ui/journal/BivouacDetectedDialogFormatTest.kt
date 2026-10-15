@@ -10,7 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.w3c.dom.Element
 
-// RIC-227 : dates du dialogue « Bivouac détecté », avec les motifs réellement générés depuis
+// RIC-227 : dates du dialogue « Arrêt prolongé détecté », avec les motifs réellement générés depuis
 // l'inventaire (values/strings.xml et values-fr/strings.xml), dans le fuseau du bivouac.
 class BivouacDetectedDialogFormatTest {
 

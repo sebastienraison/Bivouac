@@ -48,12 +48,12 @@ internal fun formatBivouacDateTimes(
  * trois. Titre avec le nom de la rando quand [BivouacQuestion.trackName] est connu (crible du
  * premier lancement), compteur au-dessus du corps quand il y a plus d'une question.
  *
- * Quitter le dialogue autrement que par un bouton (retour, appui hors du dialogue) vaut « Ne pas
- * découper » ([onKeep]) ; aucun délai, aucune réponse par défaut tant qu'il est ouvert. La durée
+ * Quitter le dialogue autrement que par un bouton (retour, appui hors du dialogue) vaut « Pause »
+ * ([onPause], RIC-229) ; aucun délai, aucune réponse par défaut tant qu'il est ouvert. La durée
  * du trou passe par [formatPauseDuration], le formateur de « 13h10 au bivouac » de la frise.
  */
 @Composable
-internal fun BivouacDetectedDialog(question: BivouacQuestion, onSplit: () -> Unit, onKeep: () -> Unit) {
+internal fun BivouacDetectedDialog(question: BivouacQuestion, onSplit: () -> Unit, onPause: () -> Unit) {
     val bivouac = question.bivouac
     val dateTimes = formatBivouacDateTimes(
         stopAt = bivouac.stopAt,
@@ -66,7 +66,7 @@ internal fun BivouacDetectedDialog(question: BivouacQuestion, onSplit: () -> Uni
     )
     val gapSeconds = Duration.between(bivouac.stopAt, bivouac.resumeAt).seconds.toDouble()
     AlertDialog(
-        onDismissRequest = onKeep,
+        onDismissRequest = onPause,
         title = {
             Text(
                 question.trackName?.let { stringResource(R.string.bivouac_detected_title_in_track, it) }
@@ -90,7 +90,7 @@ internal fun BivouacDetectedDialog(question: BivouacQuestion, onSplit: () -> Uni
             TextButton(onClick = onSplit) { Text(stringResource(R.string.bivouac_detected_split)) }
         },
         dismissButton = {
-            TextButton(onClick = onKeep) { Text(stringResource(R.string.bivouac_detected_keep)) }
+            TextButton(onClick = onPause) { Text(stringResource(R.string.bivouac_detected_keep)) }
         },
     )
 }

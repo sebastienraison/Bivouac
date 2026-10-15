@@ -819,7 +819,7 @@ fun JournalScreen(
         BivouacDetectedDialog(
             question = question,
             onSplit = { viewModel.answerBivouacQuestion(BivouacReview.Answer.SPLIT) },
-            onKeep = { viewModel.answerBivouacQuestion(BivouacReview.Answer.KEEP) },
+            onPause = { viewModel.answerBivouacQuestion(BivouacReview.Answer.PAUSE) },
         )
     }
 
@@ -3263,7 +3263,7 @@ private fun JournalDetailMenu(
                 onClick = { expanded = false; onDuplicateClick() },
             )
             // RIC-227 (conception RIC-222 §3.2) : revenir sur le crible des bivouacs, par exemple
-            // après avoir répondu « Ne pas découper » trop vite. Absente en édition, voir
+            // après avoir répondu « Pause » trop vite (RIC-229 : les nuits refusées sont reproposées). Absente en édition, voir
             // detectBivouacsMenuEntryVisible.
             if (showDetectBivouacs) {
                 DropdownMenuItem(

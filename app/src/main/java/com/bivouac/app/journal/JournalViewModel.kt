@@ -237,7 +237,7 @@ private data class PhotoOverlayState(
 )
 
 /**
- * RIC-227 : une série de questions « Bivouac détecté » en cours, avec les réponses déjà données
+ * RIC-227 : une série de questions « Arrêt prolongé détecté » en cours, avec les réponses déjà données
  * (dans l'ordre de [questions]). [Import] : un import en attente d'enregistrement, rien n'est écrit
  * avant la dernière réponse.
  */
@@ -2021,7 +2021,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** RIC-227 : les questions « Bivouac détecté » d'un import, tous fichiers du lot confondus. */
+    /** RIC-227 : les questions « Arrêt prolongé détecté » d'un import, tous fichiers du lot confondus. */
     private fun importBivouacQuestions(prepared: PreparedImport): List<BivouacReview.Question> =
         BivouacReview.questions(prepared.days.map { it.bivouacs })
 
@@ -2036,7 +2036,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * RIC-227 : réponse à la question « Bivouac détecté » affichée. [BivouacReview.Answer.KEEP]
+     * RIC-227, RIC-229 : réponse à la question « Arrêt prolongé détecté » affichée. [BivouacReview.Answer.PAUSE]
      * aussi quand l'utilisateur quitte le dialogue autrement (retour, appui hors du dialogue). Les
      * réponses sont mémorisées ; la dernière déclenche l'écriture : l'enregistrement de l'import,
      * ou le découpage de la rando ouverte pour l'action de menu.

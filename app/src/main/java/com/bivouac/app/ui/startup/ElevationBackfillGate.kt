@@ -76,7 +76,7 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
         data object Checking : State
         data class Running(val done: Int, val total: Int) : State
 
-        /** RIC-227 : une question « Bivouac détecté » attend sa réponse ([answerBivouacQuestion]). */
+        /** RIC-227 : une question « Arrêt prolongé détecté » attend sa réponse ([answerBivouacQuestion]). */
         data class Reviewing(val question: BivouacQuestion) : State
         data object Ready : State
     }
@@ -141,7 +141,7 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
         }
     }
 
-    /** RIC-227 : réponse à la question affichée ; [BivouacReview.Answer.KEEP] aussi en quittant le dialogue. */
+    /** RIC-227 : réponse à la question affichée ; [BivouacReview.Answer.PAUSE] aussi en quittant le dialogue (RIC-229). */
     fun answerBivouacQuestion(answer: BivouacReview.Answer) {
         pendingAnswer?.complete(answer)
     }
@@ -242,7 +242,7 @@ fun ElevationBackfillGate(
             BivouacDetectedDialog(
                 question = current.question,
                 onSplit = { viewModel.answerBivouacQuestion(BivouacReview.Answer.SPLIT) },
-                onKeep = { viewModel.answerBivouacQuestion(BivouacReview.Answer.KEEP) },
+                onPause = { viewModel.answerBivouacQuestion(BivouacReview.Answer.PAUSE) },
             )
         }
         ElevationBackfillViewModel.State.Checking -> {

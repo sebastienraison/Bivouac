@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : strings-inventaire-v19.csv (inventaire de l'agent de pilotage,
+    Source : strings-inventaire-v20.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v19.csv
+        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v20.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -662,19 +662,19 @@
     <string name="journal_analysis_figure_steepest_descent">Pente la plus forte en descente</string>
 
     <!-- Messages et erreurs -->
-    <string name="bivouac_detected_title">Bivouac détecté</string>
-    <string name="bivouac_detected_title_in_track">Bivouac détecté dans « %1$s »</string>
+    <string name="bivouac_detected_title">Arrêt prolongé détecté</string>
+    <string name="bivouac_detected_title_in_track">Arrêt prolongé détecté dans « %1$s »</string>
     <string name="bivouac_detected_counter">%1$d sur %2$d</string>
     <string name="bivouac_detected_body">Du %1$s au %2$s, soit %3$s sans enregistrement.</string>
-    <string name="bivouac_detected_question">Découper la rando en deux jours à cet endroit ?</string>
-    <string name="bivouac_detected_split">Découper</string>
-    <string name="bivouac_detected_keep">Ne pas découper</string>
+    <string name="bivouac_detected_question">Séparer les journées par un bivouac, ou une simple pause ?</string>
+    <string name="bivouac_detected_split">Bivouac</string>
+    <string name="bivouac_detected_keep">Pause</string>
 
     <!-- Journal détail (tiroir) -->
     <string name="journal_detail_menu_detect_bivouacs">Détecter les bivouacs</string>
 
     <!-- Messages et erreurs -->
-    <string name="bivouac_detect_none">Aucun bivouac détecté : aucune nuit sans enregistrement d\'au moins quatre heures dans cette rando.</string>
+    <string name="bivouac_detect_none">Aucun arrêt prolongé détecté : aucune nuit sans enregistrement d\'au moins quatre heures dans cette rando.</string>
     <string name="bivouac_detect_all_split">Tous les bivouacs détectés sont déjà des fins de journée.</string>
 
     <!-- Formats (dates, nombres, unités) -->
