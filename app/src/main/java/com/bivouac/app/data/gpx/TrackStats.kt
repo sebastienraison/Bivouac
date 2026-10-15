@@ -8,6 +8,12 @@ data class TrackStats(
     val elevationGainMeters: Double,
     val elevationLossMeters: Double,
     val estimatedDurationMinutes: Int,
+    // RIC-231 : faux quand la trace n'a pas d'altitude exploitable (voir ElevationAvailability) :
+    // elevationGainMeters et elevationLossMeters valent alors 0.0, qui n'est pas une mesure et ne
+    // doit pas s'afficher comme telle. Vrai par défaut : toute construction qui ne sait rien de
+    // l'altitude (fixtures de test, ligne dont le booléen n'est pas encore rattrapé) se comporte
+    // comme avant ce ticket. La durée estimée, elle, reste celle d'une marche à plat.
+    val elevationAvailable: Boolean = true,
 )
 
 /**
@@ -50,7 +56,10 @@ data class SpeedCalibration(
 class TrackSeries internal constructor(
     /** Distance filtrée (seuil de déplacement minimal) cumulée depuis le premier point. */
     val cumulativeDistanceMeters: DoubleArray,
-    /** Altitude interpolée puis lissée sur la distance ; null si aucun point n'a d'altitude. */
+    /**
+     * Altitude interpolée puis lissée sur la distance ; null si la trace n'a pas d'altitude
+     * exploitable (aucun point, ou toutes les altitudes identiques : [ElevationAvailability]).
+     */
     val smoothedElevationMeters: DoubleArray?,
     val breaks: Set<Int>,
 ) {
@@ -74,7 +83,7 @@ class TrackSeries internal constructor(
                 if (delta > 0) gain += delta else loss += -delta
             }
         }
-        return TrackStatsCalculator.statsWithDuration(distance, gain, loss, calibration)
+        return TrackStatsCalculator.statsWithDuration(distance, gain, loss, calibration, elevationAvailable = elevations != null)
     }
 }
 
@@ -103,13 +112,20 @@ object TrackStatsCalculator {
         return series(points, breaks, parameters).statsBetween(0, points.lastIndex, calibration)
     }
 
-    internal fun statsWithDuration(distance: Double, gain: Double, loss: Double, calibration: SpeedCalibration): TrackStats {
+    internal fun statsWithDuration(
+        distance: Double,
+        gain: Double,
+        loss: Double,
+        calibration: SpeedCalibration,
+        elevationAvailable: Boolean = true,
+    ): TrackStats {
         val durationMinutes = applyPauseProvision(walkingMinutes(distance, gain, calibration), calibration.pauseFractionPercent).roundToInt()
         return TrackStats(
             distanceMeters = distance,
             elevationGainMeters = gain,
             elevationLossMeters = loss,
             estimatedDurationMinutes = durationMinutes,
+            elevationAvailable = elevationAvailable,
         )
     }
 
@@ -126,7 +142,8 @@ object TrackStatsCalculator {
      * série lissée reste constante pendant la pause : aucun D+ fantôme. Aucun horodatage n'est lu,
      * ce qui vaut aussi pour les traces planifiées.
      *
-     * Altitude : [interpolateElevations] (trous comblés par index, RIC-138), puis, pour chaque
+     * Altitude : [interpolateElevations] (nulle si la trace n'a pas d'altitude exploitable, RIC-231 ;
+     * trous comblés par index, RIC-138), puis, pour chaque
      * point, moyenne arithmétique des altitudes des points du même bloc (plage sans coupure) dont
      * la distance filtrée est à au plus la demi-fenêtre de la sienne, bornes incluses. La fenêtre
      * se tronque d'elle-même aux bords d'un bloc.
@@ -266,6 +283,10 @@ object TrackStatsCalculator {
      * n'y a rien vers quoi interpoler de ce côté-là, et une extension plate est la supposition la
      * moins arbitraire. Ne retourne null que si AUCUN point de la trace n'a d'altitude : il n'y a
      * alors rien du tout à partir de quoi interpoler, et le profil reste vide comme avant RIC-138.
+     *
+     * RIC-231 : null aussi quand toutes les altitudes présentes sont identiques (voir
+     * [ElevationAvailability]) : une série constante n'est pas un relief. Le cas partiel, lui,
+     * reste interpolé comme ci-dessus.
      */
     fun smoothedElevationSeries(
         points: List<TrackPoint>,
@@ -277,7 +298,7 @@ object TrackStatsCalculator {
     // fenêtre de lissage (voir SmoothedElevationSeriesTest).
     internal fun interpolateElevations(points: List<TrackPoint>): List<Double>? {
         if (points.isEmpty()) return emptyList()
-        if (points.none { it.elevationMeters != null }) return null
+        if (!ElevationAvailability.of(points)) return null
 
         val result = DoubleArray(points.size)
         var previousKnownIndex = -1

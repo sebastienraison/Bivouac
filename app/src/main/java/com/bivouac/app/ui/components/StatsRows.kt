@@ -114,14 +114,25 @@ fun StatsRows(stats: TrackStats, muted: Boolean = false, duration: DurationDispl
         )
         InfoText(formatDurationWithShare(duration, stats.estimatedDurationMinutes), Icons.Filled.Schedule, durationColor)
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+    // RIC-231 : une trace sans altitude exploitable (TrackStats.elevationAvailable) n'a pas un D+ de
+    // 0 m, elle n'a pas de D+ : « indisponible » à la place des valeurs. FlowRow pour que les deux
+    // mentions, plus longues que deux chiffres, passent à la ligne plutôt que d'être tronquées.
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         InfoText(
-            stringResource(R.string.fmt_stats_rows_gain, formatGroupedInt(stats.elevationGainMeters)),
+            if (stats.elevationAvailable) {
+                stringResource(R.string.fmt_stats_rows_gain, formatGroupedInt(stats.elevationGainMeters))
+            } else {
+                stringResource(R.string.fmt_stats_rows_gain_unavailable)
+            },
             Icons.AutoMirrored.Filled.TrendingUp,
             gainColor,
         )
         InfoText(
-            stringResource(R.string.fmt_stats_rows_loss, formatGroupedInt(stats.elevationLossMeters)),
+            if (stats.elevationAvailable) {
+                stringResource(R.string.fmt_stats_rows_loss, formatGroupedInt(stats.elevationLossMeters))
+            } else {
+                stringResource(R.string.fmt_stats_rows_loss_unavailable)
+            },
             Icons.AutoMirrored.Filled.TrendingDown,
             lossColor,
         )

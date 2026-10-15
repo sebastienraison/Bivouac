@@ -133,4 +133,12 @@ data class LoggedTrackDayEntity(
     // vide) : aucun refus, l'état de toutes les lignes d'avant la migration 22 vers 23 et de tout
     // jour pas encore examiné. Lue et écrite par RefusedBivouacStops, seul endroit qui la décode.
     val refusedBivouacStops: String? = null,
+    // RIC-231 (2.7.0) : ce jour a-t-il une altitude exploitable ? (ElevationAvailability : au moins
+    // deux altitudes différentes dans ses points). Faux : son D+ et son D- valent 0.0 sans que ce
+    // soit une mesure, et tout ce qui dépend de l'altitude s'affiche « indisponible ». Nulle : pas
+    // encore rattrapée (lignes d'avant la migration 23 vers 24), lue comme vraie par l'affichage ;
+    // le rattrapage d'altitude du premier lancement (LoggedTrackBackfill.runElevation) la remplit
+    // sans jamais la laisser nulle. Renseignée à l'import, au découpage, au refus d'une nuit et au
+    // rattrapage des statistiques, depuis le même TrackStats que les totaux du jour.
+    val elevationAvailable: Boolean? = null,
 )

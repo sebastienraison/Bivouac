@@ -31,6 +31,9 @@ data class DayStatsUpdate(
     val elevationLossMeters: Double,
     val pausedSeconds: Double,
     val paceBands: List<PaceBandSum>,
+    // RIC-231 : le jour a-t-il une altitude exploitable (TrackStats.elevationAvailable du jour) ?
+    // Écrit avec les totaux, jamais sans eux.
+    val elevationAvailable: Boolean,
 )
 
 @Dao
@@ -93,6 +96,12 @@ interface LoggedTrackDao {
         elevationLossMeters: Double? = null,
         pausedSeconds: Double? = null,
     )
+
+    // RIC-231 : écrit seul, hors de updateDayDenormalizedFields : cette requête-là est aussi celle du
+    // rattrapage RIC-109/115 (applyDayBackfill), qui ne connaît pas l'altitude et ne doit pas
+    // effacer un booléen déjà écrit.
+    @Query("UPDATE logged_track_day SET elevationAvailable = :elevationAvailable WHERE id = :id")
+    suspend fun updateDayElevationAvailable(id: Long, elevationAvailable: Boolean)
 
     // RIC-146 : les lignes de rythme d'un jour sont toujours remplacées en bloc, jamais mises à
     // jour une à une : une bande qui s'est vidée au nouveau calcul doit disparaître, pas garder
@@ -223,6 +232,7 @@ interface LoggedTrackDao {
                 elevationLossMeters = day.elevationLossMeters,
                 pausedSeconds = day.pausedSeconds,
             )
+            updateDayElevationAvailable(day.id, day.elevationAvailable)
             replaceDayPaces(day.id, day.paceBands)
         }
         updateTrackStats(
@@ -238,22 +248,29 @@ interface LoggedTrackDao {
     // RIC-19 : marqueur dédié (elevationBackfilled), pas flatCount IS NULL : ce rattrapage porte des
     // colonnes différentes de celui de RIC-109 et une ligne peut avoir l'un sans l'autre dans les
     // deux sens (voir LoggedTrackDayEntity.elevationBackfilled).
+    //
+    // RIC-231 : elevationAvailable IS NULL rejoint la condition : même passe, même fichier lu une
+    // seule fois pour les trois colonnes d'altitude. Une ligne déjà rattrapée par RIC-19 mais née
+    // avant la migration 23 vers 24 repasse donc une fois ici pour recevoir le booléen.
     @Query(
-        "SELECT * FROM logged_track_day WHERE elevationBackfilled = 0 ORDER BY trackId, dayIndex LIMIT :limit",
+        "SELECT * FROM logged_track_day WHERE elevationBackfilled = 0 OR elevationAvailable IS NULL " +
+            "ORDER BY trackId, dayIndex LIMIT :limit",
     )
     suspend fun getDaysNeedingElevationBackfill(limit: Int): List<LoggedTrackDayEntity>
 
-    @Query("SELECT COUNT(*) FROM logged_track_day WHERE elevationBackfilled = 0")
+    @Query("SELECT COUNT(*) FROM logged_track_day WHERE elevationBackfilled = 0 OR elevationAvailable IS NULL")
     suspend fun countDaysNeedingElevationBackfill(): Int
 
     @Query(
         "UPDATE logged_track_day SET maxElevationMeters = :maxElevationMeters, " +
-            "lastPointElevationMeters = :lastPointElevationMeters, elevationBackfilled = 1 WHERE id = :id",
+            "lastPointElevationMeters = :lastPointElevationMeters, elevationAvailable = :elevationAvailable, " +
+            "elevationBackfilled = 1 WHERE id = :id",
     )
     suspend fun updateDayElevationFields(
         id: Long,
         maxElevationMeters: Double?,
         lastPointElevationMeters: Double?,
+        elevationAvailable: Boolean,
     )
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -368,6 +385,7 @@ interface LoggedTrackDao {
             elevationLossMeters = day.elevationLossMeters,
             pausedSeconds = day.pausedSeconds,
         )
+        updateDayElevationAvailable(day.id, day.elevationAvailable)
         replaceDayPaces(day.id, day.paceBands)
         updateDayRefusedBivouacStops(day.id, refusedBivouacStops)
         updateTrackStats(

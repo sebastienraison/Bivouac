@@ -52,7 +52,9 @@ import kotlinx.coroutines.withContext
  * RIC-114 lot 2 (conception §5.3) : cette même porte enchaîne désormais trois phases de plus,
  * dans cet ordre, sous **un seul compteur de progression** (les done/total de chaque phase se
  * concatènent plutôt que de faire clignoter le popup à zéro entre deux phases) :
- * 1. l'altitude ci-dessus (RIC-19, inchangée) ;
+ * 1. l'altitude ci-dessus (RIC-19) ; RIC-231 y ajoute le booléen « altitude exploitable » des jours
+ *    du Journal (même passe, même fichier lu une fois) puis celui des traces de la Banque
+ *    ([BankedTrackRepository.backfillElevationAvailability]), sous le même compteur ;
  * 2. les statistiques du Journal ([LoggedTrackRepository.backfillStatsFields]) ;
  * 3. les statistiques de la Banque ([BankedTrackRepository.backfillStatsFields]) ;
  * puis, silencieusement et sans jamais compter dans ce total (elle ne lit que des sommes déjà en
@@ -97,9 +99,10 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
     init {
         viewModelScope.launch {
             val elevationRemaining = withContext(Dispatchers.IO) { repository.countDaysNeedingElevationBackfill() }
+            val bankedElevationRemaining = withContext(Dispatchers.IO) { bankedRepository.countTracksNeedingElevationAvailability() }
             val journalStatsRemaining = withContext(Dispatchers.IO) { repository.countTracksNeedingStatsBackfill() }
             val bankedStatsRemaining = withContext(Dispatchers.IO) { bankedRepository.countTracksNeedingStatsBackfill() }
-            val total = elevationRemaining + journalStatsRemaining + bankedStatsRemaining
+            val total = elevationRemaining + bankedElevationRemaining + journalStatsRemaining + bankedStatsRemaining
             // RIC-227 : compté dès maintenant, pour ne composer le reste de l'app qu'après le
             // crible quand il y a des randos à examiner.
             val reviewRemaining = withContext(Dispatchers.IO) {
@@ -116,6 +119,12 @@ class ElevationBackfillViewModel(application: Application) : AndroidViewModel(ap
                         repository.backfillElevationFields { done, _ -> _state.value = State.Running(base + done, total) }
                     }
                     base += elevationRemaining
+                }
+                if (bankedElevationRemaining > 0) {
+                    withContext(Dispatchers.IO) {
+                        bankedRepository.backfillElevationAvailability { done, _ -> _state.value = State.Running(base + done, total) }
+                    }
+                    base += bankedElevationRemaining
                 }
                 if (journalStatsRemaining > 0) {
                     withContext(Dispatchers.IO) {

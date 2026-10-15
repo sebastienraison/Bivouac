@@ -43,7 +43,7 @@ class TrackTimelineCalculatorTest {
                 lat += stepMeters * degPerMeter
                 elevation += stepMeters * slopePercent / 100.0
                 time = time.plusMillis((stepSeconds * 1_000).toLong())
-                points += TrackPoint(lat, LONGITUDE, elevation, time)
+                points += TrackPoint(lat, LONGITUDE, elevation + (if (slopePercent == 0.0) flatTrackRelief(points.size * stepMeters) else 0.0), time)
             }
             return this
         }

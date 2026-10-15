@@ -156,6 +156,11 @@ data class JournalDayInfo(
     // jours, nuits exclues) ; `null` si au moins un jour n'a pas d'horodatage exploitable (brief
     // "rando sans horodatage" : l'app n'a pas de durée réelle, repli sur l'estimation ailleurs).
     val realDuration: RealDurationCalculator.RealDuration? = null,
+    // RIC-231 : faux si au moins un jour de la rando n'a pas d'altitude exploitable
+    // (logged_track_day.elevationAvailable) : on n'affiche pas un D+ partiel, la liste dit
+    // « indisponible ». Calculé sur les jours déjà chargés pour la liste, sans rien reparser. Une
+    // colonne encore nulle (pas rattrapée) se lit comme disponible.
+    val elevationAvailable: Boolean = true,
 ) {
     val bivouacCount: Int get() = (dayCount - 1).coerceAtLeast(0)
 }
@@ -758,6 +763,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                             // mieux qu'inventer les autres. dayCount, lui, est toujours juste.
                             dates = days.mapNotNull { it.startedAtMillis }.map { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() },
                             realDuration = RealDurationCalculator.forDays(days),
+                            elevationAvailable = days.all { it.elevationAvailable != false },
                         )
                     }
             }

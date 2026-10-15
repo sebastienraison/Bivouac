@@ -88,6 +88,9 @@ data class PreparedDay(
     // calculés pour les durées), en index de ses points : ce sont les questions posées à l'import
     // avant l'enregistrement, sans reparser le fichier. Vide par défaut pour les fixtures de test.
     val bivouacs: List<DetectedBivouac> = emptyList(),
+    // RIC-231 : le jour a-t-il une altitude exploitable (TrackStats.elevationAvailable du jour,
+    // ElevationAvailability) ? Nul pour les fixtures de test qui n'en disent rien : colonne nulle.
+    val elevationAvailable: Boolean? = null,
 )
 
 // Une trace du Journal ouverte pour affichage : [track] est l'ensemble des jours concaténés (la
@@ -348,6 +351,7 @@ class LoggedTrackRepository(context: Context) {
                 elevationGainMeters = stats.elevationGainMeters,
                 elevationLossMeters = stats.elevationLossMeters,
                 bivouacs = figures.bivouacs,
+                elevationAvailable = stats.elevationAvailable,
             )
         }
         return PreparedImport(entity, days)
@@ -431,6 +435,7 @@ class LoggedTrackRepository(context: Context) {
                 elevationGainMeters = day.elevationGainMeters,
                 elevationLossMeters = day.elevationLossMeters,
                 pausedSeconds = day.pausedSeconds,
+                elevationAvailable = day.elevationAvailable,
             )
         }
         try {
@@ -567,6 +572,7 @@ class LoggedTrackRepository(context: Context) {
                 firstPointIndex = range.first,
                 lastPointIndex = range.last,
                 refusedBivouacStops = RefusedBivouacStops.encode(refusedByPiece[k]),
+                elevationAvailable = update.elevationAvailable,
             )
         }
 
@@ -1573,6 +1579,10 @@ class LoggedTrackRepository(context: Context) {
 
         val fallbackSamples = entries.mapNotNull { entry ->
             val days = daysByTrack[entry.id].orEmpty()
+            // RIC-231 : un jour sans altitude exploitable a un D+ de 0 qui n'est pas une mesure : en
+            // faire un échantillon « à plat » fausserait la vitesse. Les sommes de segments l'écartent
+            // déjà (aucun tronçon sans altitude), le repli doit en faire autant.
+            if (days.any { it.elevationAvailable == false }) return@mapNotNull null
             // Une trace dont un seul jour n'est pas encore rattrapé repasse entièrement par
             // l'ancien chemin : mélanger une somme partielle avec des jours ignorés donnerait une
             // durée écoulée trop courte, donc une vitesse trop rapide, silencieusement.

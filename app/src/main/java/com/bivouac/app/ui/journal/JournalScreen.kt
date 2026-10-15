@@ -157,6 +157,7 @@ import com.bivouac.app.ui.components.ChoiceOptionCard
 import com.bivouac.app.ui.components.DrawerStop
 import com.bivouac.app.ui.components.DurationDisplay
 import com.bivouac.app.ui.components.DurationIconColor
+import com.bivouac.app.ui.components.ElevationMissingBanner
 import com.bivouac.app.ui.components.ElevationProfile
 import com.bivouac.app.ui.components.FullScreenEmptyState
 import com.bivouac.app.ui.components.GainIconColor
@@ -1836,6 +1837,11 @@ private fun aggregateStats(
             elevationGainMeters = tracks.sumOf { it.elevationGainMeters },
             elevationLossMeters = tracks.sumOf { it.elevationLossMeters },
             estimatedDurationMinutes = 0,
+            // RIC-231 : les totaux stockés d'une rando sans altitude valent 0 (un jour sans altitude
+            // n'ajoute rien, voir LoggedTrackDayEntity.elevationAvailable) : la somme reste juste pour
+            // celles qui en ont. « Indisponible » seulement quand aucune des randos comptées n'a
+            // d'altitude : un 0 m cumulé serait alors un faux.
+            elevationAvailable = tracks.isEmpty() || tracks.any { dayInfoByTrackId[it.id]?.elevationAvailable != false },
         ),
         activeCalibration,
     )
@@ -2024,7 +2030,9 @@ private fun JournalTrackRow(
             Spacer(Modifier.height(4.dp))
             // RIC-209 (brief Partie B) : durée réelle si dayInfo en connaît une pour cette rando,
             // repli sur l'estimation avec préfixe "≈" sinon.
+            // RIC-231 : « D+ indisponible » si un jour au moins de la rando n'a pas d'altitude.
             val rowStats = TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration)
+                .copy(elevationAvailable = dayInfo?.elevationAvailable != false)
             StatsRows(rowStats, duration = resolvedDuration(dayInfo?.realDuration, rowStats.estimatedDurationMinutes))
         }
     }
@@ -2133,7 +2141,7 @@ private fun JournalMultiTrackContent(
  * une heure d'arrivée orpheline se lirait mal et n'apprendrait pas grand-chose.
  */
 @Composable
-private fun ReadOnlyBivouacRow(arrival: TrackPoint?, departure: TrackPoint?) {
+private fun ReadOnlyBivouacRow(arrival: TrackPoint?, departure: TrackPoint?, showElevation: Boolean = true) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -2145,7 +2153,7 @@ private fun ReadOnlyBivouacRow(arrival: TrackPoint?, departure: TrackPoint?) {
             modifier = Modifier.size(24.dp),
         )
         val elevation = arrival?.elevationMeters
-        if (elevation != null) {
+        if (elevation != null && showElevation) {
             InfoText(
                 text = stringResource(R.string.format_elevation_meters, formatGroupedInt(elevation.roundToInt())),
                 icon = Icons.Default.Terrain,
@@ -2275,6 +2283,11 @@ internal fun ThreeStopJournalDetail(
                 segment.points.firstOrNull()?.time?.atZone(zone)?.toLocalDate()
             }
         }
+        // RIC-231 : la trace a-t-elle une altitude exploitable ? Lu sur les stats de chaque jour, que
+        // la vue détail vient de calculer sur les points chargés (TrackStats.elevationAvailable) :
+        // un jour sans altitude suffit à rendre D+, profil et pente « indisponibles » pour toute la
+        // rando, on n'affiche pas un partiel.
+        val trackElevationAvailable = remember(daySegments) { daySegments.all { it.stats.elevationAvailable } }
         var isEditing by remember(entry.id) { mutableStateOf(false) }
         var draftTags by remember(entry.id) { mutableStateOf(currentTags.toSet()) }
         // TextFieldValue et non String : le suivi du curseur pendant la frappe (RIC-100) a
@@ -2541,6 +2554,12 @@ internal fun ThreeStopJournalDetail(
                             }
                         }
                     }
+                    // RIC-231 : bandeau permanent d'une trace sans altitude, sous le titre, dans les deux
+                    // modes (Carnet et Analyse). Replié avec la rangée du titre quand la note prend
+                    // toute la place.
+                    AnimatedVisibility(visible = !noteTakesAllSpace && !trackElevationAvailable) {
+                        ElevationMissingBanner(modifier = Modifier.padding(top = 4.dp))
+                    }
                     // RIC-146 lot 7 (conception 2 section 5.1, brief Partie A/B) : choix Carnet |
                     // Analyse, à la même place dans les deux modes, sous le titre et la date. Masqué
                     // en édition et pendant le mode placement photo, comme le reste de cette rangée
@@ -2557,7 +2576,13 @@ internal fun ThreeStopJournalDetail(
                         // l'estimation, quel que soit le cran (même mécanique que le reste de cet
                         // en-tête : toujours dans l'arbre, seule la hauteur du tiroir décide de ce
                         // qui reste visible).
-                        AnalysisHeadlineHeader(result = analysisResult, loading = analysisLoading, modifier = Modifier.padding(top = 8.dp))
+                        AnalysisHeadlineHeader(
+                            result = analysisResult,
+                            loading = analysisLoading,
+                            modifier = Modifier.padding(top = 8.dp),
+                            elevationAvailable = trackElevationAvailable,
+                            hasTimedPoint = remember(track) { track.points.any { it.time != null } },
+                        )
                     } else {
                         // Sur une sortie de plusieurs jours, la ligne agrégée devient un « Total »
                         // en retrait : c'est la ventilation par jour, au cran Détails, qui porte
@@ -2573,6 +2598,7 @@ internal fun ThreeStopJournalDetail(
                         // disponible, repli sur l'estimation avec préfixe "≈" sinon (brief §Règles,
                         // "rando sans horodatage").
                         val totalStats = TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration)
+                            .copy(elevationAvailable = trackElevationAvailable)
                         val totalReal = remember(days) { RealDurationCalculator.forDays(days) }
                         StatsRows(
                             totalStats,
@@ -2650,6 +2676,7 @@ internal fun ThreeStopJournalDetail(
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                             cursorIndex = cursorIndex,
                             onCursorDragged = onCursorDragged,
+                            elevationAvailable = trackElevationAvailable,
                         )
                     }
                 }
@@ -2694,32 +2721,44 @@ internal fun ThreeStopJournalDetail(
                             onColoringChanged = onAnalysisColoringChanged,
                             hasTimestamps = hasTimestamps,
                         )
-                        // Brief §4.3 : légende compacte à gauche, choix de l'axe à droite.
-                        AnalysisLegendAxisRow(
-                            coloring = analysisColoring,
-                            hasTimestamps = hasTimestamps,
-                            axis = analysisAxis,
-                            onAxisChanged = onAnalysisAxisChanged,
-                        )
-                        // Brief §4.4 : le profil coloré, puis la ligne de lecture.
-                        ElevationProfile(
-                            points = track.points,
-                            bivouacPoints = bivouacPoints,
-                            dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex } + bivouacStopIndices,
-                            seriesBreaks = seriesBreaks,
-                            cursorIndex = cursorIndex,
-                            onCursorDragged = onCursorDragged,
-                            axis = analysisAxis,
-                            colorRanges = analysisProfileData?.first.orEmpty(),
-                            pauses = analysisProfileData?.second.orEmpty(),
-                        )
-                        AnalysisReadoutLine(
-                            cursorIndex = cursorIndex,
-                            result = analysisResult,
-                            points = track.points,
-                            dayPointCounts = daySegments.map { it.points.size },
-                            seriesBreaks = seriesBreaks,
-                        )
+                        // RIC-231 : sans altitude, la pente n'existe pas. L'onglet Pente (la seule coloration
+                        // proposée sur une trace sans horodatage) le dit à la place de la légende, du
+                        // profil et de la ligne de lecture, au lieu de les laisser vides.
+                        if (!trackElevationAvailable && analysisColoring == com.bivouac.app.ui.map.AnalysisColoring.SLOPE) {
+                            Text(
+                                text = stringResource(R.string.analysis_slope_unavailable),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            // Brief §4.3 : légende compacte à gauche, choix de l'axe à droite.
+                            AnalysisLegendAxisRow(
+                                coloring = analysisColoring,
+                                hasTimestamps = hasTimestamps,
+                                axis = analysisAxis,
+                                onAxisChanged = onAnalysisAxisChanged,
+                            )
+                            // Brief §4.4 : le profil coloré, puis la ligne de lecture.
+                            ElevationProfile(
+                                points = track.points,
+                                bivouacPoints = bivouacPoints,
+                                dayBoundaryIndices = bivouacPoints.map { it.trackPointIndex } + bivouacStopIndices,
+                                seriesBreaks = seriesBreaks,
+                                cursorIndex = cursorIndex,
+                                onCursorDragged = onCursorDragged,
+                                axis = analysisAxis,
+                                colorRanges = analysisProfileData?.first.orEmpty(),
+                                pauses = analysisProfileData?.second.orEmpty(),
+                                elevationAvailable = trackElevationAvailable,
+                            )
+                            AnalysisReadoutLine(
+                                cursorIndex = cursorIndex,
+                                result = analysisResult,
+                                points = track.points,
+                                dayPointCounts = daySegments.map { it.points.size },
+                                seriesBreaks = seriesBreaks,
+                            )
+                        }
                         val totals = analysisResult.analysis.totals
                         val estimate = analysisResult.analysis.estimate
                         // Brief §4.5 : "Forme du jour" (tableau réel/estimé/écart puis résumé par
@@ -2741,7 +2780,7 @@ internal fun ThreeStopJournalDetail(
                         }
                         // Brief §4.6 : "Chiffres", réduite aux altitudes et pentes sans horodatage
                         // (AnalysisFiguresSection gère elle-même ce repli, totals pouvant être `null`).
-                        AnalysisFiguresSection(totals, analysisResult.timeline.figures)
+                        AnalysisFiguresSection(totals, analysisResult.timeline.figures, elevationAvailable = trackElevationAvailable)
                         // Brief §4.7/§4.8 : seulement s'ils existent.
                         analysisResult.analysis.bestPassages?.let { best ->
                             if (best.climbMetersPerHour != null || best.flatSpeedKmh != null) BestPassagesSection(best)
@@ -2785,6 +2824,7 @@ internal fun ThreeStopJournalDetail(
                                         ReadOnlyBivouacRow(
                                             arrival = track.points.getOrNull(bivouac.trackPointIndex),
                                             departure = track.points.getOrNull(bivouac.trackPointIndex + 1),
+                                            showElevation = trackElevationAvailable,
                                         )
                                     }
                                 }

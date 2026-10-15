@@ -2,11 +2,14 @@ package com.bivouac.app.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -18,6 +21,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -164,6 +168,21 @@ private fun formatKm(km: Double): String {
     }
 }
 
+/** RIC-231 : le message qui remplace la courbe, centré dans la hauteur que la courbe aurait prise. */
+@Composable
+private fun ElevationProfileUnavailable(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.fillMaxWidth().height(72.dp + BOTTOM_AXIS_HEIGHT),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = stringResource(R.string.elevation_profile_unavailable),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 /**
  * Elevation profile of the whole track, with a dot for each bivouac point at its actual altitude,
  * and altitude/distance rulers. RIC-138 : un export GPX réel a parfois quelques points sans
@@ -202,7 +221,16 @@ fun ElevationProfile(
     colorRanges: List<ProfileColorRange> = emptyList(),
     // RIC-146 lot 4 (brief §6) : marqueurs de pause. Vide = comportement inchangé (aucun marqueur).
     pauses: List<ProfilePause> = emptyList(),
+    // RIC-231 : faux quand la trace n'a pas d'altitude exploitable (TrackStats.elevationAvailable de
+    // l'appelant, qui connaît toute la trace : une rando du Journal dont un jour seulement en manque
+    // est « sans altitude » pour le profil comme pour son D+). Le message prend la place de la
+    // courbe, à la même hauteur : le tiroir ne saute pas.
+    elevationAvailable: Boolean = true,
 ) {
+    if (!elevationAvailable) {
+        ElevationProfileUnavailable(modifier)
+        return
+    }
     // RIC-114 : courbe ET axe tirés de la série commune, celle qui produit les statistiques de la
     // même vue : l'axe finit sur la distance affichée, la courbe est celle qui a donné le D+.
     // Distance-based, not index-based: GPS point density varies along a track (denser on slow or
@@ -211,7 +239,12 @@ fun ElevationProfile(
         TrackStatsCalculator.series(points, seriesBreaks, statsParameters)
     }
     val elevations = series.smoothedElevationMeters
-    if (elevations == null || elevations.size < 2) return
+    // RIC-231 : une série nulle, c'est une trace sans altitude exploitable : le message, pas un vide.
+    if (elevations == null) {
+        ElevationProfileUnavailable(modifier)
+        return
+    }
+    if (elevations.size < 2) return
     val cumulativeDistances = series.cumulativeDistanceMeters
 
     // Les jonctions où l'enregistrement a réellement été coupé : dessinées en pointillé plutôt

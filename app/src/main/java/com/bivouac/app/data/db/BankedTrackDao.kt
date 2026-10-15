@@ -33,8 +33,8 @@ interface BankedTrackDao {
     @Query(
         "UPDATE banked_track SET distanceMeters = :distanceMeters, " +
             "elevationGainMeters = :elevationGainMeters, elevationLossMeters = :elevationLossMeters, " +
-            "estimatedDurationMinutes = :estimatedDurationMinutes, statsVersion = :statsVersion " +
-            "WHERE id = :id",
+            "estimatedDurationMinutes = :estimatedDurationMinutes, statsVersion = :statsVersion, " +
+            "elevationAvailable = :elevationAvailable WHERE id = :id",
     )
     suspend fun updateTrackStats(
         id: String,
@@ -43,5 +43,17 @@ interface BankedTrackDao {
         elevationLossMeters: Double,
         estimatedDurationMinutes: Int,
         statsVersion: Int,
+        elevationAvailable: Boolean,
     )
+
+    // RIC-231 : rattrapage du booléen d'altitude des lignes d'avant la migration 23 vers 24, voir
+    // BankedTrackRepository.backfillElevationAvailability.
+    @Query("SELECT * FROM banked_track WHERE elevationAvailable IS NULL ORDER BY id LIMIT :limit")
+    suspend fun getTracksNeedingElevationAvailability(limit: Int): List<BankedTrackEntity>
+
+    @Query("SELECT COUNT(*) FROM banked_track WHERE elevationAvailable IS NULL")
+    suspend fun countTracksNeedingElevationAvailability(): Int
+
+    @Query("UPDATE banked_track SET elevationAvailable = :elevationAvailable WHERE id = :id")
+    suspend fun updateElevationAvailable(id: String, elevationAvailable: Boolean)
 }

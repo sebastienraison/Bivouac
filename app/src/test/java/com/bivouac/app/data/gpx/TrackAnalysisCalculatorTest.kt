@@ -40,7 +40,7 @@ class TrackAnalysisCalculatorTest {
             TrackPoint(
                 latitude = 45.0 + i * stepMeters * degPerMeter,
                 longitude = 6.0,
-                elevationMeters = startElevation + i * stepMeters * slopePercent / 100.0,
+                elevationMeters = startElevation + i * stepMeters * slopePercent / 100.0 + (if (slopePercent == 0.0) flatTrackRelief(i * stepMeters) else 0.0),
                 time = startTime.plusMillis((i * stepSeconds * 1_000).toLong()),
             )
         }

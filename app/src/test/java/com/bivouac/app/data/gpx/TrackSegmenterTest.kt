@@ -36,7 +36,7 @@ class TrackSegmenterTest {
     private fun points(
         count: Int,
         speedKmh: Double = 4.0,
-        elevation: (Int) -> Double? = { 1000.0 },
+        elevation: (Int) -> Double? = { i -> 1000.0 + flatTrackRelief(i * stepMeters) },
         time: (Int) -> Instant? = { i -> BASE_TIME.plusSeconds((i * stepMeters / 1000.0 / speedKmh * 3600.0).toLong()) },
     ): List<TrackPoint> = (0 until count).map { i ->
         TrackPoint(
@@ -90,7 +90,7 @@ class TrackSegmenterTest {
         val track = points(75, elevation = { i ->
             when (i) {
                 20, 21 -> null
-                else -> 1000.0
+                else -> 1000.0 + flatTrackRelief(i * stepMeters)
             }
         }).mapIndexed { i, p -> if (i == 50) p.copy(time = null) else p }
 
@@ -226,7 +226,7 @@ class TrackSegmenterTest {
     private fun pointAt(meters: Double, seconds: Long, elevation: Double = 1000.0) = TrackPoint(
         latitude = 45.0 + meters * degPerMeter,
         longitude = 6.0,
-        elevationMeters = elevation,
+        elevationMeters = elevation + flatTrackRelief(meters),
         time = BASE_TIME.plusSeconds(seconds),
     )
 

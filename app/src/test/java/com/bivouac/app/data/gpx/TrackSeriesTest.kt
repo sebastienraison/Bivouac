@@ -10,6 +10,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -242,7 +243,10 @@ class TrackSeriesTest {
 
         assertEquals(0.0, stats.distanceMeters, 0.0)
         assertEquals(0.0, stats.elevationGainMeters, 0.0)
-        assertEquals(listOf(1234.0), TrackStatsCalculator.smoothedElevationSeries(track))
+        // RIC-231 : une seule altitude ne dit rien du relief (toutes les altitudes sont « identiques ») :
+        // pas de série lissée, trace sans altitude exploitable.
+        assertNull(TrackStatsCalculator.smoothedElevationSeries(track))
+        assertFalse(stats.elevationAvailable)
     }
 
     @Test

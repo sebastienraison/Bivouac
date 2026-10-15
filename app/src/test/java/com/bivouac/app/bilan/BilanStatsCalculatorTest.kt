@@ -467,4 +467,109 @@ class BilanStatsCalculatorTest {
         assertEquals(emptyList<BilanRecord>(), BilanStatsCalculator.recordsHeldBy(stats, "also_ran"))
         assertEquals(emptyList<BilanRecord>(), BilanStatsCalculator.recordsHeldBy(stats, "unknown"))
     }
+
+    // --- RIC-231 : les jours sans altitude comptent pour la distance, pas pour le dénivelé ---
+
+    // Un jour sans altitude : D+ et D- à 0.0 par construction (TrackStatsCalculator.compute), flag faux.
+    private fun dayWithoutElevation(trackId: String, dayIndex: Int, distanceMeters: Double) =
+        day(trackId, dayIndex, distanceMeters = distanceMeters, elevationGainMeters = 0.0, elevationLossMeters = 0.0)
+            .copy(elevationAvailable = false)
+
+    private fun dayWithElevation(trackId: String, dayIndex: Int, distanceMeters: Double, gain: Double) =
+        day(trackId, dayIndex, distanceMeters = distanceMeters, elevationGainMeters = gain, elevationLossMeters = gain)
+            .copy(elevationAvailable = true)
+
+    @Test
+    fun aTrackWithoutElevationCountsForItsDistanceNotForTheCumulativeGainNorTheGainRecord() {
+        val tracks = listOf(
+            track("measured", 2025, 7, distanceMeters = 10_000.0, elevationGainMeters = 800.0),
+            track("planned", 2025, 8, distanceMeters = 12_200.0, elevationGainMeters = 0.0),
+        )
+        val days = mapOf(
+            "measured" to listOf(dayWithElevation("measured", 0, 10_000.0, 800.0)),
+            "planned" to listOf(dayWithoutElevation("planned", 0, 12_200.0)),
+        )
+
+        val stats = BilanStatsCalculator.compute(tracks, days, SpeedCalibration.DEFAULT, zone, now = YearMonth.of(2025, 8))
+
+        assertEquals(2, stats.totalCount)
+        assertEquals(22_200.0, stats.totals.distanceMeters, 1e-9)
+        assertEquals(800.0, stats.totals.elevationGainMeters, 1e-9)
+        assertTrue("une rando a de l'altitude : le total reste un total", stats.totals.elevationAvailable)
+        val gainSeries = stats.progression.first { it.metric == ProgressionMetric.DPLUS }.points
+        assertEquals(listOf(800.0, 0.0), gainSeries.map { it.value })
+        val kmSeries = stats.progression.first { it.metric == ProgressionMetric.KM }.points
+        assertEquals(listOf(10.0, 12.2), kmSeries.map { it.value })
+        assertEquals("measured", stats.maxGainDayRecord!!.trackId)
+        assertEquals(800.0, stats.maxGainDayRecord!!.value, 1e-9)
+        // La distance record, elle, reste une mesure : le jour sans altitude la gagne.
+        assertEquals("planned", stats.maxDistanceDayRecord!!.trackId)
+    }
+
+    @Test
+    fun aJournalOnlyMadeOfTracksWithoutElevationHasUnavailableGainAndNoElevationRecord() {
+        val tracks = listOf(track("planned", 2025, 8, distanceMeters = 12_200.0, elevationGainMeters = 0.0))
+        val days = mapOf("planned" to listOf(dayWithoutElevation("planned", 0, 12_200.0)))
+
+        val stats = BilanStatsCalculator.compute(tracks, days, SpeedCalibration.DEFAULT, zone, now = YearMonth.of(2025, 8))
+
+        assertTrue(!stats.totals.elevationAvailable)
+        assertEquals(0.0, stats.totals.elevationGainMeters, 0.0)
+        assertEquals(12_200.0, stats.totals.distanceMeters, 1e-9)
+        assertNull(stats.maxGainDayRecord)
+        assertNull(stats.maxAltitudeRecord)
+        assertNull(stats.kmEffortRecord)
+        assertNull(stats.vamRecord)
+    }
+
+    @Test
+    fun aMixedTrackOnlyCountsItsDaysWithElevation() {
+        // Jour 0 avec altitude (400 m), jour 1 sans : le total de la rando ne porte que les 400 m
+        // du jour 0, et le Bilan ne compte que ceux-là. Le jour 1, dont la colonne vaut (à tort)
+        // 150 m ici, est retiré explicitement : la règle ne dépend pas de la cohérence des colonnes.
+        val tracks = listOf(track("mixed", 2025, 7, distanceMeters = 20_000.0, elevationGainMeters = 550.0))
+        val days = mapOf(
+            "mixed" to listOf(
+                dayWithElevation("mixed", 0, 10_000.0, 400.0),
+                day("mixed", 1, distanceMeters = 10_000.0, elevationGainMeters = 150.0, elevationLossMeters = 150.0)
+                    .copy(elevationAvailable = false),
+            ),
+        )
+
+        val stats = BilanStatsCalculator.compute(tracks, days, SpeedCalibration.DEFAULT, zone, now = YearMonth.of(2025, 7))
+
+        assertEquals(20_000.0, stats.totals.distanceMeters, 1e-9)
+        assertEquals(400.0, stats.totals.elevationGainMeters, 1e-9)
+        assertTrue(stats.totals.elevationAvailable)
+        assertEquals(1, stats.bivouacCount)
+        assertEquals(400.0, stats.progression.first { it.metric == ProgressionMetric.DPLUS }.points.single().value!!, 1e-9)
+        assertEquals(400.0, stats.maxGainDayRecord!!.value, 1e-9)
+        assertEquals(400.0, stats.biggestTrekRecord!!.extraGainMeters!!, 1e-9)
+    }
+
+    @Test
+    fun aTrekWithoutAnyElevationHasNoGainInItsRecordLine() {
+        val tracks = listOf(track("trek", 2025, 7, distanceMeters = 30_000.0, elevationGainMeters = 0.0))
+        val days = mapOf(
+            "trek" to listOf(dayWithoutElevation("trek", 0, 15_000.0), dayWithoutElevation("trek", 1, 15_000.0)),
+        )
+
+        val stats = BilanStatsCalculator.compute(tracks, days, SpeedCalibration.DEFAULT, zone, now = YearMonth.of(2025, 7))
+
+        assertEquals(30.0, stats.biggestTrekRecord!!.extraDistanceKm!!, 1e-9)
+        assertNull(stats.biggestTrekRecord!!.extraGainMeters)
+    }
+
+    @Test
+    fun rowsWithoutTheColumnYetBehaveLikeBefore() {
+        // Colonne nulle (pas rattrapée) : lue comme « disponible », strictement l'ancien calcul.
+        val tracks = listOf(track("old", 2025, 7, distanceMeters = 10_000.0, elevationGainMeters = 500.0))
+        val days = mapOf("old" to listOf(day("old", 0, distanceMeters = 10_000.0, elevationGainMeters = 500.0)))
+
+        val stats = BilanStatsCalculator.compute(tracks, days, SpeedCalibration.DEFAULT, zone, now = YearMonth.of(2025, 7))
+
+        assertEquals(500.0, stats.totals.elevationGainMeters, 1e-9)
+        assertTrue(stats.totals.elevationAvailable)
+        assertEquals(500.0, stats.maxGainDayRecord!!.value, 1e-9)
+    }
 }

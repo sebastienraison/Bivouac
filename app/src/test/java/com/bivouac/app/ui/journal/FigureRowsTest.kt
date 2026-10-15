@@ -32,4 +32,14 @@ class FigureRowsTest {
             figureRowsFor(hasTimestamps = false),
         )
     }
+
+    // RIC-231 : sans altitude exploitable, plus d'altitudes ni de pentes ; les vitesses restent.
+    @Test
+    fun sansAltitudeLesLignesDAltitudeEtDePenteDisparaissent() {
+        assertEquals(
+            listOf(FigureRowKind.MOVING_SPEED, FigureRowKind.CLIMBING_SPEED),
+            figureRowsFor(hasTimestamps = true, elevationAvailable = false),
+        )
+        assertEquals(emptyList<FigureRowKind>(), figureRowsFor(hasTimestamps = false, elevationAvailable = false))
+    }
 }

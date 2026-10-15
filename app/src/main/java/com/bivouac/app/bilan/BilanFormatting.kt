@@ -97,6 +97,9 @@ internal fun recordMetaLines(context: Context, record: BilanRecord): List<String
             formatKm1(distance),
             formatGroupedInt(gain),
         )
+    } else if (distance != null) {
+        // RIC-231 : trek sans altitude, la distance seule.
+        lines += context.getString(R.string.format_distance_km, formatKm1(distance))
     }
     return lines
 }

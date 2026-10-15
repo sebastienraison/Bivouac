@@ -236,6 +236,7 @@ class BivouacDatabaseMigrationTest {
             BivouacDatabase.MIGRATION_20_21,
             BivouacDatabase.MIGRATION_21_22,
             BivouacDatabase.MIGRATION_22_23,
+            BivouacDatabase.MIGRATION_23_24,
         )
 
         // RIC-97 : la ligne saved_track née en v1 avec gpxContent en colonne doit ressortir avec
@@ -1640,6 +1641,91 @@ class BivouacDatabaseMigrationTest {
             assertTrue(cursor.moveToFirst())
             assertEquals("14,29", cursor.getString(0))
             assertEquals(setOf(14, 29), RefusedBivouacStops.decode(cursor.getString(0)))
+        }
+
+        migrated.close()
+    }
+
+    // RIC-231 (2.7.0) : elevationAvailable arrive nulle (pas encore rattrapée) sur les jours du
+    // Journal et les traces de la Banque existants, sans toucher à leurs autres colonnes, puis accepte
+    // vrai et faux comme les écrit le rattrapage d'altitude du premier lancement.
+    @Test
+    fun migrate23To24_addsNullElevationAvailableOnDaysAndBankedTracksWithoutTouchingExistingRows() {
+        helper.createDatabase(testDbName, 23).apply {
+            execSQL(
+                "INSERT INTO logged_track (id, name, startedAt, contentHash, distanceMeters, " +
+                    "elevationGainMeters, elevationLossMeters, pointCount, " +
+                    "estimatedDurationMinutes, note, statsVersion, bivouacReviewVersion) VALUES " +
+                    "('track-1', 'Randonnee Belledonne', 1780300800000, 'hash-track-1', " +
+                    "8200.0, 650.0, 300.0, 3, 240, '', 4, 1)",
+            )
+            execSQL(
+                "INSERT INTO logged_track_day (id, trackId, dayIndex, rawGpxFilePath, " +
+                    "contentHash, startedAtMillis, elapsedSeconds, elevationBackfilled, " +
+                    "maxElevationMeters, lastPointElevationMeters, distanceMeters, elevationGainMeters, " +
+                    "elevationLossMeters, refusedBivouacStops) VALUES (1, 'track-1', 0, " +
+                    "'gpx/track-1-day0.gpx', 'day0-hash', 1780300800000, 50400, 1, 2100.0, 1800.0, " +
+                    "8200.0, 650.0, 300.0, '14,29')",
+            )
+            execSQL(
+                "INSERT INTO banked_track (id, name, gpxFilePath, bivouacTrackPointIndices, " +
+                    "distanceMeters, elevationGainMeters, elevationLossMeters, " +
+                    "estimatedDurationMinutes, savedAt, statsVersion) VALUES " +
+                    "('banked-1', 'Plan Belledonne', 'gpx-planif/banked-1.gpx', '0,12', " +
+                    "12200.0, 0.0, 0.0, 215, 1780300800000, 4)",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            testDbName,
+            24,
+            true,
+            BivouacDatabase.MIGRATION_23_24,
+        )
+
+        migrated.query(
+            "SELECT rawGpxFilePath, contentHash, maxElevationMeters, distanceMeters, refusedBivouacStops, " +
+                "elevationAvailable FROM logged_track_day WHERE id = 1",
+        ).use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("gpx/track-1-day0.gpx", cursor.getString(0))
+            assertEquals("day0-hash", cursor.getString(1))
+            assertEquals(2100.0, cursor.getDouble(2), 1e-9)
+            assertEquals(8200.0, cursor.getDouble(3), 1e-9)
+            assertEquals("14,29", cursor.getString(4))
+            assertTrue("elevationAvailable doit arriver nulle (pas encore rattrapée)", cursor.isNull(5))
+        }
+        migrated.query(
+            "SELECT name, gpxFilePath, bivouacTrackPointIndices, distanceMeters, statsVersion, " +
+                "elevationAvailable FROM banked_track WHERE id = 'banked-1'",
+        ).use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Plan Belledonne", cursor.getString(0))
+            assertEquals("gpx-planif/banked-1.gpx", cursor.getString(1))
+            assertEquals("0,12", cursor.getString(2))
+            assertEquals(12200.0, cursor.getDouble(3), 1e-9)
+            assertEquals(4, cursor.getInt(4))
+            assertTrue("elevationAvailable doit arriver nulle (pas encore rattrapée)", cursor.isNull(5))
+        }
+        migrated.query("SELECT statsVersion, bivouacReviewVersion FROM logged_track WHERE id = 'track-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(4, cursor.getInt(0))
+            assertEquals(1, cursor.getInt(1))
+        }
+
+        // Ce que les rattrapages écrivent ensuite : un booléen Room, 0 ou 1.
+        migrated.execSQL("UPDATE logged_track_day SET elevationAvailable = 0 WHERE id = 1")
+        migrated.execSQL("UPDATE banked_track SET elevationAvailable = 1 WHERE id = 'banked-1'")
+        migrated.query("SELECT elevationAvailable FROM logged_track_day WHERE id = 1").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        migrated.query("SELECT elevationAvailable FROM banked_track WHERE id = 'banked-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1, cursor.getInt(0))
         }
 
         migrated.close()
