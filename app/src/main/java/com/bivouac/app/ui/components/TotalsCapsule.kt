@@ -85,7 +85,12 @@ fun TotalsCapsule(
                 modifier = Modifier.weight(1f),
             )
             TotalsStatItem(
-                value = stringResource(R.string.format_elevation_meters, formatGrouped(stats.elevationGainMeters)),
+                // RIC-231 : « D+ indisponible » quand aucune des randos comptées n'a d'altitude.
+                value = if (stats.elevationAvailable) {
+                    stringResource(R.string.format_elevation_meters, formatGrouped(stats.elevationGainMeters))
+                } else {
+                    stringResource(R.string.fmt_stats_rows_gain_unavailable)
+                },
                 label = stringResource(R.string.bilan_totals_label_gain),
                 icon = Icons.AutoMirrored.Filled.TrendingUp,
                 color = GainIconColor,

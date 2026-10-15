@@ -514,17 +514,19 @@ internal enum class FigureRowKind { MOVING_SPEED, CLIMBING_SPEED, HIGHEST, LOWES
  * (trace sans horodatage) : réduite aux altitudes et aux pentes, les deux vitesses supposant un
  * temps de marche qui n'existe pas alors.
  */
-internal fun figureRowsFor(hasTimestamps: Boolean): List<FigureRowKind> = if (hasTimestamps) {
-    listOf(
-        FigureRowKind.MOVING_SPEED,
-        FigureRowKind.CLIMBING_SPEED,
-        FigureRowKind.HIGHEST,
-        FigureRowKind.LOWEST,
-        FigureRowKind.STEEPEST_CLIMB,
-        FigureRowKind.STEEPEST_DESCENT,
-    )
-} else {
-    listOf(FigureRowKind.HIGHEST, FigureRowKind.LOWEST, FigureRowKind.STEEPEST_CLIMB, FigureRowKind.STEEPEST_DESCENT)
+internal fun figureRowsFor(hasTimestamps: Boolean, elevationAvailable: Boolean = true): List<FigureRowKind> {
+    // RIC-231 : sans altitude exploitable, les altitudes mini et maxi et les pentes les plus fortes
+    // n'existent pas : ces quatre lignes disparaissent, plutôt que d'afficher un « - » ou, pire, un 0.
+    val elevationRows = if (elevationAvailable) {
+        listOf(FigureRowKind.HIGHEST, FigureRowKind.LOWEST, FigureRowKind.STEEPEST_CLIMB, FigureRowKind.STEEPEST_DESCENT)
+    } else {
+        emptyList()
+    }
+    return if (hasTimestamps) {
+        listOf(FigureRowKind.MOVING_SPEED, FigureRowKind.CLIMBING_SPEED) + elevationRows
+    } else {
+        elevationRows
+    }
 }
 
 @Composable
@@ -536,13 +538,22 @@ private fun FigureRow(label: String, value: String) {
 }
 
 @Composable
-internal fun AnalysisFiguresSection(totals: AnalysisTotals?, figures: TrackFigures, modifier: Modifier = Modifier) {
+internal fun AnalysisFiguresSection(
+    totals: AnalysisTotals?,
+    figures: TrackFigures,
+    modifier: Modifier = Modifier,
+    elevationAvailable: Boolean = true,
+) {
+    // RIC-231 : une trace sans horodatage ET sans altitude n'a aucune ligne à montrer : pas de
+    // section vide.
+    val rows = figureRowsFor(hasTimestamps = totals != null, elevationAvailable = elevationAvailable)
+    if (rows.isEmpty()) return
     Column(modifier = modifier) {
         SectionTitle(stringResource(R.string.journal_analysis_section_figures))
         // RIC-146 lot 8 (finition B2) : interligne porté de 8 à 10 dp ; plus de padding top, voir
         // le commentaire de AnalysisFormSection.
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            figureRowsFor(hasTimestamps = totals != null).forEach { kind ->
+            rows.forEach { kind ->
                 when (kind) {
                     FigureRowKind.MOVING_SPEED -> FigureRow(
                         stringResource(R.string.journal_analysis_figure_moving_speed),

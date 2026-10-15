@@ -65,6 +65,7 @@ import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.ui.components.DrawerStop
+import com.bivouac.app.ui.components.ElevationMissingBanner
 import com.bivouac.app.ui.components.ElevationProfile
 import com.bivouac.app.ui.components.GainIconColor
 import com.bivouac.app.ui.components.formatGroupedInt
@@ -213,6 +214,11 @@ internal fun ThreeStopPlanificationDetail(
                             onCloseClick = onCloseClick,
                         )
                     }
+                    // RIC-231 : bandeau permanent d'une trace sans altitude, sous le titre. Dans la
+                    // colonne mesurée de la Synthèse : le cran grandit de sa hauteur tout seul.
+                    if (!stats.elevationAvailable) {
+                        ElevationMissingBanner(modifier = Modifier.padding(top = 4.dp, bottom = 6.dp))
+                    }
                     if (bivouacPoints.isNotEmpty()) {
                         Text(
                             text = stringResource(R.string.journal_detail_total_label),
@@ -242,6 +248,7 @@ internal fun ThreeStopPlanificationDetail(
                     modifier = Modifier
                         .padding(horizontal = 20.dp)
                         .padding(top = 10.dp, bottom = 2.dp),
+                    elevationAvailable = stats.elevationAvailable,
                 )
 
                 // Clôture permanente sous la courbe, puis un espace de la hauteur de la barre de
@@ -272,6 +279,7 @@ internal fun ThreeStopPlanificationDetail(
                             onExportSegment = onExportSegment,
                             onWeatherClick = onWeatherClick,
                             nonFreeFeaturesDisabled = nonFreeFeaturesDisabled,
+                            elevationAvailable = stats.elevationAvailable,
                         )
                     }
                 }
@@ -355,6 +363,7 @@ private fun SegmentsList(
     onExportSegment: (index: Int, segment: Segment) -> Unit,
     onWeatherClick: (TrackPoint) -> Unit,
     nonFreeFeaturesDisabled: Boolean,
+    elevationAvailable: Boolean = true,
 ) {
     Column(modifier = Modifier.padding(top = 12.dp)) {
         segments.forEachIndexed { index, segment ->
@@ -390,6 +399,7 @@ private fun SegmentsList(
                     onWeatherClick = { onWeatherClick(trackPoint) },
                     onRemove = { onRemovePoint(bivouac.id) },
                     showWeather = !nonFreeFeaturesDisabled,
+                    showElevation = elevationAvailable,
                 )
             }
         }
@@ -398,7 +408,15 @@ private fun SegmentsList(
 }
 
 @Composable
-private fun BivouacRow(trackPoint: TrackPoint, onWeatherClick: () -> Unit, onRemove: () -> Unit, showWeather: Boolean = true) {
+private fun BivouacRow(
+    trackPoint: TrackPoint,
+    onWeatherClick: () -> Unit,
+    onRemove: () -> Unit,
+    showWeather: Boolean = true,
+    // RIC-231 : l'altitude d'un bivouac n'a pas de sens sur une trace sans altitude exploitable
+    // (absente, ou la même partout : un 0 m n'est pas une mesure).
+    showElevation: Boolean = true,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -410,7 +428,7 @@ private fun BivouacRow(trackPoint: TrackPoint, onWeatherClick: () -> Unit, onRem
             modifier = Modifier.size(24.dp),
         )
         val elevation = trackPoint.elevationMeters
-        if (elevation != null) {
+        if (elevation != null && showElevation) {
             InfoText(
                 text = stringResource(R.string.format_elevation_meters, formatGroupedInt(elevation.roundToInt())),
                 icon = Icons.Default.Terrain,

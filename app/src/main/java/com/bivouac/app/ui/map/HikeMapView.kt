@@ -698,7 +698,10 @@ private fun renderTrack(
     // RIC-146 lot 3 : liseré blanc conservé (juste au-dessus), coloration par tronçon à la place de
     // la ligne unie du tracé normal (brief lot 3 §3). Un tronçon sans classe garde la couleur
     // neutre plutôt que de percer le liseré : jamais de trou dans le tracé.
-    if (analysisData != null) {
+    // RIC-231 : sans le moindre tronçon (trace sans altitude : le découpage en tronçons lit l'altitude
+    // lissée), la coloration n'aurait rien à colorer et la trace disparaîtrait sous son liseré. Elle
+    // garde alors son trait ordinaire.
+    if (analysisData != null && analysisData.daySegments.any { it.isNotEmpty() }) {
         fun coloredPolyline(pts: List<GeoPoint>, color: Int) = Polyline(mapView).apply {
             setPoints(pts)
             paint.apply {
@@ -1665,6 +1668,7 @@ internal class TrackDistanceCache {
     private var parameters: TrackStatsParameters = TrackStatsParameters.DEFAULT
     private var cachedPoints: List<TrackPoint>? = null
     private var cachedDistances: DoubleArray = DoubleArray(0)
+    private var cachedElevationAvailable: Boolean = true
 
     fun bind(seriesBreaks: Set<Int>, statsParameters: TrackStatsParameters) {
         if (seriesBreaks == breaks && statsParameters == parameters) return
@@ -1676,9 +1680,21 @@ internal class TrackDistanceCache {
     fun distancesFor(points: List<TrackPoint>): DoubleArray {
         if (cachedPoints !== points) {
             cachedPoints = points
-            cachedDistances = TrackStatsCalculator.series(points, breaks, parameters).cumulativeDistanceMeters
+            val series = TrackStatsCalculator.series(points, breaks, parameters)
+            cachedDistances = series.cumulativeDistanceMeters
+            cachedElevationAvailable = series.smoothedElevationMeters != null || points.isEmpty()
         }
         return cachedDistances
+    }
+
+    /**
+     * RIC-231 : la trace [points] a-t-elle une altitude exploitable (la série commune a une altitude
+     * lissée) ? Lu sur la même série que [distancesFor], calculée une seule fois par liste de points :
+     * la bulle du curseur n'affiche l'altitude d'un point que si elle existe.
+     */
+    fun elevationAvailableFor(points: List<TrackPoint>): Boolean {
+        distancesFor(points)
+        return cachedElevationAvailable
     }
 }
 
@@ -1693,7 +1709,9 @@ private fun cursorBubbleText(
     distanceCache: TrackDistanceCache,
 ): String {
     val distanceKm = distanceCache.distancesFor(points)[index] / 1000.0
-    val altitude = points[index].elevationMeters?.roundToInt()
+    // RIC-231 : une trace sans altitude exploitable (aucune, ou la même partout) n'a pas d'altitude à
+    // montrer sous le curseur : un 0 m ne serait pas une mesure.
+    val altitude = points[index].elevationMeters?.roundToInt()?.takeIf { distanceCache.elevationAvailableFor(points) }
     val distanceText = context.getString(R.string.map_cursor_bubble_distance_km_format, formatKm1(distanceKm))
     return if (altitude != null) {
         context.getString(
