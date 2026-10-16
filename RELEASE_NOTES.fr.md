@@ -2,6 +2,31 @@
 
 *[English version](RELEASE_NOTES.md)*
 
+## V2.7.0
+
+**Trek de plusieurs jours dans un seul fichier GPX (nouveau) :**
+
+- À l'import, Bivouac repère les arrêts prolongés de nuit (au moins quatre heures, entre 19 h et
+  5 h à l'heure du lieu) et demande, pour chacun, bivouac ou simple pause
+- Bivouac : la rando se lit jour par jour. Pause : elle reste une journée, l'arrêt compte en pause,
+  pas en marche
+- Les randos déjà présentes sont passées en revue au premier lancement ; « Détecter les bivouacs »,
+  dans le menu d'une rando, permet d'y revenir
+
+**Planification :**
+
+- Un bivouac posé sur une trace à points espacés ne retire plus rien au total
+- Le tiroir ne passe plus sous la barre de navigation à trois boutons
+
+**Trace sans altitude :**
+
+- Signalée dans le tiroir ; dénivelé, profil et pente marqués indisponibles au lieu de 0 m, durée
+  estimée conservée comme ordre de grandeur, dénivelé non compté au Bilan
+
+**Corrections :**
+
+- Un import qui ne peut pas être enregistré est signalé au lieu de fermer l'application
+
 ## V2.6.0
 
 **Analyse d'une rando (nouveau) :**

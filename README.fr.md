@@ -27,7 +27,8 @@ Présentation, captures, installation et questions fréquentes : **[bivouac.rseb
 - **Planification** : import GPX (sélecteur de fichiers ou partage depuis une autre app), banque
   de traces, bivouacs aimantés au tracé avec altitude et lien météo, étapes recalculées
   (distance, dénivelé, durée estimée), export GPX d'une étape
-- **Journal** : sorties d'un ou plusieurs jours (plusieurs fichiers importés ensemble), note,
+- **Journal** : sorties d'un ou plusieurs jours (plusieurs fichiers importés ensemble, ou un seul
+  fichier dont les bivouacs sont détectés), note,
   tags, photos placées sur la trace par leur GPS ou leur heure de prise de vue, recadrage non
   destructif, deux modes de stockage des photos
 - **Analyse** : coloration par forme, pente ou vitesse ; profil en distance ou en durée ; durée

@@ -2,6 +2,31 @@
 
 *[Version française](RELEASE_NOTES.fr.md)*
 
+## V2.7.0
+
+**Multi-day trek in a single GPX file (new):**
+
+- On import, Bivouac detects extended overnight stops (at least four hours, between 7 pm and 5 am
+  local time) and asks, for each one, bivouac or just a break
+- Bivouac: the hike reads day by day. Break: it stays a single day, and the stop counts as a break,
+  not as walking
+- Existing hikes are reviewed on first launch; "Detect bivouacs", in a hike's menu, lets you come
+  back to it
+
+**Planning:**
+
+- Placing a bivouac on a track with widely spaced points no longer removes anything from the total
+- The drawer no longer slides under the 3-button navigation bar
+
+**Track without elevation data:**
+
+- Flagged in the drawer; elevation gain, profile and gradient shown as unavailable instead of 0 m,
+  estimated duration kept as a rough figure, elevation gain not counted in Stats
+
+**Bugfixes:**
+
+- An import that cannot be saved is reported instead of closing the app
+
 ## V2.6.0
 
 **Hike analysis (new):**

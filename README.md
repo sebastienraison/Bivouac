@@ -27,7 +27,8 @@ Overview, screenshots, installation and FAQ: **[bivouac.rseb.net](https://bivoua
 - **Planning**: GPX import (file picker or sharing from another app), track bank, bivouacs
   snapped to the route with altitude and a weather link, stages recalculated (distance,
   elevation, estimated duration), GPX export of a stage
-- **Journal**: hikes of one or several days (several files imported together), note, tags,
+- **Journal**: hikes of one or several days (several files imported together, or a single file
+  whose bivouacs are detected), note, tags,
   photos placed on the track from their GPS or their capture time, non-destructive crop, two
   photo storage modes
 - **Analysis**: colouring by form, slope or speed; profile by distance or by duration; actual
