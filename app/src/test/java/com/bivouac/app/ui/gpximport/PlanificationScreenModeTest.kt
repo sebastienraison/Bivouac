@@ -60,6 +60,41 @@ class PlanificationScreenModeTest {
         assertFalse(carriesAMap(mode))
     }
 
+    /**
+     * RIC-243 : la fenêtre que RIC-164 laissait ouverte. La banque a déjà répondu (vide) mais la
+     * restauration de la session précédente est encore en vol : `Loading` tombait dans le `else`
+     * et rendait BANK, donc un MapView et une tuile OpenTopoMap, puis la restauration répondait
+     * « rien » et l'écran passait à EMPTY sans que personne ait vu la carte.
+     */
+    @Test
+    fun loadingAfterTheBankHasAnsweredEmpty_carriesNoMap() {
+        val mode = planificationScreenMode(
+            uiState = GpxImportUiState.Loading,
+            bankedTracesEmpty = true,
+            bankedTracesLoaded = true,
+        )
+
+        assertEquals(PlanificationScreenMode.LOADING, mode)
+        assertFalse("une restauration ou un import en vol n'est pas quelque chose à montrer", carriesAMap(mode))
+    }
+
+    /**
+     * RIC-243 : même règle banque non vide. C'est aussi le chemin de l'ouverture d'une trace depuis
+     * la liste (openFromBank passe par Loading) et de la restauration d'une session qui aboutit
+     * à Loaded : aucune carte de fond tant que la lecture est en vol.
+     */
+    @Test
+    fun loadingAfterTheBankHasAnsweredNonEmpty_carriesNoMap() {
+        val mode = planificationScreenMode(
+            uiState = GpxImportUiState.Loading,
+            bankedTracesEmpty = false,
+            bankedTracesLoaded = true,
+        )
+
+        assertEquals(PlanificationScreenMode.LOADING, mode)
+        assertFalse(carriesAMap(mode))
+    }
+
     /** L'écran d'accueil de RIC-105 : banque vraiment vide, et toujours aucune carte. */
     @Test
     fun emptyBank_carriesNoMap() {
