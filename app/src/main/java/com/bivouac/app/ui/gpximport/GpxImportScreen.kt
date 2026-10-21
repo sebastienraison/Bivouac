@@ -136,11 +136,21 @@ internal fun bankPeekHeight(navigationBarHeight: Dp, maxPeekHeight: Dp): Dp =
  * MapView qui déclenche le téléchargement, pas son affichage : la seule garantie possible est de ne
  * pas le créer, et c'est ce que ce mode assure.
  *
+ * RIC-243 : la même fenêtre existait une seconde fois, une fois la banque lue. Au démarrage à
+ * froid, la restauration de la session précédente passe par [GpxImportUiState.Loading] ; si la
+ * banque (vide) avait répondu avant elle, le `else` rendait BANK, donc un MapView et une tuile,
+ * puis la restauration répondait « rien » et l'écran passait à EMPTY. Une restauration ou un
+ * import en vol n'est pas « quelque chose à montrer » : tout [GpxImportUiState.Loading] est donc
+ * sans carte, quelle que soit la banque.
+ *
  * Fonction pure et testable plutôt qu'une cascade de `if` dans le composable : l'invariant à tenir
  * (« pas de carte avant qu'il y ait quelque chose à montrer ») se vérifie alors sans appareil.
  */
 internal enum class PlanificationScreenMode {
-    /** Première lecture de la banque en vol. Aucune carte. */
+    /**
+     * Deux moments sans carte : la première lecture de la banque en vol (RIC-164) et toute
+     * restauration ou tout import en vol, [GpxImportUiState.Loading] (RIC-243). Aucune carte.
+     */
     LOADING,
 
     /** Banque vide et rien d'ouvert : plein écran d'accueil. Aucune carte. */
@@ -162,6 +172,8 @@ internal fun planificationScreenMode(
     // la lecture de la banque n'a pas encore répondu (cas de la restauration de session).
     uiState is GpxImportUiState.Loaded -> PlanificationScreenMode.DETAIL
     !bankedTracesLoaded -> PlanificationScreenMode.LOADING
+    // RIC-243 : restauration de session ou import en vol, même banque lue : rien à montrer encore.
+    uiState is GpxImportUiState.Loading -> PlanificationScreenMode.LOADING
     uiState is GpxImportUiState.Idle && bankedTracesEmpty -> PlanificationScreenMode.EMPTY
     else -> PlanificationScreenMode.BANK
 }
@@ -327,8 +339,9 @@ fun GpxImportScreen(
     // bel et bien sur le point d'être restaurée (voir GpxImportViewModel.bankedTracesLoaded).
     val screenMode = planificationScreenMode(uiState, bankedTraces.isEmpty(), bankedTracesLoaded)
     if (screenMode == PlanificationScreenMode.LOADING) {
-        // RIC-164 : rien, surtout pas de carte, tant que la première lecture Room n'a pas répondu.
-        // Voir [planificationScreenMode] pour ce que ce trou coûtait.
+        // RIC-164, RIC-243 : rien, surtout pas de carte, tant que la première lecture Room n'a pas
+        // répondu ni qu'une restauration ou un import n'est en vol. Voir [planificationScreenMode]
+        // pour ce que ces trous coûtaient.
         Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             SectionMenuButton(
