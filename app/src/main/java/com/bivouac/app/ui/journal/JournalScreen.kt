@@ -2538,7 +2538,10 @@ internal fun ThreeStopJournalDetail(
                                 // doit pas en dire moins qu'une sortie survolée. Les dates
                                 // viennent ici des points déjà chargés, pas des colonnes
                                 // dénormalisées, la trace étant de toute façon parsée pour être
-                                // affichée.
+                                // affichée. RIC-233 : même règle des deux côtés (TrekDayDates, date
+                                // du premier et du dernier point de chaque jour) ; la liste dérive
+                                // la fin de startedAtMillis + elapsedSeconds, voir le cas limite
+                                // documenté sur TrekDayDates.ofStartAndElapsed.
                                 Text(
                                     text = TrekDatesFormatter.format(LocalContext.current, trekDayDates, appLocale())
                                         ?: formatStartedAt(entry.startedAt, appLocale()),

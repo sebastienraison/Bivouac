@@ -34,6 +34,7 @@ import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
+import com.bivouac.app.data.model.TrekDayDates
 import com.bivouac.app.data.operations.ExclusiveOperation
 import com.bivouac.app.data.operations.ExclusiveOperations
 import com.bivouac.app.data.operations.exclusiveOperationRefusalMessage
@@ -49,7 +50,6 @@ import com.bivouac.app.data.photo.withAdjustments
 import com.bivouac.app.data.prefs.MapLayerPreferences
 import com.bivouac.app.data.prefs.SettingsPreferences
 import com.bivouac.app.ui.map.MapLayer
-import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
@@ -761,7 +761,9 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                             // Les jours sans horodatage exploitable, et ceux que le rattrapage n'a
                             // pas encore traités, sont absents : afficher les dates connues vaut
                             // mieux qu'inventer les autres. dayCount, lui, est toujours juste.
-                            dates = days.mapNotNull { it.startedAtMillis }.map { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() },
+                            // RIC-233 : date de début ET date de fin de chaque jour, la fin
+                            // dérivée de startedAtMillis + elapsedSeconds (TrekDayDates).
+                            dates = TrekDayDates.ofStartAndElapsed(days.map { it.startedAtMillis to it.elapsedSeconds }, zone),
                             realDuration = RealDurationCalculator.forDays(days),
                             elevationAvailable = days.all { it.elevationAvailable != false },
                         )

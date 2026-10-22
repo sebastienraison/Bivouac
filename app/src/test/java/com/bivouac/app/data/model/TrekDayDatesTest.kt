@@ -59,4 +59,33 @@ class TrekDayDatesTest {
             TrekDayDates.of(listOf(first, second), paris),
         )
     }
+
+    // Liste du Journal : fin du jour = startedAtMillis + elapsedSeconds (pilotage, 22/10).
+    @Test
+    fun `liste, un jour qui passe minuit porte ses deux dates`() {
+        val start = at("2025-12-31T20:00:00")
+        val elapsed = 13L * 3_600 + 15 * 60 // fin le 1er janvier à 09:15
+        assertEquals(
+            listOf(LocalDate.of(2025, 12, 31), LocalDate.of(2026, 1, 1)),
+            TrekDayDates.ofStartAndElapsed(listOf(start.toEpochMilli() to elapsed), paris),
+        )
+    }
+
+    @Test
+    fun `liste, sans duree ecoulee le jour garde sa seule date de debut`() {
+        val start = at("2025-12-31T20:00:00")
+        assertEquals(
+            listOf(LocalDate.of(2025, 12, 31)),
+            TrekDayDates.ofStartAndElapsed(listOf(start.toEpochMilli() to null), paris),
+        )
+    }
+
+    @Test
+    fun `liste, un jour sans horodatage est ignore`() {
+        val start = at("2026-06-11T08:00:00")
+        assertEquals(
+            listOf(LocalDate.of(2026, 6, 11)),
+            TrekDayDates.ofStartAndElapsed(listOf(start.toEpochMilli() to 3_600L, null to null), paris),
+        )
+    }
 }
