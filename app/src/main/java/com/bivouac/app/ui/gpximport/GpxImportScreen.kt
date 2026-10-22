@@ -91,6 +91,7 @@ import com.bivouac.app.journal.DuplicatePlanRequest
 import com.bivouac.app.ui.components.FullScreenEmptyState
 import com.bivouac.app.ui.components.StatsRows
 import com.bivouac.app.ui.components.halfWindowHeight
+import com.bivouac.app.ui.components.peekHeightAboveNavigationBar
 import com.bivouac.app.ui.map.HikeMapView
 import com.bivouac.app.ui.map.MapControls
 import com.bivouac.app.ui.nav.AppSection
@@ -102,19 +103,6 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
 import kotlinx.coroutines.flow.first
-
-private val PEEK_HEIGHT_EMPTY = 150.dp
-
-/**
- * RIC-224 : hauteur du cran bas du tiroir de la banque. Le tiroir est posé dans la fenêtre entière
- * (edge-to-edge) : sa hauteur de repli compte donc aussi la zone de la barre de navigation. Sans
- * elle, une barre opaque (navigation à trois boutons, 48 dp) mangeait d'autant la hauteur utile et
- * cachait la ligne des chiffres de la première trace. La hauteur utile au-dessus de la barre reste
- * [PEEK_HEIGHT_EMPTY] ; en gestes, la barre est fine (environ 16 dp) et la différence s'y limite.
- * Le plafond de [halfWindowHeight] s'applique au total, pour qu'une fenêtre courte garde sa carte.
- */
-internal fun bankPeekHeight(navigationBarHeight: Dp, maxPeekHeight: Dp): Dp =
-    (PEEK_HEIGHT_EMPTY + navigationBarHeight).coerceAtMost(maxPeekHeight)
 
 /**
  * RIC-164 : les quatre visages de l'écran Planification, dont deux seulement portent une carte.
@@ -306,7 +294,7 @@ fun GpxImportScreen(
     val maxPeekHeight = halfWindowHeight()
     // RIC-224 : le cran bas du tiroir de la banque se mesure depuis le bord de la fenêtre, barre
     // de navigation comprise ; à trois boutons (opaque, 48 dp) elle cachait la fin de la première
-    // trace. Voir bankPeekHeight.
+    // trace. Voir peekHeightAboveNavigationBar.
     val navigationBarHeight = with(LocalDensity.current) { WindowInsets.navigationBars.getBottom(this).toDp() }
 
     // Hissés ici (et non plus créés dans TrackSheetContent) : le FAB flottant qui recouvre
@@ -375,7 +363,7 @@ fun GpxImportScreen(
             BottomSheetScaffold(
                 modifier = Modifier.fillMaxSize(),
                 scaffoldState = bottomSheetScaffoldState,
-                sheetPeekHeight = bankPeekHeight(navigationBarHeight, maxPeekHeight),
+                sheetPeekHeight = peekHeightAboveNavigationBar(navigationBarHeight, maxPeekHeight),
                 sheetContent = {
                     TrackSheetContent(
                         uiState = uiState,

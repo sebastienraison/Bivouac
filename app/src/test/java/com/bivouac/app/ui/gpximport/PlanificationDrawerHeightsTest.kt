@@ -118,17 +118,4 @@ class PlanificationDrawerHeightsTest {
         assertTrue(h.detailHeightPx in h.profileHeightPx..500f)
         assertEquals(0f, h.segmentsMaxHeightPx, 0.001f)
     }
-
-    @Test
-    fun `banque le cran bas compte la barre de navigation`() {
-        assertEquals(150.dp, bankPeekHeight(0.dp, 600.dp))
-        assertEquals(198.dp, bankPeekHeight(48.dp, 600.dp))
-        // Gestes : barre fine, la difference se limite a sa hauteur.
-        assertEquals(166.dp, bankPeekHeight(16.dp, 600.dp))
-    }
-
-    @Test
-    fun `banque le plafond de la demi-fenetre s'applique au total`() {
-        assertEquals(120.dp, bankPeekHeight(48.dp, 120.dp))
-    }
 }
