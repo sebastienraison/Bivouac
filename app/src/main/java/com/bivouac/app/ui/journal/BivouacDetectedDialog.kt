@@ -7,11 +7,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.bivouac.app.R
 import com.bivouac.app.journal.BivouacQuestion
+import com.bivouac.app.ui.components.appLocale
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -23,7 +23,7 @@ internal data class BivouacDateTimes(val stop: String, val resume: String)
 
 /**
  * RIC-227 (textes validés par Seb le 15/10) : « mardi 12 août à 20 h 30 » / « Tuesday 12 August at
- * 20:30 », dans la [locale] de l'appareil et le fuseau du bivouac ([zone], celui retenu par la
+ * 20:30 », dans la [locale] des dates de l'app (AppLocale, RIC-245) et le fuseau du bivouac ([zone], celui retenu par la
  * détection, pas celui de l'appareil). [pattern] et [patternWithYear] sont les motifs de
  * l'inventaire (`bivouac_detected_datetime_pattern` et `..._with_year`) : le second sert aux deux
  * instants quand ils ne tombent pas la même année dans [zone]. Fonction pure, testée par
@@ -59,8 +59,10 @@ internal fun BivouacDetectedDialog(question: BivouacQuestion, onSplit: () -> Uni
         stopAt = bivouac.stopAt,
         resumeAt = bivouac.resumeAt,
         zone = bivouac.zone,
-        // Locale observable de Compose (lint NonObservableLocale), même choix que SettingsScreen.
-        locale = LocalLocale.current.platformLocale,
+        // RIC-245 : la locale des dates de l'app (AppLocale), lue par sa variante composable,
+        // observable (lint NonObservableLocale) : sur un appareil allemand, la phrase est anglaise
+        // et ses jours et mois aussi.
+        locale = appLocale(),
         pattern = stringResource(R.string.bivouac_detected_datetime_pattern),
         patternWithYear = stringResource(R.string.bivouac_detected_datetime_pattern_with_year),
     )

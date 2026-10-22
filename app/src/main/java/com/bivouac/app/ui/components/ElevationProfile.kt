@@ -113,14 +113,17 @@ private val PAUSE_BAND_MIN_WIDTH = 2.dp
  * [com.bivouac.app.ui.journal.formatTimeOfDay], dupliqué ici (comme
  * `HikeMapView.formatShortDuration` duplique `StatsRows.formatDuration`) pour ne pas faire
  * dépendre ce composant partagé (Planification comprise) du package ui.journal.
+ *
+ * RIC-245 : [locale] est la locale des dates de l'app (appLocale(), lue par ElevationProfile hors
+ * du Canvas), et non plus Locale.getDefault().
  */
-private fun formatClockTime(instant: Instant, zone: ZoneId): String =
-    DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(Locale.getDefault()).withZone(zone).format(instant)
+private fun formatClockTime(instant: Instant, zone: ZoneId, locale: Locale): String =
+    DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale).withZone(zone).format(instant)
 
 /** Même formatage que [formatClockTime], pour une heure ronde sans date (graduations
  * intermédiaires, voir [com.bivouac.app.data.gpx.TrackAnalysisMapMapping.clockGridlines]). */
-private fun formatClockTime(time: LocalTime): String =
-    DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(Locale.getDefault()).format(time)
+private fun formatClockTime(time: LocalTime, locale: Locale): String =
+    DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale).format(time)
 
 /**
  * Intermediate gridlines between [min] and [max] (exclusive), evenly spaced first and rounded
@@ -275,6 +278,8 @@ fun ElevationProfile(
     val axisValues = if (effectiveAxis == ElevationProfileAxis.DURATION) elapsedSeconds!! else cumulativeDistances
     val totalAxisValue = axisValues.last().coerceAtLeast(1.0)
     val zone = remember { ZoneId.systemDefault() }
+    // RIC-245 : lue ici, le Canvas ne pouvant pas appeler de fonction composable.
+    val clockLocale = appLocale()
     val clockGridlines = remember(points, dayBoundaryIndices, zone, effectiveAxis) {
         if (effectiveAxis == ElevationProfileAxis.DURATION) {
             TrackAnalysisMapMapping.clockGridlines(points, dayBoundaryIndices, zone)
@@ -545,14 +550,14 @@ fun ElevationProfile(
             val startInstant = points.first().time
             val endInstant = points.last().time
             if (startInstant != null) {
-                drawClockGridline(0.0, formatClockTime(startInstant, zone), AxisLabelAlign.START, AxisLabelPriority.ENDPOINT)
+                drawClockGridline(0.0, formatClockTime(startInstant, zone, clockLocale), AxisLabelAlign.START, AxisLabelPriority.ENDPOINT)
             }
             if (endInstant != null) {
-                drawClockGridline(totalAxisValue, formatClockTime(endInstant, zone), AxisLabelAlign.END, AxisLabelPriority.ENDPOINT)
+                drawClockGridline(totalAxisValue, formatClockTime(endInstant, zone, clockLocale), AxisLabelAlign.END, AxisLabelPriority.ENDPOINT)
             }
             clockGridlines?.forEach { gridline ->
                 drawClockGridline(
-                    gridline.elapsedSeconds, formatClockTime(gridline.time), AxisLabelAlign.CENTER, AxisLabelPriority.INTERMEDIATE,
+                    gridline.elapsedSeconds, formatClockTime(gridline.time, clockLocale), AxisLabelAlign.CENTER, AxisLabelPriority.INTERMEDIATE,
                 )
             }
         }

@@ -51,11 +51,14 @@ object TrekDatesFormatter {
      * [locale] pilote le nom des mois ; les ressources, elles, sont choisies par la configuration
      * de [context]. Les deux entrées sont distinctes, d'où le paramètre : un test peut fixer l'une
      * et l'autre indépendamment (voir TrekDatesFormatterTest).
+     *
+     * RIC-245 : par défaut, la locale des dates de l'app ([AppLocale]), et non plus celle de
+     * l'appareil : sur un appareil allemand, la phrase est anglaise, ses mois aussi.
      */
     fun format(
         context: Context,
         days: List<LocalDate>,
-        locale: Locale = Locale.getDefault(),
+        locale: Locale = AppLocale.of(context),
     ): String? {
         val distinct = days.distinct().sorted()
         if (distinct.size < 2) return null

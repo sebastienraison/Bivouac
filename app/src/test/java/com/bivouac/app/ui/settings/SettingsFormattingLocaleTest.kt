@@ -240,7 +240,7 @@ class SettingsFormattingLocaleTest {
     fun `formatBackupTimestamp combine date longue et heure courte en francais`() {
         Locale.setDefault(Locale.FRANCE)
         val instant = ZonedDateTime.of(2026, 4, 14, 19, 0, 0, 0, zone).toInstant()
-        assertEquals("14 avril 2026 19:00", formatBackupTimestamp(instant.toEpochMilli()))
+        assertEquals("14 avril 2026 19:00", formatBackupTimestamp(instant.toEpochMilli(), Locale.FRANCE))
     }
 
     @Test
@@ -248,6 +248,6 @@ class SettingsFormattingLocaleTest {
     fun `formatBackupTimestamp combine date longue et heure courte en anglais`() {
         Locale.setDefault(Locale.US)
         val instant = ZonedDateTime.of(2026, 4, 14, 19, 0, 0, 0, zone).toInstant()
-        assertEquals("April 14, 2026, 7:00 PM", formatBackupTimestamp(instant.toEpochMilli()))
+        assertEquals("April 14, 2026, 7:00 PM", formatBackupTimestamp(instant.toEpochMilli(), Locale.US))
     }
 }

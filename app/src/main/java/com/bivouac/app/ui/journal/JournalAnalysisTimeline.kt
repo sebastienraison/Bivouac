@@ -58,6 +58,7 @@ import com.bivouac.app.data.gpx.TimelinePause
 import com.bivouac.app.data.gpx.TrackAnalysisMapMapping
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrackPoint
+import com.bivouac.app.ui.components.appLocale
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.formatKm1
 import com.bivouac.app.ui.map.AnalysisColoring
@@ -212,9 +213,11 @@ internal fun dayTitleVisible(dayCount: Int): Boolean = dayCount > 1
  * mois, ni [formatStartedAt], sans jour de semaine) ; motif localisé au lieu d'un texte écrit en
  * dur, via l'API Android qui choisit l'ordre et la ponctuation propres à la locale (virgule en
  * anglais, aucune en français) à partir d'un squelette de champs.
+ *
+ * RIC-245 : [locale] est la locale des dates de l'app (AppLocale, lue par appLocale() chez
+ * l'appelant), et non plus Locale.getDefault().
  */
-internal fun formatTimelineDayDate(instant: Instant): String {
-    val locale = Locale.getDefault()
+internal fun formatTimelineDayDate(instant: Instant, locale: Locale): String {
     val pattern = AndroidDateFormat.getBestDateTimePattern(locale, "EEEEMMMMd")
     return DateTimeFormatter.ofPattern(pattern, locale).withZone(ZoneId.systemDefault()).format(instant)
 }
@@ -482,7 +485,7 @@ private fun TimelinePhaseRow(phase: TimelinePhase, shortPauses: List<ShortTimeli
     val interruptions = remember(phase, shortPauses) { traitInterruptionsFor(phase, shortPauses) }
     Row(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Text(
-            text = formatTimeOfDay(clockTime),
+            text = formatTimeOfDay(clockTime, appLocale()),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -544,7 +547,7 @@ private fun TimelinePauseRow(pause: TimelinePause, clockTime: Instant, onClick: 
     val heightDp = pauseHeightDp(pause.endSeconds - pause.startSeconds)
     Row(modifier = Modifier.fillMaxWidth().height(heightDp.dp).clickable(onClick = onClick)) {
         Text(
-            text = formatTimeOfDay(clockTime),
+            text = formatTimeOfDay(clockTime, appLocale()),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -583,7 +586,7 @@ private fun TimelineMarkerRow(time: Instant, elevationMeters: Double, labelRes: 
     // "Départ" (il arrive par le haut). Le rond, dessiné après, recouvre l'extrémité du trait.
     Row(modifier = Modifier.fillMaxWidth().nightLink(link), verticalAlignment = Alignment.CenterVertically) {
         Text(
-            text = formatTimeOfDay(time),
+            text = formatTimeOfDay(time, appLocale()),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -792,7 +795,7 @@ internal fun AnalysisTimelineSection(days: List<DayTimeline>, daySegments: List<
                     val dateLine = stringResource(
                         R.string.journal_analysis_timeline_day,
                         (dayIndex + 1).toString(),
-                        formatTimelineDayDate(dayStartInstant),
+                        formatTimelineDayDate(dayStartInstant, appLocale()),
                     )
                     val figuresLine = timelineDayFiguresLine(
                         stringResource(R.string.journal_analysis_timeline_day_figures, distanceText, durationText),
