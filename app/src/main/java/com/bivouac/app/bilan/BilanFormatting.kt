@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.annotation.StringRes
 import androidx.compose.ui.graphics.Color
 import com.bivouac.app.R
+import com.bivouac.app.data.model.AppLocale
 import com.bivouac.app.ui.components.BivouacIconColor
 import com.bivouac.app.ui.components.DistanceIconColor
 import com.bivouac.app.ui.components.DurationIconColor
@@ -31,11 +32,14 @@ import java.util.Locale
 // RIC-187 (lot 0 i18n) : Locale.FRENCH figé remplacé par Locale.getDefault() (mois en toutes
 // lettres dans la locale de l'appareil, "avril 2026" / "April 2026" : pas d'ambiguïté d'ordre, un
 // seul mot puis l'année).
+//
+// RIC-245 : la locale par défaut est celle des dates de l'app (AppLocale), et non plus celle de
+// l'appareil : le mois suit la langue de la ressource fmt_bilan_month_year qui l'entoure.
 internal fun formatMonthYear(
     context: Context,
     millis: Long,
     zone: ZoneId = ZoneId.systemDefault(),
-    locale: Locale = Locale.getDefault(),
+    locale: Locale = AppLocale.of(context),
 ): String {
     val date = Instant.ofEpochMilli(millis).atZone(zone)
     return context.getString(R.string.fmt_bilan_month_year, date.month.getDisplayName(TextStyle.FULL, locale), date.year)
@@ -47,7 +51,10 @@ internal fun formatMonthYear(
 // August -> A, en réalité déjà identiques ici aussi). Tranché par la note de relecture de
 // l'inventaire i18n (clé bilan_month_initials_array, volontairement non générée en ressource, voir
 // tools/i18n/generate_strings.py) : pas de <string-array>, java.time suffit (minSdk 26).
-internal fun monthInitial(month: Month, locale: Locale = Locale.getDefault()): String =
+//
+// RIC-245 : plus de valeur par défaut à Locale.getDefault() ; l'appelant (ProgressionChart,
+// composable) passe la locale des dates de l'app, appLocale().
+internal fun monthInitial(month: Month, locale: Locale): String =
     month.getDisplayName(TextStyle.NARROW, locale)
 
 // RIC-190 (lot 3 i18n) : un id de ressource et non une chaîne, résolu au point d'affichage
@@ -122,8 +129,11 @@ internal fun recordColor(kind: BilanRecordKind): Color = when (kind) {
 // mois dans une phrase française en dur aurait donné « You mostly go out en juillet » ; la phrase
 // étant maintenant traduite, le mois suit la locale de l'appareil comme partout ailleurs. Le "s"
 // conditionnel de « sortie(s) cumulée(s) » est remplacé par les formes one/other de la ressource.
+//
+// RIC-245 : le mois suit la locale des dates de l'app (AppLocale), donc la langue de la phrase,
+// et non plus celle de l'appareil (« Most active month: Juli » sur un appareil allemand).
 internal fun formatInsight(context: Context, insight: MostActiveMonthInsight): String {
-    val monthName = Month.of(insight.monthOfYear).getDisplayName(TextStyle.FULL, Locale.getDefault())
+    val monthName = Month.of(insight.monthOfYear).getDisplayName(TextStyle.FULL, AppLocale.of(context))
     // RIC-192 : le cumul de sorties porte le séparateur de milliers de la locale ; l'année
     // (%3$d) reste un entier brut.
     return context.resources.getQuantityString(

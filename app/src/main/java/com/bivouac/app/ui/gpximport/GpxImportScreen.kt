@@ -81,6 +81,7 @@ import com.bivouac.app.data.db.BankedTrackEntity
 import com.bivouac.app.data.gpx.GpxExporter
 import com.bivouac.app.data.gpx.SpeedCalibration
 import com.bivouac.app.data.gpx.TrackStatsCalculator
+import com.bivouac.app.data.model.AppLocale
 import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.weather.MeteoblueLink
 import com.bivouac.app.gpximport.CloseConfirmationReason
@@ -811,10 +812,13 @@ private fun BankedTrackRow(
 // motif du fichier dont l'ORDRE des champs depend de la langue ("3 aout" en francais, "August 3"
 // en anglais), et ofLocalizedDate(FormatStyle) n'a pas de style "jour+mois sans annee" tout fait.
 // D'ou le Context : cette fonction n'est pas composable, elle est appelee depuis BankedTrackRow.
+//
+// RIC-245 : la locale des dates de l'app (AppLocale), et non plus Locale.getDefault() : le motif
+// vient des ressources, le nom du mois suit la meme langue.
 internal fun formatSavedAt(context: Context, epochMillis: Long): String {
     val zone = ZoneId.systemDefault()
     val instant = Instant.ofEpochMilli(epochMillis)
-    val locale = Locale.getDefault()
+    val locale = AppLocale.of(context)
     return if (instant.atZone(zone).toLocalDate() == LocalDate.now(zone)) {
         val time = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale).withZone(zone).format(instant)
         context.getString(R.string.gpximport_saved_today_format, time)

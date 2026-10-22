@@ -65,6 +65,7 @@ import com.bivouac.app.data.gpx.TrackAnalysisMapMapping
 import com.bivouac.app.data.gpx.TrackGeometry
 import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.gpx.TrackStatsParameters
+import com.bivouac.app.data.model.AppLocale
 import com.bivouac.app.data.model.BivouacPoint
 import com.bivouac.app.data.model.DayJunctions
 import com.bivouac.app.data.model.HikeTrack
@@ -1811,7 +1812,9 @@ internal fun cursorBubbleContent(
         photoAdjustments = present.map { photo -> photo.adjustments },
         // Parallèle à photoFiles, un élément par photo du lot : c'est ce qui permet à l'heure
         // affichée de suivre le carrousel sans que la bulle ait à retenir les entités.
-        photoTimes = present.map { photo -> photo.takenAtMillis?.let(::formatPhotoTimeOfDay) },
+        photoTimes = AppLocale.of(context).let { locale ->
+            present.map { photo -> photo.takenAtMillis?.let { formatPhotoTimeOfDay(it, locale) } }
+        },
         // RIC-170 : même principe, pour la légende sous la vignette. Une entrée nulle ou blanche
         // vaut « pas de légende », la bulle la masque alors (voir CursorInfoWindow.showCurrentPhoto).
         photoCaptions = present.map { photo -> photo.caption },
@@ -1835,10 +1838,13 @@ internal fun cursorBubbleContent(
  * longtemps que le process, et l'app peut très bien changer de fuseau entre deux (voyage, passage
  * à l'heure d'été) sans être relancée. RIC-187 : la locale l'est aussi, pour la même raison (un
  * changement de langue dans les réglages système n'a pas besoin de relancer l'app pour se voir ici).
+ *
+ * RIC-245 : [locale] est la locale des dates de l'app (AppLocale.of, l'appelant a un Context), et
+ * non plus Locale.getDefault().
  */
-internal fun formatPhotoTimeOfDay(takenAtMillis: Long): String =
+internal fun formatPhotoTimeOfDay(takenAtMillis: Long, locale: Locale): String =
     DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
-        .withLocale(Locale.getDefault())
+        .withLocale(locale)
         .withZone(ZoneId.systemDefault())
         .format(Instant.ofEpochMilli(takenAtMillis))
 

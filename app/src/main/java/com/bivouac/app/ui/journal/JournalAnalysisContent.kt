@@ -47,6 +47,7 @@ import com.bivouac.app.data.gpx.TrackStatsCalculator
 import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.journal.JournalAnalysisResult
 import com.bivouac.app.ui.components.ElevationProfileAxis
+import com.bivouac.app.ui.components.appLocale
 import com.bivouac.app.ui.components.formatDuration
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.formatKm1
@@ -763,7 +764,7 @@ internal fun AnalysisReadoutLine(
     val line1 = stringResource(
         R.string.journal_analysis_readout_section,
         formatKm1(distanceKm),
-        formatTimeOfDay(point.time!!),
+        formatTimeOfDay(point.time!!, appLocale()),
         stringResource(R.string.format_elevation_meters, formatGroupedInt(elevation.roundToInt())),
         formatSignedSlopePercent(segment.netSlopePercent),
         segment.movingSpeedKmh?.let { stringResource(R.string.settings_speed_value_format, formatKm1(it)) } ?: "-",

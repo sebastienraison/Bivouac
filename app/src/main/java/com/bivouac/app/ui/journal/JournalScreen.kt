@@ -141,6 +141,7 @@ import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.data.model.TrekDatesFormatter
+import com.bivouac.app.data.model.TrekDayDates
 import com.bivouac.app.data.photo.PhotoLibraryPermission
 import com.bivouac.app.journal.BivouacReview
 import com.bivouac.app.journal.DuplicatePlanRequest
@@ -166,6 +167,7 @@ import com.bivouac.app.ui.components.StatsRows
 import com.bivouac.app.ui.components.ThreeStopDrawerHandle
 import com.bivouac.app.ui.components.ThreeStopDrawerStopRow
 import com.bivouac.app.ui.components.TotalsCapsule
+import com.bivouac.app.ui.components.appLocale
 import com.bivouac.app.ui.components.toDurationDisplay
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.halfWindowHeight
@@ -1184,7 +1186,7 @@ private fun ImportProgressDialog(progress: ImportProgress) {
 @Composable
 private fun formatDuplicateWarning(warning: DuplicateMatch): String {
     val existingName = warning.existing.name
-    val existingDate = formatStartedAtWithTime(warning.existing.startedAt)
+    val existingDate = formatStartedAtWithTime(warning.existing.startedAt, appLocale())
     // RIC-189 (lot 2 i18n) : trois phrases entières et non plus un sujet variable collé à un
     // suffixe commun. La composition marchait en français, où le complément suit toujours le
     // sujet ; elle ne survit pas à une langue qui range ses mots autrement, et elle prive le
@@ -1974,8 +1976,8 @@ private fun JournalTrackRow(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     text = (
-                        TrekDatesFormatter.format(LocalContext.current, dayInfo?.dates.orEmpty())
-                            ?: formatStartedAt(entry.startedAt)
+                        TrekDatesFormatter.format(LocalContext.current, dayInfo?.dates.orEmpty(), appLocale())
+                            ?: formatStartedAt(entry.startedAt, appLocale())
                         ) +
                         if (bivouacCount > 0) " · $bivouacCount" else "",
                     style = MaterialTheme.typography.labelSmall,
@@ -2171,8 +2173,8 @@ private fun ReadOnlyBivouacRow(arrival: TrackPoint?, departure: TrackPoint?, sho
             InfoText(
                 text = stringResource(
                     R.string.format_bivouac_arrival_departure,
-                    formatTimeOfDay(arrivedAt),
-                    formatTimeOfDay(leftAt),
+                    formatTimeOfDay(arrivedAt, appLocale()),
+                    formatTimeOfDay(leftAt, appLocale()),
                 ),
                 icon = Icons.Default.Snooze,
                 iconTint = DurationIconColor,
@@ -2281,12 +2283,12 @@ internal fun ThreeStopJournalDetail(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = LocalDensity.current
         val zone = remember { ZoneId.systemDefault() }
-        // Date de début de chaque jour, tirée directement des points déjà chargés. Les jours sans
-        // horodatage sont écartés plutôt qu'inventés, comme dans la liste.
-        val dayStartDates = remember(daySegments, zone) {
-            daySegments.mapNotNull { segment ->
-                segment.points.firstOrNull()?.time?.atZone(zone)?.toLocalDate()
-            }
+        // Dates de chaque jour, tirées directement des points déjà chargés. Les jours sans
+        // horodatage sont écartés plutôt qu'inventés, comme dans la liste. RIC-233 : la date du
+        // premier ET celle du dernier point horodaté de chaque jour (TrekDayDates), pour qu'un jour
+        // qui finit le lendemain porte ses deux dates.
+        val trekDayDates = remember(daySegments, zone) {
+            TrekDayDates.of(daySegments.map { it.points }, zone)
         }
         // RIC-231 : la trace a-t-elle une altitude exploitable ? Lu sur les stats de chaque jour, que
         // la vue détail vient de calculer sur les points chargés (TrackStats.elevationAvailable) :
@@ -2536,10 +2538,13 @@ internal fun ThreeStopJournalDetail(
                                 // doit pas en dire moins qu'une sortie survolée. Les dates
                                 // viennent ici des points déjà chargés, pas des colonnes
                                 // dénormalisées, la trace étant de toute façon parsée pour être
-                                // affichée.
+                                // affichée. RIC-233 : même règle des deux côtés (TrekDayDates, date
+                                // du premier et du dernier point de chaque jour) ; la liste dérive
+                                // la fin de startedAtMillis + elapsedSeconds, voir le cas limite
+                                // documenté sur TrekDayDates.ofStartAndElapsed.
                                 Text(
-                                    text = TrekDatesFormatter.format(LocalContext.current, dayStartDates)
-                                        ?: formatStartedAt(entry.startedAt),
+                                    text = TrekDatesFormatter.format(LocalContext.current, trekDayDates, appLocale())
+                                        ?: formatStartedAt(entry.startedAt, appLocale()),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -2812,11 +2817,11 @@ internal fun ThreeStopJournalDetail(
                                     HorizontalDivider()
                                     Column(modifier = Modifier.padding(vertical = 10.dp)) {
                                         // RIC-112 : jour de semaine + quantième réels plutôt qu'un ordinal,
-                                        // tirés du même horodatage GPX que dayStartDates ci-dessus. Repli sur
+                                        // tirés du même horodatage GPX que trekDayDates ci-dessus. Repli sur
                                         // "Jour N" si ce jour précis n'a pas d'horodatage exploitable : un
                                         // trou isolé ne doit pas casser la ventilation des autres jours.
                                         val dayLabel = segment.points.firstOrNull()?.time
-                                            ?.let { formatDayLabel(it) }
+                                            ?.let { formatDayLabel(it, appLocale()) }
                                             ?: stringResource(R.string.journal_detail_day_fallback_label, index + 1)
                                         Text(text = dayLabel, style = MaterialTheme.typography.labelLarge)
                                         // RIC-209 (brief Partie B) : durée réelle DE CE JOUR (pas de
@@ -3337,35 +3342,39 @@ private fun JournalDetailMenu(
 
 // RIC-187 (lot 0 i18n) : les quatre formateurs ci-dessous étaient figés sur Locale.FRANCE, avec un
 // motif de date en dur ("d MMMM yyyy", 'à' littéral) qui ne veut plus rien dire en anglais.
-// Remplacés par Locale.getDefault() (locale de l'appareil, cohérent avec le reste du chantier) et
-// des styles localisés (DateTimeFormatter.ofLocalizedDate/DateTime) plutôt que des motifs écrits à
-// la main : FormatStyle.LONG pour la date (mois en toutes lettres dans les deux langues, "14 avril
-// 2026" / "April 14, 2026") et FormatStyle.SHORT pour l'heure (respecte le 24h français / 12h AM-PM
-// anglais). internal (pas private) : testé directement par JournalScreenLocaleFormattingTest.
-// visible=internal pour être appelable depuis le module de test.
-internal fun formatTimeOfDay(instant: Instant): String =
+// Remplacés par des styles localisés (DateTimeFormatter.ofLocalizedDate/DateTime) plutôt que des
+// motifs écrits à la main : FormatStyle.LONG pour la date (mois en toutes lettres dans les deux
+// langues, "14 avril 2026" / "April 14, 2026") et FormatStyle.SHORT pour l'heure (respecte le 24h
+// français / 12h AM-PM anglais). internal (pas private) : testé directement par
+// JournalDateFormattingLocaleTest.
+//
+// RIC-245 : la locale est un PARAMÈTRE explicite, et non plus Locale.getDefault() : c'est la
+// locale des dates de l'app (AppLocale), que tous les appelants, composables, lisent par
+// appLocale(). Un paramètre plutôt qu'un Context : les quatre fonctions restent pures et leur test
+// reste un test JVM sans Robolectric, qui fixe la locale à l'appel au lieu de la poser sur la JVM.
+internal fun formatTimeOfDay(instant: Instant, locale: Locale): String =
     DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
-        .withLocale(Locale.getDefault())
+        .withLocale(locale)
         .withZone(ZoneId.systemDefault())
         .format(instant)
 
 // RIC-112 : jour de semaine + quantième d'un jour de trek, ex. "Lundi 12" / "Monday 12". Motif
 // "EEEE d" gardé tel quel (deux champs sans mois, pas d'ambiguïté d'ordre entre locales) ; seule la
 // locale du nom de jour et de la majuscule change.
-internal fun formatDayLabel(instant: Instant): String =
-    DateTimeFormatter.ofPattern("EEEE d", Locale.getDefault())
+internal fun formatDayLabel(instant: Instant, locale: Locale): String =
+    DateTimeFormatter.ofPattern("EEEE d", locale)
         .withZone(ZoneId.systemDefault())
         .format(instant)
-        .replaceFirstChar { it.titlecase(Locale.getDefault()) }
+        .replaceFirstChar { it.titlecase(locale) }
 
-internal fun formatStartedAt(epochMillis: Long): String =
+internal fun formatStartedAt(epochMillis: Long, locale: Locale): String =
     DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG)
-        .withLocale(Locale.getDefault())
+        .withLocale(locale)
         .withZone(ZoneId.systemDefault())
         .format(Instant.ofEpochMilli(epochMillis))
 
-internal fun formatStartedAtWithTime(epochMillis: Long): String =
+internal fun formatStartedAtWithTime(epochMillis: Long, locale: Locale): String =
     DateTimeFormatter.ofLocalizedDateTime(FormatStyle.LONG, FormatStyle.SHORT)
-        .withLocale(Locale.getDefault())
+        .withLocale(locale)
         .withZone(ZoneId.systemDefault())
         .format(Instant.ofEpochMilli(epochMillis))

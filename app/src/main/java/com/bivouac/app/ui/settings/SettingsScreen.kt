@@ -94,6 +94,7 @@ import com.bivouac.app.settings.RestoreOutcome
 import com.bivouac.app.settings.SettingsViewModel
 import com.bivouac.app.ui.components.BlockingProgress
 import com.bivouac.app.ui.components.BlockingProgressDialog
+import com.bivouac.app.ui.components.appLocale
 import com.bivouac.app.ui.components.formatDuration
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.nav.AppScreenHeader
@@ -1284,7 +1285,7 @@ private fun DataSection(
             icon = Icons.Default.CloudUpload,
             title = stringResource(R.string.settings_backup_row_label),
             subtitle = lastBackupAtMillis
-                ?.let { stringResource(R.string.settings_backup_last_date, formatBackupTimestamp(it)) }
+                ?.let { stringResource(R.string.settings_backup_last_date, formatBackupTimestamp(it, appLocale())) }
                 ?: stringResource(R.string.settings_backup_never),
         )
         Row(
@@ -1360,9 +1361,12 @@ internal fun buildYearOrNull(buildDate: String): String? =
 // à 19:00", qui n'en portait aucune) : écart mineur assumé, pas de style "jour+mois+heure sans
 // année" tout fait en FormatStyle, et l'année en plus est plutôt utile sur un écran de réglages
 // qui affiche la date de la dernière sauvegarde.
-internal fun formatBackupTimestamp(epochMillis: Long): String =
+//
+// RIC-245 : [locale] est la locale des dates de l'app (appLocale() chez l'appelant, composable),
+// et non plus Locale.getDefault().
+internal fun formatBackupTimestamp(epochMillis: Long, locale: Locale): String =
     DateTimeFormatter.ofLocalizedDateTime(FormatStyle.LONG, FormatStyle.SHORT)
-        .withLocale(Locale.getDefault())
+        .withLocale(locale)
         .withZone(ZoneId.systemDefault())
         .format(Instant.ofEpochMilli(epochMillis))
 

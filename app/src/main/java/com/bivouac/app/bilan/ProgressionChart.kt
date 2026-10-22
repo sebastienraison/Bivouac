@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import com.bivouac.app.ui.components.appLocale
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.formatKm1
 import kotlin.math.ceil
@@ -94,7 +95,7 @@ internal fun ProgressionChart(series: ProgressionSeries, color: Color, modifier:
                 series.points.forEach { point ->
                     Box(modifier = Modifier.width(COLUMN_WIDTH), contentAlignment = Alignment.Center) {
                         Text(
-                            text = monthInitial(point.yearMonth.month),
+                            text = monthInitial(point.yearMonth.month, appLocale()),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

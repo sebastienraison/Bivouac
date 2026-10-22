@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : strings-inventaire-v22.csv (inventaire de l'agent de pilotage,
+    Source : strings-inventaire-v23.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v22.csv
+        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v23.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -695,4 +695,8 @@
     <string name="analysis_slope_unavailable">Pente indisponible : cette trace n\'a pas d\'altitude.</string>
     <string name="journal_analysis_no_elevation">Analyse indisponible : cette trace n\'a pas d\'altitude.</string>
     <string name="journal_analysis_no_timestamps_no_elevation">Analyse indisponible : cette trace n\'a ni horodatage ni altitude.</string>
+
+    <!-- Formats (dates, nombres, unités) -->
+    <string name="app_language_tag">fr</string>
+    <string name="bivouac_detected_gap_hours_minutes">%1$d h %2$s</string>
 </resources>
