@@ -1,5 +1,6 @@
 package com.bivouac.app.ui.journal
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.AlertDialog
@@ -7,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.bivouac.app.R
@@ -17,6 +19,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /** RIC-227 : l'arrêt et la reprise d'un bivouac, mis en forme pour `bivouac_detected_body`. */
 internal data class BivouacDateTimes(val stop: String, val resume: String)
@@ -51,6 +54,27 @@ internal fun formatBivouacDateTimes(
         return DateTimeFormatter.ofPattern(effective, locale).withZone(zone).format(instant)
     }
     return BivouacDateTimes(format(stopAt), format(resumeAt))
+}
+
+/**
+ * RIC-235 (validé par Seb le 22/10) : durée du trou dans le corps du dialogue, alignée sur le motif
+ * des instants : « 19 h 02 » en français, « 19h 02m » en anglais (`bivouac_detected_gap_hours_minutes`),
+ * au lieu du format compact de la frise (« 19h02 », formatPauseDuration, qui ne change pas). Sous
+ * une heure, « 59 min » (`journal_analysis_pause_minutes`). Arrondi à la minute comme
+ * formatPauseDuration ; les minutes sur deux chiffres sont posées ici et non par la ressource, comme
+ * pour `fmt_stats_rows_duration`. Testée par BivouacGapDurationFormatTest.
+ */
+internal fun formatBivouacGapDuration(seconds: Double, context: Context): String {
+    val totalMinutes = (seconds / 60.0).roundToInt()
+    return if (totalMinutes < 60) {
+        context.getString(R.string.journal_analysis_pause_minutes, totalMinutes.toString())
+    } else {
+        context.getString(
+            R.string.bivouac_detected_gap_hours_minutes,
+            totalMinutes / 60,
+            (totalMinutes % 60).toString().padStart(2, '0'),
+        )
+    }
 }
 
 /**
@@ -98,11 +122,12 @@ internal fun patternWithDayOfMonthLiteral(pattern: String, literal: String): Str
  *
  * Quitter le dialogue autrement que par un bouton (retour, appui hors du dialogue) vaut « Pause »
  * ([onPause], RIC-229) ; aucun délai, aucune réponse par défaut tant qu'il est ouvert. La durée
- * du trou passe par [formatPauseDuration], le formateur de « 13h10 au bivouac » de la frise.
+ * du trou passe par [formatBivouacGapDuration] (RIC-235), alignée sur le motif des instants.
  */
 @Composable
 internal fun BivouacDetectedDialog(question: BivouacQuestion, onSplit: () -> Unit, onPause: () -> Unit) {
     val bivouac = question.bivouac
+    val context = LocalContext.current
     val dateTimes = formatBivouacDateTimes(
         stopAt = bivouac.stopAt,
         resumeAt = bivouac.resumeAt,
@@ -133,7 +158,7 @@ internal fun BivouacDetectedDialog(question: BivouacQuestion, onSplit: () -> Uni
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text(stringResource(R.string.bivouac_detected_body, dateTimes.stop, dateTimes.resume, formatPauseDuration(gapSeconds)))
+                Text(stringResource(R.string.bivouac_detected_body, dateTimes.stop, dateTimes.resume, formatBivouacGapDuration(gapSeconds, context)))
                 Text(stringResource(R.string.bivouac_detected_question))
             }
         },

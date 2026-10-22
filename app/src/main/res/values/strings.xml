@@ -664,4 +664,5 @@
 
     <!-- Formats (dates, nombres, unités) -->
     <string name="app_language_tag">en</string>
+    <string name="bivouac_detected_gap_hours_minutes">%1$dh %2$sm</string>
 </resources>
