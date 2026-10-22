@@ -77,6 +77,7 @@ class DatesFollowResourcesLanguageTest {
             locale = AppLocale.of(context),
             pattern = context.getString(R.string.bivouac_detected_datetime_pattern),
             patternWithYear = context.getString(R.string.bivouac_detected_datetime_pattern_with_year),
+            firstDayOfMonth = context.getString(R.string.journal_trek_dates_first_day_of_month),
         )
         assertEquals("Saturday 18 July at 11:42", result.stop)
         assertEquals("Sunday 19 July at 09:30", result.resume)

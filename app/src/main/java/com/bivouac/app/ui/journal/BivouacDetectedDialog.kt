@@ -28,6 +28,12 @@ internal data class BivouacDateTimes(val stop: String, val resume: String)
  * l'inventaire (`bivouac_detected_datetime_pattern` et `..._with_year`) : le second sert aux deux
  * instants quand ils ne tombent pas la même année dans [zone]. Fonction pure, testée par
  * BivouacDetectedDialogFormatTest.
+ *
+ * RIC-235 : le premier du mois s'écrit [firstDayOfMonth] (`journal_trek_dates_first_day_of_month`,
+ * « 1er » en français, « 1 » en anglais), comme dans la ligne de dates du Journal : « mercredi
+ * 1er avril à 6 h 40 ». Le jour devient alors un littéral quoté du motif
+ * ([patternWithDayOfMonthLiteral]) plutôt qu'une substitution dans le texte rendu : le texte porte
+ * d'autres « 1 » (l'heure, « 1 h 01 », les minutes, l'année), et seul le motif dit lequel est le jour.
  */
 internal fun formatBivouacDateTimes(
     stopAt: Instant,
@@ -36,10 +42,52 @@ internal fun formatBivouacDateTimes(
     locale: Locale,
     pattern: String,
     patternWithYear: String,
+    firstDayOfMonth: String,
 ): BivouacDateTimes {
     val sameYear = stopAt.atZone(zone).year == resumeAt.atZone(zone).year
-    val formatter = DateTimeFormatter.ofPattern(if (sameYear) pattern else patternWithYear, locale).withZone(zone)
-    return BivouacDateTimes(formatter.format(stopAt), formatter.format(resumeAt))
+    val base = if (sameYear) pattern else patternWithYear
+    fun format(instant: Instant): String {
+        val effective = if (instant.atZone(zone).dayOfMonth == 1) patternWithDayOfMonthLiteral(base, firstDayOfMonth) else base
+        return DateTimeFormatter.ofPattern(effective, locale).withZone(zone).format(instant)
+    }
+    return BivouacDateTimes(format(stopAt), format(resumeAt))
+}
+
+/**
+ * RIC-235 : [pattern] (motif DateTimeFormatter) dont chaque champ jour du mois `d` (une lettre, hors
+ * texte quoté) est remplacé par [literal], quoté. Les autres lettres, `dd` compris, et le texte
+ * déjà quoté (`'à'`, `'h'`, avec ses apostrophes doublées) sont recopiés tels quels.
+ */
+internal fun patternWithDayOfMonthLiteral(pattern: String, literal: String): String {
+    val quoted = "'" + literal.replace("'", "''") + "'"
+    val out = StringBuilder()
+    var inQuote = false
+    var i = 0
+    while (i < pattern.length) {
+        val c = pattern[i]
+        when {
+            c == '\'' && pattern.getOrNull(i + 1) == '\'' -> {
+                out.append("''")
+                i += 2
+            }
+            c == '\'' -> {
+                inQuote = !inQuote
+                out.append(c)
+                i++
+            }
+            !inQuote && c == 'd' -> {
+                var end = i
+                while (end < pattern.length && pattern[end] == 'd') end++
+                if (end - i == 1) out.append(quoted) else out.append(pattern, i, end)
+                i = end
+            }
+            else -> {
+                out.append(c)
+                i++
+            }
+        }
+    }
+    return out.toString()
 }
 
 /**
@@ -65,6 +113,7 @@ internal fun BivouacDetectedDialog(question: BivouacQuestion, onSplit: () -> Uni
         locale = appLocale(),
         pattern = stringResource(R.string.bivouac_detected_datetime_pattern),
         patternWithYear = stringResource(R.string.bivouac_detected_datetime_pattern_with_year),
+        firstDayOfMonth = stringResource(R.string.journal_trek_dates_first_day_of_month),
     )
     val gapSeconds = Duration.between(bivouac.stopAt, bivouac.resumeAt).seconds.toDouble()
     AlertDialog(
