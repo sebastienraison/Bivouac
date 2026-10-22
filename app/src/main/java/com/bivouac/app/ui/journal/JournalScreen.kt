@@ -141,6 +141,7 @@ import com.bivouac.app.data.model.HikeTrack
 import com.bivouac.app.data.model.Segment
 import com.bivouac.app.data.model.TrackPoint
 import com.bivouac.app.data.model.TrekDatesFormatter
+import com.bivouac.app.data.model.TrekDayDates
 import com.bivouac.app.data.photo.PhotoLibraryPermission
 import com.bivouac.app.journal.BivouacReview
 import com.bivouac.app.journal.DuplicatePlanRequest
@@ -2282,12 +2283,12 @@ internal fun ThreeStopJournalDetail(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = LocalDensity.current
         val zone = remember { ZoneId.systemDefault() }
-        // Date de début de chaque jour, tirée directement des points déjà chargés. Les jours sans
-        // horodatage sont écartés plutôt qu'inventés, comme dans la liste.
-        val dayStartDates = remember(daySegments, zone) {
-            daySegments.mapNotNull { segment ->
-                segment.points.firstOrNull()?.time?.atZone(zone)?.toLocalDate()
-            }
+        // Dates de chaque jour, tirées directement des points déjà chargés. Les jours sans
+        // horodatage sont écartés plutôt qu'inventés, comme dans la liste. RIC-233 : la date du
+        // premier ET celle du dernier point horodaté de chaque jour (TrekDayDates), pour qu'un jour
+        // qui finit le lendemain porte ses deux dates.
+        val trekDayDates = remember(daySegments, zone) {
+            TrekDayDates.of(daySegments.map { it.points }, zone)
         }
         // RIC-231 : la trace a-t-elle une altitude exploitable ? Lu sur les stats de chaque jour, que
         // la vue détail vient de calculer sur les points chargés (TrackStats.elevationAvailable) :
@@ -2539,7 +2540,7 @@ internal fun ThreeStopJournalDetail(
                                 // dénormalisées, la trace étant de toute façon parsée pour être
                                 // affichée.
                                 Text(
-                                    text = TrekDatesFormatter.format(LocalContext.current, dayStartDates, appLocale())
+                                    text = TrekDatesFormatter.format(LocalContext.current, trekDayDates, appLocale())
                                         ?: formatStartedAt(entry.startedAt, appLocale()),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2813,7 +2814,7 @@ internal fun ThreeStopJournalDetail(
                                     HorizontalDivider()
                                     Column(modifier = Modifier.padding(vertical = 10.dp)) {
                                         // RIC-112 : jour de semaine + quantième réels plutôt qu'un ordinal,
-                                        // tirés du même horodatage GPX que dayStartDates ci-dessus. Repli sur
+                                        // tirés du même horodatage GPX que trekDayDates ci-dessus. Repli sur
                                         // "Jour N" si ce jour précis n'a pas d'horodatage exploitable : un
                                         // trou isolé ne doit pas casser la ventilation des autres jours.
                                         val dayLabel = segment.points.firstOrNull()?.time
