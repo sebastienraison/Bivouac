@@ -169,6 +169,7 @@ import com.bivouac.app.ui.components.TotalsCapsule
 import com.bivouac.app.ui.components.toDurationDisplay
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.halfWindowHeight
+import com.bivouac.app.ui.components.peekHeightAboveNavigationBar
 import com.bivouac.app.ui.components.rememberThreeStopDrawerState
 import com.bivouac.app.ui.map.ColoredTrack
 import com.bivouac.app.ui.map.HikeMapView
@@ -183,8 +184,6 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
 import kotlin.math.roundToInt
-
-private val PEEK_HEIGHT_EMPTY = 150.dp
 
 /**
  * RIC-146 lot 7 (conception 2 section 5.1, brief Partie B) : le choix Carnet/Analyse vaut ce que
@@ -622,9 +621,15 @@ fun JournalScreen(
         // qui mène au détail restent sur le patron carte + tiroir : seul l'accueil liste (branche
         // else ci-dessous) quitte ce patron, la carte n'a jamais quitté son rôle ici.
         multiTrack != null || uiState is JournalUiState.Loading -> {
+            // RIC-237 : le cran bas se mesure depuis le bord de la fenêtre, barre de navigation
+            // comprise ; à trois boutons (opaque, 48 dp) le titre et la croix passaient dessous.
+            // Même correction que la banque de Planification (RIC-224). Le
+            // navigationBarsPadding() du contenu reste : la hauteur utile redevient 150 dp.
+            val navigationBarHeight =
+                with(LocalDensity.current) { WindowInsets.navigationBars.getBottom(this).toDp() }
             BottomSheetScaffold(
                 modifier = modifier,
-                sheetPeekHeight = PEEK_HEIGHT_EMPTY.coerceAtMost(halfWindowHeight()),
+                sheetPeekHeight = peekHeightAboveNavigationBar(navigationBarHeight, halfWindowHeight()),
                 sheetContent = {
                     // Loading est émis par openTrack() comme par showOnMap() : sans ce rendu, taper
                     // une trace ne donnait aucun retour visuel le temps du parsing (RIC-95), et une
