@@ -2713,7 +2713,14 @@ internal fun ThreeStopJournalDetail(
                     // est masqué, pas seulement repoussé sous lui : entrer en édition quitte de toute
                     // façon le mode Analyse (voir plus haut), donc rien de ce bloc normal n'est
                     // jamais éditable pendant que l'Analyse est visible.
-                    if (analysisModeActive && analysisResult != null) {
+                    // RIC-239 : sans heures ni altitude, l'en-tête (AnalysisHeadlineHeader) dit tout et
+                    // rien ne se compose dessous (ni sélecteur, ni phrase de pente, ni section). Même
+                    // entrée que l'en-tête (au moins un point horodaté) et non `totals != null` : une
+                    // trace horodatée sans altitude n'a pas de totaux mais garde son contenu (RIC-231).
+                    val trackHasTimedPoint = remember(track) { track.points.any { it.time != null } }
+                    if (analysisModeActive && analysisResult != null &&
+                        analysisBodyAvailable(hasTimestamps = trackHasTimedPoint, elevationAvailable = trackElevationAvailable)
+                    ) {
                         val hasTimestamps = analysisResult.analysis.totals != null
                         // Brief §4.2 : choix de la coloration, sur toute la largeur.
                         AnalysisColoringSelector(
