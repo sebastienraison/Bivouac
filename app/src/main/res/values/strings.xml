@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : strings-inventaire-v21.csv (inventaire de l'agent de pilotage,
+    Source : strings-inventaire-v22.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v21.csv
+        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v22.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -660,4 +660,5 @@
     <!-- Journal détail, mode Analyse -->
     <string name="analysis_slope_unavailable">Gradient unavailable: no elevation data in this track.</string>
     <string name="journal_analysis_no_elevation">Analysis unavailable: no elevation data in this track.</string>
+    <string name="journal_analysis_no_timestamps_no_elevation">Analysis unavailable: no timestamps or elevation data in this track.</string>
 </resources>

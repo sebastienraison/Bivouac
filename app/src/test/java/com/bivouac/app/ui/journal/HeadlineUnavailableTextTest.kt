@@ -7,7 +7,8 @@ import org.junit.Test
 /**
  * RIC-231 : l'en-tête de l'Analyse sans chiffre de tête dit « pas d'altitude » pour une trace
  * horodatée sans altitude, et garde « pas d'horodatage » pour une trace sans heures (le fichier
- * Decathlon, planifié, en est un). Fonction pure, sans Compose.
+ * Decathlon, planifié, en est un). RIC-239 : sans heures ni altitude, une troisième issue dit les
+ * deux manques. Fonction pure, sans Compose.
  */
 class HeadlineUnavailableTextTest {
 
@@ -18,8 +19,13 @@ class HeadlineUnavailableTextTest {
 
     @Test
     fun aTrackWithoutTimesKeepsNoTimestamps() {
-        assertEquals(R.string.journal_analysis_no_timestamps, headlineUnavailableTextRes(elevationAvailable = false, hasTimedPoint = false))
         assertEquals(R.string.journal_analysis_no_timestamps, headlineUnavailableTextRes(elevationAvailable = true, hasTimedPoint = false))
+    }
+
+    @Test
+    fun aTrackWithNeitherTimesNorElevationSaysBoth() {
+        // RIC-239 : un seul en-tête qui dit les deux manques.
+        assertEquals(R.string.journal_analysis_no_timestamps_no_elevation, headlineUnavailableTextRes(elevationAvailable = false, hasTimedPoint = false))
     }
 
     @Test

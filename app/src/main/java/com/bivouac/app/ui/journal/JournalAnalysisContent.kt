@@ -115,11 +115,32 @@ internal fun headlineGapWordingFor(deltaMinutes: Int): HeadlineGapWording = when
  * exploitable n'en a aucun, et dire « pas d'horodatage » serait faux. Fonction pure, extraite de
  * [AnalysisHeadlineHeader] pour être testée directement (HeadlineUnavailableTextTest).
  *
+ * RIC-239 : trois issues. Sans altitude et sans heures, un seul texte dit les deux manques
+ * (`journal_analysis_no_timestamps_no_elevation`), au lieu de n'annoncer que l'absence d'horodatage
+ * puis de retirer la pente sous l'en-tête. Sans altitude mais horodatée : `journal_analysis_no_elevation`.
+ * Tout le reste : `journal_analysis_no_timestamps`.
+ *
  * [hasTimedPoint] : au moins un point de la trace porte une heure.
  */
 @StringRes
-internal fun headlineUnavailableTextRes(elevationAvailable: Boolean, hasTimedPoint: Boolean): Int =
-    if (!elevationAvailable && hasTimedPoint) R.string.journal_analysis_no_elevation else R.string.journal_analysis_no_timestamps
+internal fun headlineUnavailableTextRes(elevationAvailable: Boolean, hasTimedPoint: Boolean): Int = when {
+    !elevationAvailable && !hasTimedPoint -> R.string.journal_analysis_no_timestamps_no_elevation
+    !elevationAvailable && hasTimedPoint -> R.string.journal_analysis_no_elevation
+    else -> R.string.journal_analysis_no_timestamps
+}
+
+/**
+ * RIC-239 : faut-il composer quelque chose sous l'en-tête du mode Analyse ? Faux seulement quand la
+ * trace n'a ni heures ni altitude : aucune coloration ne peut exister (la pente exige l'altitude, les
+ * autres exigent les heures), l'en-tête dit tout et le mode Analyse n'affiche rien d'autre. Dans les
+ * deux autres cas manquants (sans heures avec altitude, avec heures sans altitude), le contenu reste
+ * tel qu'il est. Fonction pure, testée directement (AnalysisBodyAvailableTest).
+ *
+ * [hasTimestamps] : au moins un point de la trace porte une heure (même entrée que `hasTimedPoint`
+ * de [headlineUnavailableTextRes]).
+ */
+internal fun analysisBodyAvailable(hasTimestamps: Boolean, elevationAvailable: Boolean): Boolean =
+    hasTimestamps || elevationAvailable
 
 /**
  * Durée réelle en grand, part de marche à côté, écart à l'estimation dessous. Remplace le chiffre
