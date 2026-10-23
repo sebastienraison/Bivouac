@@ -2,6 +2,32 @@
 
 *[Version française](RELEASE_NOTES.fr.md)*
 
+## V2.7.1
+
+Bugfix release, after the F-Droid community tests and the 2.7.0 acceptance run.
+
+**Journal:**
+
+- A hike kept as a single day that runs past midnight shows both dates, "31 December and
+  1 January", instead of its start date only
+- In the list, the hikes shown add up to their year and the years to the total, with no rounding
+  gap
+- The "several tracks on the map" view no longer slides under the 3-button navigation bar
+- The Analysis of a track with neither timestamps nor elevation data says so in one sentence,
+  instead of offering the gradient and then withdrawing it
+- Stats recompute every time the screen is shown: a hike added or deleted appears there without
+  restarting the app
+
+**Planning:**
+
+- The segments shown add up exactly to the total shown
+- No map tile is fetched any more at startup on the empty screen
+
+**Language:**
+
+- Dates and times follow the app language: on a device set to a language other than French or
+  English, a sentence no longer mixes two languages
+
 ## V2.7.0
 
 **Multi-day trek in a single GPX file (new):**

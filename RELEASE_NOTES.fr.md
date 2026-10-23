@@ -2,6 +2,35 @@
 
 *[English version](RELEASE_NOTES.md)*
 
+## V2.7.1
+
+Version de correctifs, après les tests communautaires de F-Droid et la recette de la 2.7.0.
+
+**Journal :**
+
+- Une rando gardée en une seule journée qui passe minuit affiche ses deux dates, « 31 décembre et
+  1er janvier » au lieu de la seule date de début
+- Dans la liste, les randos affichées somment à leur année et les années au total, sans écart
+  d'arrondi
+- La vue « plusieurs traces sur la carte » ne passe plus sous la barre de navigation à trois
+  boutons
+- L'Analyse d'une trace sans horodatage ni altitude le dit en une phrase, au lieu d'annoncer la
+  pente puis de la retirer
+- Le Bilan se recalcule à chaque affichage : une rando ajoutée ou supprimée y apparaît sans
+  redémarrer l'application
+
+**Planification :**
+
+- Les segments affichés somment exactement au total affiché
+- Plus aucune tuile de carte chargée au démarrage sur l'écran vide
+
+**Langue :**
+
+- Les dates et les heures suivent la langue de l'application : sur un appareil réglé dans une
+  autre langue que le français ou l'anglais, une phrase ne mélange plus deux langues
+- Dialogue « Arrêt prolongé » : « 1er » pour le premier du mois, et la durée écrite comme les
+  heures, « 19 h 02 »
+
 ## V2.7.0
 
 **Trek de plusieurs jours dans un seul fichier GPX (nouveau) :**
