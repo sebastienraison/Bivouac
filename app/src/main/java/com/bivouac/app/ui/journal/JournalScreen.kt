@@ -155,6 +155,7 @@ import com.bivouac.app.journal.SeparateImportReport
 import com.bivouac.app.ui.components.BlockingProgress
 import com.bivouac.app.ui.components.BlockingProgressDialog
 import com.bivouac.app.ui.components.ChoiceOptionCard
+import com.bivouac.app.ui.components.DisplayFigures
 import com.bivouac.app.ui.components.DrawerStop
 import com.bivouac.app.ui.components.DurationDisplay
 import com.bivouac.app.ui.components.DurationIconColor
@@ -167,6 +168,7 @@ import com.bivouac.app.ui.components.StatsRows
 import com.bivouac.app.ui.components.ThreeStopDrawerHandle
 import com.bivouac.app.ui.components.ThreeStopDrawerStopRow
 import com.bivouac.app.ui.components.TotalsCapsule
+import com.bivouac.app.ui.components.toDisplayFigures
 import com.bivouac.app.ui.components.appLocale
 import com.bivouac.app.ui.components.toDurationDisplay
 import com.bivouac.app.ui.components.formatGroupedInt
@@ -1616,6 +1618,17 @@ private fun JournalPopulatedList(
     val bilanStats = remember(tracks, activeCalibration, dayInfoByTrackId) {
         aggregateStats(tracks, activeCalibration, dayInfoByTrackId)
     }
+    // RIC-234 : chiffres d'affichage répartis au plus grand reste, capsule, années, randos. Calculés
+    // ici et non dans le remember de `groups` : il faut la capsule (`tracks`) ET les années
+    // (`filteredTracks`), qui ne se rejoignent qu'à cet endroit. `groups` garde les valeurs réelles.
+    // Les années ne sont ajustées contre la capsule que si elles couvrent tout le Journal (aucun
+    // filtre n'en retire) : sinon la capsule n'est pas leur somme, et forcer l'égalité serait faux.
+    val displayList = remember(groups, bilanStats, tracks, filteredTracks) {
+        displayJournalList(
+            groups = groups,
+            capsule = if (filteredTracks.size == tracks.size) bilanStats.stats.toDisplayFigures() else null,
+        )
+    }
     // RIC-19 : bivouacCount découle de dayCount, toujours connu (contrairement aux dates, qui
     // dépendent d'un horodatage GPX exploitable) : voir JournalDayInfo.bivouacCount.
     val bilanBivouacCount = remember(tracks, dayInfoByTrackId) {
@@ -1749,7 +1762,7 @@ private fun JournalPopulatedList(
             )
         }
         Spacer(modifier = Modifier.height(16.dp))
-        groups.forEach { group ->
+        displayList.groups.forEach { group ->
             HorizontalDivider()
             YearHeader(
                 group = group,
@@ -1776,6 +1789,7 @@ private fun JournalPopulatedList(
                     HorizontalDivider()
                     JournalTrackRow(
                         entry = entry,
+                        displayFigures = displayList.rowFigures[entry.id],
                         dayInfo = dayInfoByTrackId[entry.id],
                         hasPhotos = entry.id in trackIdsWithPhotos,
                         activeCalibration = activeCalibration,
@@ -1863,6 +1877,41 @@ private fun aggregateStats(
     return AggregatedStats(stats, duration)
 }
 
+// RIC-234 : la liste du Journal telle qu'on l'affiche. [groups] porte, par année, le total aux
+// chiffres répartis ; [rowFigures] les chiffres répartis de chaque rando, par identifiant.
+private data class JournalListDisplay(
+    val groups: List<YearGroup>,
+    val rowFigures: Map<String, DisplayFigures>,
+)
+
+// RIC-234 : voir apportionJournalFigures. [capsule] null : années non ajustées (filtre actif).
+private fun displayJournalList(groups: List<YearGroup>, capsule: DisplayFigures?): JournalListDisplay {
+    val shown = apportionJournalFigures(
+        capsule = capsule,
+        years = groups.map { group ->
+            JournalYearFigures(
+                total = group.total.stats.toDisplayFigures(),
+                rows = group.entries.map { it.toTrackStats().toDisplayFigures() },
+            )
+        },
+    )
+    val rowFigures = mutableMapOf<String, DisplayFigures>()
+    val displayGroups = groups.mapIndexed { i, group ->
+        group.entries.forEachIndexed { j, entry -> rowFigures[entry.id] = shown[i].rows[j] }
+        val total = shown[i].total
+        group.copy(
+            total = group.total.copy(
+                stats = group.total.stats.copy(
+                    distanceMeters = total.distanceMeters,
+                    elevationGainMeters = total.elevationGainMeters,
+                    elevationLossMeters = total.elevationLossMeters,
+                ),
+            ),
+        )
+    }
+    return JournalListDisplay(displayGroups, rowFigures)
+}
+
 private fun groupByYear(
     tracks: List<LoggedTrackEntity>,
     activeCalibration: SpeedCalibration,
@@ -1939,6 +1988,9 @@ private fun YearHeader(
 @Composable
 private fun JournalTrackRow(
     entry: LoggedTrackEntity,
+    // RIC-234 : distance, D+ et D- répartis au plus grand reste, pour que les lignes d'une année
+    // somment à l'année affichée ; null (aperçu, test) : valeurs réelles.
+    displayFigures: DisplayFigures?,
     dayInfo: JournalDayInfo?,
     // RIC-141 : voir le commentaire des deux pictos plus bas.
     hasPhotos: Boolean,
@@ -2040,6 +2092,17 @@ private fun JournalTrackRow(
             // RIC-231 : « D+ indisponible » si un jour au moins de la rando n'a pas d'altitude.
             val rowStats = TrackStatsCalculator.recomputeDuration(entry.toTrackStats(), activeCalibration)
                 .copy(elevationAvailable = dayInfo?.elevationAvailable != false)
+                .let { stats ->
+                    if (displayFigures == null) {
+                        stats
+                    } else {
+                        stats.copy(
+                            distanceMeters = displayFigures.distanceMeters,
+                            elevationGainMeters = displayFigures.elevationGainMeters,
+                            elevationLossMeters = displayFigures.elevationLossMeters,
+                        )
+                    }
+                }
             StatsRows(rowStats, duration = resolvedDuration(dayInfo?.realDuration, rowStats.estimatedDurationMinutes))
         }
     }

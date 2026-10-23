@@ -68,6 +68,7 @@ import com.bivouac.app.ui.components.DrawerStop
 import com.bivouac.app.ui.components.ElevationMissingBanner
 import com.bivouac.app.ui.components.ElevationProfile
 import com.bivouac.app.ui.components.GainIconColor
+import com.bivouac.app.ui.components.apportionedSegmentStats
 import com.bivouac.app.ui.components.formatGroupedInt
 import com.bivouac.app.ui.components.InfoText
 import com.bivouac.app.ui.components.StatsRows
@@ -274,6 +275,7 @@ internal fun ThreeStopPlanificationDetail(
                         SegmentsList(
                             track = track,
                             segments = segments,
+                            totalStats = stats,
                             bivouacPoints = bivouacPoints,
                             onRemovePoint = onRemovePoint,
                             onExportSegment = onExportSegment,
@@ -358,6 +360,10 @@ private fun TrackActionsRow(
 private fun SegmentsList(
     track: HikeTrack,
     segments: List<Segment>,
+    // RIC-234 : le total affiché au-dessus ; les chiffres des segments sont répartis au plus grand
+    // reste pour que leur somme affichée tombe dessus (les segments exportés gardent leurs valeurs
+    // réelles : seul l'affichage change).
+    totalStats: TrackStats,
     bivouacPoints: List<BivouacPoint>,
     onRemovePoint: (String) -> Unit,
     onExportSegment: (index: Int, segment: Segment) -> Unit,
@@ -365,6 +371,9 @@ private fun SegmentsList(
     nonFreeFeaturesDisabled: Boolean,
     elevationAvailable: Boolean = true,
 ) {
+    val displayedStats = remember(totalStats, segments) {
+        apportionedSegmentStats(totalStats, segments.map { it.stats })
+    }
     Column(modifier = Modifier.padding(top = 12.dp)) {
         segments.forEachIndexed { index, segment ->
             // Pas de séparateur de tête : la clôture permanente sous la courbe le fournit déjà.
@@ -387,7 +396,7 @@ private fun SegmentsList(
                         )
                     }
                 }
-                StatsRows(segment.stats)
+                StatsRows(displayedStats[index])
             }
 
             if (index < bivouacPoints.size) {
