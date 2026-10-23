@@ -41,6 +41,7 @@ fun apportionToDisplayedTotal(
     step: Double,
     totalRounding: TotalRounding = TotalRounding.NEAREST,
 ): List<Long> {
+    // i18n-ok : message d'exception technique, jamais affiché (RIC-234).
     require(step > 0.0) { "le pas doit être strictement positif : $step" }
     if (parts.isEmpty()) return emptyList()
     val totalSteps = when (totalRounding) {
