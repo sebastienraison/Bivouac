@@ -28,8 +28,8 @@ Version de correctifs, après les tests communautaires de F-Droid et la recette 
 
 - Les dates et les heures suivent la langue de l'application : sur un appareil réglé dans une
   autre langue que le français ou l'anglais, une phrase ne mélange plus deux langues
-- Dialogue « Arrêt prolongé » : « 1er » pour le premier du mois, et la durée écrite comme les
-  heures, « 19 h 02 »
+- Dialogue « Arrêt prolongé » : « 1er » pour le premier du mois, heures et durée écrites de la même
+  façon, « 13h58 », « 19h02 »
 
 ## V2.7.0
 
