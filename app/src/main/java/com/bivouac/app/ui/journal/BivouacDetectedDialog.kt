@@ -25,7 +25,7 @@ import kotlin.math.roundToInt
 internal data class BivouacDateTimes(val stop: String, val resume: String)
 
 /**
- * RIC-227 (textes validés par Seb le 15/10) : « mardi 12 août à 20 h 30 » / « Tuesday 12 August at
+ * RIC-227 (textes validés par Seb le 15/10) : « mardi 12 août à 20h30 » / « Tuesday 12 August at
  * 20:30 », dans la [locale] des dates de l'app (AppLocale, RIC-245) et le fuseau du bivouac ([zone], celui retenu par la
  * détection, pas celui de l'appareil). [pattern] et [patternWithYear] sont les motifs de
  * l'inventaire (`bivouac_detected_datetime_pattern` et `..._with_year`) : le second sert aux deux
@@ -34,9 +34,9 @@ internal data class BivouacDateTimes(val stop: String, val resume: String)
  *
  * RIC-235 : le premier du mois s'écrit [firstDayOfMonth] (`journal_trek_dates_first_day_of_month`,
  * « 1er » en français, « 1 » en anglais), comme dans la ligne de dates du Journal : « mercredi
- * 1er avril à 6 h 40 ». Le jour devient alors un littéral quoté du motif
+ * 1er avril à 6h40 ». Le jour devient alors un littéral quoté du motif
  * ([patternWithDayOfMonthLiteral]) plutôt qu'une substitution dans le texte rendu : le texte porte
- * d'autres « 1 » (l'heure, « 1 h 01 », les minutes, l'année), et seul le motif dit lequel est le jour.
+ * d'autres « 1 » (l'heure, « 1h01 », les minutes, l'année), et seul le motif dit lequel est le jour.
  */
 internal fun formatBivouacDateTimes(
     stopAt: Instant,
@@ -57,12 +57,13 @@ internal fun formatBivouacDateTimes(
 }
 
 /**
- * RIC-235 (validé par Seb le 22/10) : durée du trou dans le corps du dialogue, alignée sur le motif
- * des instants : « 19 h 02 » en français, « 19h 02m » en anglais (`bivouac_detected_gap_hours_minutes`),
- * au lieu du format compact de la frise (« 19h02 », formatPauseDuration, qui ne change pas). Sous
- * une heure, « 59 min » (`journal_analysis_pause_minutes`). Arrondi à la minute comme
- * formatPauseDuration ; les minutes sur deux chiffres sont posées ici et non par la ressource, comme
- * pour `fmt_stats_rows_duration`. Testée par BivouacGapDurationFormatTest.
+ * RIC-235 (validé par Seb le 22/10, forme compacte le 23/10) : durée du trou dans le corps du
+ * dialogue, alignée sur le motif des instants : « 19h02 » en français, « 19h 02m » en anglais
+ * (`bivouac_detected_gap_hours_minutes`). En français, c'est la forme de la frise
+ * (formatPauseDuration, qui ne change pas). Sous une heure, « 59 min »
+ * (`journal_analysis_pause_minutes`). Arrondi à la minute comme formatPauseDuration ; les minutes
+ * sur deux chiffres sont posées ici et non par la ressource, comme pour
+ * `fmt_stats_rows_duration`. Testée par BivouacGapDurationFormatTest.
  */
 internal fun formatBivouacGapDuration(seconds: Double, context: Context): String {
     val totalMinutes = (seconds / 60.0).roundToInt()

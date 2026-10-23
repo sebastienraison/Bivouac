@@ -41,15 +41,15 @@ class BivouacDetectedDialogFormatTest {
     @Test
     fun `francais, meme annee`() {
         val result = format(Locale.FRENCH, "values-fr", "2026-08-12T20:30:00", "2026-08-13T07:15:00")
-        assertEquals("mercredi 12 août à 20 h 30", result.stop.espacesNormalisees())
-        assertEquals("jeudi 13 août à 7 h 15", result.resume.espacesNormalisees())
+        assertEquals("mercredi 12 août à 20h30", result.stop.espacesNormalisees())
+        assertEquals("jeudi 13 août à 7h15", result.resume.espacesNormalisees())
     }
 
     @Test
     fun `francais, heure du matin sans zero, minutes sur deux chiffres`() {
         val result = format(Locale.FRENCH, "values-fr", "2026-08-13T21:05:00", "2026-08-14T06:05:00")
-        assertEquals("jeudi 13 août à 21 h 05", result.stop.espacesNormalisees())
-        assertEquals("vendredi 14 août à 6 h 05", result.resume.espacesNormalisees())
+        assertEquals("jeudi 13 août à 21h05", result.stop.espacesNormalisees())
+        assertEquals("vendredi 14 août à 6h05", result.resume.espacesNormalisees())
     }
 
     @Test
@@ -62,9 +62,9 @@ class BivouacDetectedDialogFormatTest {
     @Test
     fun `annee ajoutee aux deux instants quand elle change`() {
         val fr = format(Locale.FRENCH, "values-fr", "2025-12-31T20:00:00", "2026-01-01T09:00:00")
-        assertEquals("mercredi 31 décembre 2025 à 20 h 00", fr.stop.espacesNormalisees())
+        assertEquals("mercredi 31 décembre 2025 à 20h00", fr.stop.espacesNormalisees())
         // RIC-235 : « 1er » et non « 1 », comme la ligne de dates du Journal.
-        assertEquals("jeudi 1er janvier 2026 à 9 h 00", fr.resume.espacesNormalisees())
+        assertEquals("jeudi 1er janvier 2026 à 9h00", fr.resume.espacesNormalisees())
         val en = format(Locale.ENGLISH, "values", "2025-12-31T20:00:00", "2026-01-01T09:00:00")
         assertEquals("Wednesday 31 December 2025 at 20:00", en.stop)
         assertEquals("Thursday 1 January 2026 at 09:00", en.resume)
@@ -83,8 +83,8 @@ class BivouacDetectedDialogFormatTest {
     @Test
     fun `francais, premier du mois en 1er`() {
         val result = format(Locale.FRENCH, "values-fr", "2026-03-31T21:05:00", "2026-04-01T06:40:00")
-        assertEquals("mardi 31 mars à 21 h 05", result.stop.espacesNormalisees())
-        assertEquals("mercredi 1er avril à 6 h 40", result.resume.espacesNormalisees())
+        assertEquals("mardi 31 mars à 21h05", result.stop.espacesNormalisees())
+        assertEquals("mercredi 1er avril à 6h40", result.resume.espacesNormalisees())
     }
 
     @Test
@@ -96,9 +96,9 @@ class BivouacDetectedDialogFormatTest {
 
     // Seul le jour du mois devient « 1er » : ni l'heure (1 h), ni les minutes, ni l'année.
     @Test
-    fun `francais, 1er avril a 1 h 01, seul le jour change`() {
+    fun `francais, 1er avril a 1h01, seul le jour change`() {
         val result = format(Locale.FRENCH, "values-fr", "2026-03-31T23:00:00", "2026-04-01T01:01:00")
-        assertEquals("mercredi 1er avril à 1 h 01", result.resume.espacesNormalisees())
+        assertEquals("mercredi 1er avril à 1h01", result.resume.espacesNormalisees())
     }
 
     // Ni le texte quoté (avec une apostrophe doublée), ni « dd » ne sont touchés.
