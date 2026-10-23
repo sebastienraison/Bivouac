@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -75,6 +76,12 @@ fun BilanScreen(
 ) {
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val loaded by viewModel.loaded.collectAsStateWithLifecycle()
+
+    // RIC-246 : le ViewModel survit aux allers-retours entre sections (saveState/restoreState),
+    // mais ce composable sort de la composition quand une autre section s'affiche : chaque passage
+    // sur le Bilan relance donc cet effet. Les chiffres précédents restent à l'écran pendant le
+    // recalcul (stats n'est jamais vidé, loaded ne repasse pas à faux).
+    LaunchedEffect(Unit) { viewModel.refresh() }
 
     Scaffold(
         modifier = modifier,
