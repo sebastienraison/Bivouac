@@ -21,6 +21,15 @@ import kotlinx.coroutines.withContext
  * BilanStatsCalculator.compute() est un calcul en mémoire pur sur des colonnes déjà dénormalisées
  * (aucun reparsing de GPX), donc bon marché même sur une banque fournie, plus simple à lire qu'un
  * graphe de `combine` pour un écran qui n'a, par construction, qu'un seul état à recalculer.
+ *
+ * RIC-246 : recalculé à chaque affichage de l'écran, pas à la création du ViewModel. Ce dernier
+ * survit aux allers-retours entre sections (popUpTo saveState + restoreState dans MainActivity) :
+ * un calcul unique à la création laissait le Bilan sur l'état du Journal du premier passage (une
+ * rando supprimée y restait comptée jusqu'au redémarrage de l'app). C'est donc BilanScreen qui
+ * appelle [refresh] à chaque entrée dans la composition ; rien n'est chargé à la création, pour ne
+ * pas calculer deux fois au premier affichage. Pendant un recalcul, [stats] garde sa valeur
+ * précédente et [loaded] ne repasse jamais à faux : l'indicateur de chargement ne sert qu'au tout
+ * premier calcul.
  */
 class BilanViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -33,10 +42,7 @@ class BilanViewModel(application: Application) : AndroidViewModel(application) {
     private val _loaded = MutableStateFlow(false)
     val loaded: StateFlow<Boolean> = _loaded.asStateFlow()
 
-    init {
-        refresh()
-    }
-
+    /** Recalcule le Bilan sur l'état courant de la banque et sur la calibration en vigueur. */
     fun refresh() {
         viewModelScope.launch {
             val calibration = settingsPreferences.effectiveCalibration.first()
