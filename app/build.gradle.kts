@@ -214,7 +214,11 @@ android {
             buildConfigField("String", "BUILD_DATE", "\"$debugBuildDate\"")
         }
         release {
-            isMinifyEnabled = false
+            // RIC-219 : R8 activé (réduction, optimisation, obscurcissement), car Google Play exige
+            // dès février 2027 au moins 25 % dans chacune des trois catégories pour une app de plus
+            // de 10 Mo de DEX. isShrinkResources reste volontairement désactivé (source de variation
+            // signalée par la doc F-Droid, à tester à part). Règles de conservation : proguard-rules.pro.
+            isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // RIC-201 : qui signe quoi, et pourquoi. Ancien état (périmé) : "F-Droid compile et
             // signe lui-même le binaire depuis les sources, la signature de ce buildType n'a
