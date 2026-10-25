@@ -16,3 +16,10 @@
 -keep class com.fasterxml.aalto.stax.InputFactoryImpl { *; }
 -keep class com.fasterxml.aalto.stax.OutputFactoryImpl { *; }
 -keep class com.fasterxml.aalto.stax.EventFactoryImpl { *; }
+
+# 3. PROPOSITION HORS LISTE, à valider par le pilotage (RIC-219, arrêt obligatoire du kickoff) :
+#    jpx 3.2.1, XML.copy(XMLStreamReader, Document), référence javax.xml.transform.stax.StAXSource,
+#    absente d'Android (ni android.jar ni aalto-xml). R8 refuse sinon de terminer (classe manquante).
+#    Règle générée par AGP (missing_rules.txt). Ne change pas le comportement : sans R8 la classe
+#    manquait déjà à l'exécution, le chemin n'est de toute façon pas utilisable sur Android.
+-dontwarn javax.xml.transform.stax.StAXSource
