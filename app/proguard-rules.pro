@@ -23,3 +23,13 @@
 #    Règle générée par AGP (missing_rules.txt). Ne change pas le comportement : sans R8 la classe
 #    manquait déjà à l'exécution, le chemin n'est de toute façon pas utilisable sur Android.
 -dontwarn javax.xml.transform.stax.StAXSource
+
+# 4. stax-api 1.0-2 : javax.xml.stream.FactoryFinder construit le nom de la ressource
+#    META-INF/services/javax.xml.stream.XMLInputFactory (et XMLOutputFactory, XMLEventFactory) à
+#    partir d'une chaîne littérale, l'identifiant de fabrique passé par XMLInputFactory.newInstance().
+#    javax.xml.stream.* est ici une classe du programme (jar stax-api, pas la plateforme) : R8 la
+#    renommait (XMLInputFactory -> go3) et renommait le fichier de services avec elle ; la recherche
+#    par chaîne ne trouvait rien et retombait sur com.bea.xml.stream.MXParserFactory, absente
+#    (FactoryConfigurationError à l'import GPX, constaté sur émulateur le 25/10/2026).
+#    Garder les noms suffit : les fichiers de services gardent alors leur nom d'origine.
+-keepnames class javax.xml.stream.** { *; }
