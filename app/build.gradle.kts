@@ -334,7 +334,8 @@ android {
         error += "MissingTranslation"
     }
     sourceSets {
-        getByName("androidTest").assets.srcDirs("$projectDir/schemas")
+        // RIC-118 : `srcDirs()` est deprecie en AGP 9.3 ("Use `directories` mutable set instead").
+        getByName("androidTest").assets.directories.add("$projectDir/schemas")
     }
     // RIC-103 : les tests JVM exercent le cycle fermeture/réouverture de la base via Robolectric,
     // seul moyen d'avoir un vrai Context et une vraie base SQLite sans appareil (l'interdiction
