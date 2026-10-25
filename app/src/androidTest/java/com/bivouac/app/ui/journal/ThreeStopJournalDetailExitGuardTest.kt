@@ -1,6 +1,6 @@
 package com.bivouac.app.ui.journal
 
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -79,6 +79,10 @@ class ThreeStopJournalDetailExitGuardTest {
         setContent(photoOperationInFlight = true)
 
         composeRule.onNodeWithContentDescription(string(R.string.common_close_description)).performClick()
+        // RIC-117 : v2 met en file les coroutines (dont celle du geste de clic). On attend le repos
+        // avant de lire le compteur, qui est une variable Kotlin et non un noeud de sémantique : la
+        // synchronisation automatique de Compose ne la couvre pas.
+        composeRule.waitForIdle()
 
         assertEquals("la croix ne doit pas fermer pendant un import ou un enregistrement", 0, closeCount)
     }
@@ -92,6 +96,10 @@ class ThreeStopJournalDetailExitGuardTest {
         setContent(photoOperationInFlight = false)
 
         composeRule.onNodeWithContentDescription(string(R.string.common_close_description)).performClick()
+        // RIC-117 : v2 met en file les coroutines (dont celle du geste de clic). On attend le repos
+        // avant de lire le compteur, qui est une variable Kotlin et non un noeud de sémantique : la
+        // synchronisation automatique de Compose ne la couvre pas.
+        composeRule.waitForIdle()
 
         assertEquals(1, closeCount)
     }

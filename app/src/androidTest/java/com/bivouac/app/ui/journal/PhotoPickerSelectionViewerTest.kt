@@ -5,7 +5,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -152,6 +152,10 @@ class PhotoPickerSelectionViewerTest {
                 end1 = center + Offset(160f, 0f),
             )
         }
+        // RIC-117 : assertion négative (« jamais de bascule »). On attend le repos avant, pour que
+        // un tap parasite mis en file par v2 ait eu le temps de se produire : sinon le 0 serait
+        // vrai par construction, avant que le geste n'ait été traité.
+        composeRule.waitForIdle()
 
         selectedChecks().assertCountEquals(0)
     }
