@@ -377,6 +377,13 @@ android {
         // et c'est la plus légère à télécharger. La première exécution récupère l'image système si
         // elle manque, c'est normal.
         managedDevices {
+            // RIC-155 : a chaque execution GMD, AGP 9.3.2 avertit « The device "..." does not specify
+            // a "testedAbi" » alors que les trois appareils ci-dessous la declarent. Cause (lue dans
+            // le bytecode de gradle-9.3.2.jar) : ManagedDeviceInstrumentationTestSetupTask lit sa
+            // propriete `testedAbi` avec getOrNull(), mais sa CreationAction ne la renseigne jamais
+            // depuis le DSL (elle ne cable que `abi`, calcule sans lire testedAbi). Aucune forme
+            // alternative n'existe : `testedAbi` n'est ni depreciee ni renommee. Pas de levier cote
+            // projet ; on garde les declarations (le test runner, lui, les lit) pour AGP 10.
             localDevices {
                 // RIC-116 : appareil de référence, aligné sur targetSdk = 37. C'est le seul qui
                 // exerce réellement les changements de comportement d'Android 16 et 17
