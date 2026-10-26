@@ -8,6 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 // RIC-43 : voir PhotoPositionCorrelator pour le raisonnement (GPS puis horodatage puis rien).
+// RIC-214 : un GPS trop loin de la trace retombe sur l'horodatage, à 2 minutes près.
 class PhotoPositionCorrelatorTest {
 
     private val baseTime = Instant.parse("2026-06-12T08:00:00Z")
@@ -70,18 +71,90 @@ class PhotoPositionCorrelatorTest {
         assertTrue(!position.approximate)
     }
 
-    // Un GPS valide mais hors trace dit que la photo n'a pas été prise dessus : l'horodatage, même
-    // parfaitement dans la tolérance, ne doit pas servir de session de rattrapage.
+    // RIC-214 : un GPS trop loin de la trace ne suffit plus à écarter la photo si son heure tombe
+    // pendant l'enregistrement (GPS faux, trace qui enregistrait à la même minute). Tolérance de
+    // 2 minutes, resserrée par rapport aux 10 minutes du cas sans GPS.
     @Test
-    fun gpsFarFromTheTrack_doesNotFallBackToTimeCorrelation() {
+    fun gpsFarFromTheTrack_timeWithinOneMinuteOfAPoint_isPlacedByTime_andIsApproximate() {
         val position = PhotoPositionCorrelator.correlate(
             points,
             latitude = points[0].latitude + 0.1,
             longitude = points[0].longitude,
-            takenAtMillis = points[2].time!!.toEpochMilli(),
+            takenAtMillis = points[2].time!!.plusSeconds(60).toEpochMilli(),
+        )
+
+        assertEquals(2, position.pointIndex)
+        assertTrue("un placement par horodatage est toujours approximatif", position.approximate)
+    }
+
+    @Test
+    fun gpsFarFromTheTrack_timeExactlyTwoMinutesFromAPoint_isStillPlaced() {
+        // Borne incluse : 2 min pile après le dernier point (les points sont à 5 min les uns des autres).
+        val position = PhotoPositionCorrelator.correlate(
+            points,
+            latitude = points[0].latitude + 0.1,
+            longitude = points[0].longitude,
+            takenAtMillis = points.last().time!!.plusSeconds(2 * 60).toEpochMilli(),
+        )
+
+        assertEquals(points.lastIndex, position.pointIndex)
+        assertTrue(position.approximate)
+    }
+
+    @Test
+    fun gpsFarFromTheTrack_timeThreeMinutesFromAnyPoint_yieldsNoPosition() {
+        // 3 minutes après le dernier point, et rien après : plus proche point à 3 min, au-delà des
+        // 2 minutes, bien que dans les 10 minutes du cas sans GPS (qui ne s'applique pas ici).
+        val position = PhotoPositionCorrelator.correlate(
+            points,
+            latitude = points[0].latitude + 0.1,
+            longitude = points[0].longitude,
+            takenAtMillis = points.last().time!!.plusSeconds(3 * 60).toEpochMilli(),
         )
 
         assertNull(position.pointIndex)
+        assertTrue(!position.approximate)
+    }
+
+    @Test
+    fun gpsFarFromTheTrack_withoutTimestamp_yieldsNoPosition() {
+        val position = PhotoPositionCorrelator.correlate(
+            points,
+            latitude = points[0].latitude + 0.1,
+            longitude = points[0].longitude,
+            takenAtMillis = null,
+        )
+
+        assertNull(position.pointIndex)
+        assertTrue(!position.approximate)
+    }
+
+    @Test
+    fun gpsFarFromTheTrack_timeTwentySevenMinutesOutside_yieldsNoPosition() {
+        // Le cas à préserver : photo prise loin de la trace, bien hors de ses heures.
+        val position = PhotoPositionCorrelator.correlate(
+            points,
+            // ~0,03 degré de longitude à 45 degrés de latitude = ~2,4 km à l'écart de la trace.
+            latitude = points[0].latitude,
+            longitude = points[0].longitude + 0.03,
+            takenAtMillis = points.last().time!!.plusSeconds(27 * 60).toEpochMilli(),
+        )
+
+        assertNull(position.pointIndex)
+    }
+
+    @Test
+    fun gpsNearTheTrack_stillWinsOverTime_andIsNeverApproximate() {
+        // GPS proche : l'heure, même dans la tolérance resserrée d'un autre point, ne sert à rien.
+        val position = PhotoPositionCorrelator.correlate(
+            points,
+            latitude = points[4].latitude,
+            longitude = points[4].longitude,
+            takenAtMillis = points[0].time!!.plusSeconds(30).toEpochMilli(),
+        )
+
+        assertEquals(4, position.pointIndex)
+        assertTrue(!position.approximate)
     }
 
     @Test
@@ -106,6 +179,17 @@ class PhotoPositionCorrelatorTest {
 
         assertNull(position.pointIndex)
         assertTrue(!position.approximate)
+    }
+
+    @Test
+    fun noGps_timestampNineMinutesFromTheNearestPoint_isStillPlaced() {
+        // Sans GPS, la tolérance reste de 10 minutes (et non les 2 minutes du GPS contredit).
+        val takenAt = points.last().time!!.plusSeconds(9 * 60).toEpochMilli()
+
+        val position = PhotoPositionCorrelator.correlate(points, null, null, takenAt)
+
+        assertEquals(points.lastIndex, position.pointIndex)
+        assertTrue(position.approximate)
     }
 
     @Test
