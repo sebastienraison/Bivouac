@@ -1015,6 +1015,9 @@ private fun analysisPauseIcon(context: Context, density: Float): Drawable {
  * lisibles par-dessus tout le reste des overlays. Un Overlay dédié plutôt qu'un Marker de plus :
  * un Marker se redessinerait sous les marqueurs ajoutés après lui, alors que cet overlay doit
  * rester strictement au-dessus, quel que soit l'ordre d'ajout des marqueurs eux-mêmes.
+ *
+ * RIC-216 : deux étiquettes qui se recouvriraient s'empilent plutôt que de se masquer, chacune
+ * gardant l'abscisse de son marqueur ; le calcul est dans [PauseLabelLayout].
  */
 private class AnalysisPauseLabelsOverlay(
     private val labels: List<Pair<GeoPoint, String>>,
@@ -1033,16 +1036,23 @@ private class AnalysisPauseLabelsOverlay(
     override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
         if (shadow) return
         val point = Point()
-        val verticalOffset = PAUSE_ICON_RADIUS_DP * density + 4f * density
-        labels.forEach { (position, text) ->
+        // RIC-216 : positions écran recalculées à chaque draw (le zoom les change), puis empilées
+        // par PauseLabelLayout si deux étiquettes se recouvrent. Pas de cache.
+        val anchors = labels.map { (position, text) ->
             mapView.projection.toPixels(position, point)
-            val textWidth = textPaint.measureText(text)
-            val left = point.x - textWidth / 2 - 4f * density
-            val right = point.x + textWidth / 2 + 4f * density
-            val top = point.y - verticalOffset - 14f * density
-            val bottom = point.y - verticalOffset
-            canvas.drawRoundRect(left, top, right, bottom, 4f * density, 4f * density, backgroundPaint)
-            canvas.drawText(text, point.x.toFloat(), bottom - 4f * density, textPaint)
+            PauseLabelLayout.Anchor(point.x.toFloat(), point.y.toFloat(), textPaint.measureText(text))
+        }
+        val boxes = PauseLabelLayout.stack(
+            anchors = anchors,
+            horizontalPadding = 4f * density,
+            height = 14f * density,
+            baseOffset = PAUSE_ICON_RADIUS_DP * density + 4f * density,
+            gap = 2f * density,
+        )
+        labels.forEachIndexed { index, (_, text) ->
+            val box = boxes[index]
+            canvas.drawRoundRect(box.left, box.top, box.right, box.bottom, 4f * density, 4f * density, backgroundPaint)
+            canvas.drawText(text, anchors[index].x, box.bottom - 4f * density, textPaint)
         }
     }
 }

@@ -2,10 +2,10 @@
 <!--
     FICHIER GENERE, NE PAS EDITER A LA MAIN.
 
-    Source : strings-inventaire-v24.csv (inventaire de l'agent de pilotage,
+    Source : strings-inventaire-v25.csv (inventaire de l'agent de pilotage,
     RIC-24/RIC-187). Toute correction se fait dans l'inventaire, puis :
 
-        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v24.csv
+        python3 tools/i18n/generate_strings.py <dossier de l'inventaire>/strings-inventaire-v25.csv
 
     Voir tools/i18n/README.md.
 -->
@@ -150,6 +150,7 @@
     <string name="photo_gallery_page_counter">%1$d / %2$d</string>
     <string name="photo_gallery_approximate_position_description">Positionnement approximatif</string>
     <string name="photo_gallery_removed_from_map_description">Retirée de la carte</string>
+    <string name="photo_gallery_no_position_description">Sans position sur la trace</string>
 
     <!-- Visionneuse et éditeur Ajuster -->
     <string name="photo_adjust_dialog_title">Ajuster</string>

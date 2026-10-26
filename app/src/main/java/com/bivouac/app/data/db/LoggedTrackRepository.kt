@@ -3,6 +3,7 @@ package com.bivouac.app.data.db
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Log
 import android.webkit.MimeTypeMap
 import com.bivouac.app.data.gpx.DayBivouacs
@@ -287,8 +288,8 @@ class LoggedTrackRepository(context: Context) {
      * content itself is only used transiently here (via [GpxParser]) to compute the denormalized
      * stats and the hike's start date; it's stored untouched separately (see LoggedTrackDayEntity).
      *
-     * L'ordre des jours ne suit pas l'ordre de sélection mais l'horodatage de chaque fichier, voir
-     * [ImportDayOrdering]. Les statistiques agrégées sont la somme de celles de chaque jour, pas
+     * L'ordre des jours ne suit pas l'ordre de sélection mais l'horodatage de chaque fichier (ou, si
+     * l'un d'eux n'en a pas, l'ordre naturel des noms de fichiers), voir [ImportDayOrdering]. Les statistiques agrégées sont la somme de celles de chaque jour, pas
      * un calcul sur la concaténation : ça évite de compter le trajet fictif entre l'arrivée d'un
      * jour et le départ du lendemain.
      */
@@ -305,8 +306,11 @@ class LoggedTrackRepository(context: Context) {
                 ?: throw IOException("Impossible d'ouvrir le fichier sélectionné")
             rawGpx to rawGpx.byteInputStream(StandardCharsets.UTF_8).use { GpxParser.parse(it) }
         }
-        val ordered = ImportDayOrdering.orderIndices(parsed.map { (_, track) -> track.points.firstOrNull()?.time })
-            .map { parsed[it] }
+        // RIC-101 : les noms ne servent qu'au repli d'un lot dont un fichier n'a pas d'horodatage.
+        val ordered = ImportDayOrdering.orderIndices(
+            parsed.map { (_, track) -> track.points.firstOrNull()?.time },
+            uris.map { displayNameOf(resolver, it) },
+        ).map { parsed[it] }
         // RIC-226 : tout ce qu'un jour range est calculé par JournalDayStats, le même code que le
         // rattrapage et le découpage. Un fichier qui contient une nuit (bivouac détecté) a sa durée
         // écoulée sans la nuit, et la distance du trou n'est comptée qu'en deçà de 50 m.
@@ -1686,6 +1690,20 @@ class LoggedTrackRepository(context: Context) {
         val distanceCloseEnough = avgDistance > 0 && abs(a.distanceMeters - b.distanceMeters) / avgDistance <= 0.05
         return startCloseEnough && distanceCloseEnough
     }
+
+    /**
+     * RIC-101 : le nom affiché d'un fichier choisi dans le sélecteur système (colonne standard
+     * [OpenableColumns.DISPLAY_NAME]), tel que le fournisseur le donne. Chaîne vide quand il n'en
+     * rend aucun (Uri sans curseur, colonne absente ou nulle, fournisseur qui échoue) : le fichier
+     * se trie alors avant les autres noms, et l'ordre de sélection le départage des autres sans nom.
+     * Jamais une exception : le nom ne sert qu'à ordonner, il ne doit pas faire échouer un import.
+     */
+    private fun displayNameOf(resolver: ContentResolver, uri: Uri): String = runCatching {
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (index >= 0 && cursor.moveToFirst() && !cursor.isNull(index)) cursor.getString(index) else null
+        }
+    }.getOrNull() ?: ""
 
     private fun sha256(text: String): String =
         MessageDigest.getInstance("SHA-256").digest(text.toByteArray(StandardCharsets.UTF_8))
