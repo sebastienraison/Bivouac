@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
@@ -88,7 +88,7 @@ fun MapControls(
                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             ),
         ) {
-            Icon(Icons.Default.MyLocation, contentDescription = stringResource(R.string.map_controls_recenter_description))
+            Icon(Icons.Default.FitScreen, contentDescription = stringResource(R.string.map_controls_recenter_description))
         }
     }
 }
