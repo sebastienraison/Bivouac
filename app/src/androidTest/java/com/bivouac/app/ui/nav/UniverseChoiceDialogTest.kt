@@ -1,7 +1,7 @@
 package com.bivouac.app.ui.nav
 
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -56,6 +56,9 @@ class UniverseChoiceDialogTest {
         composeRule.onNodeWithText(text(R.string.nav_universe_choice_option_planification_subtitle))
             .assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.nav_section_planification)).performClick()
+        // RIC-117 : v2 met le clic en file ; les compteurs sont des variables Kotlin, hors de la
+        // synchronisation automatique de Compose, d'où l'attente explicite avant de les lire.
+        composeRule.waitForIdle()
 
         assertEquals("un seul fichier : le choix Planification doit partir normalement", 1, planificationChosen)
     }
@@ -67,6 +70,9 @@ class UniverseChoiceDialogTest {
         composeRule.onNodeWithText(text(R.string.nav_universe_choice_planification_disabled_subtitle))
             .assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.nav_section_planification)).performClick()
+        // RIC-117 : sans cette attente, le « 0 » attendu passerait même si le clic arrivait après
+        // coup (assertion négative vacuement vraie).
+        composeRule.waitForIdle()
 
         assertEquals(
             "un lot ne doit pas pouvoir partir en Planification, qui n'en ouvrirait qu'un",
@@ -81,6 +87,8 @@ class UniverseChoiceDialogTest {
         setContent(fileCount = 3)
 
         composeRule.onNodeWithText(text(R.string.journal_list_screen_title)).performClick()
+        // RIC-117 : attente explicite avant de lire le compteur (v2 met le clic en file).
+        composeRule.waitForIdle()
 
         assertEquals(1, journalChosen)
     }

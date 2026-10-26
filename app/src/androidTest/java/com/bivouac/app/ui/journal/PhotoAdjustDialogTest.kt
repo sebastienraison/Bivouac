@@ -3,7 +3,7 @@ package com.bivouac.app.ui.journal
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -81,6 +81,9 @@ class PhotoAdjustDialogTest {
         }
 
         composeTestRule.onNodeWithText(string(R.string.common_cancel_button)).performClick()
+        // RIC-117 : v2 met le clic en file ; `cancelled` et `confirmed` sont des variables Kotlin,
+        // hors de la synchronisation automatique de Compose, d'où l'attente explicite.
+        composeTestRule.waitForIdle()
 
         assertTrue(cancelled)
         assertNull("Annuler ne doit rien valider", confirmed)
@@ -94,6 +97,8 @@ class PhotoAdjustDialogTest {
         }
 
         composeTestRule.onNodeWithText(string(R.string.common_ok_button)).performClick()
+        // RIC-117 : attente explicite avant de lire `confirmed` (v2 met le clic en file).
+        composeTestRule.waitForIdle()
 
         // Exactement ce que la photo portait : c'est ce qui permet au ViewModel de reconnaître
         // « rien n'a changé » et de ne pas marquer l'écran comme modifié.
@@ -111,6 +116,8 @@ class PhotoAdjustDialogTest {
         composeTestRule.onNodeWithContentDescription(string(R.string.photo_adjust_rotate_right_button)).performClick()
         composeTestRule.onNodeWithContentDescription(string(R.string.photo_adjust_rotate_left_button)).performClick()
         composeTestRule.onNodeWithText(string(R.string.common_ok_button)).performClick()
+        // RIC-117 : attente explicite avant de lire `confirmed` (v2 met le clic en file).
+        composeTestRule.waitForIdle()
 
         assertEquals(PhotoAdjustments(rotationQuarterTurns = 1), confirmed)
     }
@@ -125,6 +132,8 @@ class PhotoAdjustDialogTest {
 
         composeTestRule.onNodeWithContentDescription(string(R.string.photo_adjust_rotate_right_button)).performClick()
         composeTestRule.onNodeWithText(string(R.string.common_ok_button)).performClick()
+        // RIC-117 : attente explicite avant de lire `confirmed` (v2 met le clic en file).
+        composeTestRule.waitForIdle()
 
         // 3 + 1 = 4 quarts de tour, ramenés à 0 : l'éditeur repart bien de l'état existant, il ne
         // recommence pas à zéro.
@@ -156,6 +165,8 @@ class PhotoAdjustDialogTest {
         // Le retour à l'identité ne se voit pas qu'au bouton : OK doit désormais rendre NONE, comme
         // si la rotation n'avait jamais eu lieu.
         composeTestRule.onNodeWithText(string(R.string.common_ok_button)).performClick()
+        // RIC-117 : attente explicite avant de lire `confirmed` (v2 met le clic en file).
+        composeTestRule.waitForIdle()
         assertEquals(PhotoAdjustments.NONE, confirmed)
     }
 }
