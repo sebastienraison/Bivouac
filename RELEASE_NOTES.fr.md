@@ -2,6 +2,33 @@
 
 *[English version](RELEASE_NOTES.md)*
 
+## V2.7.2
+
+**Application allégée :**
+
+- Le code est désormais optimisé et réduit à la compilation : l'APK passe de 16,5 Mo à environ
+  4 Mo
+
+**Photos du Journal :**
+
+- Une photo dont la position GPS est loin de la trace (plus de 500 m), mais prise à moins de
+  deux minutes d'un point enregistré, est désormais placée d'après son heure et marquée
+  approximative
+- Les vignettes signalent les photos qui n'ont pas de position sur la trace
+- Les badges des vignettes changent : position approximative, une épingle avec un point
+  d'interrogation (au lieu du viseur) ; photo retirée de la carte, un œil barré (au lieu de
+  l'épingle barrée, qui signale désormais une photo sans position)
+
+**Journal :**
+
+- Import de plusieurs fichiers : quand un fichier n'a pas d'heure, les jours sont rangés dans
+  l'ordre naturel de leurs noms, « jour 2 » avant « jour 10 »
+- Analyse : les étiquettes de durée de pauses proches s'empilent au lieu de se recouvrir
+
+**Carte :**
+
+- Le bouton de recentrage prend une icône de cadrage, pour ne plus être confondu avec la position
+
 ## V2.7.1
 
 Version de correctifs, après les tests communautaires de F-Droid et la recette de la 2.7.0.

@@ -2,6 +2,31 @@
 
 *[Version française](RELEASE_NOTES.fr.md)*
 
+## V2.7.2
+
+**Lighter app:**
+
+- The code is now optimised and shrunk at build time: the APK goes from 16.5 MB to about 4 MB
+
+**Journal photos:**
+
+- A photo whose GPS position is far from the track (more than 500 m), but taken within two
+  minutes of a recorded point, is now placed by its time and marked approximate
+- Thumbnails now flag photos that have no position on the track
+- Thumbnail badges change: approximate position, a pin with a question mark (instead of the
+  crosshair); photo removed from the map, a crossed-out eye (instead of the crossed-out pin, which
+  now flags a photo with no position)
+
+**Journal:**
+
+- Importing several files: when a file has no times, the days are ordered by the natural order of
+  their names, "day 2" before "day 10"
+- Analysis: duration labels of nearby breaks stack instead of overlapping
+
+**Map:**
+
+- The recentre button gets a framing icon, so it is no longer mistaken for the location button
+
 ## V2.7.1
 
 Bugfix release, after the F-Droid community tests and the 2.7.0 acceptance run.
